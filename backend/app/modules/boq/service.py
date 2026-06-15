@@ -6301,6 +6301,14 @@ class BOQService:
         boq = await self.get_boq(boq_id)
         all_positions = await self.position_repo.list_all_for_boq(boq_id)
 
+        # Resolve the project's base currency + FX table so positions and
+        # resources priced in a foreign currency are converted before they are
+        # aggregated. A BOQ can legitimately hold mixed-currency positions
+        # (Issue #111 path); summing their raw totals would mix e.g. EUR and USD
+        # numerically. Best-effort - ("", {}) degrades to raw sums (the prior
+        # behaviour) rather than failing the breakdown.
+        base_currency, fx_map = await self._resolve_project_fx(boq_id)
+
         # Accumulators
         category_amounts: dict[str, float] = {}
         category_counts: dict[str, int] = {}
@@ -6336,6 +6344,19 @@ class BOQService:
                     if not math.isfinite(res_total):
                         res_total = 0.0
 
+                    # Convert this resource's per-unit subtotal into the base
+                    # currency (mirrors _resource_total_in_base): a resource may
+                    # carry its own currency; a missing rate degrades to no
+                    # conversion rather than zeroing the row. Scaling by the
+                    # position quantity afterwards is currency-neutral.
+                    res_currency = str(res.get("currency") or "").strip().upper()
+                    if res_currency and res_currency != base_currency and fx_map:
+                        fx = fx_map.get(res_currency)
+                        if fx:
+                            fx_f = _str_to_float(fx)
+                            if math.isfinite(fx_f) and fx_f > 0:
+                                res_total = res_total * fx_f
+
                     cat = self._normalize_resource_category(res_type)
 
                     # Scale the per-unit resource subtotal by the real
@@ -6356,13 +6377,19 @@ class BOQService:
                     resource_types[res_name] = cat
                     resource_positions.setdefault(res_name, set()).add(pos.id)
             else:
-                # Heuristic fallback - classify by description keywords (fast)
+                # Heuristic fallback - classify by description keywords (fast).
+                # Convert the position total into base currency first so a
+                # foreign-priced position is not aggregated at its face value
+                # (mirrors _position_total_in_base on the export rollup path).
                 cat = self._classify_position_category(pos.description)
-                category_amounts[cat] = category_amounts.get(cat, 0.0) + pos_total
+                pos_total_base = float(
+                    _position_total_in_base(pos.total, _position_currency(pos), fx_map, base_currency)
+                )
+                category_amounts[cat] = category_amounts.get(cat, 0.0) + pos_total_base
                 category_counts[cat] = category_counts.get(cat, 0) + 1
 
                 short_name = pos.description[:60] if pos.description else "Position"
-                resource_totals[short_name] = resource_totals.get(short_name, 0.0) + pos_total
+                resource_totals[short_name] = resource_totals.get(short_name, 0.0) + pos_total_base
                 resource_types[short_name] = cat
                 resource_positions.setdefault(short_name, set()).add(pos.id)
 
@@ -7023,6 +7050,7 @@ class BOQService:
         for p in boq.positions:
             positions_data.append(
                 {
+                    "id": str(p.id),
                     "ordinal": p.ordinal,
                     "description": p.description,
                     "unit": p.unit,
@@ -7100,7 +7128,10 @@ class BOQService:
         await self.session.execute(sa_delete(BOQMarkup).where(BOQMarkup.boq_id == boq_id))
         await self.session.flush()
 
-        # Recreate positions from snapshot
+        # Recreate positions from snapshot. Keep a map from each snapshot
+        # position's OLD id to the freshly created row so the parent links can
+        # be re-threaded in a second pass below.
+        old_to_new: dict[str, Position] = {}
         for pdata in data.get("positions", []):
             pos = Position(
                 boq_id=boq_id,
@@ -7116,13 +7147,24 @@ class BOQService:
                 sort_order=pdata.get("sort_order", 0),
             )
             self.session.add(pos)
+            old_id = pdata.get("id")
+            if old_id:
+                old_to_new[old_id] = pos
 
         await self.session.flush()
 
-        # Note: snapshot parent_id values are the OLD UUIDs which we cannot
-        # directly map to new positions. The section hierarchy is reconstructed
-        # from ordinals by get_boq_structured, so explicit parent_id is not
-        # strictly required for correct rendering.
+        # Re-thread the section hierarchy from the captured parent_id links.
+        # get_boq_structured groups children under their section strictly by
+        # parent_id (not by ordinal), so without this every restored row would
+        # come back parent-less, flattening the tree and zeroing section
+        # subtotals. Snapshots written before "id" was serialized lack the map
+        # and simply restore flat (the previous behavior) instead of failing.
+        for pdata in data.get("positions", []):
+            old_id = pdata.get("id")
+            old_parent = pdata.get("parent_id")
+            if old_id and old_parent and old_id in old_to_new and old_parent in old_to_new:
+                old_to_new[old_id].parent_id = old_to_new[old_parent].id
+        await self.session.flush()
 
         # Recreate markups from snapshot
         for mdata in data.get("markups", []):

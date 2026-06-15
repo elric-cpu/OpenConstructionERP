@@ -192,13 +192,21 @@ async def _require_project_access(
             pass
 
         if str(getattr(project, "owner_id", "")) != str(user_id):
-            # R7: 404 not 403 - never confirm a project UUID exists
-            # for callers that don't own it. Mirrors the response shape
-            # of the "project missing" branch above.
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Project not found",
-            )
+            # Not the owner: allow project team members (a TeamMembership row),
+            # mirroring the projects-module access guard. Otherwise 404 (R7:
+            # never confirm a project UUID exists to a caller without access).
+            # project_id is non-None here (guarded at the top of the function).
+            from app.modules.teams.access import is_project_member
+
+            try:
+                uid = uuid.UUID(str(user_id))
+            except (ValueError, TypeError):
+                uid = None
+            if uid is None or not await is_project_member(session, project_id, uid):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Project not found",
+                )
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001

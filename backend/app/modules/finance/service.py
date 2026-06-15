@@ -708,7 +708,12 @@ class FinanceService:
                 # so still matches base-currency invoice amounts as before.
                 budget_currency = (getattr(budget, "currency_code", "") or "").strip().upper()
                 key = (budget.wbs_id, budget.category, budget_currency)
-                budget.actual = bucketed.get(key, Decimal("0"))
+                # Preserve the goods-receipt-sourced portion of actual (recorded
+                # in metadata by the procurement gr.confirmed handler). Without
+                # this, paying any invoice overwrites actual with only the
+                # invoice-sourced total and silently wipes procurement actuals.
+                gr_actual = _safe_decimal((budget.metadata_ or {}).get("actual_from_receipts", "0"))
+                budget.actual = bucketed.get(key, Decimal("0")) + gr_actual
 
             logger.info(
                 "Updated budget actuals for project %s: total_actual=%s across %d budget row(s), %d bucket(s)",
@@ -1956,49 +1961,41 @@ class FinanceService:
         posted_at = _utcnow_iso()
         rev_description = description or f"Reversal of {transaction_ref}"
 
-        # Identify the debit and credit legs by which amount is non-zero
-        orig_debit = next((r for r in rows if _safe_decimal(r.debit_amount) > 0), rows[0])
-        orig_credit = next((r for r in rows if _safe_decimal(r.credit_amount) > 0), rows[-1])
-
         try:
             async with self.session.begin_nested():
-                # Reversal debit row uses the credit account (accounts are swapped)
-                rev_debit = LedgerEntry(
-                    project_id=project_id or orig_debit.project_id,
-                    transaction_ref=reversal_ref,
-                    account_code=orig_credit.account_code,  # swapped
-                    description=rev_description,
-                    debit_amount=orig_debit.debit_amount,  # same magnitude
-                    credit_amount=Decimal("0"),
-                    currency_code=orig_debit.currency_code,
-                    posted_at=posted_at,
-                    source_type=orig_debit.source_type,
-                    source_id=orig_debit.source_id,
-                    is_reversal=True,
-                    reversal_of_id=orig_debit.id,
-                    created_by=created_by,
-                    idempotency_key=reversal_idem_key,
-                )
-                # Reversal credit row uses the debit account (accounts are swapped)
-                rev_credit = LedgerEntry(
-                    project_id=project_id or orig_credit.project_id,
-                    transaction_ref=reversal_ref,
-                    account_code=orig_debit.account_code,  # swapped
-                    description=rev_description,
-                    debit_amount=Decimal("0"),
-                    credit_amount=orig_credit.credit_amount,  # same magnitude
-                    currency_code=orig_credit.currency_code,
-                    posted_at=posted_at,
-                    source_type=orig_credit.source_type,
-                    source_id=orig_credit.source_id,
-                    is_reversal=True,
-                    reversal_of_id=orig_credit.id,
-                    created_by=created_by,
-                    idempotency_key=reversal_idem_key,
-                )
-                self.session.add(rev_debit)
-                self.session.add(rev_credit)
+                # Reverse EVERY leg of the original transaction, not just one
+                # debit + one credit. A journal entry may carry 3+ legs (e.g. one
+                # debit split across two credit accounts); mirroring only a single
+                # debit/credit pair would leave the remaining legs un-backed and
+                # the GL permanently unbalanced. Each reversal row keeps the leg's
+                # OWN account and swaps its debit<->credit amounts, which backs the
+                # account out individually and keeps the reversal batch balanced.
+                # account_code stays part of the idempotency key, so the distinct-
+                # account legs coexist exactly as in the original post.
+                reversal_rows: list[LedgerEntry] = []
+                for r in rows:
+                    rev = LedgerEntry(
+                        project_id=project_id or r.project_id,
+                        transaction_ref=reversal_ref,
+                        account_code=r.account_code,
+                        description=rev_description,
+                        debit_amount=r.credit_amount,  # swap debit <-> credit
+                        credit_amount=r.debit_amount,
+                        currency_code=r.currency_code,
+                        posted_at=posted_at,
+                        source_type=r.source_type,
+                        source_id=r.source_id,
+                        is_reversal=True,
+                        reversal_of_id=r.id,
+                        created_by=created_by,
+                        idempotency_key=reversal_idem_key,
+                    )
+                    self.session.add(rev)
+                    reversal_rows.append(rev)
                 await self.session.flush()
+                # Representative pair for the (debit_row, credit_row) return contract.
+                rev_debit = next((r for r in reversal_rows if _safe_decimal(r.debit_amount) > 0), reversal_rows[0])
+                rev_credit = next((r for r in reversal_rows if _safe_decimal(r.credit_amount) > 0), reversal_rows[-1])
         except IntegrityError:
             # Concurrent double-reverse lost the race on the partial unique
             # index - return the pair the winner wrote, never a second one.

@@ -205,6 +205,15 @@ async def _on_gr_confirmed(event: Event) -> None:
             if new_committed < 0:
                 new_committed = Decimal("0")
             budget.committed = new_committed
+            # Track the goods-receipt-sourced portion of `actual` in metadata.
+            # A later invoice payment recomputes `actual` from paid invoices only
+            # (see FinanceService.pay_invoice) and would otherwise overwrite this
+            # row, silently wiping every procurement actual. Recording the GR
+            # portion here lets that recompute add it back instead of losing it.
+            # Reassign a fresh dict so SQLAlchemy detects the JSON change.
+            md = dict(budget.metadata_ or {})
+            md["actual_from_receipts"] = str(_to_decimal(md.get("actual_from_receipts")) + amount)
+            budget.metadata_ = md
             budget.actual = current_actual + amount
             await session.commit()
             logger.info(

@@ -334,9 +334,16 @@ class TenderingService:
 
         fields = data.model_dump(exclude_unset=True)
 
-        # Map schema field 'metadata' to model column 'metadata_'
+        # Map schema field 'metadata' to model column 'metadata_'. Merge a
+        # partial metadata patch into the existing column instead of replacing
+        # it wholesale - a PATCH that touches one key must not wipe every other
+        # key already stored (lifecycle stamps, evaluation notes, etc.).
         if "metadata" in fields:
-            fields["metadata_"] = fields.pop("metadata")
+            incoming_meta = fields.pop("metadata")
+            if isinstance(incoming_meta, dict):
+                fields["metadata_"] = {**(package.metadata_ or {}), **incoming_meta}
+            else:
+                fields["metadata_"] = incoming_meta
 
         # Validate status transition before persisting anything.
         new_status = fields.get("status")
@@ -441,13 +448,19 @@ class TenderingService:
 
     async def update_bid(self, bid_id: uuid.UUID, data: BidUpdate) -> TenderBid:
         """Update bid fields. Raises 404 if not found."""
-        await self.get_bid(bid_id)
+        bid = await self.get_bid(bid_id)
 
         fields = data.model_dump(exclude_unset=True)
 
-        # Map schema field 'metadata' to model column 'metadata_'
+        # Map schema field 'metadata' to model column 'metadata_'. Merge a
+        # partial metadata patch into the existing column instead of replacing
+        # it wholesale, so a PATCH touching one key keeps the rest intact.
         if "metadata" in fields:
-            fields["metadata_"] = fields.pop("metadata")
+            incoming_meta = fields.pop("metadata")
+            if isinstance(incoming_meta, dict):
+                fields["metadata_"] = {**(bid.metadata_ or {}), **incoming_meta}
+            else:
+                fields["metadata_"] = incoming_meta
 
         # Serialize line_items if present - JSON mode coerces Decimal to
         # string so the persisted JSON value matches the wire contract.

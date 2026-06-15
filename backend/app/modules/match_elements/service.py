@@ -1695,16 +1695,20 @@ class MatchElementsService:
         )
         applied_rows = (await db.execute(applied_stmt)).all()
         cost_ids = list({r[1] for r in applied_rows if r[1] is not None})
-        cost_lookup: dict[uuid.UUID, tuple[float, str]] = {}
+        cost_lookup: dict[uuid.UUID, tuple[float, str, str]] = {}
         if cost_ids:
-            ci_stmt = select(CostItem.id, CostItem.rate, CostItem.currency).where(CostItem.id.in_(cost_ids))
-            for cid, rate, ccy in (await db.execute(ci_stmt)).all():
+            ci_stmt = select(CostItem.id, CostItem.rate, CostItem.currency, CostItem.unit).where(
+                CostItem.id.in_(cost_ids)
+            )
+            for cid, rate, ccy, cat_unit in (await db.execute(ci_stmt)).all():
                 # Don't paper over a missing currency - leave it empty
                 # so the rollup downstream can either pick the dominant
                 # currency from siblings or surface the gap explicitly.
                 # Hard-defaulting to EUR mis-stamps non-EUR rates (e.g.
                 # a BRL rate row with NULL currency would become EUR).
-                cost_lookup[cid] = (_to_decimal(rate, 0.0), (ccy or "").upper())
+                # Carry the catalogue unit too so the per-row total below can
+                # mirror apply_to_boq (multiplier strip + dimensional gate).
+                cost_lookup[cid] = (_to_decimal(rate, 0.0), (ccy or "").upper(), cat_unit or "")
 
         # Universality: stamp the session_summary.currency with the
         # project's currency, NOT the first matched candidate's currency.
@@ -1752,13 +1756,38 @@ class MatchElementsService:
                 return Decimal("0"), False
             return amount * factor_dec, True
 
+        # Same dimensional helpers apply_to_boq uses, so the resume-picker total
+        # mirrors what applying actually books (multiplier strip + dim gate).
+        from app.core.match_service.boosts.unit import (
+            _DIMENSION_GROUP,
+            _normalise_unit,
+        )
+
         totals: dict[uuid.UUID, tuple[Decimal, str | None]] = dict.fromkeys(sids, (Decimal("0"), None))
         for sid, cid, qty_raw, unit in applied_rows:
             if cid is None or cid not in cost_lookup:
                 continue
-            rate, ccy = cost_lookup[cid]
+            rate, ccy, cat_unit = cost_lookup[cid]
+            # Mirror apply_to_boq so the resume-picker total matches what
+            # applying actually books. Two corrections the raw rate*qty missed:
+            #   1. Divide out any quantity multiplier the catalogue encodes in
+            #      its unit string ("100 м3" -> per-m3 rate), else a CWICR row
+            #      overstates the total by that factor (commonly 100x/1000x).
+            #   2. Zero the rate when the catalogue dimension and the group's
+            #      unit dimension disagree (an m2 rate on a length qty is
+            #      meaningless and apply_to_boq drops it to 0).
+            env_unit = unit or ""
+            cat_mult, cat_base_unit = _split_unit_multiplier(cat_unit or env_unit)
+            mult_dec = Decimal(str(cat_mult))
+            unit_rate = (Decimal(str(rate)) / mult_dec) if mult_dec > 0 else Decimal(str(rate))
+            env_dim = _DIMENSION_GROUP.get(_normalise_unit_cross_locale(env_unit) or _normalise_unit(env_unit), "")
+            cand_dim = _DIMENSION_GROUP.get(
+                _normalise_unit_cross_locale(cat_base_unit) or _normalise_unit(cat_base_unit), ""
+            )
+            if env_dim and cand_dim and env_dim != cand_dim:
+                unit_rate = Decimal("0")
             qty = _quantity_for_unit(qty_raw or {}, unit or "pcs")
-            row_total, ok = _convert(Decimal(str(rate)) * Decimal(str(qty)), ccy)
+            row_total, ok = _convert(unit_rate * Decimal(str(qty)), ccy)
             if not ok:
                 # Drop rows we can't FX-convert into the project
                 # currency. The session is still shown - just with a

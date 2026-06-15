@@ -83,8 +83,8 @@ class ValidationModuleService:
         Raises:
             ValueError: If the BOQ is not found or has no positions.
         """
-        # 1. Load BOQ and positions
-        positions_data = await self._load_boq_positions(boq_id)
+        # 1. Load BOQ and positions (scoped to the authorized project)
+        positions_data = await self._load_boq_positions(boq_id, project_id)
         if not positions_data:
             logger.warning("Validation: BOQ %s has no positions", boq_id)
 
@@ -296,7 +296,7 @@ class ValidationModuleService:
 
     # ── Internal helpers ──────────────────────────────────────────────────
 
-    async def _load_boq_positions(self, boq_id: uuid.UUID) -> list[dict[str, Any]]:
+    async def _load_boq_positions(self, boq_id: uuid.UUID, project_id: uuid.UUID) -> list[dict[str, Any]]:
         """Load BOQ positions and convert to validation-compatible dict format.
 
         Each position dict contains:
@@ -310,6 +310,16 @@ class ValidationModuleService:
             msg = f"BOQ {boq_id} not found"
             raise ValueError(msg)
 
+        # Enforce that the BOQ belongs to the project this validation run is
+        # scoped to. Without this a caller authorized on project A could
+        # validate (and read the positions of) any BOQ id from project B by
+        # passing a foreign boq_id - a cross-project IDOR. Raise the same
+        # "not found" message so a mismatch leaks nothing about the foreign BOQ
+        # (the router maps ValueError to 404).
+        if boq.project_id != project_id:
+            msg = f"BOQ {boq_id} not found"
+            raise ValueError(msg)
+
         # Load positions with an explicit awaited query rather than the lazy
         # ``boq.positions`` relationship. Under AsyncSession, touching a lazy
         # collection that is not already populated (e.g. positions inserted by
@@ -317,8 +327,23 @@ class ValidationModuleService:
         # MissingGreenlet. An explicit select is safe in every caller context.
         pos_rows = (await self.session.execute(select(Position).where(Position.boq_id == boq_id))).scalars().all()
 
+        # The CurrencyConsistency rule reads each position's currency. The
+        # per-position currency is authoritative in metadata (mirrors
+        # boq.service._position_currency); fall back to the BOQ currency so a
+        # position without an explicit code inherits the BOQ's. The loader used
+        # to drop currency entirely, which left the rule reading "" for every
+        # row and silently passing on every BOQ.
+        boq_currency = (getattr(boq, "currency", "") or "").strip().upper()
+
         positions_data: list[dict[str, Any]] = []
         for pos in pos_rows:
+            pmeta = pos.metadata_ or {}
+            pos_currency = ""
+            for ck in ("currency", "position_currency", "project_currency"):
+                cv = pmeta.get(ck)
+                if isinstance(cv, str) and cv.strip():
+                    pos_currency = cv.strip().upper()
+                    break
             positions_data.append(
                 {
                     "id": str(pos.id),
@@ -331,7 +356,8 @@ class ValidationModuleService:
                     "classification": pos.classification or {},
                     "source": pos.source,
                     "parent_id": str(pos.parent_id) if pos.parent_id else None,
-                    "type": (pos.metadata_ or {}).get("type", "position"),
+                    "currency": pos_currency or boq_currency,
+                    "type": pmeta.get("type", "position"),
                 }
             )
         return positions_data

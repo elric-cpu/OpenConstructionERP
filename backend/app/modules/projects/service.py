@@ -616,6 +616,13 @@ class ProjectService:
         # only when the user actually changed it).
         prior_address = dict(project.address) if isinstance(project.address, dict) else None
 
+        # Merge a partial metadata patch into the existing column rather than
+        # replacing it wholesale - a PATCH touching one key must not wipe every
+        # other stored key. Runs after the allow_currency_change strip above so
+        # the transient command flag is never merged back in.
+        if isinstance(fields.get("metadata_"), dict):
+            fields["metadata_"] = {**(project.metadata_ or {}), **fields["metadata_"]}
+
         await self.repo.update_fields(project_id, **fields)
 
         # Refresh the project object
