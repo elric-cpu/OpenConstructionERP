@@ -740,6 +740,11 @@ class SubcontractorService:
         fields = data.model_dump(exclude_unset=True)
         # Status transitions go through dedicated methods.
         fields.pop("status", None)
+        # Merge a partial answers patch into the existing JSON column rather than
+        # replacing it wholesale, so updating one answer keeps the rest of the
+        # questionnaire intact.
+        if isinstance(fields.get("answers"), dict):
+            fields["answers"] = {**(getattr(entity, "answers", None) or {}), **fields["answers"]}
         if fields:
             await self.prequal.update_fields(prequal_id, **fields)
             await self.session.refresh(entity)

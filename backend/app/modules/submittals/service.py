@@ -233,8 +233,16 @@ class SubmittalService:
             )
 
         fields: dict[str, Any] = data.model_dump(exclude_unset=True)
+        # Merge a partial metadata patch into the existing column instead of
+        # replacing it wholesale (the description block below then operates on
+        # the merged dict). Without this a metadata PATCH without description
+        # dropped sibling keys like review_notes / attachments.
         if "metadata" in fields:
-            fields["metadata_"] = fields.pop("metadata")
+            incoming_meta = fields.pop("metadata")
+            if isinstance(incoming_meta, dict):
+                fields["metadata_"] = {**(getattr(submittal, "metadata_", None) or {}), **incoming_meta}
+            else:
+                fields["metadata_"] = incoming_meta
 
         # Description lives in metadata (no dedicated column). Merge it into a
         # copy of the existing metadata so the edit modal persists it without

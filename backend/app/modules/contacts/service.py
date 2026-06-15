@@ -265,8 +265,15 @@ class ContactService:
         contact = await self.get_contact(contact_id)
 
         fields = data.model_dump(exclude_unset=True)
+        # Merge a partial metadata patch into the existing column instead of
+        # replacing it wholesale, so a PATCH touching one key keeps the rest
+        # (tags, internal notes, etc.).
         if "metadata" in fields:
-            fields["metadata_"] = fields.pop("metadata")
+            incoming_meta = fields.pop("metadata")
+            if isinstance(incoming_meta, dict):
+                fields["metadata_"] = {**(getattr(contact, "metadata_", None) or {}), **incoming_meta}
+            else:
+                fields["metadata_"] = incoming_meta
 
         # Validate and normalise email if being updated
         if "primary_email" in fields and fields["primary_email"] is not None:

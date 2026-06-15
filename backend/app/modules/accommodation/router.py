@@ -219,7 +219,10 @@ async def update_accommodation(
     metadata = data.pop("metadata", None)
     for key, value in data.items():
         setattr(accom, key, value)
-    if metadata is not None:
+    if isinstance(metadata, dict):
+        # Merge into the existing column so a partial PATCH keeps other keys.
+        accom.metadata_ = {**(getattr(accom, "metadata_", None) or {}), **metadata}
+    elif metadata is not None:
         accom.metadata_ = metadata
     await session.flush()
     # Re-load so ``updated_at`` (server-side ``onupdate=func.now()``) is
@@ -701,7 +704,10 @@ async def update_charge(
 
     for key, value in data.items():
         setattr(charge, key, value)
-    if metadata is not None:
+    if isinstance(metadata, dict):
+        # Merge into the existing column so a partial PATCH keeps other keys.
+        charge.metadata_ = {**(getattr(charge, "metadata_", None) or {}), **metadata}
+    elif metadata is not None:
         charge.metadata_ = metadata
 
     await session.flush()

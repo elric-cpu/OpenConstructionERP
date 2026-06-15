@@ -168,8 +168,16 @@ class NCRService:
             )
 
         fields: dict[str, Any] = data.model_dump(exclude_unset=True)
+        # Merge a partial metadata patch into the existing column instead of
+        # replacing it wholesale - a PATCH touching one key must not wipe the
+        # rest. NCRs are auto-created with source/report tracking keys in
+        # metadata, which a naive overwrite would silently drop.
         if "metadata" in fields:
-            fields["metadata_"] = fields.pop("metadata")
+            incoming_meta = fields.pop("metadata")
+            if isinstance(incoming_meta, dict):
+                fields["metadata_"] = {**(getattr(ncr, "metadata_", None) or {}), **incoming_meta}
+            else:
+                fields["metadata_"] = incoming_meta
 
         # Validate status transition if status is being changed
         new_status = fields.get("status")

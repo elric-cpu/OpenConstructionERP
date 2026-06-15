@@ -444,11 +444,19 @@ async def update_variation_order(
     data: VariationOrderUpdate,
     session: SessionDep,
     user_id: CurrentUserId = None,  # type: ignore[assignment]
+    user_payload: CurrentUserPayload = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> VariationOrderResponse:
     existing = await service.get_order(vo_id)
     await verify_project_access(existing.project_id, str(user_id), session)
+    # A VariationOrder's final_cost_impact is the committed money. Changing it is
+    # symmetric with approval and convert-to-VO, so a high-value value must clear
+    # the same variations.approve_high_value gate. Without this an editor holding
+    # only variations.update could inflate an issued VO's cost past the threshold
+    # with no authorisation.
+    if data.final_cost_impact is not None:
+        ensure_high_value_authorised(data.final_cost_impact, payload=user_payload)
     vo = await service.update_order(vo_id, data)
     return VariationOrderResponse.model_validate(vo)
 
