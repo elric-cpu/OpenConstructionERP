@@ -1059,6 +1059,8 @@ OpenConstructionERP is built and maintained by the community. If you find it use
 
 OpenConstructionERP is shaped by the people who report bugs, request features, and ask the sharp questions that push the platform forward. We credit every one of them.
 
+For security reasons we do not merge external pull requests. When someone reports a bug or sends a patch, we re-implement the fix ourselves in our own sandbox and review it before it ships. That keeps one audited source of truth for a codebase that companies run in production, and it avoids pulling in code we did not write. The credit goes to the person who reported the problem or proposed the idea, and the implementation is our own.
+
 See **[CONTRIBUTORS.md](CONTRIBUTORS.md)** for the full list. Want to join it? [Open an issue](https://github.com/datadrivenconstruction/OpenConstructionERP/issues) or say hello in the [community chat](https://t.me/datadrivenconstruction).
 
 ## Security

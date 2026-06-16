@@ -76,12 +76,25 @@ keep the latest stable plus the previous minor for six months.
   self-hosting checklist below (e.g., default `JWT_SECRET`, HTTP
   instead of HTTPS).
 
+## External Code and Pull Requests
+
+For security reasons we do not merge external pull requests into the
+codebase. When the community reports a bug, sends a patch, or proposes a
+change, we re-implement the fix ourselves in our own sandbox and review it
+before it ships. This keeps one audited source of truth for a platform that
+companies run in production, and it avoids taking in code we have not written
+and fully reviewed. We credit the original reporter in
+[CONTRIBUTORS.md](CONTRIBUTORS.md) and in the project acknowledgments, and the
+implementation is our own. The policy is enforced in continuous integration: a
+guard rejects any pull request that contains commits not authored by
+DataDrivenConstruction.
+
 ## Self-Hosting Security Checklist
 
 If you deploy OpenConstructionERP on your own infrastructure:
 
 - [ ] Change `JWT_SECRET` from the default value
-- [ ] Use HTTPS (TLS 1.2+) in production — never expose HTTP
+- [ ] Use HTTPS (TLS 1.2+) in production - never expose HTTP
       publicly
 - [ ] Set `APP_ENV=production` to disable debug endpoints
       (`/api/docs`, `/api/redoc`)
@@ -90,7 +103,7 @@ If you deploy OpenConstructionERP on your own infrastructure:
 - [ ] Restrict `ALLOWED_ORIGINS` to your actual domain
 - [ ] Keep Docker images updated (`docker compose pull`)
 - [ ] Back up your database regularly and test restores
-- [ ] Review `.env` file permissions — readable only by the app
+- [ ] Review `.env` file permissions - readable only by the app
       user
 - [ ] If using AI features, protect your provider API keys
       (OpenAI / Anthropic / Google / Mistral / Groq / DeepSeek) —
