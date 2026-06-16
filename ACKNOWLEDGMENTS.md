@@ -17,3 +17,4 @@ while making sure community input is recognized.
 | [DevpratikDevelopers](https://github.com/DevpratikDevelopers) | [#122](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/122) |
 | [expalex1507](https://github.com/expalex1507) | [#26](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/26) |
 | [hanisedawy](https://github.com/hanisedawy) | [#124](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/124) |
+| [Hung](https://github.com/hungdd84) | [#103](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/103) |
