@@ -13,3 +13,4 @@ while making sure community input is recognized.
 | [AliK](https://github.com/alikhalilx) | [#229](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/229) |
 | [C&C Consulting](https://github.com/candcconsulting) | [#79](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/79) |
 | [Christian Santoro](https://github.com/ChristianSantoro) | [#115](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/115) |
+| [Cody Churchwell](https://github.com/consigcody94) | [#27](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/27) |
