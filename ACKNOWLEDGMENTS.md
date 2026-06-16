@@ -36,3 +36,4 @@ while making sure community input is recognized.
 | [Jérémy Christillin](https://github.com/bvisible) | [#194](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/194) |
 | [rjohny](https://github.com/rjohny55) | [#161](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/161) |
 | [Jehad Baniowda](https://github.com/jehadbaniodeh) | [#176](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/176) |
+| [leval907](https://github.com/leval907) | [#201](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/201) |
