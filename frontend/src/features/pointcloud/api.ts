@@ -18,11 +18,12 @@
  * real backend error to the caller, exactly like the BIM / DWG flows.
  */
 
-import { apiGet, apiPost, API_BASE, getAuthToken } from '@/shared/lib/api';
+import { apiGet, apiPost, apiDelete, API_BASE, getAuthToken } from '@/shared/lib/api';
 
 /** Accepted upload containers, mirrored from the backend allow-list
  *  (backend/app/modules/pointcloud/models.py ACCEPTED_SCAN_FORMATS).
- *  Proprietary ReCap RCP/RCS is deliberately absent - export E57 or LAS. */
+ *  The proprietary .rcp/.rcs scan container is deliberately absent - export
+ *  E57 or LAS. */
 export const ACCEPTED_SCAN_FORMATS = [
   'e57',
   'las',
@@ -135,6 +136,18 @@ export interface ScanIngestInitBody {
 /** List the reality-capture scans registered against a project. */
 export async function listScans(projectId: string): Promise<ScanDatasetList> {
   return apiGet<ScanDatasetList>(`/v1/pointcloud/scans?project_id=${projectId}`);
+}
+
+/**
+ * Delete a scan, its registrations and its object-storage artifacts.
+ *
+ * Hits ``DELETE /v1/pointcloud/scans/{scan_id}`` (gated by ``pointcloud.delete``
+ * / MANAGER+ on the server). The backend sweeps the scan's storage prefix before
+ * removing the row and answers 204 on success; a cross-tenant or unknown id
+ * collapses to 404. Throws on any non-2xx so the caller surfaces the real error.
+ */
+export async function deleteScan(scanId: string): Promise<void> {
+  await apiDelete<void>(`/v1/pointcloud/scans/${scanId}`);
 }
 
 /** Scan lifecycle states the points endpoint can serve (see service.get_points). */

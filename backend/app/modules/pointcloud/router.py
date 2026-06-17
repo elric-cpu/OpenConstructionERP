@@ -88,6 +88,26 @@ async def get_scan(
     return ScanDatasetRead.model_validate(scan)
 
 
+@router.delete("/scans/{scan_id}", status_code=204)
+async def delete_scan(
+    scan_id: uuid.UUID,
+    service: PointCloudService = Depends(_svc),
+    payload: CurrentUserPayload = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("pointcloud.delete")),
+) -> Response:
+    """Delete a scan, its registrations and its object-storage artifacts.
+
+    Gated by ``pointcloud.delete`` (MANAGER+) and, in the service, by tenant +
+    project access, so a cross-tenant or unknown id collapses to 404 rather than
+    leak scan existence. Sweeps the scan's per-scan storage prefix (raw upload
+    plus any derived COPC / tileset / DTM blobs) before removing the row, so the
+    delete frees storage and never strands a ghost in the scan list. Returns 204
+    with no body on success.
+    """
+    await service.delete_scan(scan_id, payload=payload)
+    return Response(status_code=204)
+
+
 @router.get(
     "/scans/{scan_id}/points",
     responses={
@@ -147,8 +167,8 @@ async def init_ingest(
     part. The browser / CLI uploads each 5-200 GB part straight to object
     storage; the backend never proxies the bytes. Returns 429 when too many
     uploads are being prepared at once (back-pressure), 422 for an unsupported
-    or proprietary (ReCap RCP/RCS) format, and 404 when the project is not
-    visible to the caller.
+    or proprietary (.rcp/.rcs scan container) format, and 404 when the project
+    is not visible to the caller.
     """
     result = await service.init_ingest(body, payload=payload)
     return ScanIngestInitResponse(

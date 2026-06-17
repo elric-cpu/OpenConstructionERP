@@ -39,6 +39,7 @@ import {
   Globe2,
   Move3d,
   Hourglass,
+  Trash2,
 } from 'lucide-react';
 import { Badge, Breadcrumb, Card, DismissibleInfo, EmptyState, ModuleGuideButton } from '@/shared/ui';
 import type { ScanDataset, ScanMetadata } from './api';
@@ -51,6 +52,7 @@ import {
   formatFromFileName,
   listScans,
   uploadScan,
+  deleteScan,
   type AccuracyTier,
   type ScanSourceType,
   type UploadProgress,
@@ -60,8 +62,9 @@ import { PointCloudViewer } from './PointCloudViewer';
 import { pointcloudGuide } from './pointcloudGuide';
 
 /* The accepted upload containers, mirrored from the backend allow-list
-   (backend/app/modules/pointcloud/models.py ACCEPTED_SCAN_FORMATS). Proprietary
-   ReCap RCP/RCS is deliberately absent - export E57 or LAS instead. */
+   (backend/app/modules/pointcloud/models.py ACCEPTED_SCAN_FORMATS). The
+   proprietary .rcp/.rcs scan container is deliberately absent - export E57 or
+   LAS instead. */
 const SUPPORTED_FORMATS = ACCEPTED_SCAN_FORMATS.map((f) => f.toUpperCase());
 const ACCEPT_ATTR = ACCEPTED_SCAN_FORMATS.map((f) => `.${f}`).join(',');
 
@@ -329,6 +332,7 @@ export function PointCloudPage() {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handlePickProject = useCallback(
@@ -426,6 +430,45 @@ export function PointCloudPage() {
     queryClient,
     t,
   ]);
+
+  const handleDelete = useCallback(
+    async (scan: ScanDataset) => {
+      const label = SOURCE_LABEL[scan.source_type] ?? scan.source_type;
+      const confirmed = window.confirm(
+        t('pointcloud.delete_confirm', {
+          defaultValue:
+            'Delete this scan and its uploaded data? This frees its storage and cannot be undone.',
+        }),
+      );
+      if (!confirmed) return;
+
+      setDeletingId(scan.id);
+      try {
+        await deleteScan(scan.id);
+        // Drop the viewer selection if it pointed at the scan we just removed.
+        setSelectedScanId((current) => (current === scan.id ? null : current));
+        addToast({
+          type: 'success',
+          title: t('pointcloud.delete_done_title', { defaultValue: 'Scan deleted' }),
+          message: t('pointcloud.delete_done_msg', {
+            defaultValue: '{{name}} and its data were removed.',
+            name: label,
+          }),
+        });
+        void queryClient.invalidateQueries({ queryKey: ['pointcloud-scans', projectId] });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        addToast({
+          type: 'error',
+          title: t('pointcloud.delete_failed_title', { defaultValue: 'Could not delete scan' }),
+          message: msg,
+        });
+      } finally {
+        setDeletingId(null);
+      }
+    },
+    [addToast, projectId, queryClient, t],
+  );
 
   // Translate a backend scan-status enum for display. Falls back to the
   // raw value for any status not in the label map.
@@ -838,6 +881,21 @@ export function PointCloudPage() {
                         : t('pointcloud.view_scan', { defaultValue: 'View' })}
                     </button>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(scan)}
+                    disabled={deletingId === scan.id}
+                    data-testid={`pointcloud-delete-${scan.id}`}
+                    aria-label={t('pointcloud.delete_scan_aria', { defaultValue: 'Delete scan' })}
+                    title={t('pointcloud.delete_scan', { defaultValue: 'Delete scan' })}
+                    className="inline-flex items-center justify-center rounded-lg border border-border-light bg-surface-secondary px-2 py-1.5 text-content-tertiary transition-colors hover:border-danger/40 hover:bg-danger/10 hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {deletingId === scan.id ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <Trash2 size={13} />
+                    )}
+                  </button>
                 </li>
               );
             })}

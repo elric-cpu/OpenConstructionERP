@@ -14,8 +14,8 @@ Coverage
 * test_register_upload_mints_tenant_namespaced_key - the service register path
   stamps the resolved tenant and a tenant-namespaced upload key, in
   status=uploading.
-* test_register_upload_rejects_recap - a proprietary RCP/RCS upload is rejected
-  with an explanatory reason.
+* test_register_upload_rejects_proprietary_scan - a proprietary .rcp/.rcs scan
+  container upload is rejected with an explanatory reason.
 """
 
 from __future__ import annotations
@@ -223,8 +223,8 @@ async def test_register_upload_mints_tenant_namespaced_key(session: AsyncSession
 
 
 @pytest.mark.asyncio
-async def test_register_upload_rejects_recap(session: AsyncSession) -> None:
-    """A proprietary ReCap container is rejected with an explanatory reason."""
+async def test_register_upload_rejects_proprietary_scan(session: AsyncSession) -> None:
+    """A proprietary .rcp/.rcs scan container is rejected with an explanatory reason."""
     project_id: uuid.UUID = session.info["project_a_id"]
     owner_a: uuid.UUID = session.info["owner_a_id"]
     service = PointCloudService(session)
@@ -235,7 +235,7 @@ async def test_register_upload_rejects_recap(session: AsyncSession) -> None:
     # in depth - the format reason code drives the explanatory UI error).
     create = ScanDatasetCreate(
         project_id=project_id,
-        name="ReCap import",
+        name="Proprietary scan import",
         original_format="e57",
     )
     object.__setattr__(create, "original_format", "rcp")
@@ -243,4 +243,4 @@ async def test_register_upload_rejects_recap(session: AsyncSession) -> None:
     with pytest.raises(HTTPException) as exc:
         await service.register_upload(create, payload=payload)
     assert exc.value.status_code == 422
-    assert exc.value.detail["reason"] == "format_proprietary_recap"
+    assert exc.value.detail["reason"] == "format_proprietary_scan"

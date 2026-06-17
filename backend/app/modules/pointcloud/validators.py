@@ -3,8 +3,8 @@
 
 Phase 0 ships the accuracy-tier helpers used at register time: the USIBD Level
 of Accuracy (LOA) tolerance table, the tier-allow-list check, and the upload
-format gate that rejects proprietary ReCap containers with an explanatory
-reason.
+format gate that rejects proprietary ``.rcp`` / ``.rcs`` scan containers with an
+explanatory reason.
 
 The full point-cloud validation RULE SET (BLOCKING coverage / registration-RMS
 / tier / occlusion checks registered with ``core/validation/rules``) lands in a
@@ -56,14 +56,15 @@ def format_rejection_reason(raw: str | None) -> str | None:
 
     The reason is a stable code the API / UI can translate (i18n), not prose:
 
-    * ``"format_proprietary_recap"`` - ReCap RCP/RCS, never accepted.
-    * ``"format_unsupported"``        - anything else not in the allow-list.
+    * ``"format_proprietary_scan"`` - proprietary ``.rcp`` / ``.rcs`` scan
+      container, never accepted.
+    * ``"format_unsupported"``      - anything else not in the allow-list.
     """
     fmt = normalize_format(raw)
     if fmt in ACCEPTED_SCAN_FORMATS:
         return None
     if fmt in REJECTED_SCAN_FORMATS:
-        return "format_proprietary_recap"
+        return "format_proprietary_scan"
     return "format_unsupported"
 
 

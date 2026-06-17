@@ -50,18 +50,18 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import GUID, Base
 
-# Accepted source formats. Proprietary Autodesk ReCap containers (``rcp`` /
-# ``rcs``) are deliberately excluded - they carry a licensing trap and are
-# never accepted as input (plan section 9). The schema layer enforces this
-# allow-list at the API boundary; the column stays an open string so a future
-# open format does not require a migration.
+# Accepted source formats. Proprietary ``.rcp`` / ``.rcs`` scan containers are
+# deliberately excluded - they carry a licensing trap and are never accepted as
+# input (plan section 9). The schema layer enforces this allow-list at the API
+# boundary; the column stays an open string so a future open format does not
+# require a migration.
 ACCEPTED_SCAN_FORMATS: frozenset[str] = frozenset(
     {"e57", "las", "laz", "copc", "ply", "pcd", "pts", "xyz"},
 )
 
 # Formats that are rejected on sight. Listed so the validator and the API can
-# give an explanatory error ("ReCap RCP/RCS is proprietary; export E57 or LAS
-# instead") instead of a silent drop.
+# give an explanatory error ("the proprietary .rcp/.rcs scan container is not
+# accepted; export E57 or LAS instead") instead of a silent drop.
 REJECTED_SCAN_FORMATS: frozenset[str] = frozenset({"rcp", "rcs"})
 
 
@@ -113,7 +113,8 @@ class ScanDataset(Base):
         server_default="laser_scan",
     )
     # The uploaded container format - one of ``ACCEPTED_SCAN_FORMATS``. Never
-    # ``rcp`` / ``rcs`` (rejected at the API boundary).
+    # a proprietary ``rcp`` / ``rcs`` scan container (rejected at the API
+    # boundary).
     original_format: Mapped[str] = mapped_column(
         String(8),
         nullable=False,

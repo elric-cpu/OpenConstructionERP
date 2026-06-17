@@ -165,6 +165,24 @@ cv = [
     "paddleocr>=2.9.0",
     "Pillow>=12.1.1",
 ]
+# Point-cloud / reality-capture readers for the Point Cloud module
+# (app/modules/pointcloud). Without these the module installs and runs, but
+# the header sniff records "metadata pending" and the viewer answers 501 with
+# a "reader not installed" message - the import guards in sniff.py / decode.py
+# degrade gracefully rather than crash. Installing this extra enables reading
+# LAS/LAZ/COPC (laspy + the lazrs LAZ backend) and E57 (pye57) and decoding
+# them to the viewer buffer. numpy is pinned explicitly here even though it
+# already arrives transitively via pandas/pyarrow in the base deps, so the
+# readers' array path is satisfied if those base deps ever change. These are
+# deliberately NOT in the base dependencies and are not bundled into the
+# desktop/demo build by default (a pending founder decision); install with
+# ``pip install openconstructionerp[pointcloud]`` to enable point clouds.
+pointcloud = [
+    "laspy>=2.5.0",
+    "lazrs>=0.6.0",
+    "pye57>=0.4.0",
+    "numpy>=1.26.0",
+]
 # Deprecated alias since v2.5.0 — `duckdb` is in base deps now.
 # Kept so existing `pip install openconstructionerp[analytics]` commands
 # continue to work without failing.
@@ -177,7 +195,7 @@ s3 = [
 ]
 # Everything
 all = [
-    "openconstructionerp[server,vector,semantic,cv,s3,analytics]",
+    "openconstructionerp[server,vector,semantic,cv,s3,pointcloud,analytics]",
 ]
 # Development tools
 dev = [
