@@ -44,7 +44,7 @@ import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useCostDatabaseStore, REGION_MAP } from '@/stores/useCostDatabaseStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import type { CostItemMetadata, CertaintyBadge as CertaintyBadgeData, CostCatalog } from './api';
-import { buildBoqPositionDraft, type FullCostItem } from './addToBoqHelpers';
+import { buildBoqPositionDraft, massEffectiveUnitRate, type FullCostItem } from './addToBoqHelpers';
 import { fetchUsageCounts, fetchCostCatalogs } from './api';
 import { CatalogsSection } from './CatalogsSection';
 import { costsGuide } from './costsGuide';
@@ -94,6 +94,12 @@ interface CostItem {
   /** Owning user catalog, when the item belongs to one (manual create with
    *  a catalog picked, or file import into a catalog). */
   catalog_id?: string | null;
+  /** Linear mass in kg per one ``unit`` (Decimal-string), or '' when the
+   *  item is not priced by mass. Pairs with ``mass_basis``. */
+  mass_per_unit?: string;
+  /** Mass-rate basis: 't' (rate per tonne), 'kg' (per kg), or '' (priced
+   *  per unit). When set, ``rate`` is the per-tonne/per-kg figure. */
+  mass_basis?: string;
 }
 
 /** Sources whose rows the user owns and may edit / delete inline. Regional
@@ -2342,7 +2348,110 @@ const INITIAL_COST_ITEM_FORM = {
   unit: 'm2',
   rate: '',
   currency: '',
+  // Free-text category -> stored as classification.collection so the item
+  // shows up in the Categories list / filter (e.g. "Structural Steel").
+  category: '',
+  // Mass-based pricing for steel sections (e.g. a 360UB). When mass_basis is
+  // set, ``rate`` is the per-tonne / per-kg figure and ``mass_per_unit`` is
+  // the linear mass in kg per one ``unit``. Empty basis = priced per unit.
+  massPerUnit: '',
+  massBasis: '' as '' | 't' | 'kg',
 };
+
+/* ── Mass-pricing form fields (shared by Create + Edit) ──────────────────── */
+
+function MassPricingFields({
+  unit,
+  rate,
+  currency,
+  massBasis,
+  massPerUnit,
+  onChange,
+}: {
+  unit: string;
+  rate: string;
+  currency: string;
+  massBasis: '' | 't' | 'kg';
+  massPerUnit: string;
+  onChange: (patch: { massBasis?: '' | 't' | 'kg'; massPerUnit?: string }) => void;
+}) {
+  const { t } = useTranslation();
+  const enabled = massBasis === 't' || massBasis === 'kg';
+  const effective = massEffectiveUnitRate(rate, massPerUnit, massBasis);
+  const previewFmt = (n: number) => {
+    const code = (currency || '').trim().toUpperCase();
+    try {
+      return new Intl.NumberFormat(getIntlLocale(), {
+        ...(code ? { style: 'currency' as const, currency: code } : {}),
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 4,
+      }).format(n);
+    } catch {
+      return n.toFixed(2);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-border-light bg-surface-secondary/30 p-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs font-medium text-content-secondary mb-1 block">
+            {t('costs.mass_basis_label', { defaultValue: 'Rate is' })}
+          </label>
+          <select
+            value={massBasis}
+            onChange={(e) => onChange({ massBasis: e.target.value as '' | 't' | 'kg' })}
+            className="h-9 w-full rounded-lg border border-border bg-surface-primary px-2 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue"
+          >
+            <option value="">{t('costs.mass_basis_none', { defaultValue: 'Not by mass' })}</option>
+            <option value="t">{t('costs.mass_basis_t', { defaultValue: 'per tonne' })}</option>
+            <option value="kg">{t('costs.mass_basis_kg', { defaultValue: 'per kg' })}</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-medium text-content-secondary mb-1 block">
+            {t('costs.mass_per_unit_label', { defaultValue: 'Mass per {{unit}}', unit })}
+          </label>
+          <div className="relative">
+            <input
+              type="number"
+              step="0.001"
+              min="0"
+              disabled={!enabled}
+              value={massPerUnit}
+              onChange={(e) => onChange({ massPerUnit: e.target.value })}
+              placeholder={t('costs.mass_per_unit_placeholder', { defaultValue: 'e.g. 44.7' })}
+              className="h-9 w-full rounded-lg border border-border bg-surface-primary pl-3 pr-14 text-sm text-right focus:outline-none focus:ring-2 focus:ring-oe-blue disabled:opacity-60 disabled:cursor-not-allowed"
+            />
+            <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-2xs text-content-tertiary">
+              {t('costs.mass_per_unit_suffix', { defaultValue: 'kg/{{unit}}', unit })}
+            </span>
+          </div>
+        </div>
+      </div>
+      <p className="text-2xs text-content-tertiary mt-1.5">
+        {t('costs.mass_hint', {
+          defaultValue:
+            'For sections priced by mass (e.g. a 360UB). Enter the mass per metre and whether the rate is per tonne or per kg; the per-{{unit}} rate is worked out when you use it.',
+          unit,
+        })}
+      </p>
+      {enabled && (
+        <p className="text-2xs font-medium text-oe-blue-text mt-1">
+          {effective != null
+            ? t('costs.mass_preview', {
+                defaultValue: '= {{rate}} per {{unit}}',
+                rate: previewFmt(effective),
+                unit,
+              })
+            : t('costs.mass_preview_unavailable', {
+                defaultValue: 'Enter mass and rate to see the per-unit price.',
+              })}
+        </p>
+      )}
+    </div>
+  );
+}
 
 function CreateCostItemModal({
   defaultCatalogId,
@@ -2408,6 +2517,7 @@ function CreateCostItemModal({
     setIsSubmitting(true);
     try {
       const code = form.code.trim() || `CUSTOM-${Date.now().toString(36).toUpperCase()}`;
+      const trimmedCategory = form.category.trim();
       await apiPost('/v1/costs/', {
         code,
         description: form.description.trim(),
@@ -2418,7 +2528,14 @@ function CreateCostItemModal({
         currency: form.currency,
         source: 'custom',
         region: 'CUSTOM',
-        classification: {},
+        // Free-text category lands in classification.collection so the item
+        // is browsable from the Categories list / filter.
+        classification: trimmedCategory ? { collection: trimmedCategory } : {},
+        // Mass-based pricing (steel sections). Sent only when a basis is
+        // chosen; the backend treats an empty basis as priced-per-unit.
+        ...(form.massBasis
+          ? { mass_basis: form.massBasis, mass_per_unit: form.massPerUnit.trim() }
+          : {}),
         ...(itemCatalogId ? { catalog_id: itemCatalogId } : {}),
       });
       addToast({ type: 'success', title: t('costs.item_created', { defaultValue: 'Cost item created' }) });
@@ -2486,6 +2603,25 @@ function CreateCostItemModal({
             />
           </div>
 
+          <div>
+            <label className="text-xs font-medium text-content-secondary mb-1 block">
+              {t('costs.category_field_label', { defaultValue: 'Category' })}
+              <span className="text-content-quaternary ml-1">({t('costs.optional', 'optional')})</span>
+            </label>
+            <input
+              type="text"
+              value={form.category}
+              onChange={(e) => setForm({ ...form, category: e.target.value })}
+              placeholder={t('costs.category_field_placeholder', { defaultValue: 'e.g. Structural Steel' })}
+              className="h-9 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue"
+            />
+            <p className="text-2xs text-content-tertiary mt-1">
+              {t('costs.category_field_hint', {
+                defaultValue: 'Group this item, e.g. "Structural Steel". Browse it later from the Categories list.',
+              })}
+            </p>
+          </div>
+
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="text-xs font-medium text-content-secondary mb-1 block">{t('boq.unit')}</label>
@@ -2522,6 +2658,18 @@ function CreateCostItemModal({
               </select>
             </div>
           </div>
+
+          {/* Price-by-mass section (steel sections like a 360UB). When a basis
+              is picked, the Rate above is read per tonne / per kg and the
+              per-unit price is derived from the mass entered here. */}
+          <MassPricingFields
+            unit={form.unit}
+            rate={form.rate}
+            currency={form.currency}
+            massBasis={form.massBasis}
+            massPerUnit={form.massPerUnit}
+            onChange={(patch) => setForm({ ...form, ...patch })}
+          />
 
           {/* Optional catalog picker - the item lands in the chosen user
               catalog; with an empty currency the catalog currency applies. */}
@@ -2601,6 +2749,9 @@ function EditCostItemModal({
     unit: item.unit,
     rate: String(item.rate ?? ''),
     currency: (item.currency || '').trim().toUpperCase(),
+    category: (item.classification?.collection ?? '').trim(),
+    massPerUnit: item.mass_per_unit ?? '',
+    massBasis: ((item.mass_basis as '' | 't' | 'kg') ?? '') as '' | 't' | 'kg',
   }));
 
   useEffect(() => {
@@ -2623,12 +2774,25 @@ function EditCostItemModal({
     if (!form.description.trim()) return;
     setIsSubmitting(true);
     try {
+      // Merge the edited category into the item's existing classification so
+      // other classification keys (department/section/...) are preserved.
+      const trimmedCategory = form.category.trim();
+      const nextClassification: Record<string, string> = { ...(item.classification ?? {}) };
+      if (trimmedCategory) {
+        nextClassification.collection = trimmedCategory;
+      } else {
+        delete nextClassification.collection;
+      }
       await apiPatch(`/v1/costs/${item.id}`, {
         code: form.code.trim() || item.code,
         description: form.description.trim(),
         unit: form.unit,
         rate: parseFloat(form.rate) || 0,
         currency: form.currency,
+        classification: nextClassification,
+        // Mass pricing: send the basis (empty clears it) + mass per unit.
+        mass_basis: form.massBasis,
+        mass_per_unit: form.massBasis ? form.massPerUnit.trim() : '',
       });
       addToast({
         type: 'success',
@@ -2699,6 +2863,20 @@ function EditCostItemModal({
             />
           </div>
 
+          <div>
+            <label className="text-xs font-medium text-content-secondary mb-1 block">
+              {t('costs.category_field_label', { defaultValue: 'Category' })}
+              <span className="text-content-quaternary ml-1">({t('costs.optional', 'optional')})</span>
+            </label>
+            <input
+              type="text"
+              value={form.category}
+              onChange={(e) => setForm({ ...form, category: e.target.value })}
+              placeholder={t('costs.category_field_placeholder', { defaultValue: 'e.g. Structural Steel' })}
+              className="h-9 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue"
+            />
+          </div>
+
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="text-xs font-medium text-content-secondary mb-1 block">{t('boq.unit')}</label>
@@ -2737,6 +2915,15 @@ function EditCostItemModal({
               </select>
             </div>
           </div>
+
+          <MassPricingFields
+            unit={form.unit}
+            rate={form.rate}
+            currency={form.currency}
+            massBasis={form.massBasis}
+            massPerUnit={form.massPerUnit}
+            onChange={(patch) => setForm({ ...form, ...patch })}
+          />
         </div>
 
         <div className="flex items-center justify-end gap-2 px-6 py-3 border-t border-border-light bg-surface-secondary/30">

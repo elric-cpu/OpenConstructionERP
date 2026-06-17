@@ -82,6 +82,7 @@ from app.modules.costs.schemas import (
     CostSuggestion,
     CwicrMatchFromPositionRequest,
     CwicrMatchRequest,
+    MassApplyPreviewResponse,
     RecordUsageRequest,
     RegionalAdjustResponse,
     RegionalIndexResponse,
@@ -2724,6 +2725,43 @@ async def get_cost_item(
     response = CostItemResponse.model_validate(item)
     resolved_locale = _resolve_cost_locale(locale, accept_language)
     return _localize_response_payload(response, resolved_locale)
+
+
+# ── Mass apply preview ──────────────────────────────────────────────────────
+
+
+class MassApplyPreviewRequest(BaseModel):
+    """Request body for ``POST /v1/costs/{id}/apply-preview``.
+
+    ``quantity`` is the length (in the item's own ``unit``, e.g. metres) the
+    section is applied to. Accepts a JSON number or numeric string; the
+    service coerces it to a non-negative Decimal.
+    """
+
+    quantity: Decimal = Field(default=Decimal("1"), ge=0, description="Length quantity in the item's unit.")
+
+
+@router.post(
+    "/{item_id}/apply-preview/",
+    response_model=MassApplyPreviewResponse,
+    dependencies=[Depends(RequirePermission("costs.read"))],
+)
+async def preview_mass_apply(
+    item_id: uuid.UUID,
+    data: MassApplyPreviewRequest,
+    _user_id: CurrentUserId,
+    service: CostItemService = Depends(_get_service),
+) -> MassApplyPreviewResponse:
+    """Preview the effective rate + line total of applying an item to a length.
+
+    Mass-aware: a section priced per tonne / per kg (``mass_basis`` set with
+    a positive ``mass_per_unit``) is converted to its effective per-length
+    rate (``mass_per_unit * rate / 1000`` for tonnes) and the derived mass is
+    returned. A plain per-unit item simply echoes the catalog rate, so the
+    same endpoint is safe to call for any item. Read-only; never persists.
+    """
+    payload = await service.mass_apply_preview(item_id, data.quantity)
+    return MassApplyPreviewResponse.model_validate(payload)
 
 
 # ── Update ────────────────────────────────────────────────────────────────

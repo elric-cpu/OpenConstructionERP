@@ -64,6 +64,12 @@ export interface FullCostItem {
   components: FullCostComponent[];
   metadata_: CostItemMetadata;
   source: string;
+  /** Linear mass in kg per one ``unit`` (Decimal-string from the backend),
+   *  or '' / undefined when the item is not priced by mass. */
+  mass_per_unit?: string;
+  /** Mass-rate basis: 't' (rate per tonne), 'kg' (per kg), or '' (priced per
+   *  unit). When set, ``rate`` is the per-tonne / per-kg figure. */
+  mass_basis?: string;
 }
 
 /** A BOQ position resource line as persisted under ``metadata.resources``. */
@@ -101,6 +107,28 @@ export interface SynthLabels {
   equipment: string;
 }
 
+/** Effective rate per ONE length unit for a mass-priced section, or null when
+ *  the item is not mass-priced / the inputs are not valid numbers. Mirrors the
+ *  backend ``costs.service.mass_effective_unit_rate``: ``rate`` is per tonne /
+ *  per kg, ``mass_per_unit`` is kg per unit, so the effective per-unit rate is
+ *  ``mass_per_unit * rate / (1000 if tonne else 1)``. Coerces the
+ *  Decimal-string inputs to Number before arithmetic (never binary ``+`` /
+ *  ``.toFixed`` on a money string). */
+export function massEffectiveUnitRate(
+  rate: number | string,
+  massPerUnit: number | string | undefined,
+  massBasis: string | undefined,
+): number | null {
+  const basis = (massBasis || '').trim().toLowerCase();
+  if (basis !== 't' && basis !== 'kg') return null;
+  const mpu = Number(massPerUnit);
+  const r = Number(rate);
+  if (!Number.isFinite(mpu) || mpu <= 0) return null;
+  if (!Number.isFinite(r) || r < 0) return null;
+  const effective = basis === 't' ? (mpu * r) / 1000 : mpu * r;
+  return Number.isFinite(effective) && effective >= 0 ? effective : null;
+}
+
 /** Pick the mean rate for a variant set, falling back to median then to the
  *  first variant's price. Never returns NaN. */
 function meanRateOf(stats: VariantStats, variants: CostVariant[]): number {
@@ -136,6 +164,43 @@ export function buildBoqPositionDraft(
   const meta = item.metadata_ ?? {};
   const topVariants = meta.variants;
   const topStats = meta.variant_stats;
+
+  // ── Step 0: mass-priced section (steel members) ───────────────────────
+  // A section priced per tonne / per kg (e.g. a 360UB) is a single priced
+  // line: convert the catalog rate to a per-``unit`` figure and emit ONE
+  // resource at quantity 1 so the position unit_rate equals that effective
+  // rate and the BOQ invariant (unit_rate == Σ quantity × unit_rate) holds.
+  // This takes precedence over the component / variant / synth paths because
+  // a mass-priced item carries no component breakdown of its own.
+  const massRate = massEffectiveUnitRate(item.rate, item.mass_per_unit, item.mass_basis);
+  if (massRate != null) {
+    const basis = (item.mass_basis || '').trim().toLowerCase();
+    const massResource: BoqResource = {
+      name: item.description || item.code,
+      code: item.code,
+      type: 'material',
+      unit: item.unit || 'm',
+      quantity: 1,
+      unit_rate: massRate,
+      total: massRate,
+      currency,
+    };
+    const metadata: Record<string, unknown> = {
+      cost_item_id: item.id,
+      cost_item_code: item.code,
+      cost_item_region: item.region,
+      ...(currency ? { currency, cost_item_currency: currency } : {}),
+      // Record the mass driver so the BOQ row / exports can show how the
+      // per-unit rate was derived (e.g. 44.7 kg/m at 1850 per tonne).
+      mass_per_unit: item.mass_per_unit ?? '',
+      mass_basis: basis,
+      mass_rate: String(item.rate ?? ''),
+      resources: [massResource],
+      cost_breakdown: { material: massRate },
+      resource_count: 1,
+    };
+    return { unitRate: massRate, metadata };
+  }
 
   // ── Step 1: components → resources (mirror BOQModals) ──────────────────
   // Track the first component index per dedupe key (resource_code, or the

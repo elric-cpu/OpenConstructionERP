@@ -49,7 +49,7 @@ export const costsGuide: ModuleGuideContent = {
       titleDefault: 'Adding your own item',
       bodyKey: 'guide.costs.add.body',
       bodyDefault:
-        'Click Add Item to create a custom rate. Enter a description, pick a unit, type the rate and choose its currency. The code is optional and is generated if you leave it blank. Reference catalogue rows stay read-only, but your own items can be edited or deleted any time.',
+        'Click Add Item to create a custom rate. Enter a description, pick a unit, type the rate and choose its currency. Add a Category (such as Structural Steel) to group it for browsing. For steel sections priced by member type, switch the rate to per tonne or per kg and enter the mass per metre (e.g. 44.7 for a 360UB); the per-metre price is worked out for you when you use it on a length. The code is optional and is generated if you leave it blank. Reference catalogue rows stay read-only, but your own items can be edited or deleted any time.',
       spotlightSelector: '[data-guide="costs-add-item"]',
     },
     {

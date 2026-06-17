@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -74,6 +74,56 @@ def _build_region_currency_fallback() -> dict[str, str]:
 
 _REGION_CURRENCY_FALLBACK: dict[str, str] = _build_region_currency_fallback()
 
+
+# ── Mass-based pricing helpers ─────────────────────────────────────────────
+#
+# A structural-steel section (e.g. a "360UB" universal beam) is priced by
+# mass: its linear mass (kg per metre) times its length gives a mass, and the
+# rate is quoted per tonne (or per kg). ``mass_basis`` records which one; an
+# empty string means mass pricing is off and the item is a plain per-unit
+# rate. ``mass_per_unit`` is the linear mass in kg per one length unit.
+MASS_BASES: frozenset[str] = frozenset({"t", "kg"})
+
+# Mass per length unit is exchanged as a plain decimal *string* for the same
+# precision reason as ``rate`` (stored as String(50)) - JSON's float bridge
+# would otherwise round a value like 44.7 kg/m. An empty string is the "not
+# set" sentinel. The schema fields type it as ``str`` and the normalisers
+# below produce a clean canonical string.
+
+
+def _normalize_mass_basis(value: str | None) -> str:
+    """Lower-case + validate a mass basis (``t`` / ``kg`` / empty).
+
+    Returns ``""`` for ``None`` / blank so mass pricing is treated as off.
+    """
+    cleaned = (value or "").strip().lower()
+    if not cleaned:
+        return ""
+    if cleaned in ("tonne", "tonnes", "ton", "te"):
+        cleaned = "t"
+    if cleaned not in MASS_BASES:
+        raise ValueError("mass_basis must be 't' (per tonne), 'kg' (per kg), or empty")
+    return cleaned
+
+
+def _normalize_mass_per_unit(value: Decimal | str | float | None) -> str:
+    """Coerce a linear-mass value to a clean non-negative decimal string.
+
+    Accepts a JSON number or numeric string. Empty / blank gives ``""`` (unset).
+    A negative or non-finite mass is rejected - a section cannot weigh below
+    zero, and a non-finite figure would poison the apply-time conversion.
+    """
+    if value is None or value == "":
+        return ""
+    try:
+        dec = Decimal(str(value).strip())
+    except (InvalidOperation, ValueError):
+        raise ValueError("mass_per_unit must be a number (kg per unit)") from None
+    if not dec.is_finite() or dec < 0:
+        raise ValueError("mass_per_unit must be a finite, non-negative number")
+    return format(dec, "f")
+
+
 # ── Create / Update ───────────────────────────────────────────────────────
 
 
@@ -104,6 +154,19 @@ class CostItemCreate(BaseModel):
     )
     tags: list[str] = Field(default_factory=list, description="Searchable tags")
     region: str | None = Field(default=None, max_length=50, description="Regional identifier (e.g. DACH, UK, US)")
+    mass_per_unit: str = Field(
+        default="",
+        description=(
+            "Linear mass in kg per one ``unit`` (e.g. 44.7 for a 360UB at "
+            "44.7 kg/m). Combined with ``mass_basis`` to price a section by "
+            "mass on a length line. Empty = mass pricing off."
+        ),
+    )
+    mass_basis: str = Field(
+        default="",
+        max_length=10,
+        description="Rate basis for mass pricing: 't' (per tonne), 'kg' (per kg), or empty (off).",
+    )
     catalog_id: UUID | None = Field(
         default=None,
         description=(
@@ -112,6 +175,16 @@ class CostItemCreate(BaseModel):
         ),
     )
     metadata: dict[str, Any] = Field(default_factory=dict, description="Arbitrary metadata")
+
+    @field_validator("mass_basis")
+    @classmethod
+    def _validate_mass_basis(cls, v: str) -> str:
+        return _normalize_mass_basis(v)
+
+    @field_validator("mass_per_unit", mode="before")
+    @classmethod
+    def _validate_mass_per_unit(cls, v: Decimal | str | float | None) -> str:
+        return _normalize_mass_per_unit(v)
 
 
 class CostItemUpdate(BaseModel):
@@ -127,9 +200,25 @@ class CostItemUpdate(BaseModel):
     classification: dict[str, str] | None = None
     components: list[dict[str, Any]] | None = None
     region: str | None = Field(default=None, max_length=50)
+    mass_per_unit: str | None = Field(default=None, description="Linear mass kg per unit; '' clears it.")
+    mass_basis: str | None = Field(default=None, max_length=10, description="'t' | 'kg' | '' (off).")
     tags: list[str] | None = None
     metadata: dict[str, Any] | None = None
     is_active: bool | None = None
+
+    @field_validator("mass_basis")
+    @classmethod
+    def _validate_mass_basis(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return _normalize_mass_basis(v)
+
+    @field_validator("mass_per_unit", mode="before")
+    @classmethod
+    def _validate_mass_per_unit(cls, v: Decimal | str | float | None) -> str | None:
+        if v is None:
+            return None
+        return _normalize_mass_per_unit(v)
 
 
 # ── Response ───────────────────────────────────────────────────────────
@@ -157,6 +246,10 @@ class CostItemResponse(BaseModel):
     components: list[dict[str, Any]]
     tags: list[str]
     region: str | None
+    # Mass-based pricing (structural members). ``mass_basis`` empty = off.
+    # ``mass_per_unit`` is a Decimal-string (kg per unit) or "" when unset.
+    mass_per_unit: str = ""
+    mass_basis: str = ""
     catalog_id: UUID | None = None
     is_active: bool
     metadata: dict[str, Any] = Field(alias="metadata_")
@@ -198,6 +291,36 @@ class CostItemResponse(BaseModel):
                         normalized,
                     )
         return self
+
+
+# ── Mass apply preview ──────────────────────────────────────────────────
+
+
+class MassApplyPreviewResponse(BaseModel):
+    """Preview of applying a cost item to a length quantity (mass-aware).
+
+    Returned by ``POST /v1/costs/{id}/apply-preview``. For a mass-priced
+    section the ``effective_unit_rate`` is the catalog rate converted to a
+    per-length figure (``mass_per_unit * rate / 1000`` when priced per
+    tonne); ``total_mass_kg`` / ``total_mass_t`` show the derived mass for
+    ``quantity`` units. For a plain item ``mass_priced`` is ``False`` and the
+    effective rate equals the catalog rate. All money / mass figures are
+    Decimal-as-string so a JS client never rounds through float.
+    """
+
+    cost_item_id: str
+    code: str
+    unit: str
+    quantity: DecimalMoney
+    mass_priced: bool
+    mass_basis: str = ""
+    mass_per_unit: str = ""
+    base_rate: DecimalMoney
+    effective_unit_rate: DecimalMoney
+    total_mass_kg: DecimalMoney | None = None
+    total_mass_t: DecimalMoney | None = None
+    line_total: DecimalMoney
+    currency: str = ""
 
 
 # ── User cost catalogs ────────────────────────────────────────────────────

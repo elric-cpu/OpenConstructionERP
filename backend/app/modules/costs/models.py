@@ -76,6 +76,31 @@ class CostItem(Base):
         JSON, nullable=False, default=list, server_default="[]"
     )
     region: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    # ── Mass-based (per-tonne / per-kg) pricing for structural members ────
+    # A steel section (e.g. a "360UB" universal beam) is priced by mass:
+    # its linear mass (kg per metre) times its length gives a mass, and the
+    # rate is quoted per tonne (or per kg). To support that on a normal
+    # length-based BOQ line WITHOUT a second unit system, an item keeps its
+    # length ``unit`` (m / lm) and its ``rate`` is interpreted as the
+    # mass-basis rate when ``mass_basis`` is set:
+    #   * ``mass_per_unit`` - linear mass in kg per ONE ``unit`` (e.g. 44.7
+    #     for a 360UB at 44.7 kg/m). Stored as a Decimal-string for the same
+    #     SQLite/JSON precision reason as ``rate``. Empty / NULL = not set.
+    #   * ``mass_basis`` - the denominator the ``rate`` is quoted against:
+    #     ``"t"`` (rate is per tonne) or ``"kg"`` (rate is per kg). An empty
+    #     string means mass pricing is OFF and the item behaves exactly as a
+    #     normal per-unit rate (full backwards compatibility).
+    # The effective per-length rate is then
+    #   ``mass_per_unit * rate / (1000 if mass_basis == "t" else 1)``
+    # computed at apply time (see ``service.mass_effective_unit_rate``); the
+    # stored ``rate`` is never mutated. Both columns are additive and
+    # default to empty so every existing row is unaffected.
+    mass_per_unit: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="", server_default=""
+    )
+    mass_basis: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="", server_default=""
+    )
     # Owning user catalog (oe_costs_catalog.id). Kept as a bare indexed UUID
     # column (no FK constraint) following the cross-table convention used by
     # ``CostItemUsage.project_id``; detach/delete semantics live in the
