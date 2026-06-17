@@ -57,6 +57,26 @@ export type FitMode = 'width' | 'page';
  *  viewport before the ratio is taken. */
 export const FIT_PADDING_PX = 16;
 
+/** Lower bound for a *fit* zoom. Fitting the whole page is a "show me
+ *  everything" action, so unlike the manual wheel / button floor (`ZOOM_MIN`,
+ *  25%) it may legitimately need a smaller zoom to frame a large-format sheet
+ *  (A0 / E-size, whose PDF-point dimensions run into the thousands) inside a
+ *  modest or split-pane viewport. Flooring a fit at `ZOOM_MIN` would clip such
+ *  a sheet, defeating the point of fit-to-page. This absolute floor only
+ *  guards against pathological (near-zero) ratios and sits well below any real
+ *  sheet's fit. Manual zoom still floors at `ZOOM_MIN`, so the first wheel /
+ *  button zoom after a sub-25% fit snaps back into the working range. */
+export const FIT_ZOOM_MIN = 0.02;
+
+/** Clamp a fit zoom to `[FIT_ZOOM_MIN, ZOOM_MAX]` (note: the lower bound is the
+ *  fit floor, NOT the manual `ZOOM_MIN`) and quantize to whole percent so the
+ *  percent readout stays stable. */
+function clampFitZoom(raw: number): number {
+  if (!Number.isFinite(raw)) return 1;
+  const bounded = Math.max(FIT_ZOOM_MIN, Math.min(ZOOM_MAX, raw));
+  return Math.round(bounded * 100) / 100;
+}
+
 /**
  * Zoom that fits the page into the viewport for the given mode.
  *
@@ -65,7 +85,9 @@ export const FIT_PADDING_PX = 16;
  *   - `page`: the whole page is visible (the tighter of width / height fit),
  *     so nothing is clipped.
  *
- * Returns a clamped zoom. Degenerate inputs (non-positive page or viewport
+ * Returns a fit-clamped zoom: bounded above by `ZOOM_MAX` and below by
+ * `FIT_ZOOM_MIN` (not the manual `ZOOM_MIN`), so a large sheet can be framed
+ * whole even below 25%. Degenerate inputs (non-positive page or viewport
  * dimensions) fall back to 1.0 rather than producing Infinity / 0.
  */
 export function computeFitZoom(
@@ -81,10 +103,10 @@ export function computeFitZoom(
     return 1;
   }
   const widthZoom = availW / pageWidth;
-  if (mode === 'width') return clampZoom(widthZoom);
+  if (mode === 'width') return clampFitZoom(widthZoom);
   const heightZoom = availH / pageHeight;
   // Whole page: constrain by whichever axis runs out of room first.
-  return clampZoom(Math.min(widthZoom, heightZoom));
+  return clampFitZoom(Math.min(widthZoom, heightZoom));
 }
 
 /* ── Axis-aligned bounding box (for zoom-to-selection) ──────────────────── */

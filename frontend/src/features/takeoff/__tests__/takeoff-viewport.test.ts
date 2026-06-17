@@ -12,6 +12,7 @@ import {
   ZOOM_MIN,
   ZOOM_MAX,
   FIT_PADDING_PX,
+  FIT_ZOOM_MIN,
   clampZoom,
   computeFitZoom,
   boundingBoxOfPoints,
@@ -73,11 +74,14 @@ describe('computeFitZoom', () => {
     expect(z).toBeCloseTo(widthZoom, 2);
   });
 
-  it('result is always clamped into range', () => {
+  it('result is clamped to the fit range (max ZOOM_MAX, floor FIT_ZOOM_MIN)', () => {
     // Tiny page in a huge viewport would over-zoom; clamp at max.
     expect(computeFitZoom(10, 10, 5000, 5000, 'width')).toBe(ZOOM_MAX);
-    // Huge page in a tiny viewport would under-zoom; clamp at min.
-    expect(computeFitZoom(100000, 100000, 100, 100, 'page')).toBe(ZOOM_MIN);
+    // A pathologically huge page under-zooms past any useful level; a fit
+    // floors at FIT_ZOOM_MIN, NOT the manual ZOOM_MIN, so a real large-format
+    // sheet (which lands well above this floor) is still framed whole rather
+    // than clipped at 25%.
+    expect(computeFitZoom(100000, 100000, 100, 100, 'page')).toBe(FIT_ZOOM_MIN);
   });
 
   it('falls back to 1 for degenerate dimensions', () => {

@@ -13729,7 +13729,7 @@ const resource = {
     "takeoff_viewer.readout_segment": "Segment",
     "takeoff_viewer.readout_total": "Total",
     "takeoff_viewer.tooltip_group": "Group",
-    "takeoff_viewer.tooltip_linked": "Linked to {{ordinal}}",
+    "takeoff_viewer.tooltip_linked": "Linked to {{pos}}",
     "takeoff_viewer.tooltip_unlinked": "Not linked to a BOQ position",
     "branding.tab_logo": "Logo",
     "branding.tab_name": "Company name",

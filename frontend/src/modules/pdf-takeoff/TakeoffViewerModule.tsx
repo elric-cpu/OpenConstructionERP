@@ -123,6 +123,7 @@ import {
   formatGroupTotal,
 } from '../../features/takeoff/lib/takeoff-groups';
 import { CalibrationDialog } from '../../features/takeoff/components/CalibrationDialog';
+import { ScaleAutoDetect } from '../../features/takeoff/components/ScaleAutoDetect';
 import { MeasurementLedger } from '../../features/takeoff/components/MeasurementLedger';
 import {
   buildExportFilename,
@@ -4758,6 +4759,21 @@ export default function TakeoffViewerModule({
                 </button>
               )}
 
+              {/* Auto-detect: read the architect's scale note straight from
+                  the PDF text layer and offer it as a one-click suggestion.
+                  Only for server-side documents (it needs a document id to
+                  scan) and hidden while actively calibrating so it never
+                  competes with the two-click flow. Nothing auto-applies -
+                  the user confirms via "Use this" (CLAUDE.md rule 7). */}
+              {documentId && !calibrationMode && !settingScale && (
+                <ScaleAutoDetect
+                  documentId={documentId}
+                  pageNumber={currentPage}
+                  onApply={(next) => setScale(next)}
+                  className="basis-full"
+                />
+              )}
+
               {/* Legend toggle — shows/hides the color-coded group legend
                   card in the bottom-left of the canvas viewport. */}
               <button
@@ -4962,8 +4978,8 @@ export default function TakeoffViewerModule({
                     {hoverMeasurement.linkedPositionOrdinal ? (
                       <span className="text-emerald-600 dark:text-emerald-400 font-mono">
                         {t('takeoff_viewer.tooltip_linked', {
-                          defaultValue: 'Linked to {{ordinal}}',
-                          ordinal: hoverMeasurement.linkedPositionOrdinal,
+                          defaultValue: 'Linked to {{pos}}',
+                          pos: hoverMeasurement.linkedPositionOrdinal,
                         })}
                       </span>
                     ) : (
