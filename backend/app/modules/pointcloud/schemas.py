@@ -93,7 +93,8 @@ class RetentionPolicy(StrEnum):
 
 
 # Accepted upload formats, derived from the model allow-list so the schema and
-# the ORM can never drift. Proprietary ReCap ``rcp`` / ``rcs`` are not present.
+# the ORM can never drift. Proprietary ``rcp`` / ``rcs`` scan containers are not
+# present.
 ScanFormat = StrEnum(  # type: ignore[misc]
     "ScanFormat",
     {fmt: fmt for fmt in sorted(ACCEPTED_SCAN_FORMATS)},
@@ -110,7 +111,7 @@ class ScanDatasetCreate(BaseModel):
     tenant-namespaced upload key. The bytes are uploaded presigned-direct-to-
     MinIO afterwards; the backend never proxies the cloud. ``original_format``
     is validated against the accepted allow-list (E57/LAS/LAZ/COPC/PLY/PCD/
-    PTS/XYZ); proprietary ReCap ``rcp`` / ``rcs`` are rejected with an
+    PTS/XYZ); proprietary ``rcp`` / ``rcs`` scan containers are rejected with an
     explanatory error.
     """
 
@@ -131,7 +132,7 @@ class ScanDatasetCreate(BaseModel):
         ...,
         description=(
             "Uploaded container format. One of E57/LAS/LAZ/COPC/PLY/PCD/PTS/XYZ. "
-            "Autodesk ReCap RCP/RCS is proprietary and not accepted - export E57 "
+            "The proprietary .rcp/.rcs scan container is not accepted - export E57 "
             "or LAS instead."
         ),
     )
@@ -261,7 +262,7 @@ class ScanIngestInit(BaseModel):
         ...,
         description=(
             "Uploaded container format. One of E57/LAS/LAZ/COPC/PLY/PCD/PTS/XYZ. "
-            "Autodesk ReCap RCP/RCS is proprietary and not accepted - export E57 "
+            "The proprietary .rcp/.rcs scan container is not accepted - export E57 "
             "or LAS instead."
         ),
     )

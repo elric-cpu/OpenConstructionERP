@@ -26,8 +26,13 @@ Coverage
   init endpoint sheds load with 429 instead of queueing.
 * test_guard_proxied_size_caps_fallback_path - the hard max-proxied-bytes cap
   rejects an oversized proxied body with 413.
-* test_init_ingest_rejects_recap - a proprietary ReCap container is rejected with
-  an explanatory reason, and no multipart upload is opened.
+* test_init_ingest_rejects_proprietary_scan - a proprietary .rcp/.rcs scan
+  container is rejected with an explanatory reason, and no multipart upload is
+  opened.
+* test_delete_scan_sweeps_storage_and_removes_row - delete sweeps the per-scan
+  storage prefix and removes the row so a subsequent get is 404.
+* test_delete_scan_cross_tenant_is_404 - another tenant's delete attempt is
+  404 and never touches storage.
 """
 
 from __future__ import annotations
@@ -77,6 +82,7 @@ class FakeS3Backend(StorageBackend):
         self.initiated: list[str] = []
         self.presigned_parts: list[tuple[str, int]] = []
         self.completed: list[tuple[str, str, int]] = []
+        self.deleted_prefixes: list[str] = []
         self._complete_size = complete_size
         self.fail_complete = False
 
@@ -135,7 +141,10 @@ class FakeS3Backend(StorageBackend):
     async def delete(self, key: str) -> None:  # pragma: no cover - unused
         return None
 
-    async def delete_prefix(self, prefix: str) -> int:  # pragma: no cover - unused
+    async def delete_prefix(self, prefix: str) -> int:
+        # The delete-scan path sweeps the per-scan prefix; record it so the test
+        # can assert the raw upload + artifacts were freed before the row went.
+        self.deleted_prefixes.append(prefix)
         return 0
 
     async def size(self, key: str) -> int:  # pragma: no cover - unused
@@ -562,8 +571,8 @@ def test_guard_proxied_size_caps_fallback_path(monkeypatch: pytest.MonkeyPatch) 
 
 
 @pytest.mark.asyncio
-async def test_init_ingest_rejects_recap(session: AsyncSession) -> None:
-    """A proprietary ReCap container is rejected before any storage call."""
+async def test_init_ingest_rejects_proprietary_scan(session: AsyncSession) -> None:
+    """A proprietary .rcp/.rcs scan container is rejected before any storage call."""
     project_id: uuid.UUID = session.info["project_id"]
     owner_id: uuid.UUID = session.info["owner_id"]
     storage = FakeS3Backend()
@@ -571,7 +580,7 @@ async def test_init_ingest_rejects_recap(session: AsyncSession) -> None:
 
     init = ScanIngestInit(
         project_id=project_id,
-        name="ReCap import",
+        name="Proprietary scan import",
         original_format="e57",
         total_size_bytes=10,
     )
@@ -582,6 +591,77 @@ async def test_init_ingest_rejects_recap(session: AsyncSession) -> None:
     with pytest.raises(HTTPException) as exc:
         await service.init_ingest(init, payload=_payload(owner_id))
     assert exc.value.status_code == 422
-    assert exc.value.detail["reason"] == "format_proprietary_recap"
+    assert exc.value.detail["reason"] == "format_proprietary_scan"
     # No multipart upload was opened for the rejected format.
     assert storage.initiated == []
+
+
+# ── 6. delete ───────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_delete_scan_sweeps_storage_and_removes_row(session: AsyncSession) -> None:
+    """delete sweeps the per-scan storage prefix and removes the row."""
+    project_id: uuid.UUID = session.info["project_id"]
+    owner_id: uuid.UUID = session.info["owner_id"]
+    storage = FakeS3Backend()
+    service = PointCloudService(session, storage=storage)
+
+    init = await service.init_ingest(
+        ScanIngestInit(
+            project_id=project_id,
+            name="Disposable scan",
+            original_format="laz",
+            total_size_bytes=10,
+        ),
+        payload=_payload(owner_id),
+    )
+    await session.commit()
+    scan_id = init["scan_id"]
+
+    await service.delete_scan(scan_id, payload=_payload(owner_id))
+    await session.commit()
+
+    # The whole per-scan prefix was swept (raw upload + any future artifacts),
+    # derived from the upload key by dropping the trailing ``raw.{ext}``.
+    expected_prefix = init["upload_key"].rsplit("/", 1)[0] + "/"
+    assert storage.deleted_prefixes == [expected_prefix]
+
+    # The row is gone - a subsequent fetch collapses to 404.
+    with pytest.raises(HTTPException) as exc:
+        await service.get_scan(scan_id, payload=_payload(owner_id))
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_scan_cross_tenant_is_404(session: AsyncSession) -> None:
+    """Another tenant cannot delete a scan and storage is never touched."""
+    project_id: uuid.UUID = session.info["project_id"]
+    owner_id: uuid.UUID = session.info["owner_id"]
+    storage = FakeS3Backend()
+    service = PointCloudService(session, storage=storage)
+
+    init = await service.init_ingest(
+        ScanIngestInit(
+            project_id=project_id,
+            name="Owned scan",
+            original_format="laz",
+            total_size_bytes=10,
+        ),
+        payload=_payload(owner_id),
+    )
+    await session.commit()
+    scan_id = init["scan_id"]
+
+    # A different, non-member user: not the project owner, so the IDOR guard in
+    # get_scan collapses the access to 404 before any delete happens.
+    stranger = {"sub": str(uuid.uuid4()), "role": "editor"}
+    with pytest.raises(HTTPException) as exc:
+        await service.delete_scan(scan_id, payload=stranger)
+    assert exc.value.status_code == 404
+    # No storage sweep ran for the rejected delete.
+    assert storage.deleted_prefixes == []
+
+    # The owner can still see the scan - it was never removed.
+    scan = await service.get_scan(scan_id, payload=_payload(owner_id))
+    assert scan.status == "uploading"
