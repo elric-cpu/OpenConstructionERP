@@ -1,11 +1,22 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import {
   useMeasurementPersistence,
   getDocumentIndex,
   removeFromStorage,
 } from './useMeasurementPersistence';
 import { emptyPageScales, type PageScales } from './data/page-scales';
+
+// Keep these unit tests hermetic: the hook now calls the server (gated on a
+// project + document UUID), so stub the API to return no rows. Each test then
+// exercises the localStorage path deterministically.
+vi.mock('@/features/takeoff/api', () => ({
+  takeoffApi: {
+    list: vi.fn().mockResolvedValue([]),
+    bulkCreate: vi.fn().mockResolvedValue([]),
+    update: vi.fn().mockResolvedValue({}),
+  },
+}));
 
 // Mock measurements
 const makeMeasurement = (id: string, page = 1) => ({
@@ -23,6 +34,13 @@ const makeMeasurement = (id: string, page = 1) => ({
 const defaultScale = { pixelsPerUnit: 100, unitLabel: 'm' };
 const basePageScales: PageScales = emptyPageScales();
 
+// Stable identity (issue #238): measurements are keyed by project + a stable
+// document UUID, never the filename. The composite localStorage key is
+// ``oe_takeoff_<projectId>__<documentId>``.
+const PROJECT = 'proj-1';
+const DOC = 'doc-uuid-1';
+const compositeKey = `oe_takeoff_${PROJECT}__${DOC}`;
+
 describe('useMeasurementPersistence', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -34,6 +52,7 @@ describe('useMeasurementPersistence', () => {
     const { result } = renderHook(() =>
       useMeasurementPersistence({
         fileName: null,
+        documentId: null,
         measurements: [],
         setMeasurements: setM,
         pageScales: basePageScales,
@@ -45,18 +64,20 @@ describe('useMeasurementPersistence', () => {
     expect(result.current.savedDocumentCount).toBe(0);
   });
 
-  it('saveNow persists measurements + page scales to localStorage', () => {
+  it('saveNow persists under the project+document composite key', () => {
     const m1 = makeMeasurement('m1');
     const setM = vi.fn();
     const setPS = vi.fn();
     const { result } = renderHook(() =>
       useMeasurementPersistence({
         fileName: 'test.pdf',
+        documentId: DOC,
         measurements: [m1],
         setMeasurements: setM,
         pageScales: basePageScales,
         setPageScales: setPS,
         scale: defaultScale,
+        projectId: PROJECT,
       }),
     );
 
@@ -64,97 +85,137 @@ describe('useMeasurementPersistence', () => {
       result.current.saveNow();
     });
 
-    // Check localStorage contains the data
-    const raw = localStorage.getItem('oe_takeoff_test.pdf');
+    // Keyed by project+document, NOT by filename (issue #238).
+    expect(localStorage.getItem('oe_takeoff_test.pdf')).toBeNull();
+    const raw = localStorage.getItem(compositeKey);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
     expect(parsed.measurements).toHaveLength(1);
     expect(parsed.measurements[0].id).toBe('m1');
-    // Both the new per-page model and the legacy single scale are written.
     expect(parsed.pageScales.defaultScale.pixelsPerUnit).toBe(100);
     expect(parsed.scale.pixelsPerUnit).toBe(100);
     expect(parsed.savedAt).toBeGreaterThan(0);
+    expect(getDocumentIndex()).toContain(compositeKey);
   });
 
-  it('migrates a legacy single-scale document into the page-scale default', () => {
-    // Pre-populate localStorage in the OLD format (only ``scale``).
+  it('persists locally (not under a composite key) when there is no document UUID', () => {
+    const m1 = makeMeasurement('m1');
+    const setM = vi.fn();
+    const setPS = vi.fn();
+    // A freshly dropped local file: documentId null. It must persist locally
+    // but never under the project+document key (it isn't a server document).
+    const { result } = renderHook(() =>
+      useMeasurementPersistence({
+        fileName: 'dropped.pdf',
+        documentId: null,
+        measurements: [m1],
+        setMeasurements: setM,
+        pageScales: basePageScales,
+        setPageScales: setPS,
+        scale: defaultScale,
+        projectId: PROJECT,
+      }),
+    );
+
+    act(() => {
+      result.current.saveNow();
+    });
+
+    const raw = localStorage.getItem('oe_takeoff_local__dropped.pdf');
+    expect(raw).toBeTruthy();
+    expect(JSON.parse(raw!).measurements).toHaveLength(1);
+    // A local-only drop is not added to the synced-document index.
+    expect(getDocumentIndex()).toEqual([]);
+  });
+
+  it('migrates a legacy single-scale document into the page-scale default', async () => {
+    // Pre-populate localStorage in the OLD format (filename key, only ``scale``).
     const m1 = makeMeasurement('m1');
     const savedScale = { pixelsPerUnit: 50, unitLabel: 'm' };
     localStorage.setItem(
       'oe_takeoff_plan.pdf',
       JSON.stringify({ measurements: [m1], scale: savedScale, savedAt: Date.now() }),
     );
-    localStorage.setItem('oe_takeoff_index', JSON.stringify(['plan.pdf']));
 
     const setM = vi.fn();
     const setPS = vi.fn();
     renderHook(() =>
       useMeasurementPersistence({
         fileName: 'plan.pdf',
+        documentId: DOC,
         measurements: [],
         setMeasurements: setM,
         pageScales: basePageScales,
         setPageScales: setPS,
         scale: defaultScale,
+        projectId: PROJECT,
       }),
     );
 
-    expect(setM).toHaveBeenCalledWith([m1]);
-    // The legacy single scale is promoted to the document default; no page
-    // override exists yet so every page reads 50 until re-calibrated.
+    // The load path is async (server first, then localStorage); the legacy
+    // filename key is read and migrated into the composite key.
+    await waitFor(() => expect(setM).toHaveBeenCalledWith([m1]));
     const ps = setPS.mock.calls[0]![0] as PageScales;
     expect(ps.defaultScale.pixelsPerUnit).toBe(50);
     expect(ps.byPage).toEqual({});
+    // The legacy entry was rewritten under the composite key.
+    const migrated = localStorage.getItem(compositeKey);
+    expect(migrated).toBeTruthy();
+    expect(JSON.parse(migrated!).measurements[0].id).toBe('m1');
   });
 
-  it('reads back a new per-page scale document as-is', () => {
+  it('reads back a new per-page scale document under the composite key', async () => {
     const m1 = makeMeasurement('m1', 3);
     const pageScales: PageScales = {
       defaultScale: { pixelsPerUnit: 100, unitLabel: 'm' },
       byPage: { 3: { pixelsPerUnit: 25, unitLabel: 'm' } },
     };
     localStorage.setItem(
-      'oe_takeoff_multi.pdf',
+      compositeKey,
       JSON.stringify({ measurements: [m1], pageScales, scale: defaultScale, savedAt: Date.now() }),
     );
-    localStorage.setItem('oe_takeoff_index', JSON.stringify(['multi.pdf']));
+    localStorage.setItem('oe_takeoff_index', JSON.stringify([compositeKey]));
 
     const setM = vi.fn();
     const setPS = vi.fn();
     renderHook(() =>
       useMeasurementPersistence({
         fileName: 'multi.pdf',
+        documentId: DOC,
         measurements: [],
         setMeasurements: setM,
         pageScales: basePageScales,
         setPageScales: setPS,
         scale: defaultScale,
+        projectId: PROJECT,
       }),
     );
 
+    await waitFor(() => expect(setPS).toHaveBeenCalled());
     const ps = setPS.mock.calls[0]![0] as PageScales;
     expect(ps.defaultScale.pixelsPerUnit).toBe(100);
     expect(ps.byPage[3]!.pixelsPerUnit).toBe(25);
   });
 
-  it('clearPersisted removes data from localStorage', () => {
+  it('clearPersisted removes data under the composite key', () => {
     const setM = vi.fn();
     const setPS = vi.fn();
-    // Save first
     localStorage.setItem(
-      'oe_takeoff_test.pdf',
+      compositeKey,
       JSON.stringify({ measurements: [], scale: defaultScale, savedAt: Date.now() }),
     );
-    localStorage.setItem('oe_takeoff_index', JSON.stringify(['test.pdf']));
+    localStorage.setItem('oe_takeoff_index', JSON.stringify([compositeKey]));
 
     const { result } = renderHook(() =>
       useMeasurementPersistence({
         fileName: 'test.pdf',
+        documentId: DOC,
         measurements: [],
         setMeasurements: setM,
         pageScales: basePageScales,
         setPageScales: setPS,
         scale: defaultScale,
+        projectId: PROJECT,
       }),
     );
 
@@ -162,28 +223,31 @@ describe('useMeasurementPersistence', () => {
       result.current.clearPersisted();
     });
 
-    expect(localStorage.getItem('oe_takeoff_test.pdf')).toBeNull();
-    expect(getDocumentIndex()).not.toContain('test.pdf');
+    expect(localStorage.getItem(compositeKey)).toBeNull();
+    expect(getDocumentIndex()).not.toContain(compositeKey);
   });
 
   it('getDocumentIndex returns list of saved documents', () => {
     expect(getDocumentIndex()).toEqual([]);
 
-    localStorage.setItem('oe_takeoff_index', JSON.stringify(['a.pdf', 'b.pdf']));
-    expect(getDocumentIndex()).toEqual(['a.pdf', 'b.pdf']);
+    localStorage.setItem('oe_takeoff_index', JSON.stringify(['a', 'b']));
+    expect(getDocumentIndex()).toEqual(['a', 'b']);
   });
 
-  it('removeFromStorage removes a specific document', () => {
-    localStorage.setItem('oe_takeoff_doc.pdf', '{}');
-    localStorage.setItem('oe_takeoff_index', JSON.stringify(['doc.pdf', 'other.pdf']));
+  it('removeFromStorage removes a specific project+document', () => {
+    const keyA = `oe_takeoff_${PROJECT}__${DOC}`;
+    const keyB = `oe_takeoff_${PROJECT}__doc-2`;
+    localStorage.setItem(keyA, '{}');
+    localStorage.setItem(keyB, '{}');
+    localStorage.setItem('oe_takeoff_index', JSON.stringify([keyA, keyB]));
 
-    removeFromStorage('doc.pdf');
+    removeFromStorage(PROJECT, DOC);
 
-    expect(localStorage.getItem('oe_takeoff_doc.pdf')).toBeNull();
-    expect(getDocumentIndex()).toEqual(['other.pdf']);
+    expect(localStorage.getItem(keyA)).toBeNull();
+    expect(getDocumentIndex()).toEqual([keyB]);
   });
 
-  it('auto-saves on measurement changes (debounced)', async () => {
+  it('auto-saves on measurement changes (debounced) under the composite key', () => {
     vi.useFakeTimers();
     const m1 = makeMeasurement('m1');
     const setM = vi.fn();
@@ -192,20 +256,24 @@ describe('useMeasurementPersistence', () => {
     renderHook(() =>
       useMeasurementPersistence({
         fileName: 'auto.pdf',
+        documentId: DOC,
         measurements: [m1],
         setMeasurements: setM,
         pageScales: basePageScales,
         setPageScales: setPS,
         scale: defaultScale,
+        projectId: PROJECT,
       }),
     );
 
     // Before debounce
-    expect(localStorage.getItem('oe_takeoff_auto.pdf')).toBeNull();
+    expect(localStorage.getItem(compositeKey)).toBeNull();
 
     // After 500ms debounce
-    vi.advanceTimersByTime(600);
-    const raw = localStorage.getItem('oe_takeoff_auto.pdf');
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    const raw = localStorage.getItem(compositeKey);
     expect(raw).toBeTruthy();
     expect(JSON.parse(raw!).measurements).toHaveLength(1);
 
@@ -213,13 +281,14 @@ describe('useMeasurementPersistence', () => {
   });
 
   it('savedDocumentCount reflects storage index size', () => {
-    localStorage.setItem('oe_takeoff_index', JSON.stringify(['a.pdf', 'b.pdf', 'c.pdf']));
+    localStorage.setItem('oe_takeoff_index', JSON.stringify(['a', 'b', 'c']));
     const setM = vi.fn();
     const setPS = vi.fn();
 
     const { result } = renderHook(() =>
       useMeasurementPersistence({
         fileName: null,
+        documentId: null,
         measurements: [],
         setMeasurements: setM,
         pageScales: basePageScales,
@@ -231,22 +300,28 @@ describe('useMeasurementPersistence', () => {
     expect(result.current.savedDocumentCount).toBe(3);
   });
 
-  it('handles corrupt localStorage gracefully', () => {
-    localStorage.setItem('oe_takeoff_bad.pdf', '{invalid json');
-    localStorage.setItem('oe_takeoff_index', JSON.stringify(['bad.pdf']));
+  it('handles corrupt localStorage gracefully', async () => {
+    localStorage.setItem(compositeKey, '{invalid json');
+    localStorage.setItem('oe_takeoff_index', JSON.stringify([compositeKey]));
 
     const setM = vi.fn();
     const setPS = vi.fn();
-    renderHook(() =>
-      useMeasurementPersistence({
-        fileName: 'bad.pdf',
-        measurements: [],
-        setMeasurements: setM,
-        pageScales: basePageScales,
-        setPageScales: setPS,
-        scale: defaultScale,
-      }),
-    );
+    await act(async () => {
+      renderHook(() =>
+        useMeasurementPersistence({
+          fileName: 'bad.pdf',
+          documentId: DOC,
+          measurements: [],
+          setMeasurements: setM,
+          pageScales: basePageScales,
+          setPageScales: setPS,
+          scale: defaultScale,
+          projectId: PROJECT,
+        }),
+      );
+      // Flush the async load (server -> localStorage fallback).
+      await Promise.resolve();
+    });
 
     // Should not call setMeasurements with corrupt data
     expect(setM).not.toHaveBeenCalled();

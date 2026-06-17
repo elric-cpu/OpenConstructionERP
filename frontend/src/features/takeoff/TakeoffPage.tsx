@@ -1171,8 +1171,12 @@ export function TakeoffPage() {
   const [uploadErrorToast, setUploadErrorToast] = useState<string | null>(null);
   const filmstripUploadRef = useRef<HTMLInputElement>(null);
 
-  /** Currently opened document in the Measurements viewer. */
-  const [viewerDoc, setViewerDoc] = useState<{ url: string; name: string } | null>(null);
+  /** Currently opened document in the Measurements viewer. ``id`` is the
+   *  stable document UUID (takeoff doc PK or Project Files doc PK); it keys
+   *  measurement identity instead of the filename (issue #238). */
+  const [viewerDoc, setViewerDoc] = useState<{ url: string; name: string; id: string } | null>(
+    null,
+  );
 
   /** Revision compare drawer (Item 17) — diffs two takeoff PDFs. */
   const [showCompare, setShowCompare] = useState(false);
@@ -1282,6 +1286,7 @@ export function TakeoffPage() {
     setViewerDoc({
       url: `/api/v1/takeoff/documents/${match.id}/download/`,
       name: match.filename,
+      id: match.id,
     });
     setActiveTab('measurements');
     const next = new URLSearchParams(searchParams);
@@ -1303,6 +1308,7 @@ export function TakeoffPage() {
     setViewerDoc({
       url: `/api/v1/takeoff/documents/${docId}/download/`,
       name: match.filename,
+      id: docId,
     });
     setActiveTab('measurements');
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1336,6 +1342,9 @@ export function TakeoffPage() {
         setViewerDoc({
           url: `/api/v1/documents/${encodeURIComponent(docId)}/download/`,
           name: displayName,
+          // Project Files document PK (oe_documents_document). The backend
+          // accepts a document_id from either table in the same project.
+          id: docId,
         });
         setActiveTab('measurements');
       } catch {
@@ -1349,19 +1358,17 @@ export function TakeoffPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  /* ── /markups deep-link: ?docId=<filename|uuid>&measurementId=<uuid> ───
+  /* ── /markups deep-link: ?docId=<uuid|filename>&measurementId=<uuid> ───
    *
-   * The unified Markups hub builds deep-links from `measurement.document_id`,
-   * which the PDF-takeoff backend stores as the **filename** (see
-   * useMeasurementPersistence — takeoffApi.list is keyed by filename, and
-   * MeasurementCreate.document_id is the same string). So `docId` here is
-   * usually a filename, occasionally a real takeoff_documents UUID. We try
-   * both: exact filename match against the takeoff docs catalogue first,
-   * then UUID id match as a fallback.
+   * The unified Markups hub builds deep-links from `measurement.document_id`.
+   * Since issue #238 a measurement's document_id is the stable document UUID,
+   * so `docId` is usually a UUID; legacy rows written by older builds still
+   * carry a filename. We handle both: a UUID id match against the takeoff
+   * docs catalogue first, then a filename match as the legacy fallback.
    *
-   * On hit: open the PDF in the Measurements viewer and stash the
-   * measurementId so TakeoffViewerModule can select + scroll-to it once
-   * the persistence hook has loaded the measurement list.
+   * On hit: open the PDF in the Measurements viewer (passing the resolved
+   * document UUID) and stash the measurementId so TakeoffViewerModule can
+   * select + scroll-to it once the persistence hook has loaded the list.
    *
    * On miss: surface a "document not found" empty state with a back link
    * to /markups — far less confusing than the previous silent blank page.
@@ -1371,8 +1378,8 @@ export function TakeoffPage() {
     const measurementId = searchParams.get('measurementId');
     const tab = searchParams.get('tab');
     // Track the measurementId param so the viewer can act on it once the
-    // measurement list lands (don't gate on serverDocuments here — viewer
-    // module fetches its own measurement list keyed by filename).
+    // measurement list lands (the viewer fetches its own measurement list
+    // keyed by the document UUID).
     setInitialMeasurementId(measurementId);
 
     if (!docId) {
@@ -1387,14 +1394,15 @@ export function TakeoffPage() {
 
     const decodedDocId = decodeURIComponent(docId);
     const lowered = decodedDocId.toLowerCase();
-    // Try filename match (most common — the hub stores filenames as
-    // document_id), then fall back to id match for legacy UUID deeplinks.
+    // Try UUID id match first (the hub now stores the document UUID), then
+    // fall back to a filename match for legacy filename-keyed deeplinks.
     const match =
+      serverDocuments.find((d) => d.id === decodedDocId) ??
       serverDocuments.find(
         (d) =>
           d.filename.toLowerCase() === lowered ||
           d.filename.toLowerCase() === lowered.replace(/\.[^.]+$/, ''),
-      ) ?? serverDocuments.find((d) => d.id === decodedDocId);
+      );
 
     if (match) {
       setDeepLinkNotFound(false);
@@ -1402,6 +1410,7 @@ export function TakeoffPage() {
       setViewerDoc({
         url: `/api/v1/takeoff/documents/${match.id}/download/`,
         name: match.filename,
+        id: match.id,
       });
       setActiveTab('measurements');
     } else if (serverDocuments.length >= 0) {
@@ -1652,7 +1661,10 @@ export function TakeoffPage() {
     (docId: string) => {
       setDocuments((prev) => prev.filter((d) => d.id !== docId));
       setActiveDocId((prev) => (prev === docId ? null : prev));
-      setViewerDoc((prev) => (prev && prev.url.includes(`/${docId}/`) ? null : prev));
+      // Close the viewer if it was showing the deleted doc. Match on the
+      // stable document id (issue #238) rather than a URL substring, which
+      // could false-match a docId that is a substring of another.
+      setViewerDoc((prev) => (prev && prev.id === docId ? null : prev));
       // Drop the doc param if it matched, so a reload doesn't revive the
       // deleted entry as a placeholder via the initial-read effect.
       setSearchParams(
@@ -1844,6 +1856,7 @@ export function TakeoffPage() {
       setViewerDoc({
         url: `/api/v1/takeoff/documents/${docId}/download/`,
         name: doc.filename,
+        id: docId,
       });
       setActiveTab('measurements');
       // Pin the current doc to the URL so reload restores the viewer.
@@ -2304,6 +2317,7 @@ export function TakeoffPage() {
                 <TakeoffViewerModule
                   initialPdfUrl={viewerDoc?.url}
                   initialPdfName={viewerDoc?.name}
+                  initialDocumentId={viewerDoc?.id}
                   initialMeasurementId={initialMeasurementId}
                   recentDocuments={serverDocuments}
                   onOpenRecentDocument={handleOpenDocInViewer}

@@ -1289,6 +1289,66 @@ class TakeoffService:
 
     # ── Measurement CRUD ─────────────────────────────────────────────────
 
+    async def _validate_document_id(
+        self,
+        document_id: str | None,
+        project_id: uuid.UUID,
+    ) -> None:
+        """Validate a measurement's ``document_id`` (issue #238).
+
+        Measurement identity must be ``project_id`` + a stable document
+        UUID, never the PDF filename. Two same-named PDFs would otherwise
+        share a measurement namespace. This is the server-side half of the
+        fix (defence-in-depth); the frontend already sends the document UUID.
+
+        ``document_id`` is a *polymorphic* reference - it can point at a
+        takeoff-uploaded PDF (``oe_takeoff_document``) or a Project Files
+        document opened for measuring (``oe_documents_document``) - so we
+        keep the column as a plain ``String`` and validate here instead of
+        adding a single hard FK that would reject half the valid ids.
+
+        Rules:
+        * ``None`` / empty -> allowed (legacy rows carry filenames, and a
+          freshly dropped local file has no server UUID yet).
+        * non-empty but not a UUID -> 422 (a filename slipped through).
+        * a UUID that matches no document *in this project* (either table)
+          -> 404, indistinguishable from "project not found" so a foreign
+          document id can't be used as an existence oracle.
+        """
+        if not document_id:
+            return
+
+        try:
+            doc_uuid = uuid.UUID(str(document_id))
+        except (ValueError, AttributeError, TypeError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "document_id must be a document UUID, not a filename. "
+                    "Re-open the drawing from Project Files or the takeoff "
+                    "filmstrip so the stable id is sent."
+                ),
+            ) from exc
+
+        # First table: takeoff-uploaded PDFs. Reuse the existing repo.
+        takeoff_doc = await self.repo.get_by_id(doc_uuid)
+        if takeoff_doc is not None and takeoff_doc.project_id == project_id:
+            return
+
+        # Second table: a Project Files document opened for measuring. Query
+        # the model directly via the session so the takeoff module doesn't
+        # take a hard dependency on the documents service/repository.
+        from app.modules.documents.models import Document  # noqa: PLC0415
+
+        project_doc = await self.session.get(Document, doc_uuid)
+        if project_doc is not None and project_doc.project_id == project_id:
+            return
+
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found in this project",
+        )
+
     async def create_measurement(
         self,
         data: TakeoffMeasurementCreate,
@@ -1301,7 +1361,12 @@ class TakeoffService:
         the raw geometry. See ``recompute_measurement_value`` for the
         threat model: prevents client-supplied measurement_value from
         diverging from the actual drawn shape.
+
+        Issue #238 - ``document_id`` is validated as a stable document UUID
+        belonging to this project (or left null) so measurement identity is
+        never keyed on a PDF filename.
         """
+        await self._validate_document_id(data.document_id, data.project_id)
         recomputed = recompute_measurement_value(
             measurement_type=data.type,
             points=data.points,
@@ -1548,6 +1613,12 @@ class TakeoffService:
             item = existing
 
         fields = data.model_dump(exclude_unset=True)
+        # Issue #238 - if the patch reassigns document_id, validate the new id
+        # is a stable document UUID in this measurement's project (or null).
+        # The project is the row's own project_id, not a client-supplied one,
+        # so a PATCH can't repoint a measurement at a foreign tenant's doc.
+        if "document_id" in fields:
+            await self._validate_document_id(fields["document_id"], item.project_id)
         if "metadata" in fields:
             fields["metadata_"] = fields.pop("metadata")
         if "points" in fields and fields["points"] is not None:
@@ -1669,7 +1740,20 @@ class TakeoffService:
         Audit B8 - recompute ``measurement_value`` for every row so
         the localStorage→server import path can't be used to bypass
         the per-row create guard.
+
+        Issue #238 - validate each distinct ``(project_id, document_id)``
+        pair once (a bulk import is usually one document, so this is a single
+        check) so the localStorage import can't smuggle in a filename-keyed
+        or foreign-project document id.
         """
+        seen_pairs: set[tuple[uuid.UUID, str | None]] = set()
+        for data in items:
+            pair = (data.project_id, data.document_id)
+            if pair in seen_pairs:
+                continue
+            seen_pairs.add(pair)
+            await self._validate_document_id(data.document_id, data.project_id)
+
         measurements = [
             TakeoffMeasurement(
                 project_id=data.project_id,
