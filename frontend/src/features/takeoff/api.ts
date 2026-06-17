@@ -72,6 +72,37 @@ export interface MeasurementResponse {
   review_status?: string;
 }
 
+/* ── Tier-1 scale detection from the PDF text layer ────────────────────────
+ * The deterministic, AI-free counterpart to the vision plan-reader's scale
+ * proposal: reads the explicit scale note the architect typed in the title
+ * block ("SCALE 1:100", '1/4" = 1\'-0"') and offers it as a one-click
+ * calibration the user confirms. Nothing is persisted or auto-applied. */
+
+/** One detected drawing-scale candidate from the document's text layer. */
+export interface ScaleDetectionCandidate {
+  /** The N of a 1:N paper scale (one paper unit represents N real units). */
+  ratio: number;
+  /** Display form, e.g. "1:100". */
+  label: string;
+  /** 0..1 ordering score; a "scale"-adjacent or imperial hit ranks highest. */
+  confidence: number;
+  /** 1-based page the scale note was found on. */
+  page: number;
+  /** The exact matched substring from the sheet (shown as evidence). */
+  evidence: string;
+  /** "ratio" | "imperial". */
+  source: string;
+  /** Extra notation detail (e.g. the original imperial form for the badge). */
+  detail: Record<string, unknown>;
+}
+
+/** Detected scale(s) for a document; ``best`` is null when none was found. */
+export interface ScaleDetectionResponse {
+  best: ScaleDetectionCandidate | null;
+  candidates: ScaleDetectionCandidate[];
+  source: string;
+}
+
 /** One unconfirmed measurement proposed by offline vector recognition (#194). */
 export interface RecognizeCandidate {
   type: 'area' | 'distance' | 'count';
@@ -268,6 +299,19 @@ export const takeoffApi = {
     return apiPost<RecognizeResult>(
       `/v1/takeoff/documents/${encodeURIComponent(docId)}/recognize/?page=${page}&scale_pixels_per_unit=${sp}`,
       {},
+    );
+  },
+
+  /** Detect an explicit drawing scale from the document's text layer (tier-1,
+   *  AI-free). Reads the scale note the architect typed in the title block and
+   *  returns the best candidate (plus ranked alternatives) so the calibration
+   *  dialog can offer a one-click "Use this". Returns null when the optional
+   *  `oe_takeoff` module is disabled so the caller can degrade silently;
+   *  `best` is null in the payload when no explicit scale was found. */
+  detectScale: async (docId: string): Promise<ScaleDetectionResponse | null> => {
+    if (!(await isModuleLoaded('oe_takeoff'))) return null;
+    return apiGet<ScaleDetectionResponse>(
+      `/v1/takeoff/documents/${encodeURIComponent(docId)}/detect-scale/`,
     );
   },
 

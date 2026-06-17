@@ -112,6 +112,48 @@ class RecognizeResponse(BaseModel):
     notes: str | None = None
 
 
+# ── Tier-1 scale detection from the PDF text layer ──────────────────────────
+#
+# The deterministic, AI-free counterpart to the vision plan-reader's scale
+# proposal: read the explicit scale note the architect already typed in the
+# title block ("SCALE 1:100", '1/4" = 1\'-0"') and offer it as a one-click
+# calibration the user confirms. Nothing is persisted or auto-applied.
+
+
+class ScaleDetectionCandidate(BaseModel):
+    """One drawing-scale candidate read from the extracted text layer.
+
+    ``ratio`` is the integer ``N`` of a ``1:N`` paper scale (one paper unit
+    represents ``N`` real-world units), which the frontend turns into a
+    pixels-per-metre calibration through its single-sourced ``presetScale``
+    (``72 / (0.0254 * N)``). ``label`` is the display form ("1:100"); for an
+    imperial equation the original notation is preserved in ``detail`` for the
+    badge. ``confidence`` orders candidates so the UI offers the strongest one.
+    """
+
+    ratio: int = Field(..., ge=1, description="The N of a 1:N paper scale")
+    label: str
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    page: int = Field(..., ge=1)
+    evidence: str = Field("", description="The exact matched substring from the sheet")
+    source: str = Field("ratio", description="ratio | imperial")
+    detail: dict[str, Any] = Field(default_factory=dict)
+
+
+class ScaleDetectionResponse(BaseModel):
+    """Detected scale(s) for a document (nothing persisted or applied).
+
+    ``best`` is the single strongest candidate (``None`` when the drawing
+    carries no explicit scale note - an honest "nothing detected", not a
+    fabricated guess); ``candidates`` is the full ranked list for an "other
+    matches" affordance.
+    """
+
+    best: ScaleDetectionCandidate | None = None
+    candidates: list[ScaleDetectionCandidate] = Field(default_factory=list)
+    source: str = "text_layer"
+
+
 # ── CAD quantity extraction schemas ──────────────────────────────────────
 
 

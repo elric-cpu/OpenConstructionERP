@@ -1451,6 +1451,47 @@ class TakeoffService:
             limit=limit,
         )
 
+    async def detect_scale_from_text(self, doc_id: str) -> dict[str, Any]:
+        """Detect an explicit drawing scale from a document's text layer.
+
+        Tier-1, AI-free: scans the per-page ``text`` already extracted into
+        ``TakeoffDocument.page_data`` for the explicit scale note the architect
+        typed in the title block ("SCALE 1:100", '1/4" = 1\'-0"') via the pure
+        :mod:`app.modules.takeoff.scale_detect` parser, and returns the best
+        candidate plus the full ranked list. Nothing is persisted or applied -
+        the user confirms the offered scale in the calibration dialog (CLAUDE.md
+        rule 7).
+
+        Returns ``{best, candidates, source}`` where ``best`` is ``None`` when
+        the drawing carries no explicit scale note (an honest empty result, not
+        a fabricated guess). A 404 is raised when the document does not exist;
+        the caller has already gated tenant access (Audit B5).
+        """
+        from app.modules.takeoff import scale_detect as _scale_detect
+
+        doc = await self.repo.get_by_id(uuid.UUID(doc_id))
+        if doc is None:
+            raise HTTPException(status_code=404, detail="Takeoff document not found")
+
+        best, ranked = _scale_detect.detect_best_scale(doc.page_data or [])
+
+        def _as_dict(c: _scale_detect.ScaleCandidate) -> dict[str, Any]:
+            return {
+                "ratio": c.ratio,
+                "label": c.label,
+                "confidence": c.confidence,
+                "page": c.page,
+                "evidence": c.evidence,
+                "source": c.source,
+                "detail": c.detail,
+            }
+
+        return {
+            "best": _as_dict(best) if best is not None else None,
+            "candidates": [_as_dict(c) for c in ranked],
+            "source": "text_layer",
+        }
+
     async def recognize_candidates(
         self,
         doc_id: str,

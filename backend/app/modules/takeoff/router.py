@@ -74,6 +74,7 @@ from app.modules.takeoff.schemas import (
     PlanReadMetaResponse,
     PlanReadRequest,
     RecognizeResponse,
+    ScaleDetectionResponse,
     TakeoffCompareResponse,
     TakeoffMeasurementBulkCreate,
     TakeoffMeasurementCreate,
@@ -4473,6 +4474,40 @@ async def recognize_document(
 
     result = await service.recognize_candidates(doc_id, page, scale_pixels_per_unit or None)
     return RecognizeResponse(**result)
+
+
+# ── Detect scale (tier-1, AI-free, from the text layer) ────────────────────
+
+
+@router.get(
+    "/documents/{doc_id}/detect-scale/",
+    response_model=ScaleDetectionResponse,
+    dependencies=[Depends(RequirePermission("takeoff.read"))],
+)
+async def detect_scale(
+    doc_id: str,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: TakeoffService = Depends(_get_service),
+) -> ScaleDetectionResponse:
+    """Detect an explicit drawing scale from the document's text layer.
+
+    The deterministic, AI-free complement to calibration: scans the per-page
+    text already extracted at upload time for the explicit scale note the
+    architect typed in the title block ("SCALE 1:100", '1/4" = 1\'-0"') and
+    returns the best candidate (plus the ranked alternatives). The calibration
+    dialog offers it as a one-click "Use this" suggestion; nothing is persisted
+    or auto-applied (CLAUDE.md rule 7). Returns ``best=null`` cleanly when the
+    drawing carries no explicit scale - never a fabricated guess.
+    """
+    doc = await service.get_document(doc_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail=translate("errors.document_not_found", locale=get_locale()))
+    # Audit B5 - IDOR: a document's text layer is as sensitive as its content.
+    await _verify_takeoff_doc_access(doc, str(user_id) if user_id else "", session)
+
+    result = await service.detect_scale_from_text(doc_id)
+    return ScaleDetectionResponse(**result)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
