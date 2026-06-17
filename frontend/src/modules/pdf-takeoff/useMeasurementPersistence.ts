@@ -69,13 +69,32 @@ interface PersistedDocument {
 const STORAGE_PREFIX = 'oe_takeoff_';
 const INDEX_KEY = 'oe_takeoff_index';
 
-function docKey(fileName: string): string {
+/**
+ * Stable storage key for a document's measurements (issue #238).
+ *
+ * Identity is ``project_id`` + a stable document UUID, never the PDF
+ * filename: two same-named PDFs (in one project, or across projects via the
+ * old filename-only key) used to collide in one namespace. The composite
+ * ``<projectId>__<documentId>`` key isolates them. Both halves are sanitised
+ * so a stray char in an id can never break the key shape.
+ */
+function compositeKey(projectId: string, documentId: string): string {
+  const safe = (s: string) => s.replace(/[^a-zA-Z0-9._-]/g, '_');
+  return `${STORAGE_PREFIX}${safe(projectId)}__${safe(documentId)}`;
+}
+
+/**
+ * Legacy filename-only key. Read-only: used once on load to migrate a
+ * user's locally-saved measurements into the new composite key so an
+ * upgrade doesn't lose them. Never written to any more.
+ */
+function legacyDocKey(fileName: string): string {
   return `${STORAGE_PREFIX}${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 }
 
-function loadFromStorage(fileName: string): PersistedDocument | null {
+function readKey(key: string): PersistedDocument | null {
   try {
-    const raw = localStorage.getItem(docKey(fileName));
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
     return JSON.parse(raw) as PersistedDocument;
   } catch {
@@ -83,12 +102,24 @@ function loadFromStorage(fileName: string): PersistedDocument | null {
   }
 }
 
-function saveToStorage(fileName: string, data: PersistedDocument): void {
+/**
+ * One-time read of the legacy ``oe_takeoff_<filename>`` key. Returns the
+ * parsed document if present so the caller can migrate it into the new
+ * composite key. Read-only - it does not delete the legacy entry (a
+ * downgrade to an older build would still find it).
+ */
+function loadLegacyFromStorage(fileName: string | null): PersistedDocument | null {
+  if (!fileName) return null;
+  return readKey(legacyDocKey(fileName));
+}
+
+function saveToStorage(projectId: string, documentId: string, data: PersistedDocument): void {
   try {
-    localStorage.setItem(docKey(fileName), JSON.stringify(data));
+    const key = compositeKey(projectId, documentId);
+    localStorage.setItem(key, JSON.stringify(data));
     const index = getDocumentIndex();
-    if (!index.includes(fileName)) {
-      index.push(fileName);
+    if (!index.includes(key)) {
+      index.push(key);
       localStorage.setItem(INDEX_KEY, JSON.stringify(index));
     }
   } catch {
@@ -96,10 +127,11 @@ function saveToStorage(fileName: string, data: PersistedDocument): void {
   }
 }
 
-export function removeFromStorage(fileName: string): void {
+export function removeFromStorage(projectId: string, documentId: string): void {
   try {
-    localStorage.removeItem(docKey(fileName));
-    const index = getDocumentIndex().filter((n) => n !== fileName);
+    const key = compositeKey(projectId, documentId);
+    localStorage.removeItem(key);
+    const index = getDocumentIndex().filter((n) => n !== key);
     localStorage.setItem(INDEX_KEY, JSON.stringify(index));
   } catch {
     // ignore
@@ -317,7 +349,14 @@ function pageScalesFromServer(rows: MeasurementResponse[]): PageScales | null {
 /* ── Hook ─────────────────────────────────────────────────────────────── */
 
 interface UseMeasurementPersistenceOptions {
+  /** Display-only filename. Used for the legacy-key migration on load and
+   *  for the unsaved-changes UX; NEVER used as a storage or server key. */
   fileName: string | null;
+  /** Stable document UUID (issue #238). Measurement identity is
+   *  ``projectId`` + this id. ``null`` when no server document exists yet
+   *  (a freshly dropped local file) - in that state we persist locally only
+   *  and do NOT sync to the server. */
+  documentId: string | null;
   measurements: Measurement[];
   setMeasurements: (measurements: Measurement[]) => void;
   /** Per-page (per-sheet) scale model. Persisted whole; a legacy
@@ -345,6 +384,7 @@ interface UseMeasurementPersistenceResult {
 
 export function useMeasurementPersistence({
   fileName,
+  documentId,
   measurements,
   setMeasurements,
   pageScales,
@@ -352,8 +392,28 @@ export function useMeasurementPersistence({
   scale,
   projectId,
 }: UseMeasurementPersistenceOptions): UseMeasurementPersistenceResult {
+  // Server identity (issue #238): both a project AND a stable document UUID
+  // must be present before we touch the server or use the composite local
+  // key. Filename alone never qualifies.
+  const canSync = Boolean(projectId && documentId);
+  // Local-storage key. With a server UUID this is the project+document
+  // composite (shared with the server-load path). A freshly dropped local
+  // file has no UUID yet, so it gets a stable local-only key derived from
+  // its filename - persisted locally, never synced - which migrates into
+  // the composite key once a real UUID arrives.
+  const localKey =
+    projectId && documentId
+      ? compositeKey(projectId, documentId)
+      : fileName
+        ? `${STORAGE_PREFIX}local__${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+        : null;
+  // Identity used to detect when a *different* document is opened (so the
+  // load effect re-runs). Filename is included so two unsynced local drops
+  // with different names don't share a load.
+  const identity = `${projectId ?? ''}|${documentId ?? ''}|${fileName ?? ''}`;
+
   const hasPersistedRef = useRef(false);
-  const lastFileRef = useRef<string | null>(null);
+  const lastIdentityRef = useRef<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncedToServer, setSyncedToServer] = useState(false);
@@ -372,18 +432,21 @@ export function useMeasurementPersistence({
   // it to broadcast a refresh to the unified Markups hub.
   const qc = useContext(QueryClientContext);
 
-  // Load persisted data when file name changes — try server first, fallback to localStorage
+  // Load persisted data when the document identity changes — try server
+  // first (keyed by the stable document UUID, issue #238), fallback to
+  // localStorage.
   useEffect(() => {
-    if (!fileName || fileName === lastFileRef.current) return;
-    lastFileRef.current = fileName;
+    if (!fileName || identity === lastIdentityRef.current) return;
+    lastIdentityRef.current = identity;
 
     let cancelled = false;
 
     async function loadData() {
-      // Try server first if project is available
-      if (projectId) {
+      // Try server first, but only with BOTH a project and a stable document
+      // UUID. Filename is never sent as the document key any more.
+      if (canSync && projectId && documentId) {
         try {
-          const serverData = await takeoffApi.list(projectId, fileName ?? undefined);
+          const serverData = await takeoffApi.list(projectId, documentId);
           if (!cancelled && serverData.length > 0) {
             hasPersistedRef.current = true;
             setSyncedToServer(true);
@@ -409,9 +472,22 @@ export function useMeasurementPersistence({
         }
       }
 
-      // Fallback to localStorage
+      // Fallback to localStorage (the composite project+document key, or the
+      // local-only key for an unsynced fresh drop).
       if (!cancelled) {
-        const data = loadFromStorage(fileName!);
+        let data = localKey ? readKey(localKey) : null;
+        // Back-compat (issue #238): nothing under the new composite key yet?
+        // A user upgrading from a filename-keyed build still has their
+        // measurements under ``oe_takeoff_<filename>``. Read it once and
+        // rewrite it under the composite key so they don't lose local work.
+        // Read-only on the legacy key (a downgrade still finds it).
+        if (!data && projectId && documentId) {
+          const legacy = loadLegacyFromStorage(fileName);
+          if (legacy) {
+            data = legacy;
+            saveToStorage(projectId, documentId, legacy);
+          }
+        }
         if (data) {
           hasPersistedRef.current = true;
           setMeasurements(data.measurements);
@@ -428,33 +504,49 @@ export function useMeasurementPersistence({
 
     loadData();
     return () => { cancelled = true; };
-  }, [fileName, projectId, setMeasurements, setPageScales]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identity, setMeasurements, setPageScales]);
 
-  // Auto-save to localStorage with debounce (500ms)
+  // Auto-save to localStorage with debounce (500ms). Keyed by the stable
+  // project+document composite (issue #238), or a local-only key for an
+  // unsynced fresh drop.
   useEffect(() => {
-    if (!fileName) return;
+    if (!localKey) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       // Never persist AI suggestions: only confirmed measurements are saved.
       // Persist BOTH the new per-page model and the legacy single ``scale``
       // (the current page's, as a best-effort default) so a downgrade to an
       // older build that only reads ``scale`` still finds a usable value.
-      saveToStorage(fileName, {
+      const payload: PersistedDocument = {
         measurements: measurements.filter((m) => !m.suggested),
         pageScales,
         scale,
         savedAt: Date.now(),
-      });
+      };
+      if (projectId && documentId) {
+        saveToStorage(projectId, documentId, payload);
+      } else {
+        // Local-only key (fresh drop, no server UUID yet) - written directly
+        // and not added to the document index (it isn't a synced document).
+        try {
+          localStorage.setItem(localKey, JSON.stringify(payload));
+        } catch {
+          // localStorage full — silently fail
+        }
+      }
     }, 500);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [fileName, measurements, pageScales, scale]);
+  }, [localKey, projectId, documentId, measurements, pageScales, scale]);
 
   // Auto-sync to server with debounce (3s). Both measurement and annotation
   // types persist now (v2.6.7) — backend schema accepts the full set.
+  // Gated on a stable document UUID + project (issue #238): a filename alone
+  // never triggers server sync, so an unsynced local drop stays local-only.
   useEffect(() => {
-    if (!fileName || !projectId) return;
+    if (!canSync || !projectId || !documentId) return;
     if (measurements.length === 0) return;
     const serverMeasurements = measurements;
 
@@ -467,8 +559,9 @@ export function useMeasurementPersistence({
           // suggestion clears `suggested` and the next tick syncs it (#194).
           .filter((m) => !m.serverId && !m.suggested)
           // Per-page scale: toApiFormat resolves each row's own page scale
-          // from pageScales, so a multi-sheet set syncs correct ratios.
-          .map((m) => toApiFormat(m, projectId, fileName, pageScales));
+          // from pageScales, so a multi-sheet set syncs correct ratios. The
+          // document_id sent is the stable UUID, never the filename (#238).
+          .map((m) => toApiFormat(m, projectId, documentId, pageScales));
 
         if (toCreate.length > 0) {
           const created = await takeoffApi.bulkCreate(toCreate);
@@ -498,7 +591,7 @@ export function useMeasurementPersistence({
     return () => {
       if (serverSyncRef.current) clearTimeout(serverSyncRef.current);
     };
-  }, [fileName, projectId, measurements, setMeasurements, pageScales]);
+  }, [canSync, projectId, documentId, measurements, setMeasurements, pageScales]);
 
   // Reshape PATCH (#194 Feature 1). When a measurement that already has a
   // `serverId` has its geometry changed in-canvas, PATCH just that row so
@@ -507,8 +600,10 @@ export function useMeasurementPersistence({
   // the viewer only commits points on mouseup. Coalesced per `serverId`:
   // if a row is already in-flight we skip it this tick and the changed
   // signature keeps it dirty for the next pass (last-write-wins per row).
+  // Gated on canSync (#238): a serverId only exists after a sync, but gate
+  // explicitly so a stale row can't PATCH once the document id is gone.
   useEffect(() => {
-    if (!projectId) return;
+    if (!canSync) return;
     if (measurements.length === 0) return;
 
     // Find synced rows whose geometry drifted from the server baseline.
@@ -582,18 +677,34 @@ export function useMeasurementPersistence({
     return () => {
       if (patchTimerRef.current) clearTimeout(patchTimerRef.current);
     };
-  }, [projectId, measurements, setMeasurements, pageScales, qc]);
+  }, [canSync, projectId, documentId, measurements, setMeasurements, pageScales, qc]);
 
   const saveNow = useCallback(() => {
-    if (!fileName) return;
-    saveToStorage(fileName, { measurements, pageScales, scale, savedAt: Date.now() });
-  }, [fileName, measurements, pageScales, scale]);
+    if (!localKey) return;
+    const payload: PersistedDocument = { measurements, pageScales, scale, savedAt: Date.now() };
+    if (projectId && documentId) {
+      saveToStorage(projectId, documentId, payload);
+    } else {
+      try {
+        localStorage.setItem(localKey, JSON.stringify(payload));
+      } catch {
+        // localStorage full — silently fail
+      }
+    }
+  }, [localKey, projectId, documentId, measurements, pageScales, scale]);
 
   const clearPersisted = useCallback(() => {
-    if (!fileName) return;
-    removeFromStorage(fileName);
+    if (projectId && documentId) {
+      removeFromStorage(projectId, documentId);
+    } else if (localKey) {
+      try {
+        localStorage.removeItem(localKey);
+      } catch {
+        // ignore
+      }
+    }
     hasPersistedRef.current = false;
-  }, [fileName]);
+  }, [projectId, documentId, localKey]);
 
   return {
     hasPersistedData: hasPersistedRef.current,
