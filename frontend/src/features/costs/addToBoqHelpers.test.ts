@@ -8,7 +8,11 @@
 // full item and runs it through this helper.
 
 import { describe, it, expect } from 'vitest';
-import { buildBoqPositionDraft, type FullCostItem } from './addToBoqHelpers';
+import {
+  buildBoqPositionDraft,
+  massEffectiveUnitRate,
+  type FullCostItem,
+} from './addToBoqHelpers';
 import type { CostVariant, VariantStats } from './api';
 
 const LABELS = { labor: 'Labor', material: 'Material', equipment: 'Equipment' };
@@ -182,5 +186,62 @@ describe('buildBoqPositionDraft', () => {
     const { metadata } = buildBoqPositionDraft(item, 'AED', LABELS);
     expect(metadata.currency).toBe('AED');
     expect(metadata.cost_item_currency).toBe('AED');
+  });
+
+  it('converts a mass-priced section (360UB) to a per-metre rate + one resource', () => {
+    // 360UB: 44.7 kg/m priced at 1850 per tonne -> 82.695 per metre.
+    const item = baseItem({
+      code: '360UB',
+      description: '360 mm Universal Beam',
+      unit: 'm',
+      rate: 1850,
+      classification: { collection: 'Structural Steel' },
+      mass_per_unit: '44.7',
+      mass_basis: 't',
+    });
+    const { metadata, unitRate } = buildBoqPositionDraft(item, 'EUR', LABELS);
+    expect(unitRate).toBeCloseTo(82.695, 6);
+    const resources = metadata.resources as Array<Record<string, unknown>>;
+    expect(resources).toHaveLength(1);
+    expect(resources[0]!.unit).toBe('m');
+    expect(resources[0]!.quantity).toBe(1);
+    expect(resources[0]!.unit_rate).toBeCloseTo(82.695, 6);
+    // The position unit_rate must equal Σ(quantity × unit_rate) (BOQ invariant).
+    expect(unitRate).toBeCloseTo(
+      (resources[0]!.quantity as number) * (resources[0]!.unit_rate as number),
+      6,
+    );
+    // Mass driver recorded for the row / exports.
+    expect(metadata.mass_basis).toBe('t');
+    expect(metadata.mass_per_unit).toBe('44.7');
+    expect(metadata.mass_rate).toBe('1850');
+  });
+
+  it('prices per kg the same as the equivalent per-tonne rate', () => {
+    const item = baseItem({ unit: 'm', rate: 1.85, mass_per_unit: '44.7', mass_basis: 'kg' });
+    const { unitRate } = buildBoqPositionDraft(item, 'EUR', LABELS);
+    expect(unitRate).toBeCloseTo(82.695, 6);
+  });
+
+  it('ignores mass pricing when basis is empty (falls back to catalog rate)', () => {
+    const item = baseItem({ unit: 'm', rate: 99, mass_per_unit: '44.7', mass_basis: '' });
+    const { unitRate, metadata } = buildBoqPositionDraft(item, 'EUR', LABELS);
+    expect(unitRate).toBe(99);
+    expect(metadata.mass_basis).toBeUndefined();
+  });
+});
+
+describe('massEffectiveUnitRate', () => {
+  it('per tonne: mass * rate / 1000', () => {
+    expect(massEffectiveUnitRate(1850, '44.7', 't')).toBeCloseTo(82.695, 6);
+  });
+  it('per kg: mass * rate', () => {
+    expect(massEffectiveUnitRate(1.85, '44.7', 'kg')).toBeCloseTo(82.695, 6);
+  });
+  it('returns null when not mass-priced or inputs invalid', () => {
+    expect(massEffectiveUnitRate(1850, '44.7', '')).toBeNull();
+    expect(massEffectiveUnitRate(1850, '0', 't')).toBeNull();
+    expect(massEffectiveUnitRate(1850, undefined, 't')).toBeNull();
+    expect(massEffectiveUnitRate(-1, '44.7', 't')).toBeNull();
   });
 });

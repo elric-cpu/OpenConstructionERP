@@ -16,7 +16,7 @@ import json as _json
 import logging
 import re
 import uuid
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -96,6 +96,61 @@ def decode_cursor(token: str) -> tuple[str, str] | None:
     return code, item_id
 
 
+# ── Mass-based pricing conversion ──────────────────────────────────────────
+#
+# A structural-steel section is priced by mass: its linear mass (kg per one
+# length unit) times the length gives a mass, and the rate is quoted per tonne
+# or per kg. This pure helper converts a mass-basis rate into the effective
+# rate per ONE length unit, so a normal length-based BOQ line (quantity x
+# unit_rate) lands on the correct total without a second unit system.
+#
+#     effective_rate_per_unit = mass_per_unit * rate / (1000 if basis == "t" else 1)
+#
+# Worked example (the customer's "360UB"): a 360 mm Universal Beam at
+# 44.7 kg/m priced at 1850 per tonne ->
+#     44.7 * 1850 / 1000 = 82.695 per metre.
+# Applied to a 12 m member: 12 * 82.695 = 992.34 (i.e. 12 m * 44.7 kg/m =
+# 536.4 kg = 0.5364 t * 1850 = 992.34). Money stays Decimal throughout.
+
+_TONNE_KG = Decimal("1000")
+
+
+def mass_effective_unit_rate(
+    rate: str | Decimal | float | None,
+    mass_per_unit: str | Decimal | float | None,
+    mass_basis: str | None,
+) -> Decimal | None:
+    """Effective rate per ONE length unit for a mass-priced section.
+
+    Returns ``None`` when the item is not mass-priced (``mass_basis`` is not
+    ``"t"`` / ``"kg"``, or ``mass_per_unit`` is missing / not a positive
+    finite number) so the caller falls back to the plain catalog ``rate``.
+    A non-finite or negative ``rate`` also yields ``None`` - never a poisoned
+    figure.
+    """
+    basis = (mass_basis or "").strip().lower()
+    if basis not in ("t", "kg"):
+        return None
+    try:
+        mpu = Decimal(str(mass_per_unit).strip()) if mass_per_unit not in (None, "") else None
+    except (InvalidOperation, ValueError):
+        return None
+    if mpu is None or not mpu.is_finite() or mpu <= 0:
+        return None
+    try:
+        rate_dec = Decimal(str(rate).strip()) if rate not in (None, "") else Decimal("0")
+    except (InvalidOperation, ValueError):
+        return None
+    if not rate_dec.is_finite() or rate_dec < 0:
+        return None
+    effective = mpu * rate_dec
+    if basis == "t":
+        effective = effective / _TONNE_KG
+    if not effective.is_finite() or effective < 0:
+        return None
+    return effective
+
+
 class CostItemService:
     """Business logic for cost item operations."""
 
@@ -143,6 +198,8 @@ class CostItemService:
             components=data.components,
             tags=data.tags,
             region=data.region,
+            mass_per_unit=data.mass_per_unit,
+            mass_basis=data.mass_basis,
             catalog_id=data.catalog_id,
             metadata_=data.metadata,
         )
@@ -172,6 +229,64 @@ class CostItemService:
     async def get_by_codes(self, codes: list[str]) -> list[CostItem]:
         """Get multiple cost items by their codes."""
         return await self.repo.get_by_codes(codes)
+
+    async def mass_apply_preview(self, item_id: uuid.UUID, quantity: Decimal) -> dict[str, Any]:
+        """Preview applying a (possibly mass-priced) cost item to a length quantity.
+
+        For a mass-priced section (``mass_basis`` ``t`` / ``kg`` with a
+        positive ``mass_per_unit``), returns the effective per-unit rate
+        (``mass_per_unit * rate / 1000`` for tonnes), the derived total mass,
+        and the line total for ``quantity`` units - all as Decimal-strings so
+        a JS client never rounds through float. For a non-mass item it falls
+        back to the plain catalog rate, so the same endpoint is safe to call
+        for any item. Raises 404 when the item does not exist.
+        """
+        item = await self.get_cost_item(item_id)
+
+        try:
+            qty = quantity if isinstance(quantity, Decimal) else Decimal(str(quantity))
+        except (InvalidOperation, ValueError):
+            qty = Decimal("0")
+        if not qty.is_finite() or qty < 0:
+            qty = Decimal("0")
+
+        try:
+            base_rate = Decimal(str(item.rate))
+        except (InvalidOperation, ValueError):
+            base_rate = Decimal("0")
+        if not base_rate.is_finite() or base_rate < 0:
+            base_rate = Decimal("0")
+
+        effective = mass_effective_unit_rate(item.rate, item.mass_per_unit, item.mass_basis)
+        mass_priced = effective is not None
+        unit_rate = effective if effective is not None else base_rate
+
+        # Total mass only makes sense for a mass-priced section.
+        total_mass_kg: Decimal | None = None
+        if mass_priced:
+            try:
+                mpu = Decimal(str(item.mass_per_unit))
+            except (InvalidOperation, ValueError):
+                mpu = Decimal("0")
+            total_mass_kg = qty * mpu
+
+        line_total = qty * unit_rate
+
+        return {
+            "cost_item_id": str(item.id),
+            "code": item.code,
+            "unit": item.unit,
+            "quantity": qty,
+            "mass_priced": mass_priced,
+            "mass_basis": item.mass_basis or "",
+            "mass_per_unit": item.mass_per_unit or "",
+            "base_rate": base_rate,
+            "effective_unit_rate": unit_rate,
+            "total_mass_kg": total_mass_kg,
+            "total_mass_t": (total_mass_kg / _TONNE_KG) if total_mass_kg is not None else None,
+            "line_total": line_total,
+            "currency": item.currency or "",
+        }
 
     async def search_for_autocomplete(
         self,
@@ -429,6 +544,8 @@ class CostItemService:
                 components=data.components,
                 tags=data.tags,
                 region=data.region,
+                mass_per_unit=data.mass_per_unit,
+                mass_basis=data.mass_basis,
                 catalog_id=data.catalog_id,
                 metadata_=data.metadata,
             )
