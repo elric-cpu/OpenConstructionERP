@@ -233,6 +233,7 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.ai_estimate', to: '/ai-estimate', icon: Sparkles, badge: 'BETA' },
       { labelKey: 'nav.match_elements', to: '/match-elements', icon: Link2, badge: 'BETA' },
       { labelKey: 'nav.estimation_dashboard', to: '/project-intelligence', icon: BrainCircuit },
+      { labelKey: 'nav.methodologies', to: '/methodologies', icon: SlidersHorizontal, advancedOnly: true },
     ],
   },
   // ── 4. COST DATA ───────────────────────────────────────────────────

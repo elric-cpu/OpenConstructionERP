@@ -21,6 +21,7 @@ import type {
 /* ── Module manifest imports ───────────────────────────────────────── */
 
 import { manifest as assemblies } from './assemblies/manifest';
+import { manifest as methodology } from './methodology/manifest';
 import { manifest as validation } from './validation/manifest';
 import { manifest as schedule } from './schedule/manifest';
 import { manifest as fiveDCostModel } from './5d-cost-model/manifest';
@@ -44,6 +45,7 @@ import { manifest as pipelines } from './pipelines/manifest';
 
 export const MODULE_REGISTRY: ModuleManifest[] = [
   assemblies,
+  methodology,
   validation,
   schedule,
   fiveDCostModel,

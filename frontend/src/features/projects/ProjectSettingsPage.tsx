@@ -35,6 +35,7 @@ import { projectsApi, type Project, type ProjectFxRate } from './api';
 import { CURRENCY_GROUPS, CreateProjectModal } from './CreateProjectPage';
 import { getVatRate } from '../boq/boqHelpers';
 import { TranslationSettingsTab } from '../translation';
+import { MethodologyActiveCard } from '../methodology/MethodologyActiveCard';
 import {
   listComplianceRulePacks,
   type ComplianceRulePack,
@@ -1084,6 +1085,11 @@ export function ProjectSettingsPage() {
           </p>
         </form>
       </Card>
+
+      {/* ── Estimating methodology (active switcher) ────────────────────── */}
+      {/* The id="methodology" anchor is the deep-link target from the
+          methodologies hub ("set which one a project uses in Settings"). */}
+      <MethodologyActiveCard projectId={project.id} />
 
       {/* ── Custom units (#93 item 3) ───────────────────────────────────── */}
       <Card padding="lg">
