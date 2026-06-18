@@ -87,26 +87,57 @@ export class SceneManager {
    *  a transient GPU reset no longer reads as a hard crash (pdf11). */
   private _onContextStateChange: ((lost: boolean) => void) | null = null;
 
+  /**
+   * Create the WebGL renderer, degrading quality before giving up.
+   *
+   * The full-quality context requests antialiasing and a logarithmic depth
+   * buffer. The log depth buffer matters for real IFC/RVT models: they carry
+   * many near-coplanar faces (multilayer walls, slab finishes, IfcCovering
+   * over IfcWall, doubled converter geometry) that z-fight under a normal
+   * depth buffer across a wide near/far range, so the GPU flips which face
+   * wins every frame (flickering triangles). But some integrated GPUs,
+   * virtual machines, remote-desktop sessions and older drivers refuse a
+   * context with those options while still granting a plain one. Try the
+   * full context first, then progressively drop antialias and the log depth
+   * buffer, so a marginal GPU still shows the model (with minor z-fighting or
+   * aliasing) instead of the "3D unavailable" fallback. Only a genuinely
+   * WebGL-less environment reaches the final throw, which BIMViewer catches.
+   */
+  private static createRenderer(canvas: HTMLCanvasElement): THREE.WebGLRenderer {
+    const attempts: THREE.WebGLRendererParameters[] = [
+      { canvas, antialias: true, alpha: false, logarithmicDepthBuffer: true },
+      { canvas, antialias: false, alpha: false, logarithmicDepthBuffer: true },
+      { canvas, antialias: false, alpha: false, logarithmicDepthBuffer: false },
+      { canvas },
+    ];
+    let lastErr: unknown;
+    for (const [i, opts] of attempts.entries()) {
+      try {
+        const renderer = new THREE.WebGLRenderer(opts);
+        if (i > 0) {
+          console.warn(
+            `[BIMViewer] WebGL context created with reduced options ` +
+              `(attempt ${i + 1}/${attempts.length}); antialias / logarithmic ` +
+              `depth buffer disabled for this GPU or driver.`,
+          );
+        }
+        return renderer;
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error('WebGLRenderer creation failed');
+  }
+
   constructor(canvas: HTMLCanvasElement) {
     const parent = canvas.parentElement;
     if (!parent) throw new Error('BIMViewer: canvas must have a parent element');
     this.container = parent;
 
-    // Renderer
-    this.renderer = new THREE.WebGLRenderer({
-      canvas,
-      antialias: true,
-      alpha: false,
-      // Real IFC/RVT models carry many near-coplanar faces (multilayer
-      // walls, slab finishes, IfcCovering over IfcWall, doubled
-      // geometry from the converter). With a normal depth buffer and a
-      // wide near/far range these faces get the same depth value and
-      // the GPU flips which one wins every frame → "jumping"/flickering
-      // triangles (z-fighting). A logarithmic depth buffer distributes
-      // precision evenly across the whole range and removes the
-      // artefact regardless of the model's unit/scale.
-      logarithmicDepthBuffer: true,
-    });
+    // Renderer, with graceful fallback for marginal GPUs / drivers / VMs /
+    // remote desktops where the full-quality context fails to create. See
+    // createRenderer() for the per-attempt option ladder.
+    this.renderer = SceneManager.createRenderer(canvas);
     // Pixel ratio capped at 1 — high-DPI rendering on a 5 000-mesh BIM
     // scene quadruples the per-frame fragment cost for marginal visual
     // gain on the engineering-readability use case. Users who want a

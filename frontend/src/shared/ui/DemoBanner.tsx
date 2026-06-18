@@ -50,23 +50,52 @@ export function DemoBanner() {
 
   return (
     <>
-      {/* Persistent thin strip at the very top */}
+      {/* Persistent strip at the very top */}
       <div
         role="alert"
-        className="sticky top-0 z-50 flex items-center justify-center gap-2 px-4 py-1.5 text-xs font-medium text-amber-950 bg-gradient-to-r from-amber-300 via-amber-200 to-amber-300 border-b border-amber-500/40 shadow-sm dark:text-amber-100 dark:from-amber-900/40 dark:via-amber-800/40 dark:to-amber-900/40 dark:border-amber-500/30"
+        className="sticky top-0 z-50 flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 px-4 py-2.5 text-[13px] font-medium text-amber-950 bg-gradient-to-r from-amber-300 via-amber-200 to-amber-300 border-b border-amber-500/40 shadow-sm dark:text-amber-100 dark:from-amber-900/40 dark:via-amber-800/40 dark:to-amber-900/40 dark:border-amber-500/30"
       >
-        <AlertTriangle size={13} className="shrink-0" />
-        <span className="truncate">
-          Public demo - do not upload real data. For production use, install
-          locally:
+        <span className="flex items-center gap-2">
+          <AlertTriangle size={14} className="shrink-0" />
+          <span>
+            Public demo - do not upload real data. For production use, install locally:
+          </span>
         </span>
         <code className="px-1.5 py-0.5 rounded bg-amber-900/15 text-amber-950 font-mono text-[11px] dark:bg-amber-100/10 dark:text-amber-100">
           pip install openconstructionerp
         </code>
+        <span className="flex items-center gap-2.5">
+          <span className="opacity-80">or download for</span>
+          <a
+            href="https://openconstructionerp.com/download"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-50"
+          >
+            <Download size={12} className="shrink-0" />
+            Windows
+          </a>
+          <a
+            href="https://openconstructionerp.com/download"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-50"
+          >
+            macOS
+          </a>
+          <a
+            href="https://openconstructionerp.com/download"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-50"
+          >
+            Linux
+          </a>
+        </span>
         <button
           type="button"
           onClick={() => setModalOpen(true)}
-          className="ml-1 underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-50"
+          className="underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-50"
         >
           Why?
         </button>

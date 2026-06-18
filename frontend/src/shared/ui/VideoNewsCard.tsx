@@ -3,48 +3,82 @@ import { useTranslation } from 'react-i18next';
 import { Play, ExternalLink, X } from 'lucide-react';
 
 /**
- * VideoNewsCard - a compact, dismissible promo card in the sidebar that links
- * to a featured YouTube video. It reuses UpdateNotification's card frame
- * (same width, radius, shadow, and entrance animation) but is image-forward:
- * the bundled thumbnail carries a play overlay and a "Video" badge, with a
- * short title and subtitle below. Dismissal is remembered per-video in
- * localStorage, so swapping in a future featured video re-shows the card.
+ * VideoNewsCard - a compact promo card in the sidebar that links to a featured
+ * YouTube video. It reuses UpdateNotification's card frame (same width, radius,
+ * shadow, and entrance animation) but is image-forward: the bundled thumbnail
+ * carries a play overlay and a "Video" badge, with a short title and subtitle
+ * below.
+ *
+ * Dismissal is two-stage and intentionally NOT persisted, so the featured video
+ * is re-shown on every page reload: the first close collapses the full card to
+ * a single-line strip (title + play, still a link to the video); a second close
+ * removes it for the rest of the session. The sidebar mounts once per session,
+ * so the collapsed state survives in-app navigation and resets only on a real
+ * refresh.
  */
 
-const VIDEO_ID = 'R_PQQHXY-rQ';
 const VIDEO_URL = 'https://youtu.be/R_PQQHXY-rQ';
 const THUMBNAIL = '/brand/uberization-construction.jpg';
-const DISMISS_KEY = 'oe_video_news_dismissed';
+
+type CardView = 'full' | 'mini' | 'gone';
 
 export function VideoNewsCard() {
   const { t } = useTranslation();
-  const [dismissed, setDismissed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(DISMISS_KEY) === VIDEO_ID;
-    } catch {
-      return false;
-    }
-  });
+  const [view, setView] = useState<CardView>('full');
 
-  if (dismissed) return null;
+  if (view === 'gone') return null;
 
+  // First close collapses the full card to the single-line strip; the next
+  // close removes the card for the rest of the session.
   const handleDismiss = (e: ReactMouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    setDismissed(true);
-    try {
-      localStorage.setItem(DISMISS_KEY, VIDEO_ID);
-    } catch {
-      /* ignore storage failures (e.g. private mode) */
-    }
+    setView((v) => (v === 'full' ? 'mini' : 'gone'));
   };
 
   const title = t('sidebar.video_news.title', { defaultValue: 'Uberization of Construction' });
   const watch = t('sidebar.video_news.watch', { defaultValue: 'Watch' });
+  const dismissLabel = t('common.dismiss', { defaultValue: 'Dismiss' });
+
+  // Collapsed single-line strip: a small play badge plus the truncated title,
+  // still a link to the video, with a close button that removes it entirely.
+  if (view === 'mini') {
+    return (
+      <div
+        data-testid="sidebar-video-news"
+        data-view="mini"
+        className="group mx-2 mb-2 relative flex items-center gap-2 overflow-hidden rounded-lg border border-border-light bg-surface-elevated px-2 py-1.5 shadow-sm ring-1 ring-black/5 transition-shadow animate-card-in hover:shadow-md dark:ring-white/5"
+      >
+        <a
+          href={VIDEO_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`${title} - ${watch}`}
+          data-testid="sidebar-video-news-link"
+          className="flex min-w-0 flex-1 items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60"
+        >
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-500 text-white">
+            <Play size={11} className="ml-px fill-white text-white" />
+          </span>
+          <span className="truncate text-[12px] font-semibold text-content-primary">{title}</span>
+        </a>
+        <button
+          type="button"
+          onClick={handleDismiss}
+          aria-label={dismissLabel}
+          data-testid="sidebar-video-news-dismiss"
+          className="shrink-0 flex h-5 w-5 items-center justify-center rounded text-content-tertiary transition-colors hover:bg-surface-secondary hover:text-content-primary"
+        >
+          <X size={11} />
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div
       data-testid="sidebar-video-news"
+      data-view="full"
       className="group mx-2 mb-2 relative overflow-hidden rounded-lg border border-border-light bg-surface-elevated shadow-md shadow-black/5 ring-1 ring-black/5 transition-shadow animate-card-in hover:shadow-lg dark:ring-white/5"
     >
       <a
@@ -98,7 +132,7 @@ export function VideoNewsCard() {
       <button
         type="button"
         onClick={handleDismiss}
-        aria-label={t('common.dismiss', { defaultValue: 'Dismiss' })}
+        aria-label={dismissLabel}
         data-testid="sidebar-video-news-dismiss"
         className="absolute right-1.5 top-1.5 z-10 flex h-5 w-5 items-center justify-center rounded bg-black/35 text-white/85 backdrop-blur-sm transition-colors hover:bg-black/55 hover:text-white"
       >

@@ -15,12 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Structural steel can be priced by mass. A cost item can carry a mass per unit and a structural category, and a member priced by length is converted to mass on its way into a bill of quantities, so steel that is sold by weight is estimated correctly.
 - Custom cost items now group under a "My categories" heading in the costs sidebar, so a category you created, such as "Structural Steel", is browsable directly instead of being reachable only through search.
 - The point cloud reader is now an installable extra, and scans can be deleted from the workspace.
-- A short video introducing the platform is linked from the left sidebar, with a one-click dismiss that is remembered.
+- A short video introducing the platform is linked from the left sidebar. The first close collapses it to a single line, a second close hides it for the rest of the session, and it returns on the next page load.
 - The new and reworded interface text in this release is translated into all 26 other languages.
 
 ### Fixed
 
 - Local AI providers that do not need an API key, such as Ollama, no longer ask for one. The API key field is hidden for these providers, a short hint points to the server address instead, and both Test connection and Save work without a key. Reported in [#244](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/244).
+- The 3D model viewer now degrades gracefully instead of failing when the browser cannot create a full-quality WebGL context. On marginal GPUs, virtual machines or remote-desktop sessions it retries with a simpler context, dropping antialiasing and the logarithmic depth buffer, before showing the "3D view unavailable" notice, so the model renders in more environments.
 
 ## [8.4.0] - 2026-06-17
 
