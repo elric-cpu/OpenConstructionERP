@@ -326,4 +326,97 @@ describe('useMeasurementPersistence', () => {
     // Should not call setMeasurements with corrupt data
     expect(setM).not.toHaveBeenCalled();
   });
+
+  // ── Issue #242: two PDFs that share a filename must not share measurements ──
+  // The pre-#238 build keyed measurements by filename, so uploading a second
+  // PDF whose name matched an earlier one surfaced the earlier file's
+  // measurements (cross-document bleed). Identity is now project + a stable
+  // document UUID, so two same-named documents are fully isolated and the
+  // shared filename key is never written.
+  it('isolates two same-named PDFs by document UUID (issue #242)', () => {
+    const fileName = 'Floor Plan.pdf';
+    const docA = 'doc-uuid-A';
+    const docB = 'doc-uuid-B';
+    const setM = vi.fn();
+    const setPS = vi.fn();
+
+    // Draw + save a measurement against document A.
+    const { result: a } = renderHook(() =>
+      useMeasurementPersistence({
+        fileName,
+        documentId: docA,
+        measurements: [makeMeasurement('a1')],
+        setMeasurements: setM,
+        pageScales: basePageScales,
+        setPageScales: setPS,
+        scale: defaultScale,
+        projectId: PROJECT,
+      }),
+    );
+    act(() => {
+      a.current.saveNow();
+    });
+
+    // Draw + save a different measurement against document B - same filename,
+    // same project, different upload.
+    const { result: b } = renderHook(() =>
+      useMeasurementPersistence({
+        fileName,
+        documentId: docB,
+        measurements: [makeMeasurement('b1')],
+        setMeasurements: setM,
+        pageScales: basePageScales,
+        setPageScales: setPS,
+        scale: defaultScale,
+        projectId: PROJECT,
+      }),
+    );
+    act(() => {
+      b.current.saveNow();
+    });
+
+    const keyA = `oe_takeoff_${PROJECT}__${docA}`;
+    const keyB = `oe_takeoff_${PROJECT}__${docB}`;
+    // Each document keeps its own namespace; neither sees the other's work.
+    expect(JSON.parse(localStorage.getItem(keyA)!).measurements[0].id).toBe('a1');
+    expect(JSON.parse(localStorage.getItem(keyB)!).measurements[0].id).toBe('b1');
+    // Nothing was ever written under a filename-derived key (the old bug).
+    expect(localStorage.getItem('oe_takeoff_Floor Plan.pdf')).toBeNull();
+    expect(localStorage.getItem('oe_takeoff_Floor_Plan.pdf')).toBeNull();
+    // Both documents are tracked independently in the index.
+    expect(getDocumentIndex()).toEqual(expect.arrayContaining([keyA, keyB]));
+  });
+
+  // ── Issue #242: a freshly dropped local file never syncs to the server ──
+  // A drop with no server document UUID must stay local-only (no bulkCreate),
+  // so the "uploaded PDF vanishes on refresh" path can only ever be backed by
+  // a real server document, never a client-only blob the server never saw.
+  it('does not server-sync a local drop that has no document UUID (issue #242)', async () => {
+    vi.useFakeTimers();
+    const { takeoffApi } = await import('@/features/takeoff/api');
+    const setM = vi.fn();
+    const setPS = vi.fn();
+
+    renderHook(() =>
+      useMeasurementPersistence({
+        fileName: 'dropped.pdf',
+        documentId: null,
+        measurements: [makeMeasurement('m1')],
+        setMeasurements: setM,
+        pageScales: basePageScales,
+        setPageScales: setPS,
+        scale: defaultScale,
+        projectId: PROJECT,
+      }),
+    );
+
+    // Past the 3s server-sync debounce: still no server write, because identity
+    // (project + document UUID) is incomplete.
+    act(() => {
+      vi.advanceTimersByTime(3500);
+    });
+    expect(takeoffApi.bulkCreate).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
 });
