@@ -5,6 +5,23 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.5.0] - 2026-06-18
+
+### Added
+
+- The DWG and DXF quantity takeoff is now a full vector takeoff. Because a drawing is exact vector geometry rather than pixels, every wall, slab and pipe already carries its true length and area, so one click produces a per-layer quantity table with the right unit for each layer, whether that is area, length or a simple count, and it measures arcs, ellipses and hatched fills as well. A count tool adds a count-by-block rollup for repeated symbols, and the whole table exports to Excel in one click. You can also search the drawing text: TEXT and MTEXT labels are found, highlighted and framed with zoom-to-match.
+- The PDF takeoff viewer now works much more like a real drawing tool. A page-thumbnail sidebar lets you move between sheets at a glance, find-on-sheet searches the text layer and jumps to each hit, and the viewer gained fit-to-page and fit-to-width, zoom-to-selection, panning, an orthogonal lock for straight measurements, a live measurement readout and a hover tooltip. Large sheets now fit correctly the first time they open.
+- PDF takeoff can detect the drawing scale. It reads the scale printed in the drawing's text layer, for example 1:100, and offers it for one-click confirmation, so measurements are calibrated without first tracing a known dimension. The detected value is always shown for you to confirm and is never applied on its own.
+- Structural steel can be priced by mass. A cost item can carry a mass per unit and a structural category, and a member priced by length is converted to mass on its way into a bill of quantities, so steel that is sold by weight is estimated correctly.
+- Custom cost items now group under a "My categories" heading in the costs sidebar, so a category you created, such as "Structural Steel", is browsable directly instead of being reachable only through search.
+- The point cloud reader is now an installable extra, and scans can be deleted from the workspace.
+- A short video introducing the platform is linked from the left sidebar, with a one-click dismiss that is remembered.
+- The new and reworded interface text in this release is translated into all 26 other languages.
+
+### Fixed
+
+- Local AI providers that do not need an API key, such as Ollama, no longer ask for one. The API key field is hidden for these providers, a short hint points to the server address instead, and both Test connection and Save work without a key. Reported in [#244](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/244).
+
 ## [8.4.0] - 2026-06-17
 
 ### Changed
