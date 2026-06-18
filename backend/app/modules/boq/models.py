@@ -134,6 +134,21 @@ class Position(Base):
     wbs_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     cost_code_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
+    # ── Methodology / analytical-dimension attributes ────────────────────
+    # Additive nullable attributes driven by the project's estimating
+    # methodology (app.modules.methodology). ``node_type`` is the typed
+    # hierarchy level (e.g. section/complex/object/work for railway) taken
+    # from the methodology's level defs. The remaining ids are plain
+    # cross-module references resolved at the service layer (same convention
+    # as wbs_id/cost_code_id above): contractor/contract reuse the existing
+    # Contract/Subcontractor entities, ``funding_source_id`` points at
+    # oe_funding_source, and ``stage_id`` at a stage dimension value.
+    node_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    contractor_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    contract_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    funding_source_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    stage_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
     # ── Issue #127: reusable code & linked-position groups ───────────────
     # ``reference_code`` is the USER-FACING reusable code
     # (Sección/Partida/Recurso, e.g. "0040"). It is DELIBERATELY distinct
