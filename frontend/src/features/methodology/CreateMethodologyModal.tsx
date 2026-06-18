@@ -69,11 +69,14 @@ export function CreateMethodologyModal({ open, projectId, onClose, onCreated }: 
   const createMut = useMutation({
     mutationFn: () => {
       const seed = blankCascade();
+      // `Number(decimals) || 2` turned a user-entered 0 (whole-unit currency
+      // such as JPY) into 2, because 0 is falsy. Clamp to the backend's [0, 8].
+      const d = Number(decimals);
       return methodologyApi.create({
         project_id: projectId,
         name: name.trim(),
         currency: currency.trim().toUpperCase(),
-        decimals: Number(decimals) || 2,
+        decimals: Number.isFinite(d) ? Math.min(8, Math.max(0, d)) : 2,
         ...seed,
         vat_rate: '0',
       });

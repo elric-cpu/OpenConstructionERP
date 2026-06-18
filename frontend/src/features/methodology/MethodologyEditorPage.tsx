@@ -100,11 +100,16 @@ export function MethodologyEditorPage() {
   const readOnly =
     !!methodology && (!methodology.is_editable || methodology.is_builtin || methodology.project_id === null);
 
-  // Seed the draft once when the methodology loads (and when switching to a
-  // different methodology id).
+  // Seed the draft when the methodology id changes (first load, or switching to
+  // a different methodology) - NOT on every refetch. The query is staleTime'd
+  // (30s) and refetches on window focus, returning a new object reference each
+  // time; depending on the whole object here would re-seed and silently clobber
+  // the user's unsaved cascade edits. Keying on the id preserves the draft
+  // across background refetches; the save path re-seeds explicitly in onSuccess.
   useEffect(() => {
     if (methodology) setDraft(toDraft(methodology));
-  }, [methodology]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [methodology?.id]);
 
   const dirty = useMemo(() => {
     if (!methodology || !draft) return false;
