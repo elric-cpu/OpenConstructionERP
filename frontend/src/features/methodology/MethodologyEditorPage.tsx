@@ -18,6 +18,8 @@ import {
   ArrowLeft,
   Coins,
   Copy,
+  FileSpreadsheet,
+  FileText,
   Layers3,
   Lock,
   Save,
@@ -40,7 +42,7 @@ import { TabBar, tabIds } from '@/shared/ui/TabBar';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { getErrorMessage } from '@/shared/lib/api';
-import { methodologyApi } from './api';
+import { methodologyApi, downloadEstimate, type MethodologyExportFormat } from './api';
 import type { MarkupStep, Methodology, MethodologyUpdate } from './types';
 import { CascadeSection } from './CascadeSection';
 import { CascadePreview } from './CascadePreview';
@@ -193,6 +195,35 @@ export function MethodologyEditorPage() {
     onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
   });
 
+  // Export the computed estimate as a client-facing Excel / PDF document. The
+  // server recomputes from the LAST SAVED methodology, so a dirty draft warns
+  // the user the export reflects their saved version, not the unsaved edits.
+  const exportMut = useMutation({
+    mutationFn: (format: MethodologyExportFormat) =>
+      downloadEstimate(methodologyId!, activeProjectId!, format),
+    onSuccess: () =>
+      addToast({
+        type: 'success',
+        title: t('methodology.editor.exported', { defaultValue: 'Estimate exported' }),
+      }),
+    onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
+  });
+  // react-query types `variables` as the mutation arg (MethodologyExportFormat)
+  // while a request is in flight, so this drives the per-button spinner.
+  const exportingFormat = exportMut.isPending ? exportMut.variables : undefined;
+
+  const handleExport = (format: MethodologyExportFormat) => {
+    if (dirty) {
+      addToast({
+        type: 'info',
+        title: t('methodology.editor.export_dirty', {
+          defaultValue: 'Exporting the last saved version. Save your edits to include them.',
+        }),
+      });
+    }
+    exportMut.mutate(format);
+  };
+
   // ── No project / loading / error / not found ─────────────────────────
   if (!activeProjectId) {
     return (
@@ -279,6 +310,28 @@ export function MethodologyEditorPage() {
         }
         actions={
           <div className="flex items-center gap-2">
+            {/* Export the computed estimate as a client-facing document. Always
+                available (a built-in template's estimate is exportable too). */}
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<FileSpreadsheet size={14} />}
+              loading={exportingFormat === 'excel'}
+              disabled={exportMut.isPending}
+              onClick={() => handleExport('excel')}
+            >
+              {t('methodology.editor.export_excel', { defaultValue: 'Excel' })}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<FileText size={14} />}
+              loading={exportingFormat === 'pdf'}
+              disabled={exportMut.isPending}
+              onClick={() => handleExport('pdf')}
+            >
+              {t('methodology.editor.export_pdf', { defaultValue: 'PDF' })}
+            </Button>
             {readOnly ? (
               <Button
                 variant="primary"

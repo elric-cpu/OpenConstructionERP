@@ -29,11 +29,16 @@ Endpoints:
     PATCH  /funding-sources/{id}?project_id=X    - Update a funding source
     DELETE /funding-sources/{id}?project_id=X    - Delete a funding source
     POST   /compute                             - Compute the cascade for a project
+    GET    /{methodology_id}/export/excel?project_id=X - Export estimate as .xlsx
+    GET    /{methodology_id}/export/pdf?project_id=X   - Export estimate as PDF
 """
 
+import logging
 import uuid
+from collections.abc import Iterator
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 
 from app.dependencies import (
     CurrentUserId,
@@ -59,6 +64,8 @@ from app.modules.methodology.schemas import (
 from app.modules.methodology.service import MethodologyService
 
 router = APIRouter(tags=["methodology"])
+
+logger = logging.getLogger(__name__)
 
 
 def _get_service(session: SessionDep) -> MethodologyService:
@@ -399,3 +406,108 @@ async def compute_estimate(
     await verify_project_access(payload.project_id, user_id, session)
     result = await service.compute_estimate(payload)
     return ComputeEstimateResponse.model_validate(result)
+
+
+# ── Export (Excel / PDF) ───────────────────────────────────────────────────
+# A methodology-driven estimate becomes a client-facing deliverable here. The
+# computed cascade (same engine as /compute) is rendered to a formatted .xlsx
+# or a professional PDF. Resource totals come from ``boq_id`` (aggregated via
+# the BOQ cost breakdown) or default to an all-zero cascade when omitted, so a
+# methodology with no quantities still exports a valid (zeroed) document.
+#
+# Both routes are registered under the trailing-slash AND bare forms because
+# the app sets ``redirect_slashes=False`` (see app/main.py); without the alias
+# a REST GET without the slash 404s. They carry the SAME verify_project_access
+# IDOR guard + methodology.read permission as every other project endpoint, and
+# the service resolves the methodology scoped to the project (a clone owned by
+# another project 404s exactly like a read).
+
+
+@router.get(
+    "/{methodology_id:uuid}/export/excel",
+    summary="Export a methodology estimate as Excel (no-slash alias)",
+    dependencies=[Depends(RequirePermission("methodology.read"))],
+    include_in_schema=False,
+)
+@router.get(
+    "/{methodology_id:uuid}/export/excel/",
+    summary="Export a methodology estimate as Excel",
+    dependencies=[Depends(RequirePermission("methodology.read"))],
+)
+async def export_methodology_excel(
+    methodology_id: uuid.UUID,
+    project_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    boq_id: uuid.UUID | None = Query(default=None),
+    service: MethodologyService = Depends(_get_service),
+) -> StreamingResponse:
+    """Export the computed methodology estimate as a formatted .xlsx file."""
+    await verify_project_access(project_id, user_id, session)
+    data = await service.build_export_data(
+        methodology_id, project_id, boq_id=boq_id
+    )
+    content = service.generate_excel_export(data)
+    filename = service.export_filename(data, "xlsx")
+    return StreamingResponse(
+        iter([content]),
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get(
+    "/{methodology_id:uuid}/export/pdf",
+    summary="Export a methodology estimate as PDF (no-slash alias)",
+    dependencies=[Depends(RequirePermission("methodology.read"))],
+    include_in_schema=False,
+)
+@router.get(
+    "/{methodology_id:uuid}/export/pdf/",
+    summary="Export a methodology estimate as PDF",
+    dependencies=[Depends(RequirePermission("methodology.read"))],
+)
+async def export_methodology_pdf(
+    methodology_id: uuid.UUID,
+    project_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    boq_id: uuid.UUID | None = Query(default=None),
+    service: MethodologyService = Depends(_get_service),
+) -> StreamingResponse:
+    """Export the computed methodology estimate as a professional PDF report."""
+    await verify_project_access(project_id, user_id, session)
+    data = await service.build_export_data(
+        methodology_id, project_id, boq_id=boq_id
+    )
+    try:
+        pdf_bytes = service.generate_pdf_export(data)
+    except Exception:
+        # Mirror the BOQ exporter: a pathological methodology (e.g. a label
+        # ReportLab's paraparser still rejects) must not surface as an opaque
+        # 500 - point the user at the Excel export, which never renders markup.
+        logger.exception("Methodology PDF generation failed for %s", methodology_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "PDF generation failed. Please try exporting as Excel instead."
+            ),
+        )
+    filename = service.export_filename(data, "pdf")
+
+    def _iter_pdf_chunks() -> Iterator[bytes]:
+        """Yield the PDF in 64 KB chunks so the response truly streams."""
+        chunk = 64 * 1024
+        for offset in range(0, len(pdf_bytes), chunk):
+            yield pdf_bytes[offset : offset + chunk]
+
+    return StreamingResponse(
+        _iter_pdf_chunks(),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(pdf_bytes)),
+        },
+    )

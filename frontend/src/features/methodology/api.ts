@@ -7,7 +7,17 @@
 // Every endpoint that touches project data is IDOR-guarded server-side; this
 // client just sends the project_id the backend requires.
 
-import { apiGet, apiPost, apiPatch, apiPut, apiDelete } from '@/shared/lib/api';
+import {
+  apiGet,
+  apiPost,
+  apiPatch,
+  apiPut,
+  apiDelete,
+  API_BASE,
+  getAuthToken,
+  triggerDownload,
+  extractErrorMessageFromBody,
+} from '@/shared/lib/api';
 import type {
   ActiveMethodology,
   ComputeEstimateRequest,
@@ -126,3 +136,52 @@ export const methodologyApi = {
   compute: (body: ComputeEstimateRequest) =>
     apiPost<ComputeEstimateResponse, ComputeEstimateRequest>(`${BASE}/compute`, body),
 };
+
+/** The export formats the methodology estimate endpoints can stream. */
+export type MethodologyExportFormat = 'excel' | 'pdf';
+
+/**
+ * Download a methodology's computed estimate as an Excel or PDF file.
+ *
+ * Streams from `GET /methodology/{id}/export/{format}` (IDOR-guarded server
+ * side: the methodology is resolved scoped to the project). The endpoint
+ * returns a binary attachment, so we bypass the JSON helpers and fetch the
+ * blob directly with the same Bearer auth, then hand it to `triggerDownload`.
+ * The optional `boqId` sources the cascade resource totals from that BOQ;
+ * when omitted the server computes an all-zero cascade.
+ *
+ * Throws an `Error` with a readable message on a non-OK response so the
+ * caller can surface it as a toast.
+ */
+export async function downloadEstimate(
+  methodologyId: string,
+  projectId: string,
+  format: MethodologyExportFormat,
+  boqId?: string,
+): Promise<void> {
+  const sp = new URLSearchParams({ project_id: projectId });
+  if (boqId) sp.set('boq_id', boqId);
+  // Match the backend route: the canonical path carries a trailing slash
+  // (the app runs with redirect_slashes=False).
+  const url = `${API_BASE}${BASE}/${methodologyId}/export/${format}/?${sp.toString()}`;
+
+  const token = getAuthToken();
+  const res = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+
+  if (!res.ok) {
+    // Try to lift a FastAPI {"detail": ...} message off the error body.
+    let message: string | null = null;
+    try {
+      message = extractErrorMessageFromBody(await res.json());
+    } catch {
+      // Non-JSON body (e.g. an HTML error page) - fall back to the status.
+    }
+    throw new Error(message ?? `Export failed (${res.status})`);
+  }
+
+  const blob = await res.blob();
+  const ext = format === 'excel' ? 'xlsx' : 'pdf';
+  triggerDownload(blob, `estimate.${ext}`);
+}

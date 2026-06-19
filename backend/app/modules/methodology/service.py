@@ -27,10 +27,11 @@ the BOQ service, which already converts a mixed-currency BOQ into the project
 base currency before returning category amounts.
 """
 
+import io
 import logging
 import re
 import uuid
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -805,6 +806,267 @@ class MethodologyService:
             "markup_total": result.markup_total,
             "grand_total": result.grand_total,
         }
+
+    # ── Export (Excel / PDF) ────────────────────────────────────────────────
+
+    async def build_export_data(
+        self,
+        methodology_id: uuid.UUID,
+        project_id: uuid.UUID,
+        *,
+        boq_id: uuid.UUID | None = None,
+        resource_totals: dict[str, Decimal] | None = None,
+    ) -> dict[str, Any]:
+        """Build the data dict that both exporters render.
+
+        Resolves the methodology (scoped to the project for IDOR safety - a
+        clone owned by another project 404s exactly like a read), computes its
+        cascade against the supplied / aggregated resource totals, and enriches
+        the compute result with the human-readable methodology name and the
+        project name + preparer for the document cover.
+
+        The resource totals follow the same priority as
+        :meth:`compute_estimate`: explicit ``resource_totals`` first, else the
+        BOQ aggregation for ``boq_id``, else an all-zero cascade.
+        """
+        methodology = await self.get_methodology_for_project(methodology_id, project_id)
+
+        compute = await self.compute_estimate(
+            ComputeEstimateRequest(
+                project_id=project_id,
+                methodology_slug=methodology.slug,
+                boq_id=boq_id,
+                resource_totals=resource_totals,
+            )
+        )
+
+        project = await self._get_project(project_id)
+        project_name = str(getattr(project, "name", "") or "") if project else ""
+        prepared_by = await self._resolve_prepared_by(project)
+
+        return {
+            "methodology_id": str(methodology_id),
+            "methodology_name": methodology.name,
+            "methodology_slug": compute["methodology_slug"],
+            "project_id": str(project_id),
+            "project_name": project_name,
+            "prepared_by": prepared_by,
+            "currency": compute["currency"],
+            "decimals": compute["decimals"],
+            "bases": compute["bases"],
+            "composites": compute["composites"],
+            "steps": compute["steps"],
+            "direct_total": compute["direct_total"],
+            "markup_total": compute["markup_total"],
+            "grand_total": compute["grand_total"],
+        }
+
+    async def _resolve_prepared_by(self, project: Any | None) -> str:
+        """Best-effort 'Prepared by' name from the project owner (never raises)."""
+        if project is None:
+            return ""
+        owner_id = getattr(project, "owner_id", None)
+        if owner_id is None:
+            return ""
+        try:
+            from app.modules.users.models import User
+
+            owner = await self.session.get(User, owner_id)
+        except Exception:
+            logger.debug("Owner lookup failed for export cover", exc_info=True)
+            return ""
+        if owner is None:
+            return ""
+        return str(getattr(owner, "full_name", "") or getattr(owner, "email", "") or "")
+
+    @staticmethod
+    def export_filename(data: dict[str, Any], ext: str) -> str:
+        """ASCII-safe download filename derived from the methodology name."""
+        raw = str(data.get("methodology_name") or "methodology")
+        safe = raw.encode("ascii", errors="replace").decode("ascii").replace('"', "'")
+        safe = safe.strip() or "methodology"
+        return f"{safe}.{ext}"
+
+    def generate_excel_export(self, data: dict[str, Any]) -> bytes:
+        """Render the export data as a formatted .xlsx workbook (bytes).
+
+        One sheet: the methodology identity block, the markup cascade (direct
+        cost -> each step -> grand total) with real numeric cells so Excel can
+        SUM them, and a resolved-bases appendix. Every user-controlled string
+        is routed through :func:`neutralise_formula` to defend against CSV /
+        formula injection, mirroring the BOQ exporter.
+        """
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+        from openpyxl.utils import get_column_letter
+
+        from app.core.csv_safety import neutralise_formula
+
+        currency = data.get("currency", "") or ""
+        decimals = int(data.get("decimals", 2))
+        number_format = f"#,##0.{'0' * decimals}" if decimals > 0 else "#,##0"
+
+        def _num(value: Any) -> Decimal:
+            if value is None or value == "":
+                return Decimal(0)
+            try:
+                d = value if isinstance(value, Decimal) else Decimal(str(value).strip())
+            except (InvalidOperation, ValueError):
+                return Decimal(0)
+            return d if d.is_finite() else Decimal(0)
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Estimate"
+
+        bold = Font(bold=True)
+        title_font = Font(bold=True, size=14)
+        header_font = Font(bold=True, color="FFFFFF")
+        grand_font = Font(bold=True, size=12)
+        header_fill = PatternFill(start_color="1A1A2E", end_color="1A1A2E", fill_type="solid")
+        direct_fill = PatternFill(start_color="F0F0F5", end_color="F0F0F5", fill_type="solid")
+        grand_fill = PatternFill(start_color="E8E8EE", end_color="E8E8EE", fill_type="solid")
+        right = Alignment(horizontal="right")
+        top_border = Border(top=Side(style="medium"))
+
+        # ── Identity block ───────────────────────────────────────────────
+        ws.cell(row=1, column=1, value="Cost Estimate").font = title_font
+        identity = [
+            ("Project", data.get("project_name", "")),
+            ("Methodology", data.get("methodology_name", "")),
+            ("Method ID", data.get("methodology_slug", "")),
+            ("Currency", currency),
+        ]
+        row = 2
+        for label, value in identity:
+            ws.cell(row=row, column=1, value=label).font = bold
+            ws.cell(row=row, column=2, value=neutralise_formula(str(value or "")))
+            row += 1
+
+        row += 1  # spacer
+
+        # ── Cascade header ───────────────────────────────────────────────
+        headers = ["Step", "Category", "Rate %", "Base", "Amount", "Running total"]
+        header_row = row
+        for col, header in enumerate(headers, start=1):
+            cell = ws.cell(row=header_row, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+        ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
+        row += 1
+
+        # Direct-cost opening row.
+        ws.cell(row=row, column=1, value="Direct cost").font = bold
+        for col in range(1, len(headers) + 1):
+            ws.cell(row=row, column=col).fill = direct_fill
+        dc = ws.cell(row=row, column=5, value=_num(data.get("direct_total")))
+        dc.number_format = number_format
+        dc.font = bold
+        dc.alignment = right
+        rt = ws.cell(row=row, column=6, value=_num(data.get("direct_total")))
+        rt.number_format = number_format
+        rt.alignment = right
+        row += 1
+
+        for step in data.get("steps", []) or []:
+            kind = step.get("kind", "percentage")
+            ws.cell(
+                row=row,
+                column=1,
+                value=neutralise_formula(str(step.get("label") or step.get("key", ""))),
+            )
+            ws.cell(
+                row=row, column=2, value=neutralise_formula(str(step.get("category", "")))
+            )
+            if kind == "percentage":
+                rate_cell = ws.cell(row=row, column=3, value=_num(step.get("rate")))
+                rate_cell.number_format = number_format
+                rate_cell.alignment = right
+            else:
+                ws.cell(row=row, column=3, value="-").alignment = right
+            base_cell = ws.cell(row=row, column=4, value=_num(step.get("base_amount")))
+            base_cell.number_format = number_format
+            base_cell.alignment = right
+            amt_cell = ws.cell(row=row, column=5, value=_num(step.get("amount")))
+            amt_cell.number_format = number_format
+            amt_cell.alignment = right
+            run_cell = ws.cell(row=row, column=6, value=_num(step.get("running_total")))
+            run_cell.number_format = number_format
+            run_cell.alignment = right
+            row += 1
+
+        # Grand-total row.
+        grand_row = row
+        for col in range(1, len(headers) + 1):
+            ws.cell(row=grand_row, column=col).border = top_border
+            ws.cell(row=grand_row, column=col).fill = grand_fill
+        gl = ws.cell(row=grand_row, column=1, value="Grand total")
+        gl.font = grand_font
+        gt = ws.cell(row=grand_row, column=6, value=_num(data.get("grand_total")))
+        gt.font = grand_font
+        gt.number_format = number_format
+        gt.alignment = right
+        # Total markup, stated next to the grand total for an at-a-glance read.
+        mk = ws.cell(row=grand_row, column=5, value=_num(data.get("markup_total")))
+        mk.number_format = number_format
+        mk.alignment = right
+        row += 2
+
+        # ── Resolved-bases appendix ──────────────────────────────────────
+        bases = data.get("bases", {}) or {}
+        composites = data.get("composites", {}) or {}
+        if bases or composites:
+            ws.cell(row=row, column=1, value="Resolved bases").font = bold
+            row += 1
+            for col, header in enumerate(("Key", "Type", "Amount"), start=1):
+                cell = ws.cell(row=row, column=col, value=header)
+                cell.font = header_font
+                cell.fill = header_fill
+            row += 1
+            for key, amount in bases.items():
+                ws.cell(row=row, column=1, value=neutralise_formula(str(key)))
+                ws.cell(row=row, column=2, value="base")
+                ac = ws.cell(row=row, column=3, value=_num(amount))
+                ac.number_format = number_format
+                ac.alignment = right
+                row += 1
+            for key, amount in composites.items():
+                ws.cell(row=row, column=1, value=neutralise_formula(str(key)))
+                ws.cell(row=row, column=2, value="composite")
+                ac = ws.cell(row=row, column=3, value=_num(amount))
+                ac.number_format = number_format
+                ac.alignment = right
+                row += 1
+
+        # Auto-width the populated columns.
+        for col_idx in range(1, len(headers) + 1):
+            max_len = len(str(headers[col_idx - 1]))
+            for r in ws.iter_rows(min_row=1, max_row=row, min_col=col_idx, max_col=col_idx):
+                for cell in r:
+                    if cell.value is not None:
+                        max_len = max(max_len, len(str(cell.value)))
+            ws.column_dimensions[get_column_letter(col_idx)].width = min(max_len + 3, 60)
+
+        # Workbook origin metadata (best-effort; touches no data cell).
+        try:
+            wb.properties.creator = "OpenConstructionERP · DataDrivenConstruction"
+            wb.properties.lastModifiedBy = "OpenConstructionERP"
+            wb.properties.title = f"Cost Estimate - {data.get('methodology_name', '')}"
+            wb.properties.description = (
+                "Generated by OpenConstructionERP (https://openconstructionerp.com)"
+            )
+        except Exception:  # noqa: BLE001 - metadata stamp must never break export
+            logger.debug("Workbook metadata stamp failed", exc_info=True)
+
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        return buffer.getvalue()
+
+    def generate_pdf_export(self, data: dict[str, Any]) -> bytes:
+        """Render the export data as a professional PDF (bytes)."""
+        from app.modules.methodology.pdf_export import generate_methodology_pdf
+
+        return generate_methodology_pdf(data)
 
 
 class DimensionValueCreateLite:
