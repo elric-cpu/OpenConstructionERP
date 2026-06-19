@@ -35,6 +35,18 @@ vi.mock('./api', async () => {
     listBaselines: vi.fn(),
     baselineDelta: vi.fn(),
     currentTasksForMaster: vi.fn(),
+    // Master-tab project overview card. Stubbed empty so it renders the
+    // inert "no activity yet" hint and never hits the network in jsdom.
+    projectDashboard: vi.fn().mockResolvedValue({
+      project_id: 'p1',
+      ppc_trend: [],
+      open_constraints: 0,
+      constraints_by_type: {},
+      rnc_pareto: {},
+      active_master_schedules: 0,
+      active_baselines: 0,
+      current_week_commitments: 0,
+    }),
   };
 });
 

@@ -34,6 +34,7 @@ from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger(__name__)
 
+from app.core.csv_safety import neutralise_formula
 from app.core.http_headers import content_disposition_attachment
 from app.core.i18n import get_locale
 from app.core.validation.messages import translate
@@ -1982,18 +1983,23 @@ async def export_schedule_csv(
         # Deduplicate predecessors
         preds = list(dict.fromkeys(preds))
 
+        # Neutralise every string-bearing cell so a value a user controls
+        # (activity name/code/WBS, or a derived predecessor label built from
+        # them) that starts with =, +, -, @, tab or CR cannot be interpreted as
+        # a formula when the CSV is opened in Excel / Sheets / LibreOffice
+        # (CSV/formula injection - OWASP). Numeric cells pass through unchanged.
         writer.writerow(
             [
-                act.activity_code or "",
-                act.name,
-                act.wbs_code,
-                act.start_date,
-                act.end_date,
+                neutralise_formula(act.activity_code or ""),
+                neutralise_formula(act.name),
+                neutralise_formula(act.wbs_code),
+                neutralise_formula(act.start_date),
+                neutralise_formula(act.end_date),
                 act.duration_days,
                 _str_to_float(act.progress_pct),
                 act.total_float if act.total_float is not None else "",
                 "Yes" if act.is_critical else "No",
-                "; ".join(preds),
+                neutralise_formula("; ".join(preds)),
             ]
         )
 

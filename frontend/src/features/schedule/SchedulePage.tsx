@@ -88,6 +88,24 @@ function formatDate(dateStr: string): string {
   });
 }
 
+/**
+ * Neutralise a spreadsheet formula-injection vector before a value is written
+ * into an exported CSV/TSV cell. If the string starts with a dangerous trigger
+ * character (=, +, -, @, tab, CR, LF) a spreadsheet app evaluates it as a
+ * formula, so we prefix a single apostrophe - the cell renders unchanged but
+ * is treated as literal text. Mirrors the backend
+ * ``app.core.csv_safety.neutralise_formula`` contract.
+ *
+ * @see https://owasp.org/www-community/attacks/CSV_Injection
+ */
+function neutraliseFormula(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  const s = String(value);
+  if (s.length === 0) return s;
+  const TRIGGERS = new Set(['=', '+', '-', '@', '\t', '\r', '\n']);
+  return TRIGGERS.has(s[0]!) ? `'${s}` : s;
+}
+
 function daysBetween(start: string, end: string): number {
   const s = new Date(start).getTime();
   const e = new Date(end).getTime();
@@ -678,8 +696,13 @@ function GanttChart({
     );
   }
 
-  // Calculate today marker position
-  const todayOffset = daysBetween(timelineStart.toISOString(), new Date().toISOString());
+  // Calculate today marker position. Use a SIGNED day offset, not
+  // daysBetween() (which floors at 1) - otherwise a "today" that falls before
+  // the timeline start is clamped to +1 day and the marker is wrongly drawn at
+  // the left edge instead of being hidden by the 0..100 guard below.
+  const todayOffset = Math.round(
+    (new Date().getTime() - timelineStart.getTime()) / (1000 * 60 * 60 * 24),
+  );
   const todayPct = (todayOffset / totalDays) * 100;
 
   // Sort activities for stable rendering
@@ -1397,6 +1420,8 @@ function ScheduleDetail({
                 ]).map((v) => (
                   <button
                     key={v.key}
+                    type="button"
+                    aria-pressed={viewMode === v.key}
                     onClick={() => setViewMode(v.key)}
                     className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
                       viewMode === v.key
@@ -1412,6 +1437,8 @@ function ScheduleDetail({
                 {(['day', 'week', 'month', 'quarter', 'year'] as const).map((level) => (
                   <button
                     key={level}
+                    type="button"
+                    aria-pressed={zoomLevel === level}
                     onClick={() => setZoomLevel(level)}
                     className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
                       zoomLevel === level
@@ -1458,9 +1485,16 @@ function ScheduleDetail({
                       t('schedule.export_progress', { defaultValue: 'Progress %' }),
                       t('schedule.export_status', { defaultValue: 'Status' }),
                     ].join('\t'),
+                    // String cells are run through neutraliseFormula so a
+                    // user-controlled value (e.g. an activity name beginning
+                    // with =, +, -, @) cannot execute as a formula when the
+                    // exported file is opened in a spreadsheet app. Numeric
+                    // columns pass through unchanged.
                     ...activities.map((a) => [
-                      a.wbs_code, a.name, a.activity_type, a.start_date, a.end_date,
-                      a.duration_days, a.progress_pct, a.status,
+                      neutraliseFormula(a.wbs_code), neutraliseFormula(a.name),
+                      neutraliseFormula(a.activity_type), neutraliseFormula(a.start_date),
+                      neutraliseFormula(a.end_date),
+                      a.duration_days, a.progress_pct, neutraliseFormula(a.status),
                     ].join('\t')),
                   ];
                   const blob = new Blob([rows.join('\n')], { type: 'text/tab-separated-values' });
@@ -1561,6 +1595,8 @@ function ScheduleDetail({
             ].filter((f) => f.show !== false && (f.key === 'all' || f.count > 0)).map((f) => (
               <button
                 key={f.key}
+                type="button"
+                aria-pressed={activityFilter === f.key}
                 onClick={() => setActivityFilter(f.key)}
                 className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-full transition-colors ${
                   activityFilter === f.key

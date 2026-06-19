@@ -1467,8 +1467,24 @@ class ScheduleAdvancedService:
         rnc_payload: dict[str, Any] | RNCCreate,
         user_id: str | None = None,
     ) -> tuple[Commitment, ReasonForNonCompletion]:
-        """Flip a commitment to ``missed`` and record the paired RNC."""
+        """Flip a commitment to ``missed`` and record the paired RNC.
+
+        Idempotent: a commitment already in ``missed`` is returned unchanged
+        together with its existing paired RNC, rather than inserting a second
+        one. ``missed -> missed`` is a legal (self-loop) transition, so without
+        this guard a double-click / retried ``/miss`` request would create a
+        duplicate RNC for the same commitment - skewing the RNC list and the
+        Pareto root-cause analysis. Mirrors the early-return guard the other
+        commitment / weekly-plan / phase transitions use.
+        """
         c = await self.get_commitment(cid)
+        if c.status == "missed":
+            existing = await self.rnc_repo.list_for_commitment(cid)
+            if existing:
+                return c, existing[0]
+            # Already missed but the paired RNC is somehow absent (e.g. created
+            # before this pairing existed): fall through to record one so the
+            # commitment is never left without a documented reason.
         if "missed" not in allowed_commitment_transitions(c.status):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

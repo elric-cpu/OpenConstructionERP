@@ -534,10 +534,20 @@ async def create_constraint(
     _perm: None = Depends(RequirePermission("schedule_advanced.create")),
     service: ScheduleAdvancedService = Depends(_get_service),
 ) -> ConstraintResponse:
-    # ConstraintCreate may have nullable look_ahead_id - gate only if present.
-    if getattr(data, "look_ahead_id", None) is not None:
-        project_id = await _project_id_for_look_ahead(data.look_ahead_id, service)
-        await verify_project_access(project_id, user_id, session)
+    # ``look_ahead_id`` is the only link a constraint has to a project, so it is
+    # the sole thing we can authorise against. The schema permits ``None`` (the
+    # service layer supports detached constraints for internal/derived flows),
+    # but a constraint created over HTTP with no look-ahead would be an
+    # unauthorised, orphaned row that no project owner can ever read back (the
+    # nested resolvers 404 detached constraints). Require it here so an API
+    # caller cannot pollute the table with rows that bypass project access.
+    if data.look_ahead_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="look_ahead_id is required to create a constraint",
+        )
+    project_id = await _project_id_for_look_ahead(data.look_ahead_id, service)
+    await verify_project_access(project_id, user_id, session)
     c = await service.create_constraint(data)
     return ConstraintResponse.model_validate(c)
 
@@ -1038,6 +1048,11 @@ async def baseline_delta_endpoint(
     session: SessionDep,
     user_id: CurrentUserId,
     current_tasks: list[dict] = Body(default_factory=list),
+    # Read-only delta computation, but exposed via POST (to carry the task
+    # list in a body), so it must still declare an explicit permission gate -
+    # a bare POST otherwise bypasses the permission registry entirely (RBAC
+    # defence-in-depth). ``schedule_advanced.read`` matches its read nature.
+    _perm: None = Depends(RequirePermission("schedule_advanced.read")),
     service: ScheduleAdvancedService = Depends(_get_service),
 ) -> BaselineDeltaResponse:
     project_id = await _project_id_for_baseline(bid, service)

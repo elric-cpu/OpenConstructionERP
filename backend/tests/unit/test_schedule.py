@@ -121,6 +121,16 @@ class _StubActivityRepo:
                 setattr(a, k, v)
             a.updated_at = datetime.now(UTC)
 
+    async def bulk_update_fields(self, updates: list[dict[str, Any]]) -> None:
+        for entry in updates:
+            data = dict(entry)
+            aid = data.pop("id")
+            a = self.rows.get(aid)
+            if a:
+                for k, v in data.items():
+                    setattr(a, k, v)
+                a.updated_at = datetime.now(UTC)
+
     async def delete(self, activity_id: uuid.UUID) -> None:
         self.rows.pop(activity_id, None)
 

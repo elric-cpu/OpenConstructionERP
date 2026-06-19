@@ -73,6 +73,7 @@ from app.modules.schedule_advanced.router import router as schedule_advanced_rou
 from app.modules.schedule_advanced.schemas import (
     CommitmentResponse,
     CommitmentUpdate,
+    ConstraintCreate,
     LookAheadUpdate,
     PhasePlanUpdate,
 )
@@ -355,6 +356,38 @@ async def test_idor_detached_constraint_404s_not_grants_access() -> None:
     with pytest.raises(HTTPException) as exc:
         await _project_id_for_constraint(detached.id, svc)
     assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_constraint_rejects_missing_look_ahead() -> None:
+    """``POST /constraints/`` with ``look_ahead_id=None`` must be rejected.
+
+    A constraint's only link to a project is its look-ahead, so a detached
+    one created over HTTP would be an unauthorised, orphaned row no project
+    owner can read back (the resolver 404s detached constraints). The
+    endpoint must reject it with 422 BEFORE any write, closing the
+    orphan-write / access-bypass vector. The service layer still supports
+    nullable look_ahead_id for internal flows - this guard is router-only.
+    """
+    from app.modules.schedule_advanced.router import create_constraint
+
+    svc = _make_service()
+    data = ConstraintCreate(
+        look_ahead_id=None,
+        task_ref=uuid.uuid4(),
+        constraint_type="material",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await create_constraint(
+            data=data,
+            session=svc.session,
+            user_id=USER_A,
+            service=svc,
+        )
+    assert exc.value.status_code == 422
+    # Nothing must have been written to the constraint store.
+    assert svc.constraint_repo.rows == {}
 
 
 # ── 2. Resource-sharing wrinkle (Calendar) ───────────────────────────────

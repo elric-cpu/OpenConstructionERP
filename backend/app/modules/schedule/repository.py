@@ -125,6 +125,26 @@ class ActivityRepository:
         # Expire cached ORM instances so the next get_by_id re-reads from DB
         self.session.expire_all()
 
+    async def bulk_update_fields(self, updates: list[dict[str, object]]) -> None:
+        """Update many activities in a single round trip.
+
+        Each entry in ``updates`` must carry the primary key under ``"id"``
+        plus the columns to set, e.g.
+        ``{"id": <uuid>, "color": "#ef4444", "metadata_": {...}}``. Uses
+        SQLAlchemy's ORM-enabled bulk UPDATE by primary key (executemany under
+        the hood), which collapses what would otherwise be N separate UPDATE
+        statements - and N ``expire_all()`` calls when looping over
+        :meth:`update_fields` - into one statement and a single cache
+        invalidation. Behaviour matches calling :meth:`update_fields` once per
+        row. No-op when ``updates`` is empty.
+        """
+        if not updates:
+            return
+        await self.session.execute(update(Activity), updates)
+        await self.session.flush()
+        # Expire cached ORM instances once so the next get_by_id re-reads from DB
+        self.session.expire_all()
+
     async def delete(self, activity_id: uuid.UUID) -> None:
         """Delete an activity."""
         stmt = delete(Activity).where(Activity.id == activity_id)

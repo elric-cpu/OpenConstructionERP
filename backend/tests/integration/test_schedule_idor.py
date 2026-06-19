@@ -346,3 +346,45 @@ async def test_owner_can_still_calculate_cpm(http_client, two_schedule_tenants):
     body = resp.json()
     assert body["schedule_id"] == a["schedule_id"]
     assert len(body["all_activities"]) == 1
+
+
+# ── CSV formula-injection neutralisation ──────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_csv_export_neutralises_formula_payload(http_client, two_schedule_tenants):
+    """A malicious activity name must not export as a live spreadsheet formula.
+
+    ``GET /schedule/export/csv/`` writes user-controlled activity fields
+    (name, code, WBS) into CSV cells. A value like ``=cmd|'/c calc'!A1``
+    would execute when opened in Excel / Sheets / LibreOffice (CSV/formula
+    injection - OWASP). The export must prepend a single apostrophe so the
+    cell is treated as literal text. Owner-side export so the value round
+    trips back to the same tenant.
+    """
+    a = two_schedule_tenants["a"]
+    payload = "=cmd|'/c calc'!A1"
+
+    act = await http_client.post(
+        f"/api/v1/schedule/schedules/{a['schedule_id']}/activities/",
+        json={
+            "name": payload,
+            "wbs_code": "=HYPERLINK(\"http://evil\")",
+            "start_date": "2026-06-01",
+            "end_date": "2026-06-10",
+            "activity_type": "task",
+        },
+        headers=a["headers"],
+    )
+    assert act.status_code == 201, act.text
+
+    resp = await http_client.get(
+        f"/api/v1/schedule/schedule/export/csv/?schedule_id={a['schedule_id']}",
+        headers=a["headers"],
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.text
+    # The raw, un-neutralised formula must NOT appear as a cell start; the
+    # apostrophe-guarded variant must.
+    assert "'" + payload in body, f"formula payload not neutralised: {body!r}"
+    assert ',=cmd' not in body and '"=cmd' not in body, f"raw formula leaked into a cell: {body!r}"

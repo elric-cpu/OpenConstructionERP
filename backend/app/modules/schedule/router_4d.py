@@ -123,6 +123,38 @@ class ProgressEntryResponse(BaseModel):
     actual_finish_date: str | None
 
 
+class SnapshotResponse(BaseModel):
+    """As-of-date status map for every BIM element linked to a schedule.
+
+    ``elements`` maps each resolved element id to its derived status
+    (``not_started`` / ``in_progress`` / ``completed``) on ``as_of_date``.
+    """
+
+    schedule_id: uuid.UUID
+    as_of_date: str
+    model_version_id: uuid.UUID | None = None
+    elements: dict[str, str] = Field(default_factory=dict)
+
+
+class DashboardResponse(BaseModel):
+    """Planned-vs-actual (EVM) dashboard for a schedule on ``as_of_date``.
+
+    ``spi`` / ``cpi`` are ``None`` when the schedule carries no cost data
+    (division by zero is undefined, not zero). Mirrors
+    :meth:`ScheduleDashboardService.dashboard` -> ``DashboardResult.to_json``.
+    """
+
+    schedule_id: str
+    as_of_date: str
+    overall_progress_percent: float = 0.0
+    spi: float | None = None
+    cpi: float | None = None
+    s_curve_data: list[dict[str, Any]] = Field(default_factory=list)
+    by_wbs: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    activity_count: int = 0
+    has_cost_data: bool = False
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────
 
 
@@ -284,34 +316,36 @@ async def record_progress(
 
 @schedules_v2_router.get(
     "/tasks/{task_id}/progress-history",
+    response_model=list[ProgressEntryResponse],
     dependencies=[Depends(RequirePermission("schedule.read"))],
 )
 async def list_progress_history(
     task_id: uuid.UUID,
     session: SessionDep,
     user_id: CurrentUserId,
-) -> list[dict[str, Any]]:
+) -> list[ProgressEntryResponse]:
     """Return the append-only progress history for ``task_id``."""
     await _verify_task_access(session, task_id, user_id)
     service = ScheduleProgressService(session)
     entries = await service.history(task_id)
     return [
-        {
-            "id": str(e.id),
-            "task_id": str(e.task_id),
-            "recorded_at": e.recorded_at.isoformat() if e.recorded_at else None,
-            "progress_percent": float(e.progress_percent),
-            "notes": e.notes,
-            "device": e.device,
-            "actual_start_date": e.actual_start_date,
-            "actual_finish_date": e.actual_finish_date,
-        }
+        ProgressEntryResponse(
+            id=e.id,
+            task_id=e.task_id,
+            recorded_at=e.recorded_at,
+            progress_percent=float(e.progress_percent),
+            notes=e.notes,
+            device=e.device,
+            actual_start_date=e.actual_start_date,
+            actual_finish_date=e.actual_finish_date,
+        )
         for e in entries
     ]
 
 
 @schedules_v2_router.get(
     "/{schedule_id}/snapshot",
+    response_model=SnapshotResponse,
     dependencies=[Depends(RequirePermission("schedule.read"))],
 )
 async def get_snapshot(
@@ -320,22 +354,23 @@ async def get_snapshot(
     user_id: CurrentUserId,
     as_of_date: str | None = Query(default=None),
     model_version_id: uuid.UUID | None = Query(default=None),
-) -> dict[str, Any]:
+) -> SnapshotResponse:
     """Return ``{element_id: status}`` for every linked element on ``as_of_date``."""
     await _verify_schedule_access(session, schedule_id, user_id)
     target = _parse_as_of(as_of_date)
     service = ScheduleSnapshotService(session)
     statuses = await service.snapshot(schedule_id, target, model_version_id)
-    return {
-        "schedule_id": str(schedule_id),
-        "as_of_date": target.isoformat(),
-        "model_version_id": str(model_version_id) if model_version_id else None,
-        "elements": statuses,
-    }
+    return SnapshotResponse(
+        schedule_id=schedule_id,
+        as_of_date=target.isoformat(),
+        model_version_id=model_version_id,
+        elements=statuses,
+    )
 
 
 @schedules_v2_router.get(
     "/{schedule_id}/dashboard",
+    response_model=DashboardResponse,
     dependencies=[Depends(RequirePermission("schedule.read"))],
 )
 async def get_dashboard(
@@ -343,12 +378,13 @@ async def get_dashboard(
     session: SessionDep,
     user_id: CurrentUserId,
     as_of_date: str | None = Query(default=None),
-) -> dict[str, Any]:
+) -> DashboardResponse:
     """Return the planned-vs-actual dashboard for ``schedule_id``."""
     await _verify_schedule_access(session, schedule_id, user_id)
     target = _parse_as_of(as_of_date)
     service = ScheduleDashboardService(session)
-    return (await service.dashboard(schedule_id, target)).to_json()
+    result = await service.dashboard(schedule_id, target)
+    return DashboardResponse(**result.to_json())
 
 
 # ── EAC schedule links router ──────────────────────────────────────────────

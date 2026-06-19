@@ -3,14 +3,15 @@
 // and a serial-greedy resource leveling modal. Reuses Card/Button/Badge from
 // the shared UI kit; no new global components introduced.
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, Layers, AlertTriangle, X } from 'lucide-react';
 import { Button, Card, Badge, Breadcrumb, DismissibleInfo, IntroRichText } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
-import { apiGet, apiPost } from '@/shared/lib/api';
+import { apiGet, apiPost, getErrorMessage } from '@/shared/lib/api';
+import { useToastStore } from '@/stores/useToastStore';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -60,6 +61,7 @@ export function CPMView({ scheduleId }: CPMViewProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const addToast = useToastStore((s) => s.addToast);
   const [levelOpen, setLevelOpen] = useState(false);
   const [levelResult, setLevelResult] = useState<LevelResourcesResponse | null>(null);
 
@@ -91,8 +93,20 @@ export function CPMView({ scheduleId }: CPMViewProps) {
         `/v1/schedule-advanced/${scheduleId}/compute-cpm`,
         {},
       ),
-    onSuccess: () => {
+    onSuccess: (data) => {
       void qc.invalidateQueries({ queryKey: ['schedule', scheduleId, 'activities'] });
+      addToast({
+        type: 'success',
+        title: t('schedule.cpm.recomputed', { defaultValue: 'Critical path recalculated' }),
+        message: t('schedule.cpm.recomputed_detail', {
+          defaultValue: '{{count}} critical of {{total}} activities',
+          count: data.num_critical,
+          total: data.num_activities,
+        }),
+      });
+    },
+    onError: (err) => {
+      addToast({ type: 'error', title: getErrorMessage(err) });
     },
   });
 
@@ -105,6 +119,12 @@ export function CPMView({ scheduleId }: CPMViewProps) {
       ),
     onSuccess: (data) => {
       setLevelResult(data);
+      // Leveling persists shifted early-start values on the activities, so
+      // refresh the table behind the modal to reflect the new ES/float.
+      void qc.invalidateQueries({ queryKey: ['schedule', scheduleId, 'activities'] });
+    },
+    onError: (err) => {
+      addToast({ type: 'error', title: getErrorMessage(err) });
     },
   });
 
@@ -116,6 +136,26 @@ export function CPMView({ scheduleId }: CPMViewProps) {
     }
     levelMut.mutate(parsed);
   };
+
+  // Single close path for the leveling modal so the dialog state is always
+  // reset consistently (used by the X button, Cancel, backdrop click and
+  // the Escape key).
+  const closeLevelModal = () => {
+    setLevelOpen(false);
+    setLevelResult(null);
+  };
+
+  // Dismiss the leveling modal on Escape (WCAG 2.1.2 - no keyboard trap).
+  // The shared WideModal/ModalShell handle this for the other dialogs in
+  // this module; this view's hand-rolled overlay needs it wired explicitly.
+  useEffect(() => {
+    if (!levelOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeLevelModal();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [levelOpen]);
 
   const activities = activitiesQuery.data ?? [];
   const numCritical = activities.filter((a) => a.is_critical).length;
@@ -248,18 +288,24 @@ export function CPMView({ scheduleId }: CPMViewProps) {
 
       {/* ── Level-resources modal ─────────────────────────────────────── */}
       {levelOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+          onClick={closeLevelModal}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cpm-level-modal-title"
+            className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-lg font-semibold">
+              <h3 id="cpm-level-modal-title" className="text-lg font-semibold">
                 {t('schedule.cpm.level_modal_title')}
               </h3>
               <button
                 type="button"
-                onClick={() => {
-                  setLevelOpen(false);
-                  setLevelResult(null);
-                }}
+                onClick={closeLevelModal}
                 className="text-gray-400 hover:text-gray-600"
                 aria-label={t('common.close', { defaultValue: 'Close' })}
               >
@@ -309,7 +355,7 @@ export function CPMView({ scheduleId }: CPMViewProps) {
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => setLevelOpen(false)}
+                    onClick={closeLevelModal}
                   >
                     {t('schedule.cpm.cancel')}
                   </Button>
@@ -337,7 +383,12 @@ export function CPMView({ scheduleId }: CPMViewProps) {
                         <th className="px-2 py-1">{t('schedule.cpm.col_activity')}</th>
                         <th className="px-2 py-1 text-right">{t('schedule.cpm.col_es_old')}</th>
                         <th className="px-2 py-1 text-right">{t('schedule.cpm.col_es_new')}</th>
-                        <th className="px-2 py-1 text-right">Δ</th>
+                        <th
+                          className="px-2 py-1 text-right"
+                          title={t('schedule.cpm.col_es_delta', { defaultValue: 'Shift in days' })}
+                        >
+                          {t('schedule.cpm.col_es_delta_short', { defaultValue: 'Δ days' })}
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -365,10 +416,7 @@ export function CPMView({ scheduleId }: CPMViewProps) {
                   <Button
                     variant="primary"
                     size="sm"
-                    onClick={() => {
-                      setLevelOpen(false);
-                      setLevelResult(null);
-                    }}
+                    onClick={closeLevelModal}
                   >
                     {t('schedule.cpm.close')}
                   </Button>

@@ -27,6 +27,8 @@ import {
   Search,
   X,
   Loader2,
+  TrendingUp,
+  BarChart3,
 } from 'lucide-react';
 import {
   Button,
@@ -84,6 +86,8 @@ import {
   listBaselines,
   captureBaseline,
   baselineDelta,
+  projectDashboard,
+  type LPSDashboard,
   type MasterSchedule,
   type PhasePlan,
   type PhaseStatus,
@@ -102,6 +106,16 @@ import {
 } from './api';
 import { fetchTasks, type Task } from '@/features/tasks/api';
 import { scheduleAdvancedGuide } from './scheduleAdvancedGuide';
+import {
+  masterStatusLabel,
+  lookAheadStatusLabel,
+  weeklyStatusLabel,
+  commitmentStatusLabel,
+  constraintStatusLabel,
+  constraintTypeLabel,
+  baselineStatusLabel,
+  taskStatusLabel,
+} from './labels';
 
 const SCHEDULE_TAB_IDS = [
   'master',
@@ -172,6 +186,25 @@ function pctNumber(value: string | number | null | undefined): number {
   // : n * 100` heuristic corrupted legitimate sub-1% values (a true
   // 1.00% PPC rendered as 100%). Just clamp into range.
   return Math.min(100, Math.max(0, n));
+}
+
+/**
+ * Neutralise a spreadsheet formula-injection vector before a value is
+ * written into an exported CSV cell. If the string starts with one of the
+ * dangerous trigger characters (=, +, -, @, tab, CR, LF) Excel / Sheets /
+ * LibreOffice will evaluate it as a formula, so we prefix a single
+ * apostrophe - the cell renders unchanged but is treated as literal text.
+ * CSV quoting alone does NOT prevent this; a quoted "=cmd|..." still runs.
+ * Mirrors the backend ``app.core.csv_safety.neutralise_formula`` contract.
+ *
+ * @see https://owasp.org/www-community/attacks/CSV_Injection
+ */
+function neutraliseFormula(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  const s = String(value);
+  if (s.length === 0) return s;
+  const TRIGGERS = new Set(['=', '+', '-', '@', '\t', '\r', '\n']);
+  return TRIGGERS.has(s[0]!) ? `'${s}` : s;
 }
 
 /* ── Task picker ─────────────────────────────────────────────────────────
@@ -324,8 +357,8 @@ function TaskPicker({
                 )}
               >
                 <span className="min-w-0 flex-1 truncate text-content-primary">{tk.title}</span>
-                <span className={clsx('shrink-0 text-2xs capitalize', statusVariant[tk.status])}>
-                  {tk.status.replace('_', ' ')}
+                <span className={clsx('shrink-0 text-2xs', statusVariant[tk.status])}>
+                  {taskStatusLabel(t, tk.status)}
                 </span>
               </button>
             ))
@@ -610,18 +643,21 @@ export function ScheduleAdvancedPage() {
           )}
         </Card>
       ) : tab === 'master' ? (
-        <MasterTab
-          masters={masterQ.data ?? []}
-          loading={masterQ.isLoading}
-          isError={masterQ.isError}
-          onRetry={() => masterQ.refetch()}
-          masterId={masterId}
-          onSelect={setMasterId}
-          onCreate={() => setCreateMaster(true)}
-          onEdit={setEditMaster}
-          onDelete={setDeleteMaster}
-          current={currentMaster}
-        />
+        <div className="space-y-4">
+          <ProjectLpsDashboard projectId={projectId} />
+          <MasterTab
+            masters={masterQ.data ?? []}
+            loading={masterQ.isLoading}
+            isError={masterQ.isError}
+            onRetry={() => masterQ.refetch()}
+            masterId={masterId}
+            onSelect={setMasterId}
+            onCreate={() => setCreateMaster(true)}
+            onEdit={setEditMaster}
+            onDelete={setDeleteMaster}
+            current={currentMaster}
+          />
+        </div>
       ) : !masterId ? (
         <Card>
           <EmptyState
@@ -749,6 +785,190 @@ export function ScheduleAdvancedPage() {
           onClose={() => setCreateBaselineOpen(false)}
         />
       )}
+    </div>
+  );
+}
+
+/* ── Project LPS dashboard ───────────────────────────────────────────────
+ *
+ * Surfaces the project-level Last Planner aggregates the backend already
+ * computes at GET /dashboard/project/{project_id} (open constraints, PPC
+ * trend, RNC Pareto, active master/baseline counts, current-week
+ * commitments). The `projectDashboard` API helper and `LPSDashboard` type
+ * existed but had no UI - this card wires them up on the Master tab so the
+ * numbers are visible without drilling into every sub-tab. A failed fetch
+ * degrades to a quiet retry strip rather than blocking the page, and a
+ * brand-new project with nothing logged yet shows a short hint instead of a
+ * wall of zeros.
+ */
+function ProjectLpsDashboard({ projectId }: { projectId: string }) {
+  const { t } = useTranslation();
+  const dashQ = useQuery({
+    queryKey: ['schedule-advanced', 'dashboard', projectId],
+    queryFn: () => projectDashboard(projectId),
+    enabled: !!projectId,
+    staleTime: 60_000,
+  });
+
+  if (dashQ.isLoading) {
+    return (
+      <Card padding="md">
+        <SkeletonTable rows={2} columns={4} />
+      </Card>
+    );
+  }
+
+  if (dashQ.isError) {
+    return (
+      <Card padding="md">
+        <RecoveryCard error={dashQ.error} onRetry={() => dashQ.refetch()} />
+      </Card>
+    );
+  }
+
+  const data: LPSDashboard | undefined = dashQ.data;
+  if (!data) return null;
+
+  const latestPpc = data.ppc_trend.length > 0 ? data.ppc_trend[data.ppc_trend.length - 1] : undefined;
+  const latestPpcPct = pctNumber(latestPpc?.ppc_percent);
+
+  // Top RNC reasons (highest first), used for the Pareto strip.
+  const rncEntries = Object.entries(data.rnc_pareto)
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1]);
+  const rncTotal = rncEntries.reduce((sum, [, n]) => sum + n, 0);
+  const topRnc = rncEntries.slice(0, 4);
+
+  const hasAnyActivity =
+    data.ppc_trend.length > 0 ||
+    data.open_constraints > 0 ||
+    rncTotal > 0 ||
+    data.active_master_schedules > 0 ||
+    data.active_baselines > 0 ||
+    data.current_week_commitments > 0;
+
+  if (!hasAnyActivity) {
+    return (
+      <Card padding="md">
+        <div className="flex items-center gap-2 text-sm text-content-tertiary">
+          <BarChart3 size={16} className="shrink-0 text-content-tertiary" />
+          {t('schedule_advanced.dashboard_empty', {
+            defaultValue:
+              'Project overview appears here once you have committed weeks, open constraints, or baselines.',
+          })}
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card padding="md" data-testid="lps-dashboard">
+      <div className="mb-3 flex items-center gap-2">
+        <TrendingUp size={16} className="text-content-secondary" />
+        <h3 className="text-sm font-semibold text-content-primary">
+          {t('schedule_advanced.dashboard_title', { defaultValue: 'Project overview' })}
+        </h3>
+      </div>
+      <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <DashStat
+          label={t('schedule_advanced.ppc', { defaultValue: 'PPC' })}
+          value={data.ppc_trend.length > 0 ? `${latestPpcPct.toFixed(0)}%` : '—'}
+          hint={t('schedule_advanced.dashboard_latest_week', { defaultValue: 'Latest week' })}
+          tone={
+            data.ppc_trend.length === 0
+              ? 'neutral'
+              : latestPpcPct >= 80
+                ? 'success'
+                : latestPpcPct >= 50
+                  ? 'warning'
+                  : 'error'
+          }
+        />
+        <DashStat
+          label={t('schedule_advanced.open_constraints', { defaultValue: 'Open constraints' })}
+          value={String(data.open_constraints)}
+          tone={data.open_constraints > 0 ? 'warning' : 'success'}
+        />
+        <DashStat
+          label={t('schedule_advanced.current_week_commitments', { defaultValue: 'Commitments this week' })}
+          value={String(data.current_week_commitments)}
+          tone="neutral"
+        />
+        <DashStat
+          label={t('schedule_advanced.rnc_total', { defaultValue: 'Reasons logged' })}
+          value={String(rncTotal)}
+          tone={rncTotal > 0 ? 'error' : 'neutral'}
+        />
+        <DashStat
+          label={t('schedule_advanced.active_masters', { defaultValue: 'Active masters' })}
+          value={String(data.active_master_schedules)}
+          tone="neutral"
+        />
+        <DashStat
+          label={t('schedule_advanced.active_baselines', { defaultValue: 'Active baselines' })}
+          value={String(data.active_baselines)}
+          tone="neutral"
+        />
+      </dl>
+
+      {topRnc.length > 0 && (
+        <div className="mt-4 border-t border-border-light pt-3">
+          <div className="mb-2 text-xs uppercase tracking-wide text-content-tertiary">
+            {t('schedule_advanced.rnc_top_reasons', { defaultValue: 'Top non-completion reasons' })}
+          </div>
+          <ul className="space-y-1.5" data-testid="lps-dashboard-rnc">
+            {topRnc.map(([cat, count]) => {
+              const widthPct = rncTotal > 0 ? Math.round((count / rncTotal) * 100) : 0;
+              return (
+                <li key={cat} className="flex items-center gap-3 text-sm">
+                  <span className="w-28 shrink-0 truncate text-content-secondary" title={cat}>
+                    {t(`schedule_advanced.rnc.${cat}`, { defaultValue: cat })}
+                  </span>
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-surface-secondary">
+                    <div
+                      className="h-full rounded-full bg-rose-500/70"
+                      style={{ width: `${Math.max(4, widthPct)}%` }}
+                    />
+                  </div>
+                  <span className="w-10 shrink-0 text-right font-mono text-xs tabular-nums text-content-tertiary">
+                    {count}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function DashStat({
+  label,
+  value,
+  hint,
+  tone,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  tone: 'neutral' | 'success' | 'warning' | 'error';
+}) {
+  const toneCls =
+    tone === 'success'
+      ? 'text-semantic-success'
+      : tone === 'warning'
+        ? 'text-semantic-warning'
+        : tone === 'error'
+          ? 'text-semantic-error'
+          : 'text-content-primary';
+  return (
+    <div className="rounded-lg border border-border-light bg-surface-secondary/40 px-3 py-2">
+      <dt className="text-2xs uppercase tracking-wide text-content-tertiary truncate" title={label}>
+        {label}
+      </dt>
+      <dd className={clsx('mt-0.5 text-xl font-bold tabular-nums', toneCls)}>{value}</dd>
+      {hint && <p className="text-2xs text-content-tertiary">{hint}</p>}
     </div>
   );
 }
@@ -931,7 +1151,7 @@ function MasterTab({
             />
             <Stat
               label={t('common.status', { defaultValue: 'Status' })}
-              value={<Badge variant={current.status === 'active' ? 'success' : 'neutral'} dot>{current.status}</Badge>}
+              value={<Badge variant={current.status === 'active' ? 'success' : 'neutral'} dot>{masterStatusLabel(t, current.status)}</Badge>}
             />
           </dl>
           {current.notes && (
@@ -995,7 +1215,13 @@ function phaseDurationDays(p: PhasePlan): number | null {
 function isPhaseDelayed(p: PhasePlan): boolean {
   if (!p.planned_finish) return false;
   if (p.pulled_status === 'completed') return false;
-  return new Date(p.planned_finish).getTime() < Date.now();
+  // A phase is delayed only once its planned finish DATE has fully passed -
+  // i.e. strictly before today. Comparing `new Date(finish) < Date.now()`
+  // parsed the date-only finish as UTC midnight and compared it to the
+  // current instant, so a phase due today was flagged delayed from the first
+  // second of the day. Compare date strings instead (same strictly-before
+  // semantics the backend's _effective_activity_status uses).
+  return p.planned_finish.slice(0, 10) < todayIso();
 }
 
 /**
@@ -2352,7 +2578,7 @@ function LookAheadTab({
                       }
                       dot
                     >
-                      {la.status}
+                      {lookAheadStatusLabel(t, la.status)}
                     </Badge>
                   </td>
                   <td className="px-4 py-2 text-right">
@@ -2546,7 +2772,7 @@ function WeeklyTab({
                     </td>
                     <td className="px-4 py-2">
                       <Badge variant={WEEKLY_VARIANT[w.status]} dot>
-                        {w.status}
+                        {weeklyStatusLabel(t, w.status)}
                       </Badge>
                     </td>
                     <td className="px-4 py-2 text-right font-mono text-xs">
@@ -2670,7 +2896,7 @@ function WeeklyTab({
                           </td>
                           <td className="px-4 py-2">
                             <Badge variant={COMMITMENT_VARIANT[c.status]} dot>
-                              {c.status}
+                              {commitmentStatusLabel(t, c.status)}
                             </Badge>
                           </td>
                           <td className="px-4 py-2">
@@ -3066,7 +3292,7 @@ function ConstraintsTab({
           </option>
           {(['open', 'in_progress', 'cleared', 'escalated', 'cannot_clear'] as const).map((s) => (
             <option key={s} value={s}>
-              {s}
+              {constraintStatusLabel(t, s)}
             </option>
           ))}
         </select>
@@ -3127,7 +3353,7 @@ function ConstraintsTab({
                 {constraints.map((c) => (
                   <tr key={c.id} className="border-t border-border-light hover:bg-surface-secondary">
                     <td className="px-4 py-2 text-xs text-content-secondary">
-                      {c.constraint_type}
+                      {constraintTypeLabel(t, c.constraint_type)}
                     </td>
                     <td className="px-4 py-2 truncate max-w-[360px]">
                       {c.description || '—'}
@@ -3137,7 +3363,7 @@ function ConstraintsTab({
                     </td>
                     <td className="px-4 py-2">
                       <Badge variant={CONSTRAINT_VARIANT[c.status]} dot>
-                        {c.status}
+                        {constraintStatusLabel(t, c.status)}
                       </Badge>
                     </td>
                     <td className="px-4 py-2">
@@ -3289,7 +3515,7 @@ function NewConstraintModal({
           >
             {CONSTRAINT_TYPES.map((ct) => (
               <option key={ct} value={ct}>
-                {t(`schedule_advanced.constraint_type.${ct}`, { defaultValue: ct })}
+                {constraintTypeLabel(t, ct)}
               </option>
             ))}
           </select>
@@ -3373,15 +3599,20 @@ function BaselinesTab({
    * round-trip, no extra dependency.
    */
   const exportCsv = () => {
+    // User-controlled string cells (task_ref, name, dates) are run through
+    // neutraliseFormula so a value like "=cmd|'/c calc'!A1" stored in a task
+    // name cannot execute when the CSV is opened in a spreadsheet app
+    // (CSV/formula injection). The numeric variance column is left as-is so a
+    // legitimate negative value is not mangled with a leading apostrophe.
     const rows = [
       ['task_ref', 'name', 'baseline_start', 'current_start', 'baseline_finish', 'current_finish', 'variance_days'],
       ...deltaEntries.map((e) => [
-        e.task_ref,
-        e.name ?? '',
-        e.planned_start_baseline ?? '',
-        e.planned_start_current ?? '',
-        e.planned_finish_baseline ?? '',
-        e.planned_finish_current ?? '',
+        neutraliseFormula(e.task_ref),
+        neutraliseFormula(e.name ?? ''),
+        neutraliseFormula(e.planned_start_baseline ?? ''),
+        neutraliseFormula(e.planned_start_current ?? ''),
+        neutraliseFormula(e.planned_finish_baseline ?? ''),
+        neutraliseFormula(e.planned_finish_current ?? ''),
         String(e.schedule_variance_days ?? 0),
       ]),
     ];
@@ -3485,7 +3716,7 @@ function BaselinesTab({
                       }
                       dot
                     >
-                      {b.status}
+                      {baselineStatusLabel(t, b.status)}
                     </Badge>
                   </td>
                   <td className="px-4 py-2 text-right">

@@ -100,6 +100,16 @@ class _StubActivityRepo:
                 setattr(a, k, v)
             a.updated_at = datetime.now(UTC)
 
+    async def bulk_update_fields(self, updates: list[dict[str, Any]]) -> None:
+        for entry in updates:
+            data = dict(entry)
+            aid = data.pop("id")
+            a = self.rows.get(aid)
+            if a:
+                for k, v in data.items():
+                    setattr(a, k, v)
+                a.updated_at = datetime.now(UTC)
+
     async def delete(self, activity_id: uuid.UUID) -> None:
         self.rows.pop(activity_id, None)
 
@@ -450,6 +460,55 @@ async def test_reconcile_drops_dangling_json_edges() -> None:
     assert stats["edges_created"] == 0
     assert await svc.relationship_repo.list_predecessors(succ.id) == []
     assert svc.activity_repo.rows[succ.id].dependencies == []
+
+
+@pytest.mark.asyncio
+async def test_delete_activity_prunes_successor_json_mirror() -> None:
+    """Deleting a predecessor must strip it from every successor's JSON
+    dependency mirror so ``get_gantt_data`` never returns an edge pointing at
+    a node that no longer exists (the canonical row is gone via FK CASCADE; the
+    derived mirror must follow)."""
+    svc = _make_service()
+    sched = await _create_schedule(svc)
+    pred = await _create_activity(svc, sched.id, name="Predecessor")
+    succ = await _create_activity(
+        svc,
+        sched.id,
+        name="Successor",
+        dependencies=[ActivityDependency(activity_id=pred.id, type="FS", lag_days=2)],
+    )
+    # Sanity: the mirror references the predecessor.
+    assert any(d["activity_id"] == str(pred.id) for d in svc.activity_repo.rows[succ.id].dependencies)
+
+    await svc.delete_activity(pred.id)
+
+    # Successor survives but no longer lists the deleted predecessor.
+    assert succ.id in svc.activity_repo.rows
+    assert svc.activity_repo.rows[succ.id].dependencies == []
+
+
+@pytest.mark.asyncio
+async def test_delete_activity_keeps_unrelated_successor_edges() -> None:
+    """Pruning on delete must only drop edges to the deleted activity, leaving
+    a successor's other predecessor edges intact."""
+    svc = _make_service()
+    sched = await _create_schedule(svc)
+    p1 = await _create_activity(svc, sched.id, name="P1")
+    p2 = await _create_activity(svc, sched.id, name="P2")
+    succ = await _create_activity(
+        svc,
+        sched.id,
+        name="S",
+        dependencies=[
+            ActivityDependency(activity_id=p1.id, type="FS", lag_days=0),
+            ActivityDependency(activity_id=p2.id, type="SS", lag_days=1),
+        ],
+    )
+
+    await svc.delete_activity(p1.id)
+
+    remaining = svc.activity_repo.rows[succ.id].dependencies
+    assert [d["activity_id"] for d in remaining] == [str(p2.id)]
 
 
 @pytest.mark.asyncio

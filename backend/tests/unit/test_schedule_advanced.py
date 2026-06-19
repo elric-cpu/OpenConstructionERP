@@ -664,6 +664,38 @@ async def test_mark_commitment_missed_creates_rnc() -> None:
 
 
 @pytest.mark.asyncio
+async def test_mark_commitment_missed_is_idempotent_no_duplicate_rnc() -> None:
+    """A retried /miss on an already-missed commitment must not create a
+    second RNC (``missed -> missed`` is a legal self-loop transition)."""
+    svc = _make_service()
+    m = await svc.create_master_schedule(
+        MasterScheduleCreate(project_id=PROJECT_ID, name="MS"),
+        user_id="u",
+    )
+    w = await svc.create_weekly_plan(
+        WeeklyWorkPlanCreate(
+            master_schedule_id=m.id,
+            week_start_date=date(2026, 5, 11),
+            week_end_date=date(2026, 5, 15),
+        )
+    )
+    c = await svc.create_commitment(
+        CommitmentCreate(
+            week_plan_id=w.id,
+            task_ref=uuid.uuid4(),
+            status="committed",
+        )
+    )
+    payload = RNCCreate(commitment_id=c.id, category="material", description="No concrete")
+    _missed1, rnc1 = await svc.mark_commitment_missed(c.id, payload)
+    # Second call (double-click / retry) returns the same RNC, no duplicate row.
+    missed2, rnc2 = await svc.mark_commitment_missed(c.id, payload)
+    assert missed2.status == "missed"
+    assert rnc2.id == rnc1.id
+    assert len(await svc.rnc_repo.list_for_commitment(c.id)) == 1
+
+
+@pytest.mark.asyncio
 async def test_clear_constraint_emits_event() -> None:
     svc = _make_service()
     # Don't need a real look-ahead — look_ahead_id is nullable
