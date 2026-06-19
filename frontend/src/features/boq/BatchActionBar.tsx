@@ -86,11 +86,15 @@ export function BatchActionBar({
   const unitDropdownRef = useRef<HTMLDivElement>(null);
   const findReplacePanelRef = useRef<HTMLDivElement>(null);
   const setValuePanelRef = useRef<HTMLDivElement>(null);
+  const factorPanelRef = useRef<HTMLDivElement>(null);
+  const classPanelRef = useRef<HTMLDivElement>(null);
   const count = selectedIds.length;
 
   // Trap Tab / restore focus on close, matching the shared modal a11y pattern.
   useFocusTrap(findReplacePanelRef, !!findReplaceDialog);
   useFocusTrap(setValuePanelRef, !!setValueDialog);
+  useFocusTrap(factorPanelRef, !!factorDialog);
+  useFocusTrap(classPanelRef, !!classDialog);
 
   // Set-value input validity. Number() (not parseFloat) so '1.2.3', '--' and
   // 'abc' are rejected as NaN rather than silently truncated. Drives both the
@@ -390,8 +394,10 @@ export function BatchActionBar({
             aria-hidden="true"
           />
           <div
+            ref={factorPanelRef}
             role="dialog"
             aria-modal="true"
+            tabIndex={-1}
             aria-label={
               factorDialog.kind === 'rate'
                 ? t('boq.batch_rate_factor_title', { defaultValue: 'Multiply rate by factor' })
@@ -460,8 +466,10 @@ export function BatchActionBar({
             aria-hidden="true"
           />
           <div
+            ref={classPanelRef}
             role="dialog"
             aria-modal="true"
+            tabIndex={-1}
             aria-label={t('boq.batch_set_classification', { defaultValue: 'Set classification' })}
             className="relative z-10 w-full max-w-sm mx-4 rounded-2xl border border-border-light bg-surface-elevated shadow-xl animate-scale-in focus:outline-none"
           >

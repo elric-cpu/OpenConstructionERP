@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 
 import { Button, ConfidenceBadge } from '@/shared/ui';
+import SimilarItemsPanel from '@/shared/ui/SimilarItemsPanel';
 import { apiGet } from '@/shared/lib/api';
 import { useIsRTL } from '@/shared/hooks/useIsRTL';
 import { fmtWithCurrency } from './boqHelpers';
@@ -314,6 +315,17 @@ export function AISmartPanel({
           </p>
         )}
       </div>
+
+      {/* Similar positions priced before — surfaces the cross-project
+          ``/positions/{id}/similar/`` vector search so the estimator can see how
+          an equivalent line was priced in past projects. Self-contained (handles
+          its own loading/empty/error + click-through) and needs no LLM key, so it
+          renders regardless of ``aiConfigured``. */}
+      {selectedPosition && (
+        <div className="px-4 pt-3 shrink-0">
+          <SimilarItemsPanel module="boq" id={selectedPosition.id} crossProject limit={5} />
+        </div>
+      )}
 
       {/* AI not configured warning */}
       {aiConfigured === false && (
@@ -633,6 +645,7 @@ interface ActionCardProps {
 }
 
 function ActionCard({ icon, title, subtitle, loading, disabled, onClick, expanded, onToggle, hasResult, children }: ActionCardProps) {
+  const { t } = useTranslation();
   return (
     <div className="border border-border-light rounded-lg bg-surface overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2.5">
@@ -651,10 +664,20 @@ function ActionCard({ icon, title, subtitle, loading, disabled, onClick, expande
           ) : (
             <Sparkles size={12} />
           )}
-          {loading ? 'AI...' : 'Run'}
+          {loading
+            ? t('boq.ai_running_short', { defaultValue: 'AI...' })
+            : t('boq.ai_run', { defaultValue: 'Run' })}
         </button>
         {hasResult && (
-          <button onClick={onToggle} className="shrink-0 p-1 rounded hover:bg-surface-hover transition-colors">
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={expanded}
+            aria-label={expanded
+              ? t('common.collapse', { defaultValue: 'Collapse' })
+              : t('common.expand', { defaultValue: 'Expand' })}
+            className="shrink-0 p-1 rounded hover:bg-surface-hover transition-colors"
+          >
             {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </button>
         )}

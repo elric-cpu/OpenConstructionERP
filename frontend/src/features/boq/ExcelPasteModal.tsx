@@ -5,10 +5,11 @@
  * and falls back to positional order.  Supports both 1,234.56 and 1.234,56 formats.
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useId, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ClipboardPaste, X, Upload, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/shared/ui';
+import { useFocusTrap } from '@/shared/hooks/useFocusTrap';
 
 export interface PastedRow {
   ordinal: string;
@@ -115,6 +116,9 @@ function parseRows(raw: string): { rows: PastedRow[]; detectedHeaders: string[] 
 export function ExcelPasteModal({ open, onClose, onImport, loading }: ExcelPasteModalProps) {
   const { t } = useTranslation();
   const [raw, setRaw] = useState('');
+  const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  useFocusTrap(panelRef, open);
 
   const { rows, detectedHeaders } = useMemo(() => parseRows(raw), [raw]);
   const totalSum = useMemo(() => rows.reduce((s, r) => s + r.quantity * r.unit_rate, 0), [rows]);
@@ -128,11 +132,31 @@ export function ExcelPasteModal({ open, onClose, onImport, loading }: ExcelPaste
     onClose();
   }, [onClose]);
 
+  // Escape closes the modal (unless an import is in flight).
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && !loading) {
+        e.preventDefault();
+        handleClose();
+      }
+    }
+    document.addEventListener('keydown', onKey, { capture: true });
+    return () => document.removeEventListener('keydown', onKey, { capture: true });
+  }, [open, loading, handleClose]);
+
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-lg animate-fade-in" onClick={handleClose}>
-      <div className="w-full max-w-3xl mx-4 bg-surface-primary rounded-2xl shadow-2xl border border-border-light overflow-hidden" onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="w-full max-w-3xl mx-4 bg-surface-primary rounded-2xl shadow-2xl border border-border-light overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-light">
           <div className="flex items-center gap-3">
@@ -140,7 +164,7 @@ export function ExcelPasteModal({ open, onClose, onImport, loading }: ExcelPaste
               <ClipboardPaste size={18} className="text-oe-blue" />
             </div>
             <div>
-              <h2 className="text-base font-semibold">{t('boq.paste_from_excel', { defaultValue: 'Paste from Excel' })}</h2>
+              <h2 id={titleId} className="text-base font-semibold">{t('boq.paste_from_excel', { defaultValue: 'Paste from Excel' })}</h2>
               <p className="text-xs text-content-secondary">{t('boq.paste_excel_hint', { defaultValue: 'Copy rows from Excel or Google Sheets and paste below' })}</p>
             </div>
           </div>

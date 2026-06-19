@@ -381,7 +381,9 @@ function ResultCard({
       {/* Components expand */}
       {hasComponents && (
         <button
+          type="button"
           onClick={onToggleExpand}
+          aria-expanded={expanded}
           className="flex items-center gap-1 mt-2 text-xs text-text-muted hover:text-text-primary transition-colors"
         >
           {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}

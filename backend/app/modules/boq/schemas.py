@@ -933,6 +933,20 @@ class MarkupCalculated(MarkupResponse):
         return _serialise_money(v)
 
 
+class MarkupListResponse(BaseModel):
+    """Envelope returned by ``GET /boqs/{boq_id}/markups/``.
+
+    The list endpoint has always wrapped its rows in a ``{"markups": [...]}``
+    object (clients read ``response.markups``). Typing that envelope makes the
+    shape explicit in the OpenAPI document - it was an untyped object before -
+    without changing the wire format: each row is the same ``MarkupResponse``
+    the handler already builds, so ``fixed_amount`` still serialises as a
+    Decimal-as-string (v3 §10).
+    """
+
+    markups: list[MarkupResponse] = Field(default_factory=list)
+
+
 # ── Composite schemas ─────────────────────────────────────────────────────────
 
 

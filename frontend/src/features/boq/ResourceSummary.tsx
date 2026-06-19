@@ -231,6 +231,8 @@ export function ResourceSummary({ boqId, locale = 'de-DE' }: { boqId: string; lo
         return t('boq.rs_material', { defaultValue: 'Material' });
       case 'labor':
         return t('boq.rs_labor', { defaultValue: 'Labor' });
+      case 'machinery':
+        return t('boq.rs_machinery', { defaultValue: 'Machinery' });
       case 'equipment':
         return t('boq.rs_equipment', { defaultValue: 'Equipment' });
       case 'subcontractor':

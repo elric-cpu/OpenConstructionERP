@@ -20,7 +20,7 @@ from app.core.events import Event, event_bus
 from app.core.vector_index import delete_one as vector_delete_one
 from app.core.vector_index import index_one as vector_index_one
 from app.database import async_session_factory
-from app.modules.boq.models import BOQActivityLog, Position
+from app.modules.boq.models import BOQ, BOQActivityLog, Position
 from app.modules.boq.vector_adapter import boq_position_adapter
 
 logger = logging.getLogger(__name__)
@@ -197,7 +197,17 @@ async def _index_position(event: Event) -> None:
 
     try:
         async with async_session_factory() as session:
-            stmt = select(Position).options(selectinload(Position.boq)).where(Position.id == position_id)
+            # Only ``row.boq.project_id`` is read; load the parent BOQ but
+            # suppress its positions/markups selectin loads so a single
+            # position edit does not pull the whole BOQ tree into memory.
+            stmt = (
+                select(Position)
+                .options(
+                    selectinload(Position.boq).noload(BOQ.positions),
+                    selectinload(Position.boq).noload(BOQ.markups),
+                )
+                .where(Position.id == position_id)
+            )
             row = (await session.execute(stmt)).scalar_one_or_none()
             if row is None:
                 # Race: row was deleted between publish and handler.

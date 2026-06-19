@@ -48,13 +48,14 @@ function createCBFormatter(locale: string) {
   });
 }
 
+/**
+ * Format a money value for display. BOQ money is ALWAYS shown at full
+ * precision - K/M rounding is never acceptable for professional cost
+ * estimation (it dropped the cents on a 45,678.90 grand total and made the
+ * panel figures impossible to reconcile against the editor / exports).
+ * Mirrors the documented contract of ``boqHelpers.fmtCompact``.
+ */
 function fmtCompact(n: number, fmt: Intl.NumberFormat): string {
-  if (Math.abs(n) >= 1_000_000) {
-    return `${fmt.format(n / 1_000_000)}M`;
-  }
-  if (Math.abs(n) >= 10_000) {
-    return `${fmt.format(n / 1_000)}K`;
-  }
   return fmt.format(n);
 }
 
@@ -139,6 +140,7 @@ export function CostBreakdownPanel({ boqId, locale = 'de-DE' }: { boqId: string;
       {/* ── Header ──────────────────────────────────────────────────── */}
       <button
         type="button"
+        aria-expanded={!collapsed}
         className="flex items-center justify-between w-full px-5 py-3.5 text-left hover:bg-surface-secondary/50 transition-colors"
         onClick={() => setCollapsed((prev) => !prev)}
       >

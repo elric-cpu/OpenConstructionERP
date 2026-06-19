@@ -109,7 +109,10 @@ export function ActivityPanel({
     <div className="mt-6 rounded-xl border border-border-light bg-surface-elevated shadow-xs overflow-hidden transition-all">
       {/* ── Toggle header ──────────────────────────────────────────── */}
       <button
+        type="button"
         onClick={onToggle}
+        aria-expanded={isOpen}
+        aria-label={t('boq.recent_activity', { defaultValue: 'Recent Activity' })}
         className="flex w-full items-center justify-between px-5 py-3.5 hover:bg-surface-secondary/50 transition-colors"
       >
         <div className="flex items-center gap-2.5">

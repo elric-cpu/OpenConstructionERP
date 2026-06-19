@@ -115,6 +115,7 @@ from app.modules.boq.schemas import (
     BOQFromTemplateRequest,
     BOQListItem,
     BOQResponse,
+    BOQStatisticsResponse,
     BOQUpdate,
     BOQWithPositions,
     BOQWithSections,
@@ -148,6 +149,7 @@ from app.modules.boq.schemas import (
     EstimateClassificationResponse,
     LineItemResponse,
     MarkupCreate,
+    MarkupListResponse,
     MarkupResponse,
     MarkupUpdate,
     PositionCO2Detail,
@@ -879,6 +881,9 @@ async def suggest_rate(
 )
 async def check_anomalies(
     boq_id: uuid.UUID,
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
     service: BOQService = Depends(_get_service),
 ) -> AnomalyCheckResponse:
     """Check all positions in a BOQ for pricing anomalies.
@@ -901,6 +906,7 @@ async def check_anomalies(
     Returns:
         AnomalyCheckResponse with anomalies list and positions_checked count.
     """
+    await _verify_boq_owner(session, boq_id, _user_id, payload)
     try:
         result = await service.check_anomalies(boq_id)
     except HTTPException:
@@ -1020,6 +1026,8 @@ async def check_scope(
     boq_id: uuid.UUID,
     data: CheckScopeRequest,
     user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
     service: BOQService = Depends(_get_service),
 ) -> CheckScopeResponse:
     """Analyze BOQ for scope completeness - find missing trades and work packages.
@@ -1027,6 +1035,7 @@ async def check_scope(
     Sends a summary of all positions to the LLM which identifies gaps:
     missing structural items, MEP, finishes, external works, preliminaries, etc.
     """
+    await _verify_boq_owner(session, boq_id, user_id, payload)
     try:
         result = await service.check_scope_completeness(
             user_id=user_id,
@@ -1219,10 +1228,19 @@ async def get_project_activity(
 )
 async def lookup_resource_by_code(
     project_id: uuid.UUID,
-    code: str,
     user_id: CurrentUserId,
     payload: CurrentUserPayload,
     session: SessionDep,
+    # Bound the length so a pathological multi-KB value can't force an
+    # unbounded casefold + full-project position scan. The param stays
+    # REQUIRED (no default) and an empty string is still accepted - the
+    # service returns found=False - to preserve the existing contract;
+    # reference codes are short (the schema caps reference_code at 64).
+    code: str = Query(
+        ...,
+        max_length=128,
+        description="Reusable resource code to look up project-wide (e.g. '0040').",
+    ),
     service: BOQService = Depends(_get_service),
 ) -> ResourceCodeLookupResponse:
     """Issue #133 - find the first existing resource using ``code``.
@@ -2296,6 +2314,7 @@ async def create_section(
 
 @router.get(
     "/boqs/{boq_id}/markups/",
+    response_model=MarkupListResponse,
     summary="List markups",
     dependencies=[Depends(RequirePermission("boq.read"))],
 )
@@ -2305,11 +2324,11 @@ async def list_markups(
     payload: CurrentUserPayload,
     session: SessionDep,
     service: BOQService = Depends(_get_service),
-) -> dict:
+) -> MarkupListResponse:
     """List all markups for a BOQ."""
     await _verify_boq_owner(session, boq_id, user_id, payload)
     markups = await service.list_markups(boq_id)
-    return {"markups": [_markup_to_response(m) for m in markups]}
+    return MarkupListResponse(markups=[_markup_to_response(m) for m in markups])
 
 
 @router.post(
@@ -2902,6 +2921,9 @@ async def _run_import_validation(
 )
 async def recalculate_rates(
     boq_id: uuid.UUID,
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
     service: BOQService = Depends(_get_service),
 ) -> dict[str, Any]:
     """Recalculate position unit_rates from their resource breakdowns.
@@ -2910,6 +2932,7 @@ async def recalculate_rates(
     entries in metadata, recomputes unit_rate as the sum of resource costs.
     Returns a summary with updated/skipped/total counts.
     """
+    await _verify_boq_owner(session, boq_id, _user_id, payload)
     return await service.recalculate_rates(boq_id)
 
 
@@ -2922,6 +2945,8 @@ async def recalculate_rates(
 )
 async def validate_boq(
     boq_id: uuid.UUID,
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
     session: SessionDep,
     service: BOQService = Depends(_get_service),
 ) -> dict[str, Any]:
@@ -2933,6 +2958,8 @@ async def validate_boq(
     """
     from app.core.validation.engine import validation_engine
     from app.modules.projects.repository import ProjectRepository
+
+    await _verify_boq_owner(session, boq_id, _user_id, payload)
 
     # Load BOQ with positions
     boq_data = await service.get_boq_with_positions(boq_id)
@@ -3087,6 +3114,7 @@ async def ai_chat_boq(
     boq_id: uuid.UUID,
     data: AIChatRequest,
     user_id: CurrentUserId,
+    payload: CurrentUserPayload,
     session: SessionDep,
     service: BOQService = Depends(_get_service),
 ) -> AIChatResponse:
@@ -3100,7 +3128,8 @@ async def ai_chat_boq(
     from app.modules.ai.ai_client import call_ai, extract_json, resolve_provider_key_model
     from app.modules.ai.repository import AISettingsRepository
 
-    # Verify BOQ exists
+    # Verify BOQ exists AND the caller owns its project (IDOR guard).
+    await _verify_boq_owner(session, boq_id, user_id, payload)
     await service.get_boq(boq_id)
 
     # Resolve AI provider from user settings. Use the (provider, key, model)
@@ -5041,6 +5070,9 @@ def _parse_rows_from_excel(
 async def import_boq_excel(
     boq_id: uuid.UUID,
     response: Response,
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
     file: UploadFile = File(..., description="Excel (.xlsx) or CSV (.csv) file"),
     service: BOQService = Depends(_get_service),
 ) -> dict[str, Any]:
@@ -5071,7 +5103,8 @@ async def import_boq_excel(
     response.headers["Link"] = '</api/v1/boq/boqs/{boq_id}/import/auto/>; rel="successor-version"'
     response.headers["Sunset"] = "Wed, 31 Dec 2026 23:59:59 GMT"
 
-    # Verify BOQ exists (raises 404 if not found)
+    # Verify BOQ exists AND the caller owns its project (IDOR guard).
+    await _verify_boq_owner(session, boq_id, _user_id, payload)
     await service.get_boq(boq_id)
 
     # Validate file type
@@ -5442,6 +5475,9 @@ async def import_boq_excel(
 async def import_boq_gaeb(
     boq_id: uuid.UUID,
     response: Response,
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
     file: UploadFile = File(..., description="GAEB XML file (.x83, .x84, .xml)"),
     service: BOQService = Depends(_get_service),
 ) -> dict[str, Any]:
@@ -5474,7 +5510,8 @@ async def import_boq_gaeb(
     response.headers["Link"] = '</api/v1/boq/boqs/{boq_id}/import/auto/>; rel="successor-version"'
     response.headers["Sunset"] = "Wed, 31 Dec 2026 23:59:59 GMT"
 
-    # Verify BOQ exists (raises 404 if not found)
+    # Verify BOQ exists AND the caller owns its project (IDOR guard).
+    await _verify_boq_owner(session, boq_id, _user_id, payload)
     await service.get_boq(boq_id)
 
     filename = (file.filename or "").lower()
@@ -5982,6 +6019,7 @@ async def _persist_imported_markups(
 async def import_boq_auto(
     boq_id: uuid.UUID,
     user_id: CurrentUserId,
+    payload: CurrentUserPayload,
     file: UploadFile = File(
         ...,
         description=(
@@ -6014,7 +6052,8 @@ async def import_boq_auto(
     # registry is consulted only at request time).
     from app.modules.boq.importers import REGISTERED_IMPORTERS, ImportedBOQ, ImporterParseError
 
-    # Verify BOQ exists (raises 404 if not found).
+    # Verify BOQ exists AND the caller owns its project (IDOR guard).
+    await _verify_boq_owner(session, boq_id, user_id, payload)
     await service.get_boq(boq_id)
 
     content = await file.read()
@@ -6059,6 +6098,7 @@ async def import_boq_auto(
         result = await smart_import(
             boq_id=boq_id,
             user_id=user_id,
+            payload=payload,
             response=fallback_response,
             file=file,
             service=service,
@@ -6361,6 +6401,7 @@ async def _extract_from_cad(content: bytes, ext: str, filename: str) -> dict[str
 async def smart_import(
     boq_id: uuid.UUID,
     user_id: CurrentUserId,
+    payload: CurrentUserPayload,
     response: Response,
     file: UploadFile = File(
         ...,
@@ -6395,7 +6436,10 @@ async def smart_import(
     response.headers["Link"] = '</api/v1/boq/boqs/{boq_id}/import/auto/>; rel="successor-version"'
     response.headers["Sunset"] = "Wed, 31 Dec 2026 23:59:59 GMT"
 
-    # Verify BOQ exists, capture project currency for downstream LLM prompts.
+    # Verify BOQ exists AND the caller owns its project (IDOR guard).
+    await _verify_boq_owner(session, boq_id, user_id, payload)
+
+    # Capture project currency for downstream LLM prompts.
     boq_obj = await service.get_boq(boq_id)
     _project_currency: str = ""
     try:
@@ -6998,16 +7042,21 @@ async def get_resource_summary(
         for item in resource_items:
             pct = (float(item.total_cost) / gt_f) * 100.0
             item.abc_percentage = round(pct, 2)
-            cumulative += pct
-            # Use the cumulative threshold *before* this item rather than
-            # after - otherwise the single biggest item would always be
-            # classified A even on a flat distribution. Standard practice.
-            if cumulative <= 80.0:
+            # Classify on the cumulative percentage *before* adding this
+            # item, then advance the running total. Standard Pareto: the
+            # item that crosses the 80 % boundary still belongs to A (A
+            # items are the top run that cumulatively reach ~80 % of cost).
+            # The previous code incremented first and compared after, so an
+            # item taking the cumulative from 75 % to 85 % was demoted to B
+            # even though it is part of the 80 % cohort - contradicting this
+            # very comment and under-counting the A bucket.
+            if cumulative < 80.0:
                 item.abc_class = "A"
-            elif cumulative <= 95.0:
+            elif cumulative < 95.0:
                 item.abc_class = "B"
             else:
                 item.abc_class = "C"
+            cumulative += pct
 
     return ResourceSummaryResponse(
         total_resources=len(resource_items),
@@ -7434,6 +7483,7 @@ async def get_cost_breakdown(
 
 @router.get(
     "/boqs/{boq_id}/statistics/",
+    response_model=BOQStatisticsResponse,
     summary="Get BOQ statistics",
     dependencies=[Depends(RequirePermission("boq.read"))],
 )
@@ -7443,7 +7493,7 @@ async def get_boq_statistics(
     payload: CurrentUserPayload,
     session: SessionDep,
     service: BOQService = Depends(_get_service),
-) -> dict:
+) -> BOQStatisticsResponse:
     """Get aggregated statistics for a BOQ.
 
     Returns position count, section count, direct cost, grand total, average
@@ -7451,8 +7501,15 @@ async def get_boq_statistics(
     classification coverage.
     """
     await _verify_boq_owner(session, boq_id, _user_id, payload)
-    result = await service.get_statistics(boq_id)
-    return result.model_dump()
+    # Return the model directly so FastAPI serialises money fields
+    # (direct_cost / grand_total / avg_unit_rate) as Decimal-as-strings via
+    # the schema's ``when_used="json"`` field serializers (v3 §10). The
+    # previous ``result.model_dump()`` emitted a plain dict of Decimals,
+    # which the JSON encoder rendered as floats - silently dropping
+    # precision on large totals and breaking the money-string contract every
+    # other BOQ endpoint honours. Declaring ``response_model`` also restores
+    # the rich schema in the OpenAPI document (it was an empty object before).
+    return await service.get_statistics(boq_id)
 
 
 # ── Sensitivity Analysis (Tornado Chart) ─────────────────────────────────────
@@ -7830,12 +7887,16 @@ class CustomColumnCreate(BaseModel):
 async def add_custom_column(
     boq_id: uuid.UUID,
     payload: CustomColumnCreate,
+    _user_id: CurrentUserId,
+    user_payload: CurrentUserPayload,
+    session: SessionDep,
     service: BOQService = Depends(_get_service),
 ) -> dict:
     """Add a custom column definition to a BOQ.
 
     Body: {"name": "supplier", "display_name": "Supplier", "column_type": "text", "options": []}
     """
+    await _verify_boq_owner(session, boq_id, _user_id, user_payload)
     name = payload.name.strip().lower().replace(" ", "_")
     if not name or not name.isidentifier():
         raise HTTPException(400, "Invalid column name - use alphanumeric + underscore")
@@ -7923,11 +7984,15 @@ async def add_custom_column(
 async def delete_custom_column(
     boq_id: uuid.UUID,
     column_name: str,
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
     service: BOQService = Depends(_get_service),
 ) -> None:
     """Remove a custom column definition (data in positions preserved)."""
     from sqlalchemy.orm.attributes import flag_modified
 
+    await _verify_boq_owner(session, boq_id, _user_id, payload)
     boq = await service.get_boq(boq_id)
     existing_meta = boq.metadata_ if isinstance(boq.metadata_, dict) else {}
     existing_columns = list(existing_meta.get("custom_columns", []))
@@ -8028,6 +8093,9 @@ async def list_boq_variables(
 )
 async def replace_boq_variables(
     boq_id: uuid.UUID,
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
     variables: list[BOQVariable] = Body(...),
     service: BOQService = Depends(_get_service),
 ) -> list[dict]:
@@ -8037,6 +8105,7 @@ async def replace_boq_variables(
     list is small (≤50) and the editor UI sends the whole table back
     on save, so a single round-trip keeps state simple.
     """
+    await _verify_boq_owner(session, boq_id, _user_id, payload)
     if len(variables) > _MAX_VARIABLES_PER_BOQ:
         raise HTTPException(
             400,
@@ -8092,6 +8161,9 @@ class RenumberRequest(BaseModel):
 )
 async def renumber_positions(
     boq_id: uuid.UUID,
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
     options: RenumberRequest | None = None,
     service: BOQService = Depends(_get_service),
 ) -> dict:
@@ -8115,6 +8187,7 @@ async def renumber_positions(
     Positions are processed in their current ``sort_order`` so the user's
     drag-and-drop order is preserved. Only the ``ordinal`` field is rewritten.
     """
+    await _verify_boq_owner(session, boq_id, _user_id, payload)
     opts = options or RenumberRequest()
 
     # Step (gap) per scheme. Sequential and dotted have step=1; gap10/gap100
@@ -8261,7 +8334,14 @@ async def boq_vector_reindex(
     from app.modules.boq.models import Position
     from app.modules.boq.vector_adapter import boq_position_adapter
 
-    stmt = select(Position).options(selectinload(Position.boq))
+    # The adapter only reads ``position.boq.project_id`` (a scalar). Load the
+    # parent BOQ but suppress its ``positions``/``markups`` selectin loads -
+    # otherwise reindexing a whole project would chain-load every BOQ's full
+    # position and markup set just to read one id per row.
+    stmt = select(Position).options(
+        selectinload(Position.boq).noload(BOQModel.positions),
+        selectinload(Position.boq).noload(BOQModel.markups),
+    )
     if boq_id is not None:
         stmt = stmt.where(Position.boq_id == boq_id)
     elif project_id is not None:
@@ -8301,10 +8381,20 @@ async def boq_position_similar(
     from sqlalchemy.orm import selectinload
 
     from app.core.vector_index import find_similar
+    from app.modules.boq.models import BOQ as BOQModel  # noqa: N811  -- domain class, not constant
     from app.modules.boq.models import Position
     from app.modules.boq.vector_adapter import boq_position_adapter
 
-    stmt = select(Position).options(selectinload(Position.boq)).where(Position.id == position_id)
+    # Only ``row.boq.project_id`` is read below; load the parent BOQ but skip
+    # its positions/markups selectin loads (a full tree load to read one id).
+    stmt = (
+        select(Position)
+        .options(
+            selectinload(Position.boq).noload(BOQModel.positions),
+            selectinload(Position.boq).noload(BOQModel.markups),
+        )
+        .where(Position.id == position_id)
+    )
     row = (await session.execute(stmt)).scalar_one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail=translate("errors.position_not_found", locale=get_locale()))

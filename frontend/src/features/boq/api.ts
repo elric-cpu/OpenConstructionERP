@@ -1541,7 +1541,10 @@ export const boqApi = {
       `/v1/boq/boqs/${boqId}/cost-risk/?iterations=${iterations}`,
     ),
 
-  /* Statistics — aggregated BOQ metrics */
+  /* Statistics — aggregated BOQ metrics.
+   * Money fields (direct_cost / grand_total / avg_unit_rate) follow the
+   * Decimal-as-string wire contract (v3 §10) - parse with Number()/a money
+   * helper at the call site, never assume a JS number. */
   getStatistics: (boqId: string) =>
     apiGet<{
       boq_id: string;
@@ -1549,9 +1552,9 @@ export const boqApi = {
       status: string;
       position_count: number;
       section_count: number;
-      direct_cost: number;
-      grand_total: number;
-      avg_unit_rate: number;
+      direct_cost: string;
+      grand_total: string;
+      avg_unit_rate: string;
       completion_pct: number;
       unit_breakdown: Record<string, number>;
       source_breakdown: Record<string, number>;

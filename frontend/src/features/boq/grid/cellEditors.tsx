@@ -447,6 +447,7 @@ export interface AutocompleteCellEditorParams extends ICellEditorParams {
 
 export const AutocompleteCellEditor = forwardRef(
   (props: AutocompleteCellEditorParams, ref) => {
+    const { t } = useTranslation();
     const [value, setValue] = useState<string>(String(props.value ?? ''));
     const committedRef = useRef(false);
 
@@ -488,7 +489,7 @@ export const AutocompleteCellEditor = forwardRef(
           onCommit={handleCommit}
           onSelectSuggestion={handleSelectSuggestion}
           onCancel={handleCancel}
-          placeholder="Enter description..."
+          placeholder={t('boq.description_placeholder', { defaultValue: 'Enter description...' })}
         />
       </div>
     );

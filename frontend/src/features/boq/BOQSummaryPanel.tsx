@@ -222,6 +222,8 @@ export function TipsPanel({
   return (
     <div className="mb-2 rounded-xl border border-border-light bg-surface-elevated shadow-xs overflow-hidden animate-fade-in">
       <button
+        type="button"
+        aria-expanded={!collapsed}
         onClick={() => setCollapsed((prev) => {
           const next = !prev;
           try { localStorage.setItem('oe_tips_dismissed', next ? 'true' : 'false'); } catch { /* noop */ }
@@ -348,7 +350,12 @@ export function QuickAddFAB({
 
       {/* FAB button */}
       <button
+        type="button"
         onClick={() => setOpen((prev) => !prev)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={t('boq.quick_add', { defaultValue: 'Quick Add' })}
+        title={t('boq.quick_add', { defaultValue: 'Quick Add' })}
         className={`flex h-9 w-9 items-center justify-center rounded-full shadow-md transition-all duration-200 ease-out transform-gpu ${
           open
             ? 'bg-content-primary text-content-inverse rotate-45 scale-95'

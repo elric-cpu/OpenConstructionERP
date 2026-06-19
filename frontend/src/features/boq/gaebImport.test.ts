@@ -302,6 +302,52 @@ describe('parseGAEBXML', () => {
     expect(result[0].unitRate).toBe(48.75);
   });
 
+  // ── Test 11b: German thousands + decimal separators (1.234,56) ──────────
+  it('parses German-formatted numbers with dot thousands + comma decimal', () => {
+    const xml = x83Doc(`
+      <Itemlist>
+        <Item RNoPart="001">
+          <Qty>1.250,5</Qty>
+          <QU>m3</QU>
+          <Description>
+            <CompleteText><DetailTxt><Text>Bulk concrete</Text></DetailTxt></CompleteText>
+          </Description>
+          <UP>1.234,56</UP>
+        </Item>
+      </Itemlist>
+    `);
+
+    const result = parseGAEBXML(xml);
+
+    expect(result).toHaveLength(1);
+    // Previously "1.234,56" was truncated to 1.234 by a naive replace(',', '.').
+    expect(result[0].quantity).toBe(1250.5);
+    expect(result[0].unitRate).toBe(1234.56);
+  });
+
+  // ── Test 11c: US thousands + dot decimal (1,234.56) ─────────────────────
+  it('parses US-formatted numbers with comma thousands + dot decimal', () => {
+    const xml = x83Doc(`
+      <Itemlist>
+        <Item RNoPart="001">
+          <Qty>10</Qty>
+          <QU>m2</QU>
+          <Description>
+            <CompleteText><DetailTxt><Text>Slab area</Text></DetailTxt></CompleteText>
+          </Description>
+          <UP>1,234.56</UP>
+        </Item>
+      </Itemlist>
+    `);
+
+    const result = parseGAEBXML(xml);
+
+    expect(result).toHaveLength(1);
+    // Both separators present, dot last -> comma is the thousands group.
+    expect(result[0].quantity).toBe(10);
+    expect(result[0].unitRate).toBe(1234.56);
+  });
+
   // ── Test 12: Qty as attribute on BoQCtgy (GAEB variant) ──────────────────
   it('reads Qty from Item child element when attribute is absent', () => {
     const xml = x83Doc(`

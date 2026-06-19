@@ -156,12 +156,56 @@ function extractDescription(itemEl: Element): string {
   return normaliseRunWhitespace(shortText?.textContent ?? '');
 }
 
-/** Parse a decimal number from a string, returning the fallback on failure. */
+/** Parse a decimal number from a string, returning the fallback on failure.
+ *
+ * GAEB files in the wild (the format is DACH-centric) routinely carry German
+ * number formatting with a dot thousands separator and a comma decimal
+ * separator, e.g. ``"1.234,56"``. The previous implementation did a single
+ * ``replace(',', '.')`` which turned ``"1.234,56"`` into ``"1.234.56"`` and
+ * ``parseFloat`` then truncated it to ``1.234`` - silently losing three
+ * orders of magnitude on a unit rate. This mirrors the backend importer's
+ * proven ``safe_float`` separator logic: when both separators are present the
+ * last-occurring one is the decimal point; a lone comma is the decimal
+ * separator; multiple dots are thousands separators.
+ */
 function parseDecimal(value: string, fallback = 0): number {
   if (!value) return fallback;
-  // GAEB uses period or comma as decimal separator depending on locale
-  const normalised = value.trim().replace(',', '.');
-  const parsed = parseFloat(normalised);
+  let numeric = value.trim();
+  if (!numeric) return fallback;
+
+  // Preserve a leading sign, then strip whitespace thousands separators.
+  let sign = '';
+  if (numeric[0] === '+' || numeric[0] === '-') {
+    sign = numeric[0] === '-' ? '-' : '';
+    numeric = numeric.slice(1).trim();
+  }
+  // Strip whitespace group separators, incl. non-breaking (U+00A0)
+  // and narrow no-break (U+202F) spaces used to group thousands.
+  numeric = numeric.replace(/\s/g, '');
+
+  const hasDot = numeric.includes('.');
+  const hasComma = numeric.includes(',');
+
+  if (hasDot && hasComma) {
+    // Both present -> the last-occurring separator is the decimal point.
+    if (numeric.lastIndexOf(',') > numeric.lastIndexOf('.')) {
+      numeric = numeric.replace(/\./g, '').replace(',', '.');
+    } else {
+      numeric = numeric.replace(/,/g, '');
+    }
+  } else if (hasComma) {
+    // Single comma -> decimal (EU). Multiple commas -> US thousands.
+    if ((numeric.match(/,/g) ?? []).length > 1) {
+      numeric = numeric.replace(/,/g, '');
+    } else {
+      numeric = numeric.replace(',', '.');
+    }
+  } else if (hasDot && (numeric.match(/\./g) ?? []).length > 1) {
+    // Multiple dots with no comma -> dots are thousands separators.
+    numeric = numeric.replace(/\./g, '');
+  }
+
+  const parsed = parseFloat(`${sign}${numeric}`);
   return isNaN(parsed) ? fallback : parsed;
 }
 

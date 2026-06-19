@@ -421,6 +421,172 @@ async def test_owner_allowed_position_co2(http_client, a_boq, owner_a):
     )
 
 
+# ── Newly-guarded BOQ endpoints (Wave 2 security sweep) ──────────────────────
+#
+# These endpoints take a ``{boq_id}`` path param and were missing the
+# ``_verify_boq_owner`` owner gate (they relied only on the VIEWER-granted
+# ``boq.read`` / ``boq.update`` RequirePermission dependency, which an outsider
+# clears). The owner gate fires before any AI / file / DB-heavy work, so these
+# cases need no AI key, no Qdrant and no real upload payload - the outsider is
+# rejected at the gate. We assert the security property (outsider -> denied) for
+# every endpoint, and additionally assert owner-allowed for the ones that resolve
+# to a clean 2xx without any external dependency.
+
+
+# POST/PATCH endpoints that mutate or analyse A's BOQ via a JSON body.
+# (suffix, http-method, json-body)
+_BOQ_WRITE_JSON_ENDPOINTS = [
+    ("recalculate-rates", "post", {}),
+    ("validate", "post", {}),
+    ("renumber", "post", {}),
+    ("check-anomalies", "post", {}),
+    ("ai-chat", "post", {"message": "add a position", "context": {}}),
+    (
+        "check-scope",
+        "post",
+        {"project_type": "general", "region": "DACH", "currency": "EUR", "locale": "en"},
+    ),
+]
+
+
+@pytest.mark.parametrize("suffix,method,body", _BOQ_WRITE_JSON_ENDPOINTS)
+@pytest.mark.asyncio
+async def test_outsider_denied_on_boq_write_json_endpoint(
+    http_client, a_boq, outsider_b, suffix, method, body
+):
+    """An outsider must be owner-gated out of every BOQ write/analyse endpoint."""
+    boq_id = a_boq["boq_id"]
+    resp = await getattr(http_client, method)(
+        f"/api/v1/boq/boqs/{boq_id}/{suffix}/",
+        json=body,
+        headers=outsider_b["headers"],
+    )
+    assert resp.status_code in DENIED, (
+        f"LEAK: outsider B reached /boqs/{{id}}/{suffix}/ (status {resp.status_code}). Body: {resp.text!r}"
+    )
+
+
+# Endpoints that resolve to a clean 2xx for the legitimate owner with no AI key /
+# network (pure DB work). ai-chat / check-anomalies / check-scope are excluded
+# here because they need a configured AI provider or the vector DB to return 2xx.
+_BOQ_OWNER_OK_JSON_ENDPOINTS = [
+    ("recalculate-rates", "post", {}),
+    ("validate", "post", {}),
+    ("renumber", "post", {}),
+]
+
+
+@pytest.mark.parametrize("suffix,method,body", _BOQ_OWNER_OK_JSON_ENDPOINTS)
+@pytest.mark.asyncio
+async def test_owner_allowed_on_boq_write_json_endpoint(
+    http_client, a_boq, owner_a, suffix, method, body
+):
+    """Owner A is allowed (2xx) on the DB-only write endpoints they own."""
+    boq_id = a_boq["boq_id"]
+    resp = await getattr(http_client, method)(
+        f"/api/v1/boq/boqs/{boq_id}/{suffix}/",
+        json=body,
+        headers=owner_a["headers"],
+    )
+    assert 200 <= resp.status_code < 300, (
+        f"REGRESSION: owner A blocked on /boqs/{{id}}/{suffix}/ (status {resp.status_code}). Body: {resp.text!r}"
+    )
+
+
+# Import endpoints: multipart uploads. The owner gate fires before the file is
+# parsed, so a tiny dummy payload is enough to prove the outsider is rejected.
+_BOQ_IMPORT_ENDPOINTS = [
+    ("import/excel", "data.csv", b"Pos,Description\n0010,Wall\n", "text/csv"),
+    ("import/auto", "data.csv", b"Pos,Description\n0010,Wall\n", "text/csv"),
+    ("import/gaeb", "boq.x83", b"<GAEB></GAEB>", "application/xml"),
+    ("import/smart", "data.csv", b"Pos,Description\n0010,Wall\n", "text/csv"),
+]
+
+
+@pytest.mark.parametrize("suffix,fname,blob,ctype", _BOQ_IMPORT_ENDPOINTS)
+@pytest.mark.asyncio
+async def test_outsider_denied_on_boq_import_endpoint(
+    http_client, a_boq, outsider_b, suffix, fname, blob, ctype
+):
+    """An outsider must not import positions into A's BOQ (owner gate first)."""
+    boq_id = a_boq["boq_id"]
+    resp = await http_client.post(
+        f"/api/v1/boq/boqs/{boq_id}/{suffix}/",
+        files={"file": (fname, blob, ctype)},
+        headers=outsider_b["headers"],
+    )
+    assert resp.status_code in DENIED, (
+        f"LEAK: outsider B imported into A's BOQ via {suffix} (status {resp.status_code}). Body: {resp.text!r}"
+    )
+
+
+# Custom-column + variable mutations: an outsider must not alter A's BOQ schema.
+@pytest.mark.asyncio
+async def test_outsider_denied_add_custom_column(http_client, a_boq, outsider_b):
+    """POST columns mutates A's BOQ metadata - outsider must be denied."""
+    boq_id = a_boq["boq_id"]
+    resp = await http_client.post(
+        f"/api/v1/boq/boqs/{boq_id}/columns/",
+        json={"name": "supplier", "column_type": "text"},
+        headers=outsider_b["headers"],
+    )
+    assert resp.status_code in DENIED, (
+        f"LEAK: outsider B added a custom column to A's BOQ (status {resp.status_code}). Body: {resp.text!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_outsider_denied_delete_custom_column(http_client, a_boq, outsider_b):
+    """DELETE columns mutates A's BOQ metadata - outsider must be denied."""
+    boq_id = a_boq["boq_id"]
+    resp = await http_client.delete(
+        f"/api/v1/boq/boqs/{boq_id}/columns/supplier",
+        headers=outsider_b["headers"],
+    )
+    assert resp.status_code in DENIED, (
+        f"LEAK: outsider B deleted a custom column on A's BOQ (status {resp.status_code}). Body: {resp.text!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_outsider_denied_replace_variables(http_client, a_boq, outsider_b):
+    """PUT variables replaces A's BOQ variable table - outsider must be denied."""
+    boq_id = a_boq["boq_id"]
+    resp = await http_client.put(
+        f"/api/v1/boq/boqs/{boq_id}/variables/",
+        json=[{"name": "GFA", "type": "number", "value": 1000}],
+        headers=outsider_b["headers"],
+    )
+    assert resp.status_code in DENIED, (
+        f"LEAK: outsider B replaced A's BOQ variables (status {resp.status_code}). Body: {resp.text!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_owner_allowed_column_and_variable_writes(http_client, a_boq, owner_a):
+    """Owner A can add a column, replace variables, then delete the column (2xx)."""
+    boq_id = a_boq["boq_id"]
+    add = await http_client.post(
+        f"/api/v1/boq/boqs/{boq_id}/columns/",
+        json={"name": "supplier", "column_type": "text"},
+        headers=owner_a["headers"],
+    )
+    assert add.status_code == 201, f"owner add column failed: {add.text}"
+
+    put_vars = await http_client.put(
+        f"/api/v1/boq/boqs/{boq_id}/variables/",
+        json=[{"name": "GFA", "type": "number", "value": 1000}],
+        headers=owner_a["headers"],
+    )
+    assert 200 <= put_vars.status_code < 300, f"owner replace variables failed: {put_vars.text}"
+
+    delete = await http_client.delete(
+        f"/api/v1/boq/boqs/{boq_id}/columns/supplier",
+        headers=owner_a["headers"],
+    )
+    assert delete.status_code == 204, f"owner delete column failed: {delete.text}"
+
+
 # ── ai-estimator: unfiltered /runs must not leak another tenant's runs ────────
 
 

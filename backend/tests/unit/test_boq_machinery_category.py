@@ -21,6 +21,7 @@ from app.modules.methodology.bases import resolve_bases
 from app.modules.methodology.templates import _CASCADE_BASE_MAPPING, _SMR_COMPOSITE
 
 _norm = BOQService._normalize_resource_category
+_classify = BOQService._classify_position_category
 
 
 @pytest.mark.parametrize(
@@ -55,6 +56,44 @@ def test_normalize_resource_category(raw: str, expected: str) -> None:
 def test_machinery_distinct_from_equipment() -> None:
     """The whole point: the two must never collapse into one bucket."""
     assert _norm("machinery") != _norm("equipment")
+
+
+@pytest.mark.parametrize(
+    ("description", "expected"),
+    [
+        # Construction plant / mechanisms that perform the work -> machinery.
+        # These are the positions that previously leaked into ``equipment`` on
+        # the description-heuristic fallback (no resource metadata) path.
+        ("Kran 50t Vorhaltung", "machinery"),
+        ("Mobile crane hire per day", "machinery"),
+        ("Bagger 25t Einsatz", "machinery"),
+        ("Excavator operation", "machinery"),
+        ("Radlader / wheel loader", "machinery"),
+        ("Vibration roller compaction", "machinery"),
+        ("Planierraupe", "machinery"),
+        # Installed / hired equipment stays equipment - NOT machinery.
+        ("Geruest stellen", "equipment"),
+        ("Scaffold rental", "equipment"),
+        ("Site container hire", "equipment"),
+        ("Equipment hire", "equipment"),
+        # The other heuristic buckets are unchanged by the split.
+        ("Beton C25/30 liefern", "material"),
+        ("Bewehrung verlegen", "labor"),
+        ("Sonstige Leistungen", "other"),
+    ],
+)
+def test_classify_position_category_splits_machinery(description: str, expected: str) -> None:
+    """The description-keyword fallback must emit ``machinery`` for plant, so it
+    stays consistent with ``_normalize_resource_category`` and the cost-breakdown
+    categories. Plant keywords are checked before the broader equipment list."""
+    assert _classify(description) == expected
+
+
+def test_classify_machinery_distinct_from_equipment() -> None:
+    """A crane is machinery; a scaffold is equipment - never the same bucket."""
+    assert _classify("Turmdrehkran") == "machinery"
+    assert _classify("Geruest") == "equipment"
+    assert _classify("Turmdrehkran") != _classify("Geruest")
 
 
 def test_cascade_base_mapping_sees_machinery_total() -> None:

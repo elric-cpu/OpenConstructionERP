@@ -78,19 +78,45 @@ function toPayload(d: Draft): BOQVariable {
   };
 }
 
-function validateRow(d: Draft, allNames: string[]): string | null {
+/**
+ * Row validation error codes. The function stays pure (no `t` dependency) and
+ * returns a stable discriminant; the render layer maps it to a localized
+ * message via {@link rowErrorMessage}.
+ */
+type RowError = 'name_required' | 'name_format' | 'name_duplicate' | 'value_not_numeric';
+
+function validateRow(d: Draft, allNames: string[]): RowError | null {
   const cleaned = d.name.replace(/^\$/, '').trim().toUpperCase();
-  if (!cleaned) return 'Name required';
+  if (!cleaned) return 'name_required';
   if (!NAME_RE.test(cleaned)) {
-    return 'Use UPPER_SNAKE_CASE, letters/digits/underscore, max 32 chars';
+    return 'name_format';
   }
   if (allNames.filter((n) => n === cleaned).length > 1) {
-    return 'Duplicate name';
+    return 'name_duplicate';
   }
   if (d.type === 'number' && d.value !== '' && !Number.isFinite(Number(d.value))) {
-    return 'Value must be numeric';
+    return 'value_not_numeric';
   }
   return null;
+}
+
+/** Localize a {@link RowError} for display. */
+function rowErrorMessage(
+  err: RowError,
+  t: (key: string, options?: Record<string, string | number>) => string,
+): string {
+  switch (err) {
+    case 'name_required':
+      return t('boq.variables_err_name_required', { defaultValue: 'Name required' });
+    case 'name_format':
+      return t('boq.variables_err_name_format', {
+        defaultValue: 'Use UPPER_SNAKE_CASE, letters/digits/underscore, max 32 chars',
+      });
+    case 'name_duplicate':
+      return t('boq.variables_err_name_duplicate', { defaultValue: 'Duplicate name' });
+    case 'value_not_numeric':
+      return t('boq.variables_err_value_numeric', { defaultValue: 'Value must be numeric' });
+  }
 }
 
 export function BOQVariablesDialog({ open, onClose, boqId }: BOQVariablesDialogProps) {
@@ -304,16 +330,17 @@ export function BOQVariablesDialog({ open, onClose, boqId }: BOQVariablesDialogP
                 {/* Per-row errors live underneath, indexed by row id */}
                 {rowErrors.some((e) => e) && (
                   <div className="border-t border-border-light bg-semantic-error-bg/40 px-3 py-2 text-xs text-semantic-error space-y-0.5">
-                    {drafts.map((d, i) =>
-                      rowErrors[i] ? (
+                    {drafts.map((d, i) => {
+                      const err = rowErrors[i];
+                      return err ? (
                         <div key={d.uid} className="flex items-center gap-1.5">
                           <AlertCircle size={12} />
                           <span className="font-mono">${d.name || '???'}</span>
-                          <span>—</span>
-                          <span>{rowErrors[i]}</span>
+                          <span>-</span>
+                          <span>{rowErrorMessage(err, t)}</span>
                         </div>
-                      ) : null,
-                    )}
+                      ) : null;
+                    })}
                   </div>
                 )}
               </div>
