@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.json_merge import merge_metadata
 from app.modules.correspondence.models import Correspondence
 from app.modules.correspondence.repository import CorrespondenceRepository
 from app.modules.correspondence.schemas import CorrespondenceCreate, CorrespondenceUpdate
@@ -163,7 +164,7 @@ class CorrespondenceService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(correspondence, "metadata_", None) or {}), **_incoming}
+                merge_metadata(getattr(correspondence, "metadata_", None), _incoming)
                 if isinstance(_incoming, dict)
                 else _incoming
             )

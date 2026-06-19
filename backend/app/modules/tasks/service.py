@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
+from app.core.json_merge import merge_metadata
 from app.modules.tasks.models import Task
 from app.modules.tasks.repository import TaskRepository
 from app.modules.tasks.schemas import TaskCreate, TaskStatsResponse, TaskUpdate
@@ -384,7 +385,7 @@ class TaskService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(task, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(task, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
         if "checklist" in fields and fields["checklist"] is not None:
             fields["checklist"] = [

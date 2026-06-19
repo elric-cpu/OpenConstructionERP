@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
 from app.core.i18n import get_locale
+from app.core.json_merge import merge_metadata
 from app.core.validation.messages import translate
 from app.modules.bid_management.models import (
     BidAward,
@@ -506,7 +507,7 @@ class BidManagementService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(package, "metadata_", None) or {}), **_incoming}
+                merge_metadata(getattr(package, "metadata_", None), _incoming)
                 if isinstance(_incoming, dict)
                 else _incoming
             )

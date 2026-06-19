@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import noload
 
 from app.core.events import event_bus
+from app.core.json_merge import merge_metadata
 
 _logger_ev = __import__("logging").getLogger(__name__ + ".events")
 
@@ -612,7 +613,7 @@ class ScheduleService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(schedule, "metadata_", None) or {}), **_incoming}
+                merge_metadata(getattr(schedule, "metadata_", None), _incoming)
                 if isinstance(_incoming, dict)
                 else _incoming
             )
@@ -1124,7 +1125,7 @@ class ScheduleService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(activity, "metadata_", None) or {}), **_incoming}
+                merge_metadata(getattr(activity, "metadata_", None), _incoming)
                 if isinstance(_incoming, dict)
                 else _incoming
             )

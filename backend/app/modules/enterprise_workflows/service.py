@@ -31,6 +31,7 @@ from datetime import UTC, datetime
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.json_merge import merge_metadata
 from app.modules.enterprise_workflows.models import ApprovalRequest, ApprovalWorkflow
 from app.modules.enterprise_workflows.repository import (
     ApprovalRequestRepository,
@@ -251,7 +252,7 @@ class WorkflowService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(workflow, "metadata_", None) or {}), **_incoming}
+                merge_metadata(getattr(workflow, "metadata_", None), _incoming)
                 if isinstance(_incoming, dict)
                 else _incoming
             )

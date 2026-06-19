@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
+from app.core.json_merge import merge_metadata
 from app.modules.transmittals.models import (
     Transmittal,
     TransmittalItem,
@@ -180,7 +181,7 @@ class TransmittalService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(transmittal, "metadata_", None) or {}), **_incoming}
+                merge_metadata(getattr(transmittal, "metadata_", None), _incoming)
                 if isinstance(_incoming, dict)
                 else _incoming
             )

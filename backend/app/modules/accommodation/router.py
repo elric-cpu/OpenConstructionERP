@@ -18,6 +18,7 @@ from datetime import UTC, date, datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import desc, select
 
+from app.core.json_merge import merge_metadata
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep
 from app.modules.accommodation.models import (
     Accommodation,
@@ -221,7 +222,7 @@ async def update_accommodation(
         setattr(accom, key, value)
     if isinstance(metadata, dict):
         # Merge into the existing column so a partial PATCH keeps other keys.
-        accom.metadata_ = {**(getattr(accom, "metadata_", None) or {}), **metadata}
+        accom.metadata_ = merge_metadata(getattr(accom, "metadata_", None), metadata)
     elif metadata is not None:
         accom.metadata_ = metadata
     await session.flush()
@@ -706,7 +707,7 @@ async def update_charge(
         setattr(charge, key, value)
     if isinstance(metadata, dict):
         # Merge into the existing column so a partial PATCH keeps other keys.
-        charge.metadata_ = {**(getattr(charge, "metadata_", None) or {}), **metadata}
+        charge.metadata_ = merge_metadata(getattr(charge, "metadata_", None), metadata)
     elif metadata is not None:
         charge.metadata_ = metadata
 

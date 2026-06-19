@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
+from app.core.json_merge import merge_metadata
 from app.modules.inspections.models import QualityInspection
 from app.modules.inspections.repository import InspectionRepository
 from app.modules.inspections.schemas import InspectionCreate, InspectionUpdate
@@ -159,7 +160,7 @@ class InspectionService:
         if "metadata" in fields:
             incoming_meta = fields.pop("metadata")
             if isinstance(incoming_meta, dict):
-                fields["metadata_"] = {**(getattr(inspection, "metadata_", None) or {}), **incoming_meta}
+                fields["metadata_"] = merge_metadata(getattr(inspection, "metadata_", None), incoming_meta)
             else:
                 fields["metadata_"] = incoming_meta
 

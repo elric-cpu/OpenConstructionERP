@@ -15,6 +15,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.json_merge import merge_metadata
 from app.modules.contacts.models import Contact
 from app.modules.contacts.repository import ContactRepository
 from app.modules.contacts.schemas import ContactCreate, ContactUpdate
@@ -271,7 +272,7 @@ class ContactService:
         if "metadata" in fields:
             incoming_meta = fields.pop("metadata")
             if isinstance(incoming_meta, dict):
-                fields["metadata_"] = {**(getattr(contact, "metadata_", None) or {}), **incoming_meta}
+                fields["metadata_"] = merge_metadata(getattr(contact, "metadata_", None), incoming_meta)
             else:
                 fields["metadata_"] = incoming_meta
 

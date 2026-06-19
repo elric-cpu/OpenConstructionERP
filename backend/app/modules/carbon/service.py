@@ -30,6 +30,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
+from app.core.json_merge import merge_metadata
 from app.modules.carbon.models import (
     CarbonInventory,
     CarbonTarget,
@@ -976,7 +977,7 @@ class CarbonService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(epd, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(epd, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
         if fields:
             await self.epd_repo.update_fields(epd_id, **fields)
@@ -1047,7 +1048,7 @@ class CarbonService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(factor, "metadata_", None) or {}), **_incoming}
+                merge_metadata(getattr(factor, "metadata_", None), _incoming)
                 if isinstance(_incoming, dict)
                 else _incoming
             )
@@ -1145,7 +1146,7 @@ class CarbonService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(inv, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(inv, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
         if fields:
             await self.inventory_repo.update_fields(inventory_id, **fields)
@@ -1293,7 +1294,7 @@ class CarbonService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(entry, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(entry, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
         if fields:
             await self.embodied_repo.update_fields(entry_id, **fields)
@@ -1376,7 +1377,7 @@ class CarbonService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(entry, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(entry, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
         if fields:
             await self.scope1_repo.update_fields(entry_id, **fields)
@@ -1424,7 +1425,7 @@ class CarbonService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(entry, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(entry, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
         if fields:
             await self.scope2_repo.update_fields(entry_id, **fields)
@@ -1469,7 +1470,7 @@ class CarbonService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(entry, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(entry, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
         if fields:
             await self.scope3_repo.update_fields(entry_id, **fields)
@@ -1516,7 +1517,7 @@ class CarbonService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(target, "metadata_", None) or {}), **_incoming}
+                merge_metadata(getattr(target, "metadata_", None), _incoming)
                 if isinstance(_incoming, dict)
                 else _incoming
             )
@@ -1663,7 +1664,7 @@ class CarbonService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(report, "metadata_", None) or {}), **_incoming}
+                merge_metadata(getattr(report, "metadata_", None), _incoming)
                 if isinstance(_incoming, dict)
                 else _incoming
             )

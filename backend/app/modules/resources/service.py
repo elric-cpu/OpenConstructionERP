@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
 from app.core.i18n import get_locale
+from app.core.json_merge import merge_metadata
 from app.core.validation.messages import translate
 from app.modules.resources.models import (
     Assignment,
@@ -549,7 +550,7 @@ class ResourcesService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(resource, "metadata_", None) or {}), **_incoming}
+                merge_metadata(getattr(resource, "metadata_", None), _incoming)
                 if isinstance(_incoming, dict)
                 else _incoming
             )
@@ -599,7 +600,7 @@ class ResourcesService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(skill, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(skill, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
         if not fields:
             return skill
@@ -685,7 +686,7 @@ class ResourcesService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(cert, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(cert, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
         # Re-derive status if expiry changed
         new_valid_until = fields.get("valid_until", cert.valid_until)
@@ -746,7 +747,7 @@ class ResourcesService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(window, "metadata_", None) or {}), **_incoming}
+                merge_metadata(getattr(window, "metadata_", None), _incoming)
                 if isinstance(_incoming, dict)
                 else _incoming
             )
@@ -814,7 +815,7 @@ class ResourcesService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(assignment, "metadata_", None) or {}), **_incoming}
+                merge_metadata(getattr(assignment, "metadata_", None), _incoming)
                 if isinstance(_incoming, dict)
                 else _incoming
             )
@@ -1130,7 +1131,7 @@ class ResourcesService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(req, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(req, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
         if "required_skills" in fields and fields["required_skills"] is not None:
             fields["required_skills"] = [str(s) for s in fields["required_skills"]]
@@ -1229,7 +1230,7 @@ class ResourcesService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(link, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(link, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
         if not fields:
             return link

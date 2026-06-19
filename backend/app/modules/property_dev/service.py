@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
 from app.core.i18n import get_locale
+from app.core.json_merge import merge_metadata
 from app.core.pdf_fonts import BODY_FONT, BOLD_FONT, register_pdf_fonts
 from app.core.validation.messages import translate
 from app.modules.property_dev.models import (
@@ -6890,10 +6891,7 @@ def _dump(data: Any, existing: Any = None) -> dict[str, Any]:
     if "metadata" in fields:
         _incoming = fields.pop("metadata")
         if existing is not None and isinstance(_incoming, dict):
-            fields["metadata_"] = {
-                **(getattr(existing, "metadata_", None) or {}),
-                **_incoming,
-            }
+            fields["metadata_"] = merge_metadata(getattr(existing, "metadata_", None), _incoming)
         else:
             fields["metadata_"] = _incoming
     return fields

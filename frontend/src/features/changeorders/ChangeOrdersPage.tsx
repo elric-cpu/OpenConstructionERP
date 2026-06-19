@@ -36,6 +36,7 @@ import {
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { apiGet, apiPost, apiDelete } from '@/shared/lib/api';
 import { getIntlLocale } from '@/shared/lib/formatters';
+import { formatCurrency as fmtMoney } from '@/shared/lib/money';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -190,32 +191,13 @@ function translateStatus(status: string, t: (key: string, opts?: Record<string, 
   return map[status] || status;
 }
 
-function formatCurrency(amount: number, currency?: string): string {
-  // NEVER hard-fallback to 'EUR' (task #217): a project priced in BRL/USD
-  // must not render its change-order amounts with a Euro sign. When the
-  // currency is unknown, show a plain decimal number with no symbol.
-  //
-  // Cents matter for contractual change-order amounts (task: a 1250.50
-  // impact must not collapse to "1,251"). We drop the explicit fraction
-  // overrides so Intl applies the currency's own minor-unit count (2 for
-  // EUR/USD, 0 for JPY, 3 for KWD, …) — that's the correct behaviour for
-  // every currency without hard-coding it.
-  const safe = Number.isFinite(amount) ? amount : 0;
-  const code = (currency || '').trim().toUpperCase();
-  if (!/^[A-Z]{3}$/.test(code)) {
-    return new Intl.NumberFormat(getIntlLocale(), {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(safe);
-  }
-  try {
-    return new Intl.NumberFormat(getIntlLocale(), {
-      style: 'currency',
-      currency: code,
-    }).format(safe);
-  } catch {
-    return `${safe.toFixed(2)} ${code}`;
-  }
+// Change-order amounts keep cents (a 1250.50 impact must not collapse to
+// "1,251"), so we pass no fraction override and let the shared formatter
+// apply each currency's natural minor-unit count (2 EUR/USD, 0 JPY, 3 KWD…).
+// Delegating to the shared money helper also gives us the Decimal-as-string
+// coercion and the never-fall-back-to-EUR policy (task #217) for free.
+function formatCurrency(amount: string | number, currency?: string): string {
+  return fmtMoney(amount, currency);
 }
 
 /**

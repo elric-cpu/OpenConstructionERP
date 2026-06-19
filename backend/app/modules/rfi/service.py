@@ -21,6 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
+from app.core.json_merge import merge_metadata
 from app.modules.rfi.models import RFI
 from app.modules.rfi.repository import RFIRepository
 from app.modules.rfi.schemas import RFICreate, RFIStatsResponse, RFIUpdate
@@ -290,7 +291,7 @@ class RFIService:
         if "metadata" in fields:
             incoming_meta = fields.pop("metadata")
             if isinstance(incoming_meta, dict):
-                fields["metadata_"] = {**(getattr(rfi, "metadata_", None) or {}), **incoming_meta}
+                fields["metadata_"] = merge_metadata(getattr(rfi, "metadata_", None), incoming_meta)
             else:
                 fields["metadata_"] = incoming_meta
 

@@ -20,6 +20,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
+from app.core.json_merge import merge_metadata
 from app.core.sql_numeric import numeric_value
 from app.modules.procurement.models import (
     GoodsReceipt,
@@ -639,7 +640,7 @@ class ProcurementService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(po, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(po, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
 
         # Re-apply the vendor prequalification gate (TOP-30 #20) only when the

@@ -17,6 +17,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
+from app.core.json_merge import merge_metadata
 from app.modules.changeorders.models import (
     ChangeOrder,
     ChangeOrderApproval,
@@ -858,7 +859,7 @@ class ChangeOrderService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(order, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(order, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
         # T3: coerce UUID lists to plain str lists so the JSON column
         # stores stable hex strings on both Postgres and SQLite (which
@@ -1617,7 +1618,7 @@ class ChangeOrderService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(item, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(item, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
 
         # Recalculate cost_delta if quantities or rates changed. Decimal

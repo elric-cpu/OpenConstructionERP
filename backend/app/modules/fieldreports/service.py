@@ -17,6 +17,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.i18n import get_locale
+from app.core.json_merge import merge_metadata
 from app.core.validation.messages import translate
 from app.modules.fieldreports.builtin_templates import (
     BUILTIN_TEMPLATES,
@@ -249,7 +250,7 @@ class FieldReportService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(report, "metadata_", None) or {}), **_incoming}
+                merge_metadata(getattr(report, "metadata_", None), _incoming)
                 if isinstance(_incoming, dict)
                 else _incoming
             )
@@ -795,7 +796,7 @@ class FieldReportTemplateService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(template, "metadata_", None) or {}), **_incoming}
+                merge_metadata(getattr(template, "metadata_", None), _incoming)
                 if isinstance(_incoming, dict)
                 else _incoming
             )

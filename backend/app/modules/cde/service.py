@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cde_states import CDEState, CDEStateMachine
 from app.core.events import event_bus
+from app.core.json_merge import merge_metadata
 from app.modules.cde.models import DocumentContainer, DocumentRevision, StateTransition
 from app.modules.cde.repository import ContainerRepository, RevisionRepository
 from app.modules.cde.schemas import (
@@ -208,7 +209,7 @@ class CDEService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(container, "metadata_", None) or {}), **_incoming}
+                merge_metadata(getattr(container, "metadata_", None), _incoming)
                 if isinstance(_incoming, dict)
                 else _incoming
             )

@@ -17,6 +17,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.json_merge import merge_metadata
 from app.core.url_safety import UnsafeUrlError, resolve_and_validate_external_url
 from app.modules.integrations.models import WebhookDelivery, WebhookEndpoint
 
@@ -74,7 +75,7 @@ class WebhookService:
                 col = "metadata_" if field == "metadata" else field
                 value = data[field]
                 if col == "metadata_" and isinstance(value, dict):
-                    value = {**(getattr(webhook, "metadata_", None) or {}), **value}
+                    value = merge_metadata(getattr(webhook, "metadata_", None), value)
                 setattr(webhook, col, value)
         await self.session.flush()
         # Reload server-computed columns (updated_at onupdate=func.now()) inside

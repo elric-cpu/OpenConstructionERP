@@ -38,6 +38,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.json_merge import merge_metadata
 from app.modules.ai_estimator import benchmarks, schemas
 from app.modules.ai_estimator import events as estimator_events
 from app.modules.ai_estimator.models import (
@@ -305,7 +306,9 @@ class AiEstimatorService:
             assert refreshed is not None  # noqa: S101
             return refreshed
 
-        await self.run_repo.update_fields(run.id, metadata_={**(run.metadata_ or {}), "envelopes": envelopes})
+        await self.run_repo.update_fields(
+            run.id, metadata_=merge_metadata(run.metadata_, {"envelopes": envelopes})
+        )
 
         detected, suggested, ai_provenance = await self._classify_source(run, envelopes, use_ai=use_ai)
 

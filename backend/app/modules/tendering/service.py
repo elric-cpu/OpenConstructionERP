@@ -15,6 +15,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
+from app.core.json_merge import merge_metadata
 
 _logger_ev = __import__("logging").getLogger(__name__ + ".events")
 
@@ -341,7 +342,7 @@ class TenderingService:
         if "metadata" in fields:
             incoming_meta = fields.pop("metadata")
             if isinstance(incoming_meta, dict):
-                fields["metadata_"] = {**(package.metadata_ or {}), **incoming_meta}
+                fields["metadata_"] = merge_metadata(package.metadata_, incoming_meta)
             else:
                 fields["metadata_"] = incoming_meta
 
@@ -458,7 +459,7 @@ class TenderingService:
         if "metadata" in fields:
             incoming_meta = fields.pop("metadata")
             if isinstance(incoming_meta, dict):
-                fields["metadata_"] = {**(bid.metadata_ or {}), **incoming_meta}
+                fields["metadata_"] = merge_metadata(bid.metadata_, incoming_meta)
             else:
                 fields["metadata_"] = incoming_meta
 

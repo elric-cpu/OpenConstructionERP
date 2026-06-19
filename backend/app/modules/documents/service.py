@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cde_states import CDEState, CDEStateMachine
 from app.core.i18n import get_locale
+from app.core.json_merge import merge_metadata
 from app.core.validation.messages import translate
 from app.modules.bim_hub.models import BIMElement
 from app.modules.documents.activity_service import record_activity
@@ -717,7 +718,7 @@ class DocumentService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(document, "metadata_", None) or {}), **_incoming}
+                merge_metadata(getattr(document, "metadata_", None), _incoming)
                 if isinstance(_incoming, dict)
                 else _incoming
             )
@@ -1709,7 +1710,7 @@ class SheetService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(sheet, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(sheet, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
 
         if not fields:

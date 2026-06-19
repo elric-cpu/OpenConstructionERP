@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings
 from app.core.events import event_bus
 from app.core.i18n import get_locale
+from app.core.json_merge import merge_metadata
 from app.core.validation.messages import translate
 
 # Per-process lock + reservation set guarding ``_generate_project_code``.
@@ -388,7 +389,7 @@ class ProjectService:
 
             _pack = get_active_pack()
             if _pack is not None:
-                project.metadata_ = {**(project.metadata_ or {}), "partner_pack": _pack.slug}
+                project.metadata_ = merge_metadata(project.metadata_, {"partner_pack": _pack.slug})
         except Exception:  # noqa: BLE001 - creation must never break on pack lookup
             pass
 
@@ -621,7 +622,7 @@ class ProjectService:
         # other stored key. Runs after the allow_currency_change strip above so
         # the transient command flag is never merged back in.
         if isinstance(fields.get("metadata_"), dict):
-            fields["metadata_"] = {**(project.metadata_ or {}), **fields["metadata_"]}
+            fields["metadata_"] = merge_metadata(project.metadata_, fields["metadata_"])
 
         await self.repo.update_fields(project_id, **fields)
 

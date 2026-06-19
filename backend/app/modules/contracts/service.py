@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
 from app.core.i18n import get_locale
+from app.core.json_merge import merge_metadata
 from app.core.validation.engine import ValidationReport, validation_engine
 from app.core.validation.messages import translate
 from app.modules.contracts.compliance_packs import (
@@ -710,7 +711,7 @@ class ContractsService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(contract, "metadata_", None) or {}), **_incoming}
+                merge_metadata(getattr(contract, "metadata_", None), _incoming)
                 if isinstance(_incoming, dict)
                 else _incoming
             )
@@ -1293,7 +1294,7 @@ class ContractsService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(line, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(line, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
         # Recompute total if quantity / unit_rate changed.
         qty = Decimal(str(fields.get("quantity", line.quantity) or 0))

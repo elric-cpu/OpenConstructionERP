@@ -18,6 +18,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
+from app.core.json_merge import merge_metadata
 from app.modules.costmodel.models import (
     BudgetLine,
     CashFlow,
@@ -380,7 +381,7 @@ class CostModelService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(snapshot, "metadata_", None) or {}), **_incoming}
+                merge_metadata(getattr(snapshot, "metadata_", None), _incoming)
                 if isinstance(_incoming, dict)
                 else _incoming
             )
@@ -734,7 +735,7 @@ class CostModelService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(line, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(line, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
 
         if fields:
@@ -1838,7 +1839,7 @@ class CostSpineService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(account, "metadata_", None) or {}), **_incoming}
+                merge_metadata(getattr(account, "metadata_", None), _incoming)
                 if isinstance(_incoming, dict)
                 else _incoming
             )
@@ -1969,7 +1970,7 @@ class CostSpineService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(line, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(line, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
 
         if fields:

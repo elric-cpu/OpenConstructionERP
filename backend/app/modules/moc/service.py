@@ -25,6 +25,7 @@ from fastapi import status as http_status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
+from app.core.json_merge import merge_metadata
 from app.modules.moc.models import MoCEntry, MoCImpact
 from app.modules.moc.repository import MoCImpactRepository, MoCRepository
 from app.modules.moc.schemas import (
@@ -195,7 +196,7 @@ class MoCService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(entry, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(entry, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
         if "cost_impact" in fields and fields["cost_impact"] is not None:
             fields["cost_impact"] = _to_decimal(fields["cost_impact"])

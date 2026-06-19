@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.json_merge import merge_metadata
 from app.modules.submittals.models import Submittal
 from app.modules.submittals.repository import SubmittalRepository
 from app.modules.submittals.schemas import SubmittalCreate, SubmittalUpdate
@@ -240,7 +241,7 @@ class SubmittalService:
         if "metadata" in fields:
             incoming_meta = fields.pop("metadata")
             if isinstance(incoming_meta, dict):
-                fields["metadata_"] = {**(getattr(submittal, "metadata_", None) or {}), **incoming_meta}
+                fields["metadata_"] = merge_metadata(getattr(submittal, "metadata_", None), incoming_meta)
             else:
                 fields["metadata_"] = incoming_meta
 

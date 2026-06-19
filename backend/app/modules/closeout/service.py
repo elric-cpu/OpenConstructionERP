@@ -28,6 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.job_runner import submit_job
+from app.core.json_merge import merge_metadata
 from app.modules.closeout import checklist_templates as templates
 from app.modules.closeout.cover_pdf import render_cover_pdf
 from app.modules.closeout.models import CloseoutBinding, CloseoutPackage, CloseoutSlot
@@ -255,7 +256,7 @@ class CloseoutService:
             if key in fields and fields[key] is not None:
                 setattr(slot, key, fields[key])
         if fields.get("metadata") is not None:
-            slot.metadata_ = {**(slot.metadata_ or {}), **fields["metadata"]}
+            slot.metadata_ = merge_metadata(slot.metadata_, fields["metadata"])
         self.session.add(slot)
         await self.session.flush()
         package = await self.get_package_or_404(slot.package_id)

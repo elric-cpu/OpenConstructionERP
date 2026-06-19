@@ -26,6 +26,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import PlainTextResponse
 
 from app.core.i18n import get_locale
+from app.core.json_merge import merge_metadata
 from app.core.rate_limiter import approval_limiter
 from app.core.url_safety import UnsafeUrlError, resolve_and_validate_external_url
 from app.core.validation.messages import translate
@@ -135,7 +136,7 @@ async def update_integration_config(
     for field, value in update_data.items():
         col = "metadata_" if field == "metadata" else field
         if col == "metadata_" and isinstance(value, dict):
-            value = {**(getattr(config, "metadata_", None) or {}), **value}
+            value = merge_metadata(getattr(config, "metadata_", None), value)
         setattr(config, col, value)
 
     await session.flush()

@@ -149,6 +149,79 @@ jobs:
           fi
           echo "All backend shards passed."
 
+  tenant-isolation:
+    name: Tenant Isolation / IDOR
+    # Cross-tenant + IDOR (Insecure Direct Object Reference) regressions are the
+    # highest-severity bug class in a multi-tenant app: one missing
+    # verify_project_access / tenant_id filter leaks another customer's data.
+    # The bulk of the isolation suite lives under tests/integration and
+    # tests/modules, which the sharded Backend CI above does NOT run (it runs
+    # only tests/unit) - so until now those tests gated merges only nightly in
+    # ci-full.yml. This dedicated job runs JUST the isolation + IDOR selection on
+    # every PR against a throwaway PostgreSQL 16 service, so a cross-tenant leak
+    # blocks the merge instead of surfacing the next morning. It is fast because
+    # it collects only the security selection, not the whole integration tree.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+
+    # Same postgres:16 service the Backend CI shards use. conftest honours an
+    # already-set DATABASE_URL (this service) and only boots an embedded cluster
+    # when none is provided, so pointing DATABASE_URL here keeps the tests off
+    # the slower embedded-PG path.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: oe
+          POSTGRES_PASSWORD: oe
+          POSTGRES_DB: openconstructionerp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U oe -d openconstructionerp_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Create empty frontend dist (hatchling force-include)
+        # Mirrors the Backend CI job: the editable install force-includes
+        # ../frontend/dist, which may not exist yet in this parallel job.
+        run: |
+          mkdir -p ../frontend/dist
+          touch ../frontend/dist/.gitkeep
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run tenant-isolation + IDOR suite
+        # Collect ONLY the cross-tenant / IDOR selection from the integration and
+        # module trees (the unit-level *_idor.py / tenant-scope guards already
+        # run in the sharded Backend CI). The -k filter matches the node id, so
+        # the filename keywords (idor / isolation / tenant / authz) pick exactly
+        # the security suite. --timeout matches the nightly so a hung test fails
+        # loud instead of stalling the cap.
+        env:
+          DATABASE_URL: postgresql+asyncpg://oe:oe@localhost:5432/openconstructionerp_test
+          DATABASE_SYNC_URL: postgresql+psycopg2://oe:oe@localhost:5432/openconstructionerp_test
+        run: >-
+          pytest tests/integration tests/modules -q -ra
+          --timeout=300 --timeout-method=signal
+          -k "idor or isolation or tenant or authz"
+
   zero-width-guard:
     name: Block zero-width Unicode characters
     runs-on: ubuntu-latest

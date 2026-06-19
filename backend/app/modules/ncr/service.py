@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
+from app.core.json_merge import merge_metadata
 from app.modules.ncr.models import NCR
 from app.modules.ncr.repository import NCRRepository
 from app.modules.ncr.schemas import NCRCreate, NCRUpdate
@@ -175,7 +176,7 @@ class NCRService:
         if "metadata" in fields:
             incoming_meta = fields.pop("metadata")
             if isinstance(incoming_meta, dict):
-                fields["metadata_"] = {**(getattr(ncr, "metadata_", None) or {}), **incoming_meta}
+                fields["metadata_"] = merge_metadata(getattr(ncr, "metadata_", None), incoming_meta)
             else:
                 fields["metadata_"] = incoming_meta
 

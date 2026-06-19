@@ -21,6 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
+from app.core.json_merge import merge_metadata
 from app.modules.service.models import (
     AssetInspectionChecklist,
     DebriefReport,
@@ -430,7 +431,7 @@ class ServiceService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(contract, "metadata_", None) or {}), **_incoming}
+                merge_metadata(getattr(contract, "metadata_", None), _incoming)
                 if isinstance(_incoming, dict)
                 else _incoming
             )
@@ -509,7 +510,7 @@ class ServiceService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(asset, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(asset, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
         if not fields:
             return asset
@@ -664,7 +665,7 @@ class ServiceService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(ticket, "metadata_", None) or {}), **_incoming}
+                merge_metadata(getattr(ticket, "metadata_", None), _incoming)
                 if isinstance(_incoming, dict)
                 else _incoming
             )
@@ -1145,7 +1146,7 @@ class ServiceService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(wo, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(wo, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
         if "status" in fields:
             assert_transition(wo.status, fields["status"], machine="work_order")
@@ -1351,7 +1352,7 @@ class ServiceService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(sla, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(sla, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
         if not fields:
             return sla
@@ -1396,7 +1397,7 @@ class ServiceService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(sched, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(sched, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
         if not fields:
             return sched

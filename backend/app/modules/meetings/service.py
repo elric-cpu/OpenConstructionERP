@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
+from app.core.json_merge import merge_metadata
 from app.modules.meetings.models import Meeting, MeetingAttendance
 from app.modules.meetings.repository import MeetingRepository
 from app.modules.meetings.schemas import (
@@ -268,7 +269,7 @@ class MeetingService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(meeting, "metadata_", None) or {}), **_incoming}
+                merge_metadata(getattr(meeting, "metadata_", None), _incoming)
                 if isinstance(_incoming, dict)
                 else _incoming
             )

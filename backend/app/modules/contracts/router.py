@@ -29,6 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 
 from app.core.i18n import get_locale
+from app.core.json_merge import merge_metadata
 from app.core.validation.messages import translate
 from app.dependencies import (
     CurrentUserId,
@@ -947,7 +948,7 @@ async def update_progress_claim(
     if "metadata" in fields:
         _incoming = fields.pop("metadata")
         fields["metadata_"] = (
-            {**(getattr(obj, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+            merge_metadata(getattr(obj, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
         )
     # Status changes must go through the lifecycle transition endpoints
     # (submit / approve / certify / reject / mark-paid). They enforce the

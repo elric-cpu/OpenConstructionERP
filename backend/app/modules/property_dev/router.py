@@ -36,6 +36,7 @@ from app.core.file_signature import (
     require as require_signature,
 )
 from app.core.i18n import get_locale
+from app.core.json_merge import merge_metadata
 from app.core.pdf_fonts import BODY_FONT, register_pdf_fonts
 from app.core.validation.messages import translate
 from app.dependencies import CurrentUserPayload, RequirePermission, SessionDep
@@ -3903,7 +3904,7 @@ async def update_escrow_transaction(
     if "metadata" in fields:
         _incoming = fields.pop("metadata")
         fields["metadata_"] = (
-            {**(getattr(obj, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+            merge_metadata(getattr(obj, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
         )
     await service.escrow_transactions.update_fields(tx_id, **fields)
     refreshed = await service.escrow_transactions.get_by_id(tx_id)

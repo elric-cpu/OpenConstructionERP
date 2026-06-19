@@ -48,6 +48,7 @@ from decimal import Decimal
 from typing import Any
 
 from app.core.events import Event, event_bus
+from app.core.json_merge import merge_metadata
 from app.database import async_session_factory
 
 logger = logging.getLogger(__name__)
@@ -269,7 +270,7 @@ async def _do_geocode_and_persist(
             await repo.create(anchor)
             anchor_id = anchor.id
         else:
-            merged_meta = {**(existing.metadata_ or {}), **geo_meta}
+            merged_meta = merge_metadata(existing.metadata_, geo_meta)
             await repo.update_fields(
                 existing.id,
                 lat=result.lat,

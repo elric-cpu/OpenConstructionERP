@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.json_merge import merge_metadata
 from app.modules.rfq_bidding.models import RFQ, RFQBid
 from app.modules.rfq_bidding.repository import RFQBidRepository, RFQRepository
 from app.modules.rfq_bidding.schemas import (
@@ -109,7 +110,7 @@ class RFQService:
         if "metadata" in fields:
             _incoming = fields.pop("metadata")
             fields["metadata_"] = (
-                {**(getattr(rfq, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
+                merge_metadata(getattr(rfq, "metadata_", None), _incoming) if isinstance(_incoming, dict) else _incoming
             )
 
         if fields:

@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import Select, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.json_merge import merge_metadata
 from app.modules.saved_views.errors import (
     BudgetError,
     ScopeDenied,
@@ -322,7 +323,7 @@ class SavedViewService:
             fields["is_pinned"] = payload.is_pinned
         if payload.metadata_ is not None:
             fields["metadata_"] = (
-                {**(getattr(view, "metadata_", None) or {}), **payload.metadata_}
+                merge_metadata(getattr(view, "metadata_", None), payload.metadata_)
                 if isinstance(payload.metadata_, dict)
                 else payload.metadata_
             )
