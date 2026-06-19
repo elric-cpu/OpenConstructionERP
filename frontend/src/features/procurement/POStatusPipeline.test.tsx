@@ -9,11 +9,23 @@ import { render, screen } from '@testing-library/react';
 import { POStatusPipeline } from './POStatusPipeline';
 
 describe('<POStatusPipeline>', () => {
-  it('renders four dots for an in-flight PO', () => {
+  it('renders five dots for an in-flight PO', () => {
     const { container } = render(<POStatusPipeline status="issued" />);
-    // 4 dot spans = 4 stages of the pipeline.
+    // 5 dot spans = the 5 life-cycle stages
+    // (draft → approved → issued → partial → completed).
     const dots = container.querySelectorAll('span');
-    expect(dots.length).toBe(4);
+    expect(dots.length).toBe(5);
+  });
+
+  it('shows the approved stage instead of collapsing to draft', () => {
+    // Regression: 'approved' is a real FSM state. It used to be unknown to
+    // the pipeline and fell back to 'draft', so an approved PO looked
+    // un-progressed even though its budget was already committed.
+    render(<POStatusPipeline status="approved" />);
+    expect(screen.getByRole('img')).toHaveAttribute(
+      'aria-label',
+      expect.stringContaining('Approved'),
+    );
   });
 
   it('exposes an accessible label with the current stage', () => {

@@ -353,3 +353,72 @@ async def test_scorecard_only_unscheduled_pos_on_time_zero(
     assert sc["unscheduled_count"] == 1
     assert sc["on_time_count"] == 0
     assert sc["on_time_delivery_pct"] == 0.0
+
+
+# ── IDOR: cross-project overview must respect accessible_project_ids ─────
+
+
+@pytest.mark.asyncio
+async def test_scorecard_empty_accessible_scope_returns_nothing(
+    session: AsyncSession,
+) -> None:
+    """The cross-project overview (no ``project_id``) MUST honour an empty
+    ``accessible_project_ids`` set: a caller who can reach no project sees
+    zero totals even though a matching PO exists. Without this the
+    aggregate leaks another tenant's supplier PO data."""
+    po = _make_po(po_number="PO-LEAK", amount_total="5000")
+    session.add(po)
+    await session.flush()
+
+    svc = ProcurementService(session)
+    # Empty set = caller has access to no project → aggregate must be empty.
+    sc = await svc.get_supplier_scorecard(
+        SUPPLIER_ID,
+        accessible_project_ids=set(),
+    )
+    assert sc["total_po_count"] == 0
+    assert sc["total_po_value"] == "0"
+    assert sc["total_gr_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_scorecard_accessible_scope_excludes_other_projects(
+    session: AsyncSession,
+) -> None:
+    """With a non-empty scope, only POs in the caller's accessible projects
+    count; a PO in another project for the same supplier is excluded."""
+    mine = uuid.uuid4()
+    theirs = uuid.uuid4()
+    po_mine = _make_po(project_id=mine, po_number="PO-MINE", amount_total="100")
+    po_theirs = _make_po(project_id=theirs, po_number="PO-THEIRS", amount_total="999")
+    session.add_all([po_mine, po_theirs])
+    await session.flush()
+
+    svc = ProcurementService(session)
+    sc = await svc.get_supplier_scorecard(
+        SUPPLIER_ID,
+        accessible_project_ids={mine},
+    )
+    # Only my project's PO is aggregated; the other tenant's PO is invisible.
+    assert sc["total_po_count"] == 1
+    assert sc["total_po_value"] == "100"
+
+
+@pytest.mark.asyncio
+async def test_scorecard_admin_none_scope_sees_all_projects(
+    session: AsyncSession,
+) -> None:
+    """``accessible_project_ids=None`` is the admin "do not filter" sentinel:
+    the cross-project overview still aggregates every project (preserving
+    the existing admin supplier-overview behaviour)."""
+    a = uuid.uuid4()
+    b = uuid.uuid4()
+    po_a = _make_po(project_id=a, po_number="PO-A", amount_total="100")
+    po_b = _make_po(project_id=b, po_number="PO-B", amount_total="200")
+    session.add_all([po_a, po_b])
+    await session.flush()
+
+    svc = ProcurementService(session)
+    sc = await svc.get_supplier_scorecard(SUPPLIER_ID, accessible_project_ids=None)
+    assert sc["total_po_count"] == 2
+    assert sc["total_po_value"] == "300"

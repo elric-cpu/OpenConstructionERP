@@ -129,6 +129,7 @@ def test_release_response_coerces_decimal_amount() -> None:
 class _StubPORepo:
     def __init__(self) -> None:
         self.rows: dict[uuid.UUID, Any] = {}
+        self.lock_calls: list[uuid.UUID] = []
 
     async def get(self, po_id: uuid.UUID) -> Any:
         return self.rows.get(po_id)
@@ -138,6 +139,11 @@ class _StubPORepo:
         if po is not None:
             for k, v in fields.items():
                 setattr(po, k, v)
+
+    async def lock_for_update(self, po_id: uuid.UUID) -> None:
+        # No-op in the stub (no real DB row to lock); record the call so a test
+        # can assert the release path takes the lock before the cap check.
+        self.lock_calls.append(po_id)
 
 
 class _StubRetainageRepo:

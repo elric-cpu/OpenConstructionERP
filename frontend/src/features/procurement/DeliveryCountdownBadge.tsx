@@ -1,13 +1,13 @@
 // DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 // Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 //
-// DeliveryCountdownBadge — small inline badge that flags an overdue PO
+// DeliveryCountdownBadge - small inline badge that flags an overdue PO
 // delivery (red) or hints at how many days are left until the scheduled
 // delivery date (neutral/warning).
 //
 // Pure UTC-day arithmetic on the ``YYYY-MM-DD`` delivery_date string the
 // PO model exposes. POs whose delivery_date is null render NOTHING (no
-// "Unscheduled" badge in the row — the column already shows a dash).
+// "Unscheduled" badge in the row - the column already shows a dash).
 // Terminal statuses (``completed`` / ``cancelled``) also suppress the
 // badge: once received or cancelled, the countdown is irrelevant and
 // would only add noise.
@@ -22,7 +22,7 @@ interface Props {
 }
 
 function diffDaysUtc(isoYmd: string): number | null {
-  // Parse the YYYY-MM-DD string as UTC midnight to avoid local TZ skew —
+  // Parse the YYYY-MM-DD string as UTC midnight to avoid local TZ skew -
   // a 2 AM EU run must not count a "today" delivery as +1 because the
   // browser midnight is offset from UTC.
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoYmd);

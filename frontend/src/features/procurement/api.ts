@@ -1,5 +1,5 @@
 /**
- * Procurement API clients — typed wrappers over fetch.
+ * Procurement API clients - typed wrappers over fetch.
  *
  * Wave 2 / T4 introduces two read endpoints (3-way match status + supplier
  * scorecard) that the procurement UI surfaces. The existing list / create
@@ -52,6 +52,13 @@ export interface SupplierScorecardResponse {
   qty_variance_pct: number;
   gr_rejection_rate: number;
   total_gr_count: number;
+  // Numerator of on_time_delivery_pct - GRs delivered on/before their PO's
+  // delivery_date. The backend returns it so the UI can show "X of Y on time".
+  on_time_count: number;
+  // GRs whose parent PO carried no delivery_date - excluded from the on-time
+  // denominator. Without surfacing this, a supplier whose deliveries are all
+  // unscheduled shows a misleading 0% on-time figure (see SupplierScorecardModal).
+  unscheduled_count: number;
 }
 
 export function getSupplierScorecard(

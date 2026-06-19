@@ -1,7 +1,7 @@
 // DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 // Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 //
-// SupplierScorecardModal — trailing-window supplier KPI dialog (Wave 2 / T4).
+// SupplierScorecardModal - trailing-window supplier KPI dialog (Wave 2 / T4).
 //
 // Opens from the supplier name in any PO row and surfaces three KPI tiles
 // (on-time delivery %, qty variance %, GR rejection rate) plus the
@@ -59,6 +59,46 @@ const TONE_TEXT: Record<TileTone, string> = {
 
 function formatPct(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
+}
+
+/**
+ * Decide how the on-time-delivery KPI tile should render.
+ *
+ * The backend's on-time denominator excludes deliveries whose PO had no
+ * delivery_date (counted as ``unscheduled``). When there is no schedulable
+ * delivery at all, ``on_time_delivery_pct`` is 0.0 by construction - showing
+ * that as a red "0.0%" risk tile is misleading, because the supplier may have
+ * a perfect record and simply nothing to measure against. This collapses the
+ * three signals (total GRs, unscheduled, on-time) into a small descriptor the
+ * component maps to translated strings.
+ *
+ * Pure + side-effect free so it can be unit-tested without React Query.
+ */
+export function onTimeTileModel(input: {
+  total_gr_count: number;
+  unscheduled_count: number;
+  on_time_count: number;
+  on_time_delivery_pct: number;
+}): {
+  kind: 'measured' | 'unscheduled_only' | 'no_deliveries';
+  tone: TileTone;
+  scheduled: number;
+} {
+  const scheduled = input.total_gr_count - input.unscheduled_count;
+  if (scheduled > 0) {
+    return {
+      kind: 'measured',
+      tone: pctTone(input.on_time_delivery_pct, { good: 0.9, warn: 0.75 }),
+      scheduled,
+    };
+  }
+  // No schedulable delivery: distinguish "had unscheduled deliveries" from
+  // "had no deliveries at all" so the tile can say which.
+  return {
+    kind: input.unscheduled_count > 0 ? 'unscheduled_only' : 'no_deliveries',
+    tone: 'neutral',
+    scheduled: 0,
+  };
 }
 
 export function SupplierScorecardModal({
@@ -148,17 +188,50 @@ export function SupplierScorecardModal({
 
           {/* ── KPI tiles ──────────────────────────────────────────────── */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <KpiTile
-              icon={<Truck size={18} />}
-              label={t('procurement.scorecard_on_time', {
+            {(() => {
+              const onTime = onTimeTileModel(scorecard);
+              const label = t('procurement.scorecard_on_time', {
                 defaultValue: 'On-time delivery',
-              })}
-              value={formatPct(scorecard.on_time_delivery_pct)}
-              tone={pctTone(scorecard.on_time_delivery_pct, {
-                good: 0.9,
-                warn: 0.75,
-              })}
-            />
+              });
+              if (onTime.kind === 'measured') {
+                return (
+                  <KpiTile
+                    icon={<Truck size={18} />}
+                    label={label}
+                    value={formatPct(scorecard.on_time_delivery_pct)}
+                    tone={onTime.tone}
+                    detail={t('procurement.scorecard_on_time_detail', {
+                      defaultValue: '{{onTime}} of {{scheduled}} on time',
+                      onTime: scorecard.on_time_count,
+                      scheduled: onTime.scheduled,
+                    })}
+                  />
+                );
+              }
+              return (
+                <KpiTile
+                  icon={<Truck size={18} />}
+                  label={label}
+                  value={t('procurement.scorecard_on_time_na', {
+                    defaultValue: 'Not scheduled',
+                  })}
+                  tone={onTime.tone}
+                  detail={
+                    onTime.kind === 'unscheduled_only'
+                      ? t('procurement.scorecard_on_time_unscheduled', {
+                          defaultValue:
+                            '{{count}} delivery with no scheduled date',
+                          defaultValue_plural:
+                            '{{count}} deliveries with no scheduled date',
+                          count: scorecard.unscheduled_count,
+                        })
+                      : t('procurement.scorecard_on_time_no_gr', {
+                          defaultValue: 'No deliveries yet',
+                        })
+                  }
+                />
+              );
+            })()}
             <KpiTile
               icon={<TrendingUp size={18} />}
               label={t('procurement.scorecard_qty_variance', {
@@ -226,12 +299,17 @@ function KpiTile({
   label,
   value,
   tone,
+  detail,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   tone: TileTone;
+  /** Optional supporting line shown under the headline value (e.g. the
+   *  on-time numerator/denominator, or why a figure is not measurable). */
+  detail?: string;
 }) {
+  const { t } = useTranslation();
   return (
     <div className={`rounded-lg border px-4 py-4 ${TONE_BG[tone]}`}>
       <div className="flex items-center justify-between">
@@ -252,17 +330,20 @@ function KpiTile({
           size="sm"
         >
           {tone === 'success'
-            ? 'good'
+            ? t('procurement.scorecard_tone_good', { defaultValue: 'good' })
             : tone === 'warning'
-              ? 'warn'
+              ? t('procurement.scorecard_tone_warn', { defaultValue: 'warn' })
               : tone === 'error'
-                ? 'risk'
+                ? t('procurement.scorecard_tone_risk', { defaultValue: 'risk' })
                 : '-'}
         </Badge>
       </div>
       <div className={`mt-2 text-2xl font-bold tabular-nums ${TONE_TEXT[tone]}`}>
         {value}
       </div>
+      {detail && (
+        <div className="mt-1 text-2xs text-content-tertiary">{detail}</div>
+      )}
     </div>
   );
 }

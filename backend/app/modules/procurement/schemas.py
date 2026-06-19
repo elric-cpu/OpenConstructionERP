@@ -1,11 +1,17 @@
 """‌⁠‍Procurement Pydantic schemas - request/response models."""
 
+import re
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+# Same ``YYYY-MM-DD`` shape POCreate.issue_date / delivery_date pin via their
+# field ``pattern``. Reused by POUpdate's date validator so the update path
+# cannot accept a date shape the create path would reject.
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def _validate_non_negative_decimal(v: str) -> str:
@@ -96,6 +102,24 @@ class POUpdate(BaseModel):
         if v is None:
             return v
         return _validate_non_negative_decimal(v)
+
+    @field_validator("issue_date", "delivery_date")
+    @classmethod
+    def _check_iso_date(cls, v: str | None) -> str | None:
+        """Enforce ``YYYY-MM-DD`` on dates supplied via PATCH.
+
+        POCreate already pins this format; the update schema omitted it, so a
+        malformed delivery_date (e.g. "2026/04/10") could slip in and silently
+        break the supplier-scorecard on-time check, which compares the PO
+        delivery_date against the receipt_date LEXICOGRAPHICALLY (only valid
+        when both are zero-padded ISO dates). An empty string is left as-is
+        (callers omit the field rather than clear it, but never reject a clear).
+        """
+        if v is None or v == "":
+            return v
+        if not _ISO_DATE_RE.match(v):
+            raise ValueError(f"Date must be in YYYY-MM-DD format, got {v!r}")
+        return v
 
 
 # ── Purchase Order responses ─────────────────────────────────────────────────
@@ -228,10 +252,45 @@ class PORetainageReleaseRequest(BaseModel):
 
 
 class PORetainageReleaseListResponse(BaseModel):
-    """Paginated list of retainage-release records for a PO."""
+    """Paginated list of retainage-release records for a PO.
+
+    ``offset`` / ``limit`` echo the pagination window the caller requested so
+    the envelope matches :class:`POListResponse`. They default (additive) so
+    existing constructions that pass only ``items`` / ``total`` still validate.
+    """
 
     items: list[PORetainageReleaseResponse]
     total: int
+    offset: int = 0
+    limit: int = 100
+
+
+class POInvoiceCreatedResponse(BaseModel):
+    """Result of converting a PO into a draft payable invoice.
+
+    Returned by ``POST /{po_id}/create-invoice/``. The endpoint previously
+    returned an untyped ``dict`` whose ``amount_total`` carried the ORM
+    ``Decimal`` straight onto the wire, which FastAPI's ``jsonable_encoder``
+    renders as a JSON *number* - violating the Decimal-as-string money
+    contract every other money field on this API follows. Pinning the
+    response shape here also makes the endpoint appear in the OpenAPI schema.
+    Field names are unchanged, so existing consumers are unaffected.
+    """
+
+    invoice_id: UUID
+    invoice_number: str
+    po_id: UUID
+    po_number: str
+    # Decimal-as-string, in the PO's own currency - never a float.
+    amount_total: str = "0"
+
+    @field_validator("amount_total", mode="before")
+    @classmethod
+    def _coerce_amount_total(cls, v: Any) -> str:
+        """The ORM hands us a ``Decimal`` - render it as a canonical string."""
+        if v is None:
+            return "0"
+        return str(v)
 
 
 class POListResponse(BaseModel):
@@ -366,10 +425,17 @@ class GRResponse(BaseModel):
 
 
 class GRListResponse(BaseModel):
-    """Paginated list of goods receipts."""
+    """Paginated list of goods receipts.
+
+    ``offset`` / ``limit`` echo the requested pagination window so the envelope
+    matches :class:`POListResponse`. Both default (additive) so existing
+    constructions that pass only ``items`` / ``total`` keep validating.
+    """
 
     items: list[GRResponse]
     total: int
+    offset: int = 0
+    limit: int = 50
 
 
 # ── Stats ────────────────────────────────────────────────────────────────
@@ -386,6 +452,19 @@ class ProcurementStatsResponse(BaseModel):
 
 
 # ── 3-way match status (Wave 2 / T4) ─────────────────────────────────────
+
+
+# The closed set of 3-way-match tags the service emits (see
+# ``ProcurementService._classify_line_match`` + the overall-precedence rollup).
+# Pinning it here validates the response and keeps the wire contract in lock-step
+# with the frontend ``POLineMatchTag`` union in ``features/procurement/api.ts``.
+POLineMatchTag = Literal[
+    "ok",
+    "partial",
+    "unmatched",
+    "over_received",
+    "over_invoiced",
+]
 
 
 class POLineMatchStatus(BaseModel):
@@ -408,7 +487,7 @@ class POLineMatchStatus(BaseModel):
     ordered_qty: str = "0"
     received_qty: str = "0"
     invoiced_qty: str = "0"
-    match_status: str = "unmatched"
+    match_status: POLineMatchTag = "unmatched"
 
 
 class POMatchStatusResponse(BaseModel):
@@ -416,7 +495,7 @@ class POMatchStatusResponse(BaseModel):
 
     po_id: UUID
     po_number: str
-    overall_status: str = "unmatched"
+    overall_status: POLineMatchTag = "unmatched"
     lines: list[POLineMatchStatus] = Field(default_factory=list)
 
 
@@ -427,7 +506,7 @@ class SupplierScorecardResponse(BaseModel):
     """Trailing-window supplier performance KPIs.
 
     ``on_time_delivery_pct`` / ``qty_variance_pct`` / ``gr_rejection_rate``
-    are decimals in 0.0–1.0 (frontend renders as ``× 100`` percentages).
+    are decimals in 0.0-1.0 (frontend renders as ``x 100`` percentages).
     ``total_po_value`` is summed across the trailing window in the supplier
     or project currency, returned as a string-Decimal for compatibility
     with the PO ``amount_total`` model field.

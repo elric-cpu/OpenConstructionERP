@@ -308,6 +308,20 @@ def test_router_get_po_calls_verify_project_access() -> None:
     )
 
 
+def test_router_create_po_calls_verify_project_access() -> None:
+    """Creating a PO is a write into a project (a financial commitment), so
+    the handler MUST gate ``data.project_id`` with ``verify_project_access``.
+    Without it an EDITOR holding only the global ``procurement.create``
+    permission could create POs against any tenant's project (IDOR write).
+    """
+    src = inspect.getsource(procurement_router.create_purchase_order)
+    assert "verify_project_access" in src, (
+        "IDOR REGRESSION: create_purchase_order no longer gates "
+        "data.project_id — POs can be written into projects the caller "
+        "cannot access."
+    )
+
+
 def test_router_update_po_calls_verify_project_access() -> None:
     """Same guard on PATCH /{po_id}."""
     src = inspect.getsource(procurement_router.update_purchase_order)
@@ -351,6 +365,33 @@ def test_router_supplier_scorecard_gates_project_when_provided() -> None:
         "supplier scorecard regressed — project_id given must trigger access "
         "check; without the conditional, the path either skips gating or "
         "blocks cross-project usage."
+    )
+
+
+def test_router_supplier_scorecard_scopes_cross_project_overview() -> None:
+    """IDOR on the aggregate: when ``project_id`` is omitted the
+    cross-project supplier overview MUST scope the aggregate to the
+    caller's ``accessible_project_ids`` and forward it to the service —
+    otherwise a VIEWER reads any supplier's PO totals / KPIs across every
+    tenant's projects. Drop the scoping and this trips.
+    """
+    src = inspect.getsource(procurement_router.get_supplier_scorecard)
+    assert "accessible_project_ids" in src, (
+        "supplier scorecard cross-project overview no longer scopes to "
+        "accessible_project_ids — it leaks a supplier's aggregate PO data "
+        "across projects the caller cannot access."
+    )
+    # The scope must be forwarded into the service call, not merely computed.
+    tree = ast.parse(src)
+    forwarded = False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            for kw in node.keywords:
+                if kw.arg == "accessible_project_ids":
+                    forwarded = True
+    assert forwarded, (
+        "accessible_project_ids is computed but not passed to "
+        "get_supplier_scorecard — the aggregate is still unscoped."
     )
 
 

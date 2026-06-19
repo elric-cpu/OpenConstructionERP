@@ -39,6 +39,17 @@ class PurchaseOrder(Base):
             "po_number",
             name="uq_procurement_po_project_number",
         ),
+        # Hot filter: both the supplier scorecard (vendor_contact_id == X AND
+        # created_at >= cutoff) and the PO-list ``vendor_contact_id`` filter
+        # scan on this column, which was previously unindexed - a full table
+        # scan as PO volume grows. The composite leads on vendor_contact_id
+        # (equality) and trails on created_at (the scorecard range + the list's
+        # ORDER BY created_at DESC), so it serves both queries.
+        Index(
+            "ix_procurement_po_vendor_created",
+            "vendor_contact_id",
+            "created_at",
+        ),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(

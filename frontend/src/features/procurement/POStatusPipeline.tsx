@@ -1,14 +1,18 @@
 // DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 // Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 //
-// POStatusPipeline — compact visual stepper for a single PO row.
+// POStatusPipeline - compact visual stepper for a single PO row.
 //
-// Renders the four-stage life-cycle as a chevron-of-dots:
-//   draft → issued → partially_received → completed
+// Renders the five-stage life-cycle as a chevron-of-dots:
+//   draft → approved → issued → partially_received → completed
+//
+// The 'approved' stage is the commitment moment (TOP-30 #10); it MUST be
+// in the order, otherwise an approved PO collapsed to the 'draft' dot and
+// looked un-progressed even though its budget was already committed.
 //
 // Cancelled POs collapse to a single red dot. The current stage is filled,
 // past stages are filled-success, future stages are outlined-muted. The
-// component is purely presentational and side-effect free — it reads the
+// component is purely presentational and side-effect free - it reads the
 // row status string and maps it to the same FSM the backend service
 // enforces (`_PO_STATUS_TRANSITIONS` in procurement/service.py).
 
@@ -17,15 +21,23 @@ import clsx from 'clsx';
 
 type PoStatus =
   | 'draft'
+  | 'approved'
   | 'issued'
   | 'partially_received'
   | 'completed'
   | 'cancelled';
 
-const ORDER: PoStatus[] = ['draft', 'issued', 'partially_received', 'completed'];
+const ORDER: PoStatus[] = [
+  'draft',
+  'approved',
+  'issued',
+  'partially_received',
+  'completed',
+];
 
 const LABEL_KEY: Record<PoStatus, string> = {
   draft: 'procurement.pipeline_draft',
+  approved: 'procurement.pipeline_approved',
   issued: 'procurement.pipeline_issued',
   partially_received: 'procurement.pipeline_partial',
   completed: 'procurement.pipeline_completed',
@@ -34,6 +46,7 @@ const LABEL_KEY: Record<PoStatus, string> = {
 
 const LABEL_DEFAULT: Record<PoStatus, string> = {
   draft: 'Draft',
+  approved: 'Approved',
   issued: 'Issued',
   partially_received: 'Partial',
   completed: 'Completed',

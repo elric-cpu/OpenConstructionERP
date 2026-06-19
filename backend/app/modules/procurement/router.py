@@ -22,7 +22,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
+from app.dependencies import (
+    CurrentUserId,
+    RequirePermission,
+    SessionDep,
+    accessible_project_ids,
+    verify_project_access,
+)
 from app.modules.contacts.models import Contact
 from app.modules.procurement.models import PurchaseOrder
 from app.modules.procurement.schemas import (
@@ -30,6 +36,7 @@ from app.modules.procurement.schemas import (
     GRListResponse,
     GRResponse,
     POCreate,
+    POInvoiceCreatedResponse,
     POListResponse,
     POMatchStatusResponse,
     POResponse,
@@ -132,9 +139,16 @@ async def list_purchase_orders(
 async def create_purchase_order(
     data: POCreate,
     user_id: CurrentUserId,
+    session: SessionDep,
     service: ProcurementService = Depends(_get_service),
 ) -> POResponse:
     """Create a new purchase order."""
+    # IDOR: a PO is a financial commitment against a project, so the caller
+    # must have access to ``data.project_id`` - not merely hold the global
+    # ``procurement.create`` permission. Without this gate an EDITOR could
+    # create POs against any project in any tenant. Mirrors the same check
+    # on ``create_goods_receipt`` / ``create_invoice_from_po``.
+    await verify_project_access(data.project_id, str(user_id), session)
     po = await service.create_po(data, user_id=user_id)
     vendor_names = await _fetch_vendor_names(service.session, [po.vendor_contact_id])
     return _po_to_response(po, vendor_names)
@@ -210,7 +224,7 @@ async def list_goods_receipts(
             # Stamp the parent PO number (not on the GR ORM row itself).
             resp.po_number = po_number
             items_out.append(resp)
-        return GRListResponse(items=items_out, total=total)
+        return GRListResponse(items=items_out, total=total, offset=offset, limit=limit)
 
     # ── po_id path (unchanged legacy behaviour) ─────────────────────────
     po = await service.get_po(po_id)
@@ -222,7 +236,7 @@ async def list_goods_receipts(
         # All GRs here belong to the same PO - stamp its number for the FE.
         resp.po_number = po.po_number
         out.append(resp)
-    return GRListResponse(items=out, total=total)
+    return GRListResponse(items=out, total=total, offset=offset, limit=limit)
 
 
 @router.post(
@@ -283,22 +297,38 @@ async def get_supplier_scorecard(
 
     When ``project_id`` is provided the access check enforces project-scope
     IDOR (the same gate the PO list uses). Without ``project_id`` the
-    caller must already hold ``procurement.read`` globally; cross-project
-    aggregation is intended for the supplier-overview screen.
+    cross-project supplier-overview aggregate is scoped to ONLY the
+    projects the caller may access (``accessible_project_ids``): an admin
+    sees every project (``None`` = no filter), a normal user sees only
+    their own. This stops a VIEWER in one tenant from reading another
+    supplier's PO totals / KPIs across projects they cannot reach (IDOR on
+    the aggregate).
     """
+    scope_ids: set[uuid.UUID] | None = None
     if project_id is not None:
         await verify_project_access(project_id, str(user_id), session)
+    else:
+        # Cross-project overview: restrict the aggregate to the caller's
+        # accessible projects. ``None`` (admin) means "do not filter".
+        scope_ids = await accessible_project_ids(session, str(user_id))
 
     data = await service.get_supplier_scorecard(
         supplier_contact_id=contact_id,
         project_id=project_id,
         period_days=period_days,
+        accessible_project_ids=scope_ids,
     )
 
     # Best-effort vendor display name - same lookup the PO list uses so
     # the scorecard modal can label the chart without a second round-trip.
-    name_map = await _fetch_vendor_names(session, [contact_id])
-    data["supplier_name"] = name_map.get(contact_id)
+    # On the cross-project overview, only resolve the name when the caller
+    # actually has accessible POs for this supplier; otherwise an arbitrary
+    # (inaccessible) contact UUID would still leak its display name even
+    # though every KPI came back empty. The project-scoped path is already
+    # access-gated, so it always resolves.
+    if project_id is not None or data.get("total_po_count", 0) > 0:
+        name_map = await _fetch_vendor_names(session, [contact_id])
+        data["supplier_name"] = name_map.get(contact_id)
     return SupplierScorecardResponse.model_validate(data)
 
 
@@ -345,6 +375,7 @@ async def update_purchase_order(
 
 @router.post(
     "/{po_id}/create-invoice/",
+    response_model=POInvoiceCreatedResponse,
     status_code=201,
     dependencies=[Depends(RequirePermission("procurement.create_invoice"))],
 )
@@ -354,7 +385,7 @@ async def create_invoice_from_po(
     session: SessionDep,
     force: bool = Query(False, alias="force"),
     service: ProcurementService = Depends(_get_service),
-) -> dict:
+) -> POInvoiceCreatedResponse:
     """Create a payable invoice pre-filled from PO line items.
 
     Copies the PO's vendor, amounts, and line items into a new draft invoice
@@ -560,13 +591,16 @@ async def create_invoice_from_po(
             po.po_number,
             po.project_id,
         )
-        return {
-            "invoice_id": str(invoice.id),
-            "invoice_number": invoice_number,
-            "po_id": str(po_id),
-            "po_number": po.po_number,
-            "amount_total": po.amount_total,
-        }
+        # Typed response - amount_total is coerced to a Decimal-as-string by
+        # the schema's before-validator so it never leaks onto the wire as a
+        # JSON number (the previous untyped dict did exactly that).
+        return POInvoiceCreatedResponse(
+            invoice_id=invoice.id,
+            invoice_number=invoice_number,
+            po_id=po_id,
+            po_number=po.po_number,
+            amount_total=po.amount_total,
+        )
     except HTTPException:
         raise
     except Exception as exc:
@@ -704,4 +738,6 @@ async def list_po_retainage_releases(
     return PORetainageReleaseListResponse(
         items=[PORetainageReleaseResponse.model_validate(r) for r in releases],
         total=total,
+        offset=offset,
+        limit=limit,
     )

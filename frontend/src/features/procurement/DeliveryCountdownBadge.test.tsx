@@ -5,7 +5,7 @@
 //
 // Pins the system clock so the date arithmetic is deterministic. The
 // badge does its math in UTC (Date.UTC + getUTCFullYear, ...), so
-// freezing UTC midnight is enough — no need to spoof timezones.
+// freezing UTC midnight is enough - no need to spoof timezones.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render } from '@testing-library/react';

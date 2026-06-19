@@ -45,6 +45,7 @@ import { VendorPrequalBadge } from './VendorPrequalBadge';
 import { RetainagePanel, RetainageBadge } from './RetainagePanel';
 import { POStatusPipeline } from './POStatusPipeline';
 import { DeliveryCountdownBadge } from './DeliveryCountdownBadge';
+import { RecordDeliveryModal } from './RecordDeliveryModal';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -88,7 +89,7 @@ interface POItemResponse {
 }
 
 /** Full PO detail returned by GET /v1/procurement/{po_id} (includes line items
- *  the list endpoint omits) — used to prefill the Edit form. */
+ *  the list endpoint omits) - used to prefill the Edit form. */
 interface POResponse {
   id: string;
   vendor_contact_id: string | null;
@@ -111,11 +112,17 @@ interface GoodsReceipt {
   id: string;
   po_id: string;
   po_number: string;
-  gr_reference: string;
+  // Aliased from the nullable delivery_note_number on the wire, so a receipt
+  // recorded without a delivery note has no reference.
+  gr_reference: string | null;
   receipt_date: string;
   status: string;
-  received_qty: number;
-  ordered_qty: number;
+  // Decimal quantities arrive as STRINGS on the wire (GRResponse serialises
+  // received_qty / ordered_qty via format(Decimal, "f")). Typing them as
+  // `number` made the row's "fully received" highlight compare them
+  // LEXICOGRAPHICALLY ("9" >= "100" -> true), so compare them numerically.
+  received_qty: string | null;
+  ordered_qty: string | null;
   description: string;
   created_at: string;
 }
@@ -128,12 +135,29 @@ interface POLineItemForm {
   amount: string;
 }
 
+/**
+ * True when a goods receipt's received quantity covers (>=) the ordered
+ * quantity. ``received_qty`` / ``ordered_qty`` are Decimal STRINGS on the
+ * wire, so they MUST be parsed to numbers before comparing - a raw string
+ * ``>=`` compares lexicographically ("9" >= "100" -> true). Returns false
+ * when nothing was ordered so empty rows are never highlighted as complete.
+ */
+export function isGoodsReceiptFullyReceived(
+  receivedQty: string | number | null | undefined,
+  orderedQty: string | number | null | undefined,
+): boolean {
+  const ordered = Number(orderedQty ?? 0);
+  const received = Number(receivedQty ?? 0);
+  if (!Number.isFinite(ordered) || !Number.isFinite(received)) return false;
+  return ordered > 0 && received >= ordered;
+}
+
 /* ── Constants ────────────────────────────────────────────────────────── */
 
 const inputCls =
   'h-10 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue';
 
-/** Common currency shortlist — NOT a default. The PO's actual currency is
+/** Common currency shortlist - NOT a default. The PO's actual currency is
  *  inherited from the project (task #217); the project's resolved currency
  *  is merged in so any project currency stays selectable. */
 const COMMON_CURRENCIES = [
@@ -169,6 +193,13 @@ const GR_STATUS_COLORS: Record<
   string,
   'neutral' | 'blue' | 'success' | 'warning' | 'error'
 > = {
+  // The GR FSM the backend actually emits is draft -> confirmed (see the
+  // GoodsReceipt model). A draft delivery is awaiting confirmation (amber);
+  // a confirmed one has rolled up into the PO + budget (green). Without
+  // these two keys both statuses fell through to a neutral grey badge.
+  draft: 'warning',
+  confirmed: 'success',
+  // Legacy / forward-compat tags kept so a future status set still colours.
   pending: 'warning',
   partial: 'warning',
   complete: 'success',
@@ -209,7 +240,7 @@ export function ProcurementPage() {
         ]}
       />
 
-      {/* Header — the module name + icon live in the global top bar; the
+      {/* Header - the module name + icon live in the global top bar; the
           page renders only its subtitle. Project selection is global too.
           srTitle gives the page its single semantic <h1> (sr-only) for a11y. */}
       <PageHeader
@@ -220,7 +251,7 @@ export function ProcurementPage() {
         actions={<ModuleGuideButton content={procurementGuide} />}
       />
 
-      {/* Canonical info block — where procurement sits in the money flow,
+      {/* Canonical info block - where procurement sits in the money flow,
           with cross-module pills for the routes its results flow to. */}
       <DismissibleInfo
         storageKey="procurement"
@@ -261,10 +292,17 @@ export function ProcurementPage() {
       )}
 
       {/* Tab Bar */}
-      <div className="flex items-center gap-1 border-b border-border-light">
+      <div
+        className="flex items-center gap-1 border-b border-border-light"
+        role="tablist"
+        aria-label={t('procurement.title', { defaultValue: 'Procurement' })}
+      >
         {tabs.map((tab) => (
           <button
             key={tab.key}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.key}
             onClick={() => setActiveTab(tab.key)}
             className={`
               flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-all
@@ -319,11 +357,11 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
   // 3-way match: rows hovered or focused fetch their match status on demand
   // (we never bulk-fetch on list load to avoid N×fetch on big projects).
   const [matchActive, setMatchActive] = useState<Record<string, boolean>>({});
-  // Supplier scorecard modal — opened from the supplier name link in a row.
+  // Supplier scorecard modal - opened from the supplier name link in a row.
   const [scorecardOpen, setScorecardOpen] = useState<
     { contactId: string; name?: string | null } | null
   >(null);
-  // Retainage panel (Gap F) — opened from a PO row's "Retainage" action.
+  // Retainage panel (Gap F) - opened from a PO row's "Retainage" action.
   const [retainagePO, setRetainagePO] = useState<PurchaseOrder | null>(null);
 
   // Resolve the project's currency from the finance dashboard so new POs
@@ -421,7 +459,7 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
   // Computed totals
   const poSubtotal = poForm.items.reduce((s, li) => s + parseFloat(li.amount || '0'), 0);
   const poTotal = poSubtotal + parseFloat(poTaxInput || '0');
-  // What to show as the amount prefix in the modal — the chosen currency,
+  // What to show as the amount prefix in the modal - the chosen currency,
   // else the resolved project currency, else a neutral label (never EUR).
   const displayCurrency =
     poForm.currency ||
@@ -432,7 +470,7 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
 
   // Surface the non-blocking vendor-prequalification warnings the PO
   // create/update gate returns (TOP-30 #20). A hard-blocked vendor never
-  // reaches here — the backend raises 409 and the error toast fires instead.
+  // reaches here - the backend raises 409 and the error toast fires instead.
   const warnIfVendorFlagged = (warnings?: string[]) => {
     if (!warnings || warnings.length === 0) return;
     addToast({
@@ -714,7 +752,7 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
       : t('procurement.new_po', { defaultValue: 'New Purchase Order' });
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-lg animate-fade-in">
-        <div className="w-full max-w-5xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[88vh] flex flex-col" role="dialog" aria-label={modalTitle}>
+        <div className="w-full max-w-5xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[88vh] flex flex-col" role="dialog" aria-modal="true" aria-label={modalTitle}>
           <div className="flex items-center justify-between px-6 py-4 border-b border-border-light sticky top-0 z-10 bg-surface-elevated rounded-t-xl">
             <h2 className="text-lg font-semibold text-content-primary">
               {modalTitle}
@@ -739,7 +777,7 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
                 {t('procurement.section_order_details', { defaultValue: 'Order Details' })}
               </h3>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                {/* Vendor — takes 2 columns on lg to keep the search input usable */}
+                {/* Vendor - takes 2 columns on lg to keep the search input usable */}
                 <div ref={firstFieldRef} className="lg:col-span-2">
                   <label className="block text-sm font-medium text-content-primary mb-1.5">
                     {t('procurement.vendor', { defaultValue: 'Vendor' })}
@@ -765,7 +803,7 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
                     className={inputCls}
                   />
                 </div>
-                {/* PO Type — visual toggle, full-row */}
+                {/* PO Type - visual toggle, full-row */}
                 <div className="lg:col-span-3">
                   <label className="block text-sm font-medium text-content-primary mb-2">
                     {t('procurement.po_type', { defaultValue: 'PO Type' })}
@@ -812,6 +850,10 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
                       value={li.description}
                       onChange={(e) => updateLineItem(idx, 'description', e.target.value)}
                       placeholder={t('procurement.item_desc_placeholder', { defaultValue: 'Item description' })}
+                      aria-label={t('procurement.item_description_for', {
+                        defaultValue: 'Description for line {{line}}',
+                        line: idx + 1,
+                      })}
                       className={clsx(inputCls, 'h-9 text-xs')}
                     />
                     <input
@@ -820,12 +862,20 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
                       value={li.quantity}
                       onChange={(e) => updateLineItem(idx, 'quantity', e.target.value)}
                       placeholder="1"
+                      aria-label={t('procurement.item_qty_for', {
+                        defaultValue: 'Quantity for line {{line}}',
+                        line: idx + 1,
+                      })}
                       className={clsx(inputCls, 'h-9 text-xs')}
                     />
                     <input
                       value={li.unit}
                       onChange={(e) => updateLineItem(idx, 'unit', e.target.value)}
                       placeholder="pcs"
+                      aria-label={t('procurement.item_unit_for', {
+                        defaultValue: 'Unit for line {{line}}',
+                        line: idx + 1,
+                      })}
                       className={clsx(inputCls, 'h-9 text-xs')}
                     />
                     <input
@@ -834,6 +884,10 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
                       value={li.unit_rate}
                       onChange={(e) => updateLineItem(idx, 'unit_rate', e.target.value)}
                       placeholder="0.00"
+                      aria-label={t('procurement.item_rate_for', {
+                        defaultValue: 'Unit rate for line {{line}}',
+                        line: idx + 1,
+                      })}
                       className={clsx(inputCls, 'h-9 text-xs')}
                     />
                     <input
@@ -841,6 +895,10 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
                       readOnly
                       value={li.amount && li.amount !== '0.00' ? li.amount : ''}
                       placeholder="0.00"
+                      aria-label={t('procurement.item_amount_for', {
+                        defaultValue: 'Amount for line {{line}}',
+                        line: idx + 1,
+                      })}
                       className={clsx(inputCls, 'h-9 text-xs bg-surface-secondary/50 cursor-default')}
                       tabIndex={-1}
                     />
@@ -849,6 +907,10 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
                       onClick={() => removeLineItem(idx)}
                       className="flex h-9 w-8 items-center justify-center rounded-lg text-content-tertiary hover:text-semantic-error hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
                       title={t('common.remove', { defaultValue: 'Remove' })}
+                      aria-label={t('procurement.remove_line', {
+                        defaultValue: 'Remove line {{line}}',
+                        line: idx + 1,
+                      })}
                     >
                       <Trash2 size={14} />
                     </button>
@@ -1010,6 +1072,9 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
             placeholder={t('procurement.search_po', {
               defaultValue: 'Search by PO # or vendor...',
             })}
+            aria-label={t('procurement.search_po', {
+              defaultValue: 'Search by PO # or vendor...',
+            })}
             className="h-10 w-full rounded-lg border border-border bg-surface-primary pl-10 pr-3 text-sm text-content-primary placeholder:text-content-tertiary focus:outline-none focus:ring-2 focus:ring-oe-blue focus:border-transparent"
           />
         </div>
@@ -1134,12 +1199,12 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
                         active={Boolean(matchActive[po.id])}
                       />
                     </div>
-                    {/* Visual life-cycle pipeline — collapses to a red bar
+                    {/* Visual life-cycle pipeline - collapses to a red bar
                         when cancelled, otherwise shows the four-stage dot
                         progression (draft → issued → partial → completed).
                         Mirrors backend _PO_STATUS_TRANSITIONS in service.py. */}
                     <POStatusPipeline status={po.status} />
-                    {/* Amber retainage chip (Gap F) — only when retention > 0. */}
+                    {/* Amber retainage chip (Gap F) - only when retention > 0. */}
                     <RetainageBadge percent={po.retention_percent} />
                   </div>
                 </td>
@@ -1163,7 +1228,7 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
                     {/* Commitment gate (TOP-30 #10): a draft PO must be
                         approved before it can be issued. Approval is what
                         commits budget in finance, so draft rows show Approve
-                        and only approved rows show Issue — matching the
+                        and only approved rows show Issue - matching the
                         backend FSM (draft→approved→issued). The chip stays
                         tappable at 44x32 when the row stacks on phones. */}
                     {po.status === 'draft' && (
@@ -1204,7 +1269,7 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
                         {t('procurement.action_issue_short', { defaultValue: 'Issue' })}
                       </Button>
                     )}
-                    {/* Invoicing is only valid once the PO has been issued —
+                    {/* Invoicing is only valid once the PO has been issued -
                         a draft/cancelled PO must never become a payable
                         (mirrors the backend status guard). Keep the control
                         visible but disabled so the reason is explained. */}
@@ -1273,7 +1338,7 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
       />
     )}
 
-    {/* Retainage panel (Gap F) — release withheld retention + audit log */}
+    {/* Retainage panel (Gap F) - release withheld retention + audit log */}
     {retainagePO && (
       <RetainagePanel
         open
@@ -1348,7 +1413,17 @@ function GoodsReceiptsTab({
   onGoToPurchaseOrders: () => void;
 }) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const addToast = useToastStore((s) => s.addToast);
+  const userRole = useAuthStore((s) => s.userRole);
+  // Recording + confirming a goods receipt are EDITOR-level permissions
+  // (procurement.create / procurement.confirm_receipt), so the controls are
+  // shown to editors and above - not just managers. The backend remains
+  // authoritative and an error toast surfaces any server-side denial.
+  const canReceive =
+    userRole === 'admin' || userRole === 'manager' || userRole === 'editor';
   const [search, setSearch] = useState('');
+  const [showRecord, setShowRecord] = useState(false);
 
   const { data: receipts, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['procurement-gr', projectId],
@@ -1358,14 +1433,45 @@ function GoodsReceiptsTab({
       ).then((res) => res.items),
   });
 
+  /* ── Confirm a draft goods receipt ──
+     Confirmation is the load-bearing step: only it runs the over-receipt
+     cap, rolls the PO up to partially_received/completed and fires the
+     finance event that flips committed -> actual. Refresh both the GR list
+     and the PO list (its status pipeline changes) plus the finance
+     dashboard. */
+  const confirmGRMut = useMutation({
+    mutationFn: (grId: string) =>
+      apiPost(`/v1/procurement/goods-receipts/${grId}/confirm/`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['procurement-gr', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['procurement-po', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['finance', 'dashboard', projectId] });
+      addToast({
+        type: 'success',
+        title: t('procurement.gr_confirmed_toast', {
+          defaultValue: 'Goods receipt confirmed',
+        }),
+      });
+    },
+    onError: (e: Error) =>
+      addToast({
+        type: 'error',
+        title: t('common.error', { defaultValue: 'Error' }),
+        message: e.message,
+      }),
+  });
+
   const filtered = useMemo(() => {
     if (!receipts) return [];
     if (!search) return receipts;
     const q = search.toLowerCase();
+    // gr_reference is aliased from the nullable delivery_note_number, so a
+    // receipt recorded without a delivery note has no reference - guard the
+    // ?? so the search filter never calls .toLowerCase() on null.
     return receipts.filter(
       (gr) =>
-        gr.gr_reference.toLowerCase().includes(q) ||
-        gr.po_number.toLowerCase().includes(q),
+        (gr.gr_reference ?? '').toLowerCase().includes(q) ||
+        (gr.po_number ?? '').toLowerCase().includes(q),
     );
   }, [receipts, search]);
 
@@ -1381,30 +1487,49 @@ function GoodsReceiptsTab({
 
   if (!receipts || receipts.length === 0) {
     return (
-      <EmptyState
-        icon={<ClipboardCheck size={28} strokeWidth={1.5} />}
-        title={t('procurement.no_gr', {
-          defaultValue: 'No goods receipts yet',
-        })}
-        description={t('procurement.no_gr_desc', {
-          defaultValue:
-            'Goods receipts record deliveries against a purchase order. They are created when a PO delivery is logged - start by creating or issuing a purchase order.',
-        })}
-        action={{
-          label: t('procurement.view_purchase_orders', {
-            defaultValue: 'View Purchase Orders',
-          }),
-          onClick: onGoToPurchaseOrders,
-        }}
-      />
+      <>
+        <EmptyState
+          icon={<ClipboardCheck size={28} strokeWidth={1.5} />}
+          title={t('procurement.no_gr', {
+            defaultValue: 'No goods receipts yet',
+          })}
+          description={t('procurement.no_gr_desc', {
+            defaultValue:
+              'Goods receipts record deliveries against a purchase order. Record a delivery against an issued PO, or open the Purchase Orders tab to issue one first.',
+          })}
+          action={
+            canReceive
+              ? {
+                  label: t('procurement.record_delivery', {
+                    defaultValue: 'Record Delivery',
+                  }),
+                  onClick: () => setShowRecord(true),
+                }
+              : {
+                  label: t('procurement.view_purchase_orders', {
+                    defaultValue: 'View Purchase Orders',
+                  }),
+                  onClick: onGoToPurchaseOrders,
+                }
+          }
+        />
+        {showRecord && (
+          <RecordDeliveryModal
+            open
+            onClose={() => setShowRecord(false)}
+            projectId={projectId}
+          />
+        )}
+      </>
     );
   }
 
   return (
+    <>
     <Card padding="none">
-      {/* Search */}
-      <div className="p-4 border-b border-border-light">
-        <div className="relative max-w-sm">
+      {/* Search + Record Delivery */}
+      <div className="p-4 border-b border-border-light flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="relative flex-1 max-w-sm">
           <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-content-tertiary">
             <Search size={16} />
           </div>
@@ -1415,9 +1540,24 @@ function GoodsReceiptsTab({
             placeholder={t('procurement.search_gr', {
               defaultValue: 'Search by GR reference or PO #...',
             })}
+            aria-label={t('procurement.search_gr', {
+              defaultValue: 'Search by GR reference or PO #...',
+            })}
             className="h-10 w-full rounded-lg border border-border bg-surface-primary pl-10 pr-3 text-sm text-content-primary placeholder:text-content-tertiary focus:outline-none focus:ring-2 focus:ring-oe-blue focus:border-transparent"
           />
         </div>
+        {canReceive && (
+          <div className="shrink-0">
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<Plus size={14} />}
+              onClick={() => setShowRecord(true)}
+            >
+              {t('procurement.record_delivery', { defaultValue: 'Record Delivery' })}
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Table */}
@@ -1440,12 +1580,17 @@ function GoodsReceiptsTab({
               <th className="px-4 py-3 text-center font-medium text-content-tertiary">
                 {t('common.status', { defaultValue: 'Status' })}
               </th>
+              {canReceive && (
+                <th className="px-4 py-3 text-right font-medium text-content-tertiary">
+                  {t('common.actions', { defaultValue: 'Actions' })}
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-sm text-content-tertiary">
+                <td colSpan={canReceive ? 6 : 5} className="px-4 py-8 text-center text-sm text-content-tertiary">
                   {t('procurement.no_gr_match', { defaultValue: 'No matching goods receipts' })}
                 </td>
               </tr>
@@ -1455,7 +1600,9 @@ function GoodsReceiptsTab({
                 className="border-b border-border-light hover:bg-surface-secondary/30 transition-colors"
               >
                 <td className="px-4 py-3 font-mono text-xs text-content-primary">
-                  {gr.gr_reference}
+                  {gr.gr_reference || (
+                    <span className="text-content-tertiary">-</span>
+                  )}
                 </td>
                 <td className="px-4 py-3 font-mono text-xs text-content-secondary">
                   {gr.po_number}
@@ -1466,15 +1613,15 @@ function GoodsReceiptsTab({
                 <td className="px-4 py-3 text-center tabular-nums">
                   <span
                     className={
-                      gr.received_qty >= gr.ordered_qty
+                      isGoodsReceiptFullyReceived(gr.received_qty, gr.ordered_qty)
                         ? 'text-semantic-success'
                         : 'text-content-primary'
                     }
                   >
-                    {gr.received_qty}
+                    {gr.received_qty ?? '0'}
                   </span>
                   <span className="text-content-tertiary mx-1">/</span>
-                  <span className="text-content-secondary">{gr.ordered_qty}</span>
+                  <span className="text-content-secondary">{gr.ordered_qty ?? '0'}</span>
                 </td>
                 <td className="px-4 py-3 text-center">
                   <Badge
@@ -1486,11 +1633,52 @@ function GoodsReceiptsTab({
                     })}
                   </Badge>
                 </td>
+                {canReceive && (
+                  <td className="px-4 py-3 text-right">
+                    {/* A draft goods receipt is awaiting confirmation - the
+                        load-bearing step that rolls the PO up and moves the
+                        budget from committed to actual. Already-confirmed
+                        receipts show nothing actionable. */}
+                    {gr.status === 'draft' ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => confirmGRMut.mutate(gr.id)}
+                        disabled={confirmGRMut.isPending}
+                        title={t('procurement.gr_confirm', {
+                          defaultValue: 'Confirm goods receipt',
+                        })}
+                        aria-label={t('procurement.gr_confirm', {
+                          defaultValue: 'Confirm goods receipt',
+                        })}
+                      >
+                        {confirmGRMut.isPending && confirmGRMut.variables === gr.id ? (
+                          <Loader2 size={14} className="animate-spin mr-1" />
+                        ) : (
+                          <CheckCircle2 size={14} className="mr-1" />
+                        )}
+                        {t('procurement.gr_confirm_short', { defaultValue: 'Confirm' })}
+                      </Button>
+                    ) : (
+                      <span className="text-content-tertiary text-xs">-</span>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
     </Card>
+
+    {/* Record-delivery modal (create a draft goods receipt) */}
+    {showRecord && (
+      <RecordDeliveryModal
+        open
+        onClose={() => setShowRecord(false)}
+        projectId={projectId}
+      />
+    )}
+    </>
   );
 }

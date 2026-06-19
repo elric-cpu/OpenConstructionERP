@@ -52,8 +52,20 @@ class PurchaseOrderRepository:
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[PurchaseOrder], int]:
-        """List POs with filters and pagination."""
-        base = select(PurchaseOrder)
+        """List POs with filters and pagination.
+
+        The PO list response (``POResponse``) never serialises
+        ``goods_receipts``, but the relationship defaults to ``lazy="selectin"``
+        on the model, so a plain ``select(PurchaseOrder)`` would still fire an
+        extra batched SELECT for every listed PO's goods receipts AND a second
+        one for their line items - pure waste on a hot list path. ``noload``
+        suppresses that GR eager-load for the list only (``items`` is kept
+        because the response includes it); the detail ``get`` still eager-loads
+        both relationships.
+        """
+        from sqlalchemy.orm import noload
+
+        base = select(PurchaseOrder).options(noload(PurchaseOrder.goods_receipts))
 
         if project_id is not None:
             base = base.where(PurchaseOrder.project_id == project_id)
@@ -89,6 +101,18 @@ class PurchaseOrderRepository:
         await self.session.execute(stmt)
         await self.session.flush()
         self.session.expire_all()
+
+    async def lock_for_update(self, po_id: uuid.UUID) -> None:
+        """Take a row-level write lock on a PO for the rest of the transaction.
+
+        A concurrent transaction that calls this for the same PO blocks until
+        this transaction commits, serialising read-modify-write critical
+        sections (e.g. incrementing the cumulative ``retainage_released_amount``
+        string column, which cannot be incremented atomically in SQL). ``FOR
+        UPDATE`` is honoured on PostgreSQL, the only supported backend. Mirrors
+        the ``with_for_update`` pattern in cde/property_dev repositories.
+        """
+        await self.session.execute(select(PurchaseOrder.id).where(PurchaseOrder.id == po_id).with_for_update())
 
     async def stats_for_project(self, project_id: uuid.UUID) -> dict:
         """Compute aggregate procurement statistics for a project.
@@ -300,6 +324,27 @@ class GoodsReceiptRepository:
         await self.session.execute(stmt)
         await self.session.flush()
         self.session.expire_all()
+
+    async def confirm_if_draft(self, gr_id: uuid.UUID) -> bool:
+        """Atomically flip a goods receipt draft -> confirmed.
+
+        Returns True only when THIS call performed the transition (the row was
+        still ``draft``). The ``WHERE status = 'draft'`` predicate makes a
+        concurrent second confirm a no-op at the DB level, so two requests
+        racing on the same GR cannot both flip it and double-publish
+        ``procurement.gr.confirmed`` (which would let finance double-count the
+        receipt against the budget). Mirrors the conditional-update idempotency
+        guard used for status transitions elsewhere.
+        """
+        stmt = (
+            update(GoodsReceipt)
+            .where(GoodsReceipt.id == gr_id, GoodsReceipt.status == "draft")
+            .values(status="confirmed")
+        )
+        result = await self.session.execute(stmt)
+        await self.session.flush()
+        self.session.expire_all()
+        return (result.rowcount or 0) > 0
 
 
 class GRItemRepository:

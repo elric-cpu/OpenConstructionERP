@@ -1,7 +1,7 @@
 // DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 // Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 //
-// RetainagePanel — PO retainage dialog (Gap F).
+// RetainagePanel - PO retainage dialog (Gap F).
 //
 // Opens from a PO row's "Retainage" action and surfaces:
 //   * three summary tiles (retention %, withheld, held),

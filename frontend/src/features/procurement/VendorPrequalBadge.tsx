@@ -49,7 +49,7 @@ export function VendorPrequalBadge({
 
   const { known, awardable, is_blocked, rating_score } = q.data;
 
-  // Ad-hoc supplier (not a registered subcontractor) — no prequal record,
+  // Ad-hoc supplier (not a registered subcontractor) - no prequal record,
   // nothing to surface.
   if (!known) return null;
 
