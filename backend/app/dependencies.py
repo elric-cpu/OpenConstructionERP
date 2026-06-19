@@ -621,6 +621,71 @@ CurrentUserId = Annotated[str, Depends(get_current_user_id)]
 OptionalUserPayload = Annotated[dict[str, Any] | None, Depends(get_optional_user_payload)]
 
 
+# ── Tenant scope (multi-tenant isolation, Phase 1 scaffolding) ──────────────
+#
+# The "tenant" today is simply the owning user's id (the JWT ``sub``);
+# there is no separate Tenant entity and no ``tenant_id`` claim in the JWT
+# yet. The pure resolver lives in :mod:`app.core.tenant_scope` (import-safe,
+# no DB); the request-time dependency is assembled here because this module
+# owns ``get_optional_user_payload`` and the session plumbing. Importing
+# tenant_scope from here (and never the reverse) keeps the edge acyclic.
+
+
+async def get_current_tenant_id(
+    payload: OptionalUserPayload = None,
+) -> str | None:
+    """The caller's tenant id, or ``None`` when it cannot be determined.
+
+    Built on :func:`get_optional_user_payload`, so an anonymous or
+    unrecognised caller yields ``None`` rather than a 401 - this dependency
+    is safe to add to any endpoint without changing its auth contract. For
+    an endpoint that must be authenticated, keep using :data:`CurrentUserId`
+    for the 401 and use this only to obtain the scoping key.
+
+    Resolution (see :func:`app.core.tenant_scope.resolve_tenant_id`):
+    explicit ``tenant_id`` claim if present (forward-compatible), else the
+    user id ``sub`` (the tenant == the user in single-tenant installs,
+    matching ``Contact.tenant_id`` / ``Snapshot.tenant_id``), else ``None``.
+    """
+    from app.core.tenant_scope import resolve_tenant_id
+
+    return resolve_tenant_id(payload)
+
+
+# Annotated alias mirroring ``CurrentUserId`` so routers can write
+# ``tenant_id: CurrentTenantId``. None == "tenant unknown" (anonymous).
+CurrentTenantId = Annotated[str | None, Depends(get_current_tenant_id)]
+
+
+async def tenant_scoped_owner_filter(
+    session: SessionDep,
+    tenant_id: CurrentTenantId = None,
+) -> str | None:
+    """Reference usage: the ready-to-apply ``owner_id`` filter for the caller.
+
+    Composes :data:`CurrentTenantId` + the session with
+    :func:`app.core.tenant_scope.tenant_scope_owner` so a company-wide
+    list/aggregate endpoint can scope to the caller's tenant in one line:
+
+        @router.get("/widgets")
+        async def list_widgets(
+            session: SessionDep,
+            owner_id: Annotated[str | None, Depends(tenant_scoped_owner_filter)],
+            service: WidgetService = Depends(_get_service),
+        ):
+            return await service.list(owner_id=owner_id)
+
+    Returns the tenant id for a normal user, or ``None`` for an admin
+    (= "do not filter", the same unrestricted sentinel
+    :func:`accessible_project_ids` uses). This is **not** wired into any
+    existing endpoint yet - it is the Phase 1 reference that Phase 2 rolls
+    out module-by-module. Importing or exposing it changes no behaviour.
+    """
+    from app.core.tenant_scope import tenant_scope_owner
+
+    return await tenant_scope_owner(session, tenant_id)
+
+
 # ── Epic H - universal audit context dependency ────────────────────────────
 
 
