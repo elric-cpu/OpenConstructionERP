@@ -1899,6 +1899,18 @@ function DashboardPageInner() {
   const boqSummary = rollup.byWidget('boq_summary');
   const scheduleCritical = rollup.byWidget('schedule_critical');
 
+  // The rollup feeds the KPI ribbon and most wave-2 widgets in one request.
+  // Its `error` was previously never read, so a failed rollup silently
+  // rendered every dependent widget as empty/zero — indistinguishable from a
+  // brand-new workspace. We surface a small, non-blocking retry banner above
+  // the widget grid (the rest of the dashboard still renders). The context
+  // does not expose `refetch`, so retry by invalidating the rollup query.
+  const queryClient = useQueryClient();
+  const retryRollup = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ['dashboard-rollup'] }),
+    [queryClient],
+  );
+
   const widgetOrder = useDashboardLayoutStore((s) => s.order);
   const widgetHidden = useDashboardLayoutStore((s) => s.hidden);
   const resolvedWidgets = useMemo(
@@ -2467,6 +2479,41 @@ function DashboardPageInner() {
             <DashboardLayoutManager onClose={() => setCustomizing(false)} />
           </CardContent>
         </Card>
+      )}
+
+      {/* Rollup-failure banner. The shared ``/v1/dashboard/rollup/`` feeds
+          the KPI ribbon and most widgets below; when it fails they render
+          empty/zero, which looks identical to a fresh workspace. Surface the
+          failure explicitly with a Retry CTA without blanking the page — the
+          non-rollup widgets (projects, documents, system status) still work. */}
+      {rollup.error != null && (
+        <div
+          role="status"
+          className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-3 py-2 animate-card-in"
+        >
+          <AlertTriangle
+            size={16}
+            className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5"
+          />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-amber-900 dark:text-amber-100">
+              {t('dashboard.rollup_error', {
+                defaultValue:
+                  'Could not load dashboard metrics. Some widgets below may show no data.',
+              })}
+            </p>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => retryRollup()}
+            disabled={rollup.isLoading}
+          >
+            {rollup.isLoading
+              ? t('common.loading', { defaultValue: 'Loading...' })
+              : t('common.retry', { defaultValue: 'Retry' })}
+          </Button>
+        </div>
       )}
 
       {/* ─── Widgets — rendered in the user's saved order, hidden ones

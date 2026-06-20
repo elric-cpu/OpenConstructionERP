@@ -33,7 +33,7 @@ import {
   Pencil,
   AlertTriangle,
 } from 'lucide-react';
-import { Button, Card, Badge, EmptyState, SkeletonTable, CountryFlag, CountryFlagBackdrop, Breadcrumb, ConfirmDialog, DismissibleInfo, IntroRichText, ModuleGuideButton } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, SkeletonTable, CountryFlag, CountryFlagBackdrop, Breadcrumb, ConfirmDialog, DismissibleInfo, IntroRichText, ModuleGuideButton, RecoveryCard } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { apiGet, apiPost, apiPatch, apiDelete, triggerDownload, extractErrorMessageFromBody } from '@/shared/lib/api';
@@ -680,7 +680,7 @@ export function CostsPage() {
 
   const searchUrl = buildSearchUrl(debouncedQuery, unit, source, region, offset, category, classificationPath, catalogId);
 
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, isLoading, isFetching, isError, error, refetch } = useQuery({
     queryKey: ['costs', debouncedQuery, unit, source, category, classificationPath, region, offset, semanticSearch, catalogId],
     queryFn: async () => {
       // Use vector semantic search when toggled and query is present
@@ -1393,6 +1393,14 @@ export function CostsPage() {
       {/* Results Table */}
       {isLoading ? (
         <SkeletonTable rows={6} columns={6} />
+      ) : isError && items.length === 0 ? (
+        // The search/catalog fetch failed and there is nothing to show.
+        // Surface a recovery affordance instead of the "No cost items
+        // found" empty state, which would hide the real error (auth /
+        // permission / server) behind a benign "nothing here" message.
+        // (When stale results are still present via placeholderData we keep
+        // rendering them rather than blanking the table.)
+        <RecoveryCard error={error} onRetry={() => refetch()} />
       ) : items.length === 0 ? (
         <EmptyState
           icon={specialTab === 'favourites' ? <Star size={24} strokeWidth={1.5} /> : specialTab === 'recent' ? <Clock size={24} strokeWidth={1.5} /> : <Database size={24} strokeWidth={1.5} />}

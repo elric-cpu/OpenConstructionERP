@@ -8,7 +8,7 @@ import {
   Building2, DollarSign, Euro, PoundSterling, Globe2, MapPin, Layers, AlertTriangle,
 } from 'lucide-react';
 import { formatDistanceToNowStrict, isValid as isValidDate, parseISO } from 'date-fns';
-import { Button, Card, Badge, EmptyState, Skeleton, SkeletonGrid, Breadcrumb, ProjectMap, ProjectWeather, FileTypeChips, ConfirmDialog, ModuleGuideButton, type LatLng } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, Skeleton, SkeletonGrid, Breadcrumb, ProjectMap, ProjectWeather, FileTypeChips, ConfirmDialog, ModuleGuideButton, RecoveryCard, type LatLng } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { DismissibleInfo, IntroRichText } from '@/shared/ui/DismissibleInfo';
 import { useWidgetSettingsStore } from '@/stores/useWidgetSettingsStore';
@@ -92,7 +92,13 @@ export function ProjectsPage() {
   const setSortOption = (v: SortOption) => setFilters((p) => ({ ...p, sort: v }));
   const [page, setPage] = useState(1);
 
-  const { data: projects, isLoading } = useQuery({
+  const {
+    data: projects,
+    isLoading,
+    isError: projectsError,
+    error: projectsErrorValue,
+    refetch: refetchProjects,
+  } = useQuery({
     queryKey: ['projects'],
     queryFn: projectsApi.list,
     staleTime: 5 * 60_000,
@@ -789,6 +795,11 @@ export function ProjectsPage() {
       {/* Results */}
       {isLoading ? (
         <SkeletonGrid items={3} />
+      ) : projectsError ? (
+        // Genuine fetch failure — surface a recovery affordance instead of
+        // the "No projects yet" empty state, which would silently hide an
+        // auth/permission/server error behind a create-your-first CTA.
+        <RecoveryCard error={projectsErrorValue} onRetry={() => refetchProjects()} />
       ) : filtered.length === 0 && (searchQuery || statusFilter !== 'all' || regionFilter !== 'all') ? (
         <EmptyState
           icon={<Search size={28} strokeWidth={1.5} />}

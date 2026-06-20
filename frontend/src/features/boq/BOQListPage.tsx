@@ -7,7 +7,7 @@ import {
   Search, ArrowUpDown, ChevronDown, GitCompareArrows, X, Loader2,
   CalendarDays,
 } from 'lucide-react';
-import { Card, Badge, EmptyState, Skeleton, Button, Breadcrumb, FileTypeChips, DismissibleInfo, IntroRichText } from '@/shared/ui';
+import { Card, Badge, EmptyState, Skeleton, Button, Breadcrumb, FileTypeChips, DismissibleInfo, IntroRichText, RecoveryCard } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { apiGet } from '@/shared/lib/api';
@@ -511,7 +511,13 @@ export function BOQListPage() {
     }
   }, [compareMode, selectedForCompare, addToast, t]);
 
-  const { data: projects, isLoading: projLoading } = useQuery({
+  const {
+    data: projects,
+    isLoading: projLoading,
+    isError: projError,
+    error: projErrorValue,
+    refetch: refetchProjects,
+  } = useQuery({
     queryKey: ['projects'],
     queryFn: () => apiGet<Project[]>('/v1/projects/'),
     staleTime: 5 * 60_000,
@@ -970,6 +976,12 @@ export function BOQListPage() {
             <Skeleton key={i} height={80} className="w-full" rounded="lg" />
           ))}
         </div>
+      ) : projError ? (
+        // The projects query gates the whole BOQ list (BOQs are fetched per
+        // project). When it fails we'd otherwise fall through to "No BOQs
+        // yet", hiding the real auth/permission/server error — surface a
+        // recovery affordance instead.
+        <RecoveryCard error={projErrorValue} onRetry={() => refetchProjects()} />
       ) : filtered.length === 0 && (searchQuery || statusFilter || projectFilter) ? (
         <EmptyState
           icon={<Search size={28} strokeWidth={1.5} />}
