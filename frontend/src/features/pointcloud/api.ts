@@ -22,17 +22,15 @@ import { apiGet, apiPost, apiDelete, API_BASE, getAuthToken } from '@/shared/lib
 
 /** Accepted upload containers, mirrored from the backend allow-list
  *  (backend/app/modules/pointcloud/models.py ACCEPTED_SCAN_FORMATS).
+ *  These are exactly the formats the server can decode: the open LAS/LAZ/COPC
+ *  family (built in) and E57 (needs the 'pointcloud' extra on the server).
  *  The proprietary .rcp/.rcs scan container is deliberately absent - export
  *  E57 or LAS. */
 export const ACCEPTED_SCAN_FORMATS = [
-  'e57',
   'las',
   'laz',
   'copc',
-  'ply',
-  'pcd',
-  'pts',
-  'xyz',
+  'e57',
 ] as const;
 
 export type ScanSourceType = 'laser_scan' | 'photogrammetry' | 'lidar' | 'other';

@@ -110,8 +110,8 @@ class ScanDatasetCreate(BaseModel):
     This mints a ``ScanDataset`` row in ``status='uploading'`` with a
     tenant-namespaced upload key. The bytes are uploaded presigned-direct-to-
     MinIO afterwards; the backend never proxies the cloud. ``original_format``
-    is validated against the accepted allow-list (E57/LAS/LAZ/COPC/PLY/PCD/
-    PTS/XYZ); proprietary ``rcp`` / ``rcs`` scan containers are rejected with an
+    is validated against the accepted allow-list (LAS/LAZ/COPC and E57);
+    proprietary ``rcp`` / ``rcs`` scan containers are rejected with an
     explanatory error.
     """
 
@@ -131,7 +131,7 @@ class ScanDatasetCreate(BaseModel):
     original_format: ScanFormat = Field(  # type: ignore[valid-type]
         ...,
         description=(
-            "Uploaded container format. One of E57/LAS/LAZ/COPC/PLY/PCD/PTS/XYZ. "
+            "Uploaded container format. One of LAS/LAZ/COPC or E57. "
             "The proprietary .rcp/.rcs scan container is not accepted - export E57 "
             "or LAS instead."
         ),
@@ -261,7 +261,7 @@ class ScanIngestInit(BaseModel):
     original_format: ScanFormat = Field(  # type: ignore[valid-type]
         ...,
         description=(
-            "Uploaded container format. One of E57/LAS/LAZ/COPC/PLY/PCD/PTS/XYZ. "
+            "Uploaded container format. One of LAS/LAZ/COPC or E57. "
             "The proprietary .rcp/.rcs scan container is not accepted - export E57 "
             "or LAS instead."
         ),

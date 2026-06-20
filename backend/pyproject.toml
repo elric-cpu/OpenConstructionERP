@@ -98,6 +98,16 @@ dependencies = [
     # DAE. Required so the GLB path actually runs.
     "pycollada>=0.8",
     "ezdxf>=0.18.0",
+    # Point-cloud viewing works out of the box for the open LAS/LAZ/COPC family:
+    # laspy reads LAS, the lazrs backend decompresses LAZ/COPC, and both feed the
+    # server-side decimator (app/modules/pointcloud/decode.py) that hands the
+    # browser a compact THREE.Points buffer. These used to sit in the optional
+    # 'pointcloud' extra, which left a fresh install unable to display any scan
+    # (upload succeeded, then the viewer answered 501). numpy (the readers' array
+    # path) is already a base dep transitively via pandas/pyarrow. Only E57
+    # (pye57, a heavier native libE57 wheel) stays in the optional extra.
+    "laspy>=2.5.0",
+    "lazrs>=0.6.0",
     "duckdb>=1.2.0,<2",
     "rapidfuzz>=3.0.0",
     # Imported at module load by the smart_views (signed share links) and eac
@@ -172,23 +182,16 @@ cv = [
     "paddleocr>=2.9.0",
     "Pillow>=12.1.1",
 ]
-# Point-cloud / reality-capture readers for the Point Cloud module
-# (app/modules/pointcloud). Without these the module installs and runs, but
-# the header sniff records "metadata pending" and the viewer answers 501 with
-# a "reader not installed" message - the import guards in sniff.py / decode.py
-# degrade gracefully rather than crash. Installing this extra enables reading
-# LAS/LAZ/COPC (laspy + the lazrs LAZ backend) and E57 (pye57) and decoding
-# them to the viewer buffer. numpy is pinned explicitly here even though it
-# already arrives transitively via pandas/pyarrow in the base deps, so the
-# readers' array path is satisfied if those base deps ever change. These are
-# deliberately NOT in the base dependencies and are not bundled into the
-# desktop/demo build by default (a pending founder decision); install with
-# ``pip install openconstructionerp[pointcloud]`` to enable point clouds.
+# E57 reader for the Point Cloud module (app/modules/pointcloud). The open
+# LAS/LAZ/COPC family is decoded out of the box (laspy + lazrs are base deps),
+# so this extra is now just E57: pye57 is a heavier native libE57 wheel that not
+# every deployment wants and that cannot be frozen into the desktop build, so it
+# stays opt-in. Without it the header sniff records "metadata pending" for E57
+# and the viewer answers a clear 501 for E57 only - the import guards in
+# sniff.py / decode.py degrade gracefully rather than crash. Install with
+# ``pip install openconstructionerp[pointcloud]`` to add E57 support.
 pointcloud = [
-    "laspy>=2.5.0",
-    "lazrs>=0.6.0",
     "pye57>=0.4.0",
-    "numpy>=1.26.0",
 ]
 # Deprecated alias since v2.5.0 — `duckdb` is in base deps now.
 # Kept so existing `pip install openconstructionerp[analytics]` commands

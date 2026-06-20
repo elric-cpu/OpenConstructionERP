@@ -32,7 +32,7 @@ export const pointcloudGuide: ModuleGuideContent = {
       titleDefault: 'Upload a scan',
       bodyKey: 'guide.pointcloud.upload.body',
       bodyDefault:
-        'Pick the project, then drag a cloud onto the upload window or browse for one. Supported containers are E57, LAS, LAZ, COPC, PLY, PCD, PTS and XYZ. Files upload straight to object storage, so even large scans register without a separate transfer step.',
+        'Pick the project, then drag a cloud onto the upload window or browse for one. Supported containers are LAS, LAZ, COPC and E57. Files upload straight to object storage, so even large scans register without a separate transfer step.',
       spotlightSelector: '[data-testid="pointcloud-upload-submit"]',
     },
     {

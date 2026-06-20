@@ -3,7 +3,7 @@
  *
  * Mirrors the upload-and-explain UX of the BIM Hub and DWG Takeoff pages:
  *  - a drag-and-drop upload dropzone + file picker for laser-scan / reality-
- *    capture containers (.las/.laz/.e57/.ply/.pts/.xyz/.pcd), wired to the
+ *    capture containers (.las/.laz/.copc/.e57), wired to the
  *    REAL presigned-direct ingest endpoint (see ./api.ts). No faked success -
  *    backend failures surface as a real error.
  *  - a project picker (mirrors DWG Takeoff) so the scan is registered against

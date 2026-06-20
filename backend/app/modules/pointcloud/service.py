@@ -244,7 +244,7 @@ class PointCloudService:
                     "message": (
                         "The proprietary .rcp/.rcs scan container is not accepted - export E57 or LAS instead."
                         if rejection == "format_proprietary_scan"
-                        else "Unsupported point-cloud format. Accepted: E57, LAS, LAZ, COPC, PLY, PCD, PTS, XYZ."
+                        else "Unsupported point-cloud format. Accepted: LAS, LAZ, COPC and E57."
                     ),
                 },
             )
@@ -891,8 +891,10 @@ class PointCloudService:
                         "reason": "reader_unavailable",
                         "format": exc.fmt,
                         "message": (
-                            f"Viewing {exc.fmt.upper()} scans needs the point-cloud reader "
-                            f"({exc.reader}). Install the 'pointcloud' extra to enable it."
+                            f"Viewing {exc.fmt.upper()} scans needs the optional {exc.reader} "
+                            "reader. LAS, LAZ and COPC work out of the box; install the "
+                            "'pointcloud' extra (pip install openconstructionerp[pointcloud]) "
+                            "to add E57 support."
                         ),
                     },
                 ) from exc
