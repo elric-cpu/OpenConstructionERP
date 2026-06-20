@@ -490,6 +490,10 @@ export function MatchWizardFlow() {
       }),
     onSuccess: (s: MatchSession) => {
       setSessionId(s.id);
+      // Seed the session cache GroupingPanel hydrates from (['match-session',
+      // id]); without this its group-by slots and category-filter chips fall
+      // back to hardcoded defaults on first entry instead of the real session.
+      qc.setQueryData(['match-session', s.id], s);
       qc.invalidateQueries({ queryKey: ['match-groups'] });
     },
     onError: (e: Error) =>

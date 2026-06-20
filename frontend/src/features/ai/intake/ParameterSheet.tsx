@@ -20,9 +20,9 @@ interface ParameterSheetProps {
   confirming?: boolean;
 }
 
-function displayValue(value: unknown): string {
-  if (value === true) return 'Yes';
-  if (value === false) return 'No';
+function displayValue(value: unknown, yesLabel: string, noLabel: string): string {
+  if (value === true) return yesLabel;
+  if (value === false) return noLabel;
   if (value === null || value === undefined || value === '') return '—';
   return String(value);
 }
@@ -53,6 +53,8 @@ export function ParameterSheet({
 }: ParameterSheetProps) {
   const { t } = useTranslation();
   const entries = Object.entries(state.params ?? {});
+  const yesLabel = t('aiest.answer.yes', { defaultValue: 'Yes' });
+  const noLabel = t('aiest.answer.no', { defaultValue: 'No' });
 
   return (
     <div className="flex h-full flex-col">
@@ -86,7 +88,7 @@ export function ParameterSheet({
                       className="h-7 w-24 rounded-md border border-border bg-surface-primary px-2 text-right text-sm focus:border-oe-blue focus:outline-none focus:ring-1 focus:ring-oe-blue/30"
                     />
                   ) : (
-                    displayValue(value)
+                    displayValue(value, yesLabel, noLabel)
                   )}
                 </dd>
               </div>
