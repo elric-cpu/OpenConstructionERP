@@ -156,8 +156,8 @@ class TestServiceDoesNotDuplicateMagicByteCheck:
         """
         monkeypatch.setattr(
             takeoff_service,
-            "_TAKEOFF_DOCUMENTS_DIR",
-            tmp_path / "td",
+            "_takeoff_documents_dir",
+            lambda: tmp_path / "td",
         )
         monkeypatch.setattr(takeoff_service, "_count_pdf_pages", lambda *a, **k: 1)
         monkeypatch.setattr(

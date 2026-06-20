@@ -455,8 +455,8 @@ class TestScannedPdfNeedsOcr:
         # Redirect upload dir to tmp_path so we don't write into the user's home.
         monkeypatch.setattr(
             takeoff_service,
-            "_TAKEOFF_DOCUMENTS_DIR",
-            tmp_path / "takeoff",
+            "_takeoff_documents_dir",
+            lambda: tmp_path / "takeoff",
         )
         svc = _make_service()
         scanned = b"%PDF-1.4\n" + b"scanned-bytes" * 100  # no /Encrypt, non-empty

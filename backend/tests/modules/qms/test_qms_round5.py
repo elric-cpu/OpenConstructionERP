@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -41,7 +42,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import (
@@ -311,6 +312,14 @@ def _build_qms_app(
     return app
 
 
+@asynccontextmanager
+async def _http(app: FastAPI) -> AsyncIterator[AsyncClient]:
+    """In-process async HTTP client bound to ``app`` on the current loop."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+
+
 @pytest.mark.asyncio
 async def test_get_calibration_idor_returns_404_for_foreign_project(
     session: AsyncSession,
@@ -338,8 +347,8 @@ async def test_get_calibration_idor_returns_404_for_foreign_project(
     await session.commit()
 
     app = _build_qms_app(session, caller_id=str(attacker))
-    client = TestClient(app)
-    resp = client.get(f"/v1/qms/calibrations/{cal.id}")
+    async with _http(app) as client:
+        resp = await client.get(f"/v1/qms/calibrations/{cal.id}")
     assert resp.status_code == 404, resp.text
 
 
@@ -365,11 +374,11 @@ async def test_patch_calibration_idor_returns_404_for_foreign_project(
     await session.commit()
 
     app = _build_qms_app(session, caller_id=str(attacker))
-    client = TestClient(app)
-    resp = client.patch(
-        f"/v1/qms/calibrations/{cal.id}",
-        json={"manufacturer": "Pwned Inc."},
-    )
+    async with _http(app) as client:
+        resp = await client.patch(
+            f"/v1/qms/calibrations/{cal.id}",
+            json={"manufacturer": "Pwned Inc."},
+        )
     assert resp.status_code == 404, resp.text
 
     # And the foreign row was not mutated.
@@ -400,8 +409,8 @@ async def test_delete_calibration_idor_returns_404_for_foreign_project(
     await session.commit()
 
     app = _build_qms_app(session, caller_id=str(attacker))
-    client = TestClient(app)
-    resp = client.delete(f"/v1/qms/calibrations/{cal.id}")
+    async with _http(app) as client:
+        resp = await client.delete(f"/v1/qms/calibrations/{cal.id}")
     assert resp.status_code == 404, resp.text
 
     # And the row is still there — the foreign caller did not delete it.
@@ -419,8 +428,8 @@ async def test_list_calibrations_rejects_missing_project_id(
     caller = await _make_user(session)
     await session.commit()
     app = _build_qms_app(session, caller_id=str(caller))
-    client = TestClient(app)
-    resp = client.get("/v1/qms/calibrations")
+    async with _http(app) as client:
+        resp = await client.get("/v1/qms/calibrations")
     assert resp.status_code == 400, resp.text
 
 
@@ -431,8 +440,8 @@ async def test_list_expiring_calibrations_rejects_missing_project_id(
     caller = await _make_user(session)
     await session.commit()
     app = _build_qms_app(session, caller_id=str(caller))
-    client = TestClient(app)
-    resp = client.get("/v1/qms/calibrations/expiring")
+    async with _http(app) as client:
+        resp = await client.get("/v1/qms/calibrations/expiring")
     assert resp.status_code == 400, resp.text
 
 
@@ -452,11 +461,11 @@ async def test_list_ncrs_rejects_unknown_severity(
     project_id = await _make_project(session, owner)
     await session.commit()
     app = _build_qms_app(session, caller_id=str(owner))
-    client = TestClient(app)
-    resp = client.get(
-        "/v1/qms/ncrs",
-        params={"project_id": str(project_id), "severity": "BOGUS"},
-    )
+    async with _http(app) as client:
+        resp = await client.get(
+            "/v1/qms/ncrs",
+            params={"project_id": str(project_id), "severity": "BOGUS"},
+        )
     assert resp.status_code == 422, resp.text
 
 
@@ -468,11 +477,11 @@ async def test_list_ncrs_rejects_unknown_status(
     project_id = await _make_project(session, owner)
     await session.commit()
     app = _build_qms_app(session, caller_id=str(owner))
-    client = TestClient(app)
-    resp = client.get(
-        "/v1/qms/ncrs",
-        params={"project_id": str(project_id), "status": "exploded"},
-    )
+    async with _http(app) as client:
+        resp = await client.get(
+            "/v1/qms/ncrs",
+            params={"project_id": str(project_id), "status": "exploded"},
+        )
     assert resp.status_code == 422, resp.text
 
 
@@ -485,11 +494,11 @@ async def test_list_ncrs_accepts_known_severity(
     project_id = await _make_project(session, owner)
     await session.commit()
     app = _build_qms_app(session, caller_id=str(owner))
-    client = TestClient(app)
-    resp = client.get(
-        "/v1/qms/ncrs",
-        params={"project_id": str(project_id), "severity": "major"},
-    )
+    async with _http(app) as client:
+        resp = await client.get(
+            "/v1/qms/ncrs",
+            params={"project_id": str(project_id), "severity": "major"},
+        )
     assert resp.status_code == 200, resp.text
     assert resp.json() == []
 
@@ -513,14 +522,14 @@ async def test_inspection_attachment_upload_rejects_bad_magic_bytes(
     await session.commit()
 
     app = _build_qms_app(session, caller_id=str(owner))
-    client = TestClient(app)
     # Craft a payload whose magic bytes are not in the allowed set
     # (16 null bytes followed by arbitrary content — not pdf/png/jpeg/…)
     bad_content = b"\x00" * 16 + b"<script>alert(1)</script>"
-    resp = client.post(
-        f"/v1/qms/inspections/{insp.id}/attachments",
-        files={"file": ("evil.html", bad_content, "text/html")},
-    )
+    async with _http(app) as client:
+        resp = await client.post(
+            f"/v1/qms/inspections/{insp.id}/attachments",
+            files={"file": ("evil.html", bad_content, "text/html")},
+        )
     assert resp.status_code == 415, resp.text
 
 
@@ -538,13 +547,13 @@ async def test_inspection_attachment_upload_accepts_pdf(
     await session.commit()
 
     app = _build_qms_app(session, caller_id=str(owner))
-    client = TestClient(app)
     # Minimal PDF magic bytes
     pdf_bytes = b"%PDF-1.4\n1 0 obj\n<< >>\nendobj\n%%EOF"
-    resp = client.post(
-        f"/v1/qms/inspections/{insp.id}/attachments",
-        files={"file": ("report.pdf", pdf_bytes, "application/pdf")},
-    )
+    async with _http(app) as client:
+        resp = await client.post(
+            f"/v1/qms/inspections/{insp.id}/attachments",
+            files={"file": ("report.pdf", pdf_bytes, "application/pdf")},
+        )
     assert resp.status_code == 201, resp.text
     body = resp.json()
     assert "filename" in body
@@ -572,11 +581,11 @@ async def test_ncr_attachment_upload_rejects_empty_file(
     await session.commit()
 
     app = _build_qms_app(session, caller_id=str(owner))
-    client = TestClient(app)
-    resp = client.post(
-        f"/v1/qms/ncrs/{ncr.id}/attachments",
-        files={"file": ("empty.pdf", b"", "application/pdf")},
-    )
+    async with _http(app) as client:
+        resp = await client.post(
+            f"/v1/qms/ncrs/{ncr.id}/attachments",
+            files={"file": ("empty.pdf", b"", "application/pdf")},
+        )
     assert resp.status_code == 400, resp.text
 
 
@@ -602,12 +611,12 @@ async def test_ncr_attachment_upload_idor_404_for_attacker(
     await session.commit()
 
     app = _build_qms_app(session, caller_id=str(attacker))
-    client = TestClient(app)
     pdf_bytes = b"%PDF-1.4\n1 0 obj\n<< >>\nendobj\n%%EOF"
-    resp = client.post(
-        f"/v1/qms/ncrs/{ncr.id}/attachments",
-        files={"file": ("report.pdf", pdf_bytes, "application/pdf")},
-    )
+    async with _http(app) as client:
+        resp = await client.post(
+            f"/v1/qms/ncrs/{ncr.id}/attachments",
+            files={"file": ("report.pdf", pdf_bytes, "application/pdf")},
+        )
     assert resp.status_code == 404, resp.text
 
 
@@ -629,8 +638,8 @@ async def test_get_inspection_idor_attacker_gets_404(
     await session.commit()
 
     app = _build_qms_app(session, caller_id=str(attacker))
-    client = TestClient(app)
-    resp = client.get(f"/v1/qms/inspections/{insp.id}")
+    async with _http(app) as client:
+        resp = await client.get(f"/v1/qms/inspections/{insp.id}")
     assert resp.status_code == 404, resp.text
 
 
@@ -654,8 +663,8 @@ async def test_get_ncr_idor_attacker_gets_404(session: AsyncSession) -> None:
     await session.commit()
 
     app = _build_qms_app(session, caller_id=str(attacker))
-    client = TestClient(app)
-    resp = client.get(f"/v1/qms/ncrs/{ncr.id}")
+    async with _http(app) as client:
+        resp = await client.get(f"/v1/qms/ncrs/{ncr.id}")
     assert resp.status_code == 404, resp.text
 
 
@@ -672,19 +681,19 @@ async def test_ncr_read_cost_impact_is_string_not_float(
     await session.commit()
 
     app = _build_qms_app(session, caller_id=str(owner))
-    client = TestClient(app)
 
-    resp = client.post(
-        "/v1/qms/ncrs",
-        json={
-            "project_id": str(project_id),
-            "title": "Concrete strength below spec",
-            "description": "Cube test 23MPa vs 30MPa",
-            "severity": "critical",
-            "cost_impact_currency": "EUR",
-            "cost_impact_amount": "12345.67",
-        },
-    )
+    async with _http(app) as client:
+        resp = await client.post(
+            "/v1/qms/ncrs",
+            json={
+                "project_id": str(project_id),
+                "title": "Concrete strength below spec",
+                "description": "Cube test 23MPa vs 30MPa",
+                "severity": "critical",
+                "cost_impact_currency": "EUR",
+                "cost_impact_amount": "12345.67",
+            },
+        )
     assert resp.status_code == 201, resp.text
     body = resp.json()
     assert isinstance(body["cost_impact_amount"], str), (

@@ -53,8 +53,8 @@ class TestUploadCap:
         monkeypatch.setenv("OE_TAKEOFF_MAX_UPLOAD_MB", "100")
         monkeypatch.setattr(
             takeoff_service,
-            "_TAKEOFF_DOCUMENTS_DIR",
-            tmp_path / "td",
+            "_takeoff_documents_dir",
+            lambda: tmp_path / "td",
         )
         svc = _make_service()
 
@@ -75,8 +75,8 @@ class TestUploadCap:
         monkeypatch.setenv("OE_TAKEOFF_MAX_UPLOAD_MB", "100")
         monkeypatch.setattr(
             takeoff_service,
-            "_TAKEOFF_DOCUMENTS_DIR",
-            tmp_path / "td",
+            "_takeoff_documents_dir",
+            lambda: tmp_path / "td",
         )
         monkeypatch.setattr(takeoff_service, "_count_pdf_pages", lambda *a, **k: 1)
         monkeypatch.setattr(
@@ -120,8 +120,8 @@ class TestTextExtractionBudget:
         monkeypatch.setenv("OE_TAKEOFF_MAX_UPLOAD_MB", "200")
         monkeypatch.setattr(
             takeoff_service,
-            "_TAKEOFF_DOCUMENTS_DIR",
-            tmp_path / "td",
+            "_takeoff_documents_dir",
+            lambda: tmp_path / "td",
         )
 
         # Stub the page extractor to return 50 pages with 1 KB each.
@@ -186,8 +186,8 @@ class TestLargePageCountMemorySafety:
         """100 pages with 2 KB text each → total string ≤ 250 KB (+ separators)."""
         monkeypatch.setattr(
             takeoff_service,
-            "_TAKEOFF_DOCUMENTS_DIR",
-            tmp_path / "td",
+            "_takeoff_documents_dir",
+            lambda: tmp_path / "td",
         )
 
         page_text = "B" * 2048  # 2 KB per page

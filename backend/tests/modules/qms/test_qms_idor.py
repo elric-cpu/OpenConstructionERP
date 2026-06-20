@@ -10,18 +10,25 @@ Router is mounted against a live PostgreSQL session (the shared unit
 database, isolated per test by an outer transaction that is rolled back on
 teardown) so the real ``verify_project_access`` runs against persisted
 ``Project.owner_id`` rows.
+
+The router is exercised with :class:`httpx.AsyncClient` over an in-process
+``ASGITransport`` so the app runs on the *same* event loop as the test. The
+synchronous ``fastapi.testclient.TestClient`` drives the app from a worker
+thread on its own loop, which breaks when a handler reuses the asyncpg
+session created on the test loop ("Future attached to a different loop").
 """
 
 from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import (
@@ -90,6 +97,14 @@ def _build_app(db_session: AsyncSession, *, caller_id: str) -> FastAPI:
     return app
 
 
+@asynccontextmanager
+async def _http(app: FastAPI) -> AsyncIterator[AsyncClient]:
+    """In-process async HTTP client bound to ``app`` on the current loop."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+
+
 # ── IDOR: GET /inspections/{id} ──────────────────────────────────────────
 
 
@@ -109,8 +124,8 @@ async def test_get_inspection_idor_404_for_attacker(
     await session.commit()
 
     app = _build_app(session, caller_id=str(attacker))
-    client = TestClient(app)
-    resp = client.get(f"/v1/qms/inspections/{insp.id}")
+    async with _http(app) as client:
+        resp = await client.get(f"/v1/qms/inspections/{insp.id}")
     assert resp.status_code == 404, resp.text
 
 
@@ -124,8 +139,8 @@ async def test_get_inspection_200_for_owner(session: AsyncSession) -> None:
     await session.commit()
 
     app = _build_app(session, caller_id=str(owner))
-    client = TestClient(app)
-    resp = client.get(f"/v1/qms/inspections/{insp.id}")
+    async with _http(app) as client:
+        resp = await client.get(f"/v1/qms/inspections/{insp.id}")
     assert resp.status_code == 200, resp.text
     assert resp.json()["id"] == str(insp.id)
 
@@ -152,8 +167,8 @@ async def test_get_ncr_idor_404_for_attacker(session: AsyncSession) -> None:
     await session.commit()
 
     app = _build_app(session, caller_id=str(attacker))
-    client = TestClient(app)
-    resp = client.get(f"/v1/qms/ncrs/{ncr.id}")
+    async with _http(app) as client:
+        resp = await client.get(f"/v1/qms/ncrs/{ncr.id}")
     assert resp.status_code == 404, resp.text
 
 
@@ -174,8 +189,8 @@ async def test_get_ncr_200_for_owner(session: AsyncSession) -> None:
     await session.commit()
 
     app = _build_app(session, caller_id=str(owner))
-    client = TestClient(app)
-    resp = client.get(f"/v1/qms/ncrs/{ncr.id}")
+    async with _http(app) as client:
+        resp = await client.get(f"/v1/qms/ncrs/{ncr.id}")
     assert resp.status_code == 200, resp.text
     assert resp.json()["id"] == str(ncr.id)
 
@@ -202,11 +217,11 @@ async def test_patch_ncr_idor_404_for_attacker(session: AsyncSession) -> None:
     await session.commit()
 
     app = _build_app(session, caller_id=str(attacker))
-    client = TestClient(app)
-    resp = client.patch(
-        f"/v1/qms/ncrs/{ncr.id}",
-        json={"title": "Injected title"},
-    )
+    async with _http(app) as client:
+        resp = await client.patch(
+            f"/v1/qms/ncrs/{ncr.id}",
+            json={"title": "Injected title"},
+        )
     assert resp.status_code == 404, resp.text
 
     # Confirm victim's NCR was not mutated
@@ -245,8 +260,8 @@ async def test_close_ncr_idor_404_for_attacker(session: AsyncSession) -> None:
     await session.commit()
 
     app = _build_app(session, caller_id=str(attacker))
-    client = TestClient(app)
-    resp = client.post(f"/v1/qms/ncrs/{ncr.id}/close")
+    async with _http(app) as client:
+        resp = await client.post(f"/v1/qms/ncrs/{ncr.id}/close")
     assert resp.status_code == 404, resp.text
 
     # Confirm victim's NCR is still verifying, not closed
@@ -274,11 +289,11 @@ async def test_patch_inspection_idor_404_for_attacker(
     await session.commit()
 
     app = _build_app(session, caller_id=str(attacker))
-    client = TestClient(app)
-    resp = client.patch(
-        f"/v1/qms/inspections/{insp.id}",
-        json={"notes": "hacked"},
-    )
+    async with _http(app) as client:
+        resp = await client.patch(
+            f"/v1/qms/inspections/{insp.id}",
+            json={"notes": "hacked"},
+        )
     assert resp.status_code == 404, resp.text
 
     # Confirm original notes unchanged

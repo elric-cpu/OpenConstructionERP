@@ -145,25 +145,64 @@ import app.modules.users.models  # noqa: E402,F401
 # event has already fanned out to subscribers.
 from app.core.events import event_bus as _event_bus  # noqa: E402
 
+# Handlers that perform real async I/O — they open their own DB session
+# (webhook dispatch) or write an activity-log row (BOQ). Both subscribe to the
+# ``"*"`` wildcard, so they are present for *every* event once the full app has
+# started (i.e. in integration tests). Manually stepping a coroutine that does
+# real asyncpg I/O via ``coro.send(None)`` corrupts the connection
+# ("await wasn't used with future") and poisons the test's session, so whenever
+# one of these is registered we let the event loop drive the publish instead.
+_ASYNC_IO_EVENT_HANDLERS = {"_dispatch_to_webhooks", "_log_boq_activity"}
+
+# Keep strong references to scheduled publish tasks so the loop can't garbage-
+# collect them mid-flight (which would raise "Task was destroyed but it is
+# pending"). The done-callback drops each task once it finishes.
+_pending_event_tasks: set = set()
+
+
+def _schedule_publish(coro):
+    import asyncio as __asyncio
+
+    task = __asyncio.ensure_future(coro)
+    _pending_event_tasks.add(task)
+    task.add_done_callback(_pending_event_tasks.discard)
+    return task
+
 
 def _sync_publish_detached(name, data=None, source_module=None):
     """Test-time replacement for :meth:`EventBus.publish_detached`.
 
-    Drives the publish coroutine to completion synchronously by stepping
-    the coroutine until it would yield to wait for a real I/O future.
-    All current subscribers are pure-Python (notifications/webhooks open
-    their own sessions but the test fixtures never wire those for unit
-    tests), so the coroutine runs to ``return`` on first ``send(None)``.
-    Returns a completed Future for callers that ignore the return value.
+    Two regimes, distinguished by whether a real-I/O wildcard handler is wired:
+
+    * **Unit tests** subscribe a pure-Python recorder to the bus, call a
+      service that fires ``publish_detached`` and then immediately assert on the
+      captured events. No I/O handler is registered, so we drive the publish
+      coroutine to completion in-line — pure subscribers finish on the first
+      ``send(None)`` — preserving that synchronous contract exactly.
+
+    * **Integration tests** run the full app, which registers wildcard handlers
+      that open their own DB session (webhook dispatch, BOQ activity log). Those
+      do real asyncpg I/O; stepping them by hand corrupts the connection. When
+      such a handler is registered for the event we instead schedule the publish
+      as a detached task, exactly as production does, so the loop drives the I/O
+      correctly.
+
+    Either way an awaitable is returned for callers/tests that use it.
     """
     import asyncio as __asyncio
+
+    handlers = list(_event_bus._handlers.get(name, ())) + list(_event_bus._wildcard_handlers)
+    needs_loop = any(getattr(h, "__name__", "") in _ASYNC_IO_EVENT_HANDLERS for h in handlers)
+    if needs_loop:
+        try:
+            return _schedule_publish(_event_bus.publish(name, data, source_module=source_module))
+        except RuntimeError:
+            pass  # no running loop (rare) — fall through to the synchronous drive
 
     coro = _event_bus.publish(name, data, source_module=source_module)
     fut: __asyncio.Future = __asyncio.Future()
     try:
-        # Drive the coroutine. Pure subscribers (no real I/O) finish in one
-        # send. Anything that does try to yield to the loop falls back to
-        # ``ensure_future`` so we never hang the test.
+        # Pure subscribers (no real I/O) finish in a single send.
         coro.send(None)
     except StopIteration as stop:
         fut.set_result(stop.value)
@@ -171,11 +210,14 @@ def _sync_publish_detached(name, data=None, source_module=None):
     except BaseException as exc:
         fut.set_exception(exc)
         return fut
-    # Coroutine yielded — fall back to scheduling so the loop can finish it.
+    # A subscriber yielded for real I/O but no recognised wildcard handler was
+    # registered (e.g. a module-specific handler imported without the full app).
+    # NEVER hand a half-stepped coroutine to the loop — that is exactly what
+    # corrupts asyncpg. Discard it and re-publish cleanly as a detached task.
+    coro.close()
     try:
-        return __asyncio.ensure_future(coro)
+        return _schedule_publish(_event_bus.publish(name, data, source_module=source_module))
     except RuntimeError:
-        # No running loop in sync test context.
         fut.set_result(None)
         return fut
 

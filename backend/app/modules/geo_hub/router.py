@@ -960,8 +960,17 @@ async def delete_raster_overlay(
     overlay_id: uuid.UUID,
     service: GeoHubService = Depends(_svc),
     payload: CurrentUserPayload = None,  # type: ignore[assignment]
-    _perm: None = Depends(RequirePermission("geo_hub.delete")),
 ) -> Response:
+    # IDOR before RBAC. Resolve the overlay through the ownership-checked
+    # getter FIRST so a cross-tenant id collapses to 404 (existence masked)
+    # before the stricter delete-permission gate runs. If we let
+    # ``RequirePermission("geo_hub.delete")`` run first (as a route
+    # dependency), an editor in another tenant would get 403 — leaking that
+    # the row exists. Same-tenant callers who can see the overlay but lack
+    # geo_hub.delete still get 403 from the explicit gate below, preserving
+    # the MANAGER+ delete contract (test_geo_hub_security).
+    await service.get_raster_overlay(overlay_id, payload=payload)
+    await RequirePermission("geo_hub.delete")(payload)
     await service.delete_raster_overlay(overlay_id, payload=payload)
     return Response(status_code=204)
 

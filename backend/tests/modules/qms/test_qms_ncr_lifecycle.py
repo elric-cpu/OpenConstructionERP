@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -28,7 +29,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import (
@@ -98,6 +99,14 @@ def _build_app(db_session: AsyncSession, *, caller_id: str) -> FastAPI:
     app.dependency_overrides[get_current_user_id] = _user_override
     app.dependency_overrides[get_current_user_payload] = _payload_override
     return app
+
+
+@asynccontextmanager
+async def _http(app: FastAPI) -> AsyncIterator[AsyncClient]:
+    """In-process async HTTP client bound to ``app`` on the current loop."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
 
 
 # ── Happy path ───────────────────────────────────────────────────────────
@@ -251,19 +260,18 @@ async def test_ncr_cost_impact_serialised_as_string(
     await session.commit()
 
     app = _build_app(session, caller_id=str(owner))
-    client = TestClient(app)
-
-    resp = client.post(
-        "/v1/qms/ncrs",
-        json={
-            "project_id": str(project_id),
-            "title": "Slab thickness deviation",
-            "description": "4mm short of spec",
-            "severity": "major",
-            "cost_impact_currency": "EUR",
-            "cost_impact_amount": "9999999.99",
-        },
-    )
+    async with _http(app) as client:
+        resp = await client.post(
+            "/v1/qms/ncrs",
+            json={
+                "project_id": str(project_id),
+                "title": "Slab thickness deviation",
+                "description": "4mm short of spec",
+                "severity": "major",
+                "cost_impact_currency": "EUR",
+                "cost_impact_amount": "9999999.99",
+            },
+        )
     assert resp.status_code == 201, resp.text
     body = resp.json()
     # Must be a string, not a float
@@ -346,8 +354,8 @@ async def test_http_close_ncr_idor_returns_404(session: AsyncSession) -> None:
     await session.commit()
 
     app = _build_app(session, caller_id=str(attacker))
-    client = TestClient(app)
-    resp = client.post(f"/v1/qms/ncrs/{ncr.id}/close")
+    async with _http(app) as client:
+        resp = await client.post(f"/v1/qms/ncrs/{ncr.id}/close")
     assert resp.status_code == 404, resp.text
 
     # Victim's NCR must still be verifying

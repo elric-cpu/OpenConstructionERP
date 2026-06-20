@@ -15,13 +15,14 @@ Coverage:
 from __future__ import annotations
 
 import uuid
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI, HTTPException
 from fastapi import status as st
-from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
 import app.core.audit_log  # noqa: F401 — registers ActivityLog with Base
 from app.dependencies import (
@@ -117,6 +118,14 @@ def _build_app(
     return app
 
 
+@asynccontextmanager
+async def _http(app: FastAPI) -> AsyncIterator[AsyncClient]:
+    """In-process async HTTP client bound to ``app`` on the current loop."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+
+
 # ── Cross-tenant 404 ─────────────────────────────────────────────────
 
 
@@ -129,24 +138,24 @@ async def test_cross_tenant_route_returns_404(db_session) -> None:
 
     # Owner creates a route on their project.
     owner_app = _build_app(db_session, caller_id=str(owner_id))
-    owner_client = TestClient(owner_app)
     other_user = await _make_user(db_session)
     await db_session.commit()
-    resp = owner_client.post(
-        "/v1/approval-routes/routes",
-        json={
-            "project_id": str(project_id),
-            "name": "Owner-only",
-            "target_kind": "rfi",
-            "steps": [
-                {
-                    "ordinal": 1,
-                    "approver_user_id": str(other_user),
-                    "mode": "all",
-                }
-            ],
-        },
-    )
+    async with _http(owner_app) as owner_client:
+        resp = await owner_client.post(
+            "/v1/approval-routes/routes",
+            json={
+                "project_id": str(project_id),
+                "name": "Owner-only",
+                "target_kind": "rfi",
+                "steps": [
+                    {
+                        "ordinal": 1,
+                        "approver_user_id": str(other_user),
+                        "mode": "all",
+                    }
+                ],
+            },
+        )
     assert resp.status_code == 201, resp.text
     route_id = resp.json()["id"]
 
@@ -157,8 +166,8 @@ async def test_cross_tenant_route_returns_404(db_session) -> None:
         role="editor",
         permissions=["approval_routes.read", "approval_routes.write"],
     )
-    other_client = TestClient(other_app)
-    resp = other_client.get(f"/v1/approval-routes/routes/{route_id}")
+    async with _http(other_app) as other_client:
+        resp = await other_client.get(f"/v1/approval-routes/routes/{route_id}")
     assert resp.status_code == 404, resp.text
 
 
@@ -179,18 +188,18 @@ async def test_missing_write_permission_is_403(db_session) -> None:
         role="viewer",
         permissions=["approval_routes.read"],
     )
-    client = TestClient(app)
-    resp = client.post(
-        "/v1/approval-routes/routes",
-        json={
-            "project_id": str(project_id),
-            "name": "Blocked",
-            "target_kind": "markup",
-            "steps": [
-                {"ordinal": 1, "approver_role": "qa", "mode": "any"},
-            ],
-        },
-    )
+    async with _http(app) as client:
+        resp = await client.post(
+            "/v1/approval-routes/routes",
+            json={
+                "project_id": str(project_id),
+                "name": "Blocked",
+                "target_kind": "markup",
+                "steps": [
+                    {"ordinal": 1, "approver_role": "qa", "mode": "any"},
+                ],
+            },
+        )
     assert resp.status_code == 403, resp.text
 
 
@@ -210,47 +219,47 @@ async def test_happy_path_post_decide_round_trip(db_session) -> None:
     await db_session.commit()
 
     app = _build_app(db_session, caller_id=str(owner_id))
-    client = TestClient(app)
 
-    # 1. Create route with a single user-pinned step.
-    resp = client.post(
-        "/v1/approval-routes/routes",
-        json={
-            "project_id": str(project_id),
-            "name": "RFI sign-off",
-            "target_kind": "rfi",
-            "steps": [
-                {
-                    "ordinal": 1,
-                    "approver_user_id": str(approver_id),
-                    "mode": "all",
-                },
-            ],
-        },
-    )
-    assert resp.status_code == 201, resp.text
-    route_id = resp.json()["id"]
-    step_id = resp.json()["steps"][0]["id"]
+    async with _http(app) as client:
+        # 1. Create route with a single user-pinned step.
+        resp = await client.post(
+            "/v1/approval-routes/routes",
+            json={
+                "project_id": str(project_id),
+                "name": "RFI sign-off",
+                "target_kind": "rfi",
+                "steps": [
+                    {
+                        "ordinal": 1,
+                        "approver_user_id": str(approver_id),
+                        "mode": "all",
+                    },
+                ],
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        route_id = resp.json()["id"]
+        step_id = resp.json()["steps"][0]["id"]
 
-    # 2. Start an instance.
-    target_id = str(uuid.uuid4())
-    resp = client.post(
-        "/v1/approval-routes/instances",
-        json={
-            "route_id": route_id,
-            "target_kind": "rfi",
-            "target_id": target_id,
-        },
-    )
-    assert resp.status_code == 201, resp.text
-    instance_id = resp.json()["id"]
-    assert resp.json()["status"] == "pending"
+        # 2. Start an instance.
+        target_id = str(uuid.uuid4())
+        resp = await client.post(
+            "/v1/approval-routes/instances",
+            json={
+                "route_id": route_id,
+                "target_kind": "rfi",
+                "target_id": target_id,
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        instance_id = resp.json()["id"]
+        assert resp.json()["status"] == "pending"
 
-    # 3. Owner-as-approver submits the decision on the only step.
-    resp = client.post(
-        f"/v1/approval-routes/instances/{instance_id}/decide",
-        json={"step_id": step_id, "decision": "approved", "comment": "ok"},
-    )
+        # 3. Owner-as-approver submits the decision on the only step.
+        resp = await client.post(
+            f"/v1/approval-routes/instances/{instance_id}/decide",
+            json={"step_id": step_id, "decision": "approved", "comment": "ok"},
+        )
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == "approved"
     assert resp.json()["completed_at"] is not None

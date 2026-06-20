@@ -27,13 +27,14 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import AsyncIterator
 
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # Ensure FK targets are in metadata.
@@ -177,6 +178,14 @@ def _build_app(db_session, *, caller_id: str, role: str = "admin") -> FastAPI:
     return app
 
 
+@asynccontextmanager
+async def _http(app: FastAPI) -> AsyncIterator[AsyncClient]:
+    """In-process async HTTP client bound to ``app`` on the current loop."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+
+
 # ── 1. Matrix endpoint: many-row performance + shape correctness ──────────────
 
 
@@ -315,8 +324,8 @@ class TestMatrixPerformance:
         await db_session.commit()
 
         app = _build_app(db_session, caller_id=str(owner_id))
-        client = TestClient(app)
-        resp = client.get(f"/v1/requirements/projects/{project_id}/matrix/")
+        async with _http(app) as client:
+            resp = await client.get(f"/v1/requirements/projects/{project_id}/matrix/")
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["rows"][0]["linked_position_id"] == str(linked_pos)
@@ -374,8 +383,8 @@ class TestMatrixRoute:
         await db_session.commit()
 
         app = _build_app(db_session, caller_id=str(owner_id))
-        client = TestClient(app)
-        resp = client.get(f"/v1/requirements/projects/{project_id}/matrix/")
+        async with _http(app) as client:
+            resp = await client.get(f"/v1/requirements/projects/{project_id}/matrix/")
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["project_id"] == str(project_id)
@@ -394,9 +403,9 @@ class TestMatrixRoute:
 
         # Build app as attacker (role=editor so admin bypass doesn't fire).
         app = _build_app(db_session, caller_id=str(attacker_id), role="editor")
-        client = TestClient(app)
 
-        resp = client.get(f"/v1/requirements/projects/{victim_project}/matrix/")
+        async with _http(app) as client:
+            resp = await client.get(f"/v1/requirements/projects/{victim_project}/matrix/")
         assert resp.status_code == 404, resp.text
 
 

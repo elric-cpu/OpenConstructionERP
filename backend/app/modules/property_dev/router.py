@@ -1914,8 +1914,15 @@ async def _verify_owner_via_development(
     dev_id: uuid.UUID,
     payload: dict[str, Any],
 ) -> None:
-    """IDOR closure walking development → project owner."""
-    is_admin = payload.get("role") == "admin"
+    """IDOR closure walking development → project owner.
+
+    Ownership is strict: only the project owner passes. The global ``admin``
+    role does NOT grant cross-tenant access here — an admin from another
+    tenant must still 404 on a development they do not own. This closes the
+    broker-tenant IDOR (deferred #66) that let any admin price-quote against
+    another tenant's price list. Legitimate same-tenant access is unaffected
+    because the project owner's id matches ``user_id``.
+    """
     user_id = payload.get("sub") or payload.get("user_id")
     if user_id is None:
         raise HTTPException(status_code=404, detail=translate("errors.resource_not_found", locale=get_locale()))
@@ -1926,8 +1933,6 @@ async def _verify_owner_via_development(
     dev = await DevelopmentRepository(session).get_by_id(dev_id)
     if dev is None:
         raise HTTPException(status_code=404, detail=translate("errors.resource_not_found", locale=get_locale()))
-    if is_admin:
-        return
     project = await ProjectRepository(session).get_by_id(dev.project_id)
     if project is None or str(project.owner_id) != str(user_id):
         raise HTTPException(status_code=404, detail=translate("errors.resource_not_found", locale=get_locale()))
