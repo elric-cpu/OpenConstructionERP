@@ -393,7 +393,10 @@ async def update_room(
     metadata = data.pop("metadata", None)
     for key, value in data.items():
         setattr(room, key, value)
-    if metadata is not None:
+    if isinstance(metadata, dict):
+        # Merge into the existing column so a partial PATCH keeps other keys.
+        room.metadata_ = merge_metadata(getattr(room, "metadata_", None), metadata)
+    elif metadata is not None:
         room.metadata_ = metadata
     await session.flush()
     await session.refresh(room)
@@ -569,7 +572,10 @@ async def update_booking(
 
     for key, value in data.items():
         setattr(booking, key, value)
-    if metadata is not None:
+    if isinstance(metadata, dict):
+        # Merge into the existing column so a partial PATCH keeps other keys.
+        booking.metadata_ = merge_metadata(getattr(booking, "metadata_", None), metadata)
+    elif metadata is not None:
         booking.metadata_ = metadata
 
     # Reflect terminal transitions on the room status - but only when the
