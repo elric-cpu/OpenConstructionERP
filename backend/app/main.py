@@ -2742,7 +2742,14 @@ def create_app() -> FastAPI:
                 except Exception:
                     logger.exception("KPI recalculation scheduler failed")
 
-        asyncio.create_task(_kpi_scheduler())
+        # Background schedulers are skipped under OE_TEST_FAST_STARTUP: the test
+        # suite stands up a fresh app (and thus a fresh set of these loops) per
+        # module on a single shared event loop. Left running, each module's
+        # detached loops accumulate and periodically open their own DB sessions,
+        # eventually exhausting the PostgreSQL connection cap (TooManyConnections)
+        # for later modules. Production (flag unset) starts them as before.
+        if not _fast_startup:
+            asyncio.create_task(_kpi_scheduler())
 
         # ── File-trash retention purge (24-hour interval) ─────────────
         # Walks ``oe_file_trash`` once a day and hard-deletes every row
@@ -2751,9 +2758,10 @@ def create_app() -> FastAPI:
         # doesn't end up running two parallel purge loops against the
         # same database.
         try:
-            from app.modules.file_trash.jobs import register_jobs as _ft_register_jobs
+            if not _fast_startup:
+                from app.modules.file_trash.jobs import register_jobs as _ft_register_jobs
 
-            _ft_register_jobs()
+                _ft_register_jobs()
         except Exception:
             logger.exception("file_trash scheduler registration failed")
 
@@ -2847,7 +2855,8 @@ def create_app() -> FastAPI:
             except Exception:
                 logger.debug("Cost-DB pre-warm failed (non-fatal)", exc_info=True)
 
-        asyncio.create_task(_prewarm_cost_caches())
+        if not _fast_startup:
+            asyncio.create_task(_prewarm_cost_caches())
 
         # ── Scheduled reports worker (1-minute tick) ────────────────────
         # Polls oe_reporting_template for rows whose ``next_run_at`` is
@@ -2919,15 +2928,17 @@ def create_app() -> FastAPI:
                 except Exception:
                     logger.exception("Reports scheduler tick failed")
 
-        asyncio.create_task(_reports_scheduler())
+        if not _fast_startup:
+            asyncio.create_task(_reports_scheduler())
 
         # No-code agent builder: fire scheduled custom agents (item #29). The
         # loop lives in the ai_agents module and self-schedules via asyncio;
         # fail-soft so a scheduler hiccup never blocks startup.
         try:
-            from app.modules.ai_agents.scheduler import start_scheduler
+            if not _fast_startup:
+                from app.modules.ai_agents.scheduler import start_scheduler
 
-            start_scheduler()
+                start_scheduler()
         except Exception:  # noqa: BLE001 - never block startup on the scheduler
             logger.exception("AI agent scheduler failed to start")
 
@@ -2949,7 +2960,8 @@ def create_app() -> FastAPI:
                 except Exception:
                     logger.exception("Risk escalation sweep tick failed")
 
-        asyncio.create_task(_risk_escalation_sweeper())
+        if not _fast_startup:
+            asyncio.create_task(_risk_escalation_sweeper())
 
         _section("Ready")
         # Friendly multi-line ready banner. The CLI (`openestimate serve`)
