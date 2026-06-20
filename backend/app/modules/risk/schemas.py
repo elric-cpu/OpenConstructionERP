@@ -12,7 +12,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 
 # ── v3 §10 money serialisation helper ─────────────────────────────────────
@@ -29,6 +29,30 @@ def _serialise_money(v: Decimal | None) -> str | None:
     if not v.is_finite():
         return "0"
     return format(v, "f")
+
+
+# Upper bound for money fields. Far above any realistic construction amount yet
+# well within Decimal's 28-digit precision, so a downstream exposure rollup /
+# quantize on a stored value never raises InvalidOperation on an otherwise-
+# "valid" huge input (e.g. '1e400'). Mirrors changeorders/schemas.py:_MONEY_MAX.
+_MONEY_MAX = Decimal("1e15")
+
+
+def _bound_money(v: Decimal | None) -> Decimal | None:
+    """Reject non-finite / absurd-magnitude money so one bad row cannot poison
+    the project-wide exposure rollup or 500 the summary / simulation.
+
+    Pydantic already rejects NaN/Infinity for a ``Decimal`` field, but NOT a
+    finite-but-absurd magnitude like ``1e400``; ``ge=0`` lets it through and it
+    later overflows ``float()``/``quantize()`` in the rollup. This closes that
+    gap (the ``is_finite`` check is kept as defence-in-depth)."""
+    if v is None:
+        return v
+    if not v.is_finite():
+        raise ValueError("amount must be a finite number (no NaN/Infinity)")
+    if abs(v) >= _MONEY_MAX:
+        raise ValueError("amount is outside the supported range")
+    return v
 
 
 # ── Shared controlled vocabularies (single source of truth) ──────────────
@@ -121,6 +145,11 @@ class RiskCreate(BaseModel):
     def _ser_money(self, v: Decimal) -> str | None:
         return _serialise_money(v)
 
+    @field_validator("impact_cost", "response_cost")
+    @classmethod
+    def _bound_money_fields(cls, v: Decimal | None) -> Decimal | None:
+        return _bound_money(v)
+
 
 class RiskUpdate(BaseModel):
     """‌⁠‍Partial update for a risk item."""
@@ -156,6 +185,11 @@ class RiskUpdate(BaseModel):
     @field_serializer("impact_cost", "response_cost", when_used="json")
     def _ser_money(self, v: Decimal | None) -> str | None:
         return _serialise_money(v)
+
+    @field_validator("impact_cost", "response_cost")
+    @classmethod
+    def _bound_money_fields(cls, v: Decimal | None) -> Decimal | None:
+        return _bound_money(v)
 
 
 class RiskResponse(BaseModel):
@@ -340,3 +374,7 @@ class RiskSimulationResult(BaseModel):
     histogram_bins: list[RiskHistogramBin] = Field(default_factory=list)
     tornado: list[RiskTornadoEntry] = Field(default_factory=list)
     currency: str = ""
+    # True when the project's cost-bearing risks span more than one currency;
+    # the cost percentiles / histogram are then suppressed (None / empty) rather
+    # than blended under a single mislabelled currency. Schedule is unaffected.
+    mixed_currency: bool = False

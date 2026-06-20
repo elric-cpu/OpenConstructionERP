@@ -7,6 +7,7 @@ Stateless service layer. Handles:
 """
 
 import logging
+import math
 import random
 import uuid
 from typing import Any, Literal
@@ -392,8 +393,13 @@ class RiskService:
             # Exposure = impact_cost * probability, accumulated per currency.
             try:
                 exposure = float(item.impact_cost) * float(item.probability)
-                cur = item.currency or ""
-                exposure_by_currency[cur] = exposure_by_currency.get(cur, 0.0) + exposure
+                # A legacy / raw-written non-finite or absurd impact_cost makes
+                # float() overflow to inf (no exception); inf would poison the
+                # whole rollup (round(inf) -> inf -> RiskSummary 500). Skip just
+                # this contribution. New rows are guarded by the schema validator.
+                if math.isfinite(exposure):
+                    cur = item.currency or ""
+                    exposure_by_currency[cur] = exposure_by_currency.get(cur, 0.0) + exposure
             except (ValueError, TypeError):
                 pass
 
@@ -566,6 +572,7 @@ class RiskService:
                 "histogram_bins": [],
                 "tornado": [],
                 "currency": currency,
+                "mixed_currency": False,
             }
 
         # Build per-risk PERT triples. Where a triple is incomplete we
@@ -608,8 +615,27 @@ class RiskService:
                 )
             )
 
+        # Currency honesty (F-PFO-RISK-04): the per-iteration cost sum blends
+        # every risk's cost draw into one number, which is only meaningful when
+        # the cost-bearing risks share a single currency. Collect the distinct
+        # non-blank currencies among risks that actually contribute cost (a
+        # blank currency inherits the project currency, so it is not a distinct
+        # one). If more than one, the blended cost total cannot be honestly
+        # labelled, so we suppress the cost read-outs below rather than mislabel
+        # them - the same rule get_summary applies to total_exposure.
+        cost_currencies: set[str] = set()
+        for idx in range(len(items)):
+            if prob_weights[idx] > 0.0 and max(cost_triples[idx]) > 0.0:
+                cur = (items[idx].currency or "").strip()
+                if cur:
+                    cost_currencies.add(cur)
+        mixed_currency = len(cost_currencies) > 1
+
         sample_cost = mode in ("cost", "both")
         sample_schedule = mode in ("schedule", "both")
+        # When cost currencies are mixed, the cost distribution is not a single-
+        # currency quantity; only schedule (currency-agnostic days) stays valid.
+        cost_currency_ok = not mixed_currency
 
         # Per-iteration sums for the contingency distribution.
         cost_totals: list[float] = []
@@ -649,7 +675,12 @@ class RiskService:
                 schedule_totals.append(s_total)
 
         # ── Percentile read-out ─────────────────────────────────────
-        p50_cost, p80_cost, p95_cost = _percentiles(cost_totals) if sample_cost else (None, None, None)
+        # Suppress the cost percentiles when currencies are mixed (a blended
+        # total would be mislabelled under one currency).
+        if sample_cost and cost_currency_ok:
+            p50_cost, p80_cost, p95_cost = _percentiles(cost_totals)
+        else:
+            p50_cost, p80_cost, p95_cost = None, None, None
         if sample_schedule:
             ps50, ps80, ps95 = _percentiles(schedule_totals)
             p50_sched = int(round(ps50)) if ps50 is not None else None
@@ -661,16 +692,25 @@ class RiskService:
         # ── Histogram: 10 equal-width bins over the cost distribution
         # (or schedule if cost wasn't sampled). The frontend draws this
         # as a bar chart.
-        histogram_source = cost_totals if sample_cost else schedule_totals
+        # Prefer the cost distribution, but never chart a currency-blended cost
+        # total - fall back to schedule (or nothing) when currencies are mixed.
+        if sample_cost and cost_currency_ok:
+            histogram_source = cost_totals
+        elif sample_schedule:
+            histogram_source = schedule_totals
+        else:
+            histogram_source = []
         histogram_bins = _histogram(histogram_source, bins=10)
 
         # ── Tornado: top contributors by mean probability-weighted
         # contribution. Sort descending so the frontend can slice [:N]
         # without re-sorting.
-        if sample_cost:
+        if sample_cost and cost_currency_ok:
             contribs = per_risk_cost_sum
-        else:
+        elif sample_schedule:
             contribs = per_risk_schedule_sum
+        else:
+            contribs = [0.0] * len(items)
         tornado_entries: list[dict[str, Any]] = []
         if iterations > 0:
             for idx, (risk_id, code) in enumerate(item_meta):
@@ -704,6 +744,7 @@ class RiskService:
             "histogram_bins": histogram_bins,
             "tornado": tornado_entries,
             "currency": currency,
+            "mixed_currency": mixed_currency,
         }
 
         # Persist the snapshot on every risk so a page refresh keeps the
@@ -739,13 +780,19 @@ class RiskService:
 
 
 def _safe_float(value: object, default: float = 0.0) -> float:
-    """‌⁠‍Coerce a stored string/Decimal/None numeric to float safely."""
+    """‌⁠‍Coerce a stored string/Decimal/None numeric to a finite float safely."""
     if value is None or value == "":
         return default
     try:
-        return float(value)  # type: ignore[arg-type]
+        result = float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return default
+    # A legacy / raw-written absurd value (e.g. "1e400") yields inf here with no
+    # exception; inf would poison the simulation percentiles -> Pydantic 500.
+    # Treat non-finite as the default. New rows are guarded by the schema.
+    if not math.isfinite(result):
+        return default
+    return result
 
 
 def _pert_triple_or_point(
