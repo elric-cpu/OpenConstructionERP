@@ -25,6 +25,7 @@ from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
+from app.core.json_merge import merge_metadata
 
 _logger_ev = __import__("logging").getLogger(__name__ + ".events")
 
@@ -426,9 +427,12 @@ class CostItemService:
         if "rate" in fields and fields["rate"] is not None:
             fields["rate"] = str(fields["rate"])
 
-        # Rename metadata → metadata_ for the ORM column
+        # Merge (not overwrite) metadata_ so a partial PATCH that sends only a
+        # few keys keeps the rest. CWICR import populates labor/material/
+        # equipment costs, variants and scope_of_work here; a wholesale assign
+        # would silently drop every key the caller did not resend.
         if "metadata" in fields:
-            fields["metadata_"] = fields.pop("metadata")
+            fields["metadata_"] = merge_metadata(item.metadata_, fields.pop("metadata"))
 
         # Check code uniqueness if code or region is being changed
         new_code = fields.get("code", item.code)
