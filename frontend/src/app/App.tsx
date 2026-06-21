@@ -477,6 +477,7 @@ const IntegrationsPage = lazy(() =>
 const AboutPage = lazy(() =>
   import('@/features/about/AboutPage').then((m) => ({ default: m.AboutPage }))
 );
+const HowItWorksPage = lazy(() => import('@/features/help/HowItWorksPage'));
 
 // CPMView is keyed by the schedule it analyses, so the route reads :id and
 // forwards it through. Kept as a tiny inline component to avoid bloating
@@ -1007,6 +1008,7 @@ export default function App() {
         <Route path="/settings" element={<P title="Settings"><SettingsPage /></P>} />
         <Route path="/integrations" element={<P title="Integrations"><IntegrationsPage /></P>} />
         <Route path="/about" element={<P title="About"><AboutPage /></P>} />
+        <Route path="/how-it-works" element={<P title="How it works"><HowItWorksPage /></P>} />
         <Route path="/project-intelligence" element={<P title="Project Intelligence"><ProjectIntelligencePage /></P>} />
         {/* Architecture Map — internal tool, admin-only. Surfaces module
             dependency graph + DDC integrity audit; not for day-to-day use. */}
