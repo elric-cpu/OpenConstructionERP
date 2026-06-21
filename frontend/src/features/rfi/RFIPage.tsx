@@ -1515,7 +1515,12 @@ const RFIRow = React.memo(function RFIRow({
                 {t('rfi.action_edit', { defaultValue: 'Edit' })}
               </Button>
             )}
-            {(rfi.status === 'answered' || rfi.status === 'open') && (
+            {/* Close - the backend refuses to close an RFI that has no
+                official response (400), and an RFI only reaches 'answered'
+                once a response lands. Gate on 'answered' to match the
+                detail page and the backend precondition so the action
+                never errors on an open RFI. */}
+            {rfi.status === 'answered' && (
               <Button
                 variant="ghost"
                 size="sm"

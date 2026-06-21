@@ -200,6 +200,22 @@ RATIO_OR_NON_MONEY: set[str] = {
     "abc_percentage",
 }
 
+# Qualified ``module.Class.field`` names that match the money regex but are
+# intentionally rendered as ``float``, documented per case. Unlike
+# ``RATIO_OR_NON_MONEY`` (which exempts a bare field name *everywhere*), these
+# pin the exemption to ONE schema field, so a same-named money field on any
+# other schema is still caught by the guard.
+IGNORE_QUALIFIED_MONEY: set[str] = {
+    # Monte-Carlo cost-risk cumulative S-curve point. ``cost`` here is the
+    # x-coordinate of a probability chart series (sibling to the float
+    # histogram bins and the p5..p95 percentile ladder on the same response),
+    # produced by the simulation - it is plotted, never summed into a ledger,
+    # and sub-cent precision on a stochastic estimate is meaningless. The
+    # headline figures on the response (base_total / mean / std_dev /
+    # recommended_budget) ARE Decimal-as-string; only the chart series is float.
+    "boq.CostRiskCdfPoint.cost",
+}
+
 
 def _is_money_named(field_name: str) -> bool:
     if field_name in RATIO_OR_NON_MONEY:
@@ -233,6 +249,11 @@ def _is_money_named(field_name: str) -> bool:
 #     Decimal-as-string; ``pct_of_budget`` taught to the ratio filter.
 #     ``BidComparisonRow.budget_quantity`` remains the single documented
 #     exception, so the cap stays 1.
+#   * v8.8.0 cost-risk wave: ``boq.CostRiskCdfPoint.cost`` is a Monte-Carlo
+#     S-curve chart coordinate (float, like its sibling histogram bins and
+#     percentile ladder), not a ledger amount - exempted by qualified name
+#     via ``IGNORE_QUALIFIED_MONEY`` rather than raising the cap, so the
+#     guard stays at 1 and every other new money-float still trips it.
 # Sibling agents that fix further money fields should *lower* this
 # constant to lock in their progress. New money-as-float fields ADDED
 # to a schema will push the count over the cap and fail CI.
@@ -310,7 +331,10 @@ def test_money_as_float_deficit_does_not_grow() -> None:
             # ``total: int``, ``positions_count: int``, etc. are real
             # integers, not float-shaped money.
             if "number" in types:
-                offenders.append(f"{schema_name}.{field_name}")
+                qualified = f"{schema_name}.{field_name}"
+                if qualified in IGNORE_QUALIFIED_MONEY:
+                    continue
+                offenders.append(qualified)
 
     offenders_unique = sorted(set(offenders))
     assert len(offenders_unique) <= MAX_REMAINING_MONEY_FLOATS, (

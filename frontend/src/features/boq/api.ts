@@ -908,11 +908,19 @@ export interface SensitivityItem {
   share_pct: number;
   impact_low: number;
   impact_high: number;
+  /* Probabilistic upgrade (present when method === 'monte_carlo'). */
+  variance_contribution_pct?: number | null;
+  rank_correlation?: number | null;
+  swing_low?: number | null;
+  swing_high?: number | null;
 }
 
 export interface SensitivityResponse {
   base_total: number;
   variation_pct: number;
+  method?: string;
+  iterations?: number;
+  correlation?: number;
   items: SensitivityItem[];
 }
 
@@ -1090,25 +1098,46 @@ export interface CostRiskDriver {
   ordinal: string;
   description: string;
   contribution_pct: number;
+  rank_correlation?: number;
+  swing_low?: number;
+  swing_high?: number;
 }
 
 export interface CostRiskPercentiles {
+  p5?: number;
   p10: number;
   p25: number;
   p50: number;
   p75: number;
   p80: number;
   p90: number;
+  p95?: number;
+}
+
+export interface CostRiskCdfPoint {
+  cost: number;
+  cumulative_prob: number;
 }
 
 export interface CostRiskResponse {
   iterations: number;
+  /* Money fields arrive as Decimal-as-strings on the wire (v3 §10). */
   base_total: number;
+  mean?: number;
+  std_dev?: number;
+  cv_pct?: number;
   percentiles: CostRiskPercentiles;
   contingency_p80: number;
   contingency_pct: number;
   recommended_budget: number;
+  target_confidence?: number;
+  prob_within_base?: number;
+  correlation?: number;
+  seed?: number;
+  convergence_status?: string;
+  convergence_margin_pct?: number;
   histogram: CostRiskHistogramBin[];
+  cdf?: CostRiskCdfPoint[];
   risk_drivers: CostRiskDriver[];
 }
 
@@ -1536,10 +1565,10 @@ export const boqApi = {
     ),
 
   /* Monte Carlo Cost Risk */
-  getCostRisk: (boqId: string, iterations = 1000) =>
-    apiGet<CostRiskResponse>(
-      `/v1/boq/boqs/${boqId}/cost-risk/?iterations=${iterations}`,
-    ),
+  getCostRisk: (boqId: string, correlation?: number) => {
+    const qs = correlation == null ? '' : `?correlation=${correlation}`;
+    return apiGet<CostRiskResponse>(`/v1/boq/boqs/${boqId}/cost-risk/${qs}`);
+  },
 
   /* Statistics — aggregated BOQ metrics.
    * Money fields (direct_cost / grand_total / avg_unit_rate) follow the

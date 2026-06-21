@@ -761,20 +761,41 @@ class AnalyticsService:
         *,
         since: str | None = None,
         until: str | None = None,
+        tenant_id: uuid.UUID | None = None,
     ) -> dict[str, Any]:
         """Per-broker: leads-assigned, reservations, sales, GMV, commission.
 
         Five SQL aggregates joined in Python by broker_id (avoids a
         ``FULL OUTER JOIN`` SQLite doesn't support). All numeric tallies
         come from SQL ``COUNT`` / ``SUM`` - no row-by-row Python tallies.
+
+        Tenant isolation: brokers are tenant-bound via ``Broker.tenant_id``.
+        A non-admin caller passes their ``tenant_id`` so every aggregate is
+        restricted to that tenant's own broker IDs - one tenant can never
+        read another tenant's GMV or commission. ``tenant_id=None`` (admin)
+        is unscoped and sees every broker.
         """
         since_d = _parse_iso_date(since)
         until_d = _parse_iso_date(until)
         since_dt = datetime.combine(since_d, datetime.min.time(), tzinfo=UTC) if since_d else None
         until_dt = datetime.combine(until_d + timedelta(days=1), datetime.min.time(), tzinfo=UTC) if until_d else None
 
+        # Resolve the broker IDs the caller may see. Scoping every aggregate
+        # to this set is what enforces tenant isolation: the prior version
+        # aggregated across ALL tenants' brokers, leaking cross-tenant GMV and
+        # commission to anyone who could reach the endpoint. Admins
+        # (tenant_id=None) stay unscoped.
+        scoped_ids: set[uuid.UUID] | None = None
+        if tenant_id is not None:
+            scoped_rows = (await self.session.execute(_select(Broker.id).where(Broker.tenant_id == tenant_id))).all()
+            scoped_ids = {bid for (bid,) in scoped_rows}
+            if not scoped_ids:
+                return {"since": since, "until": until, "rows": [], "total_brokers": 0}
+
         # Broker base list.
         brokers_stmt = _select(Broker.id, Broker.name).where(Broker.active.is_(True))
+        if scoped_ids is not None:
+            brokers_stmt = brokers_stmt.where(Broker.id.in_(scoped_ids))
         broker_rows = (await self.session.execute(brokers_stmt)).all()
         per_broker: dict[uuid.UUID, dict[str, Any]] = {
             bid: {
@@ -796,6 +817,8 @@ class AnalyticsService:
         if until_dt is not None:
             q_leads = q_leads.where(Lead.created_at < until_dt)
         q_leads = q_leads.group_by(Lead.broker_id)
+        if scoped_ids is not None:
+            q_leads = q_leads.where(Lead.broker_id.in_(scoped_ids))
         for bid, c in (await self.session.execute(q_leads)).all():
             slot = per_broker.setdefault(
                 bid,
@@ -826,6 +849,8 @@ class AnalyticsService:
             q_res = q_res.where(Reservation.created_at >= since_dt)
         if until_dt is not None:
             q_res = q_res.where(Reservation.created_at < until_dt)
+        if scoped_ids is not None:
+            q_res = q_res.where(Lead.broker_id.in_(scoped_ids))
         for bid, c in (await self.session.execute(q_res)).all():
             slot = per_broker.setdefault(
                 bid,
@@ -859,6 +884,8 @@ class AnalyticsService:
             q_sales = q_sales.where(SalesContract.signing_date >= since_d.isoformat())
         if until_d is not None:
             q_sales = q_sales.where(SalesContract.signing_date <= until_d.isoformat())
+        if scoped_ids is not None:
+            q_sales = q_sales.where(Lead.broker_id.in_(scoped_ids))
         for bid, cur, c, gmv in (await self.session.execute(q_sales)).all():
             slot = per_broker.setdefault(
                 bid,
@@ -892,6 +919,8 @@ class AnalyticsService:
             q_comm = q_comm.where(CommissionAccrual.created_at >= since_dt)
         if until_dt is not None:
             q_comm = q_comm.where(CommissionAccrual.created_at < until_dt)
+        if scoped_ids is not None:
+            q_comm = q_comm.where(CommissionAccrual.broker_id.in_(scoped_ids))
         for bid, cur, comm in (await self.session.execute(q_comm)).all():
             slot = per_broker.setdefault(
                 bid,

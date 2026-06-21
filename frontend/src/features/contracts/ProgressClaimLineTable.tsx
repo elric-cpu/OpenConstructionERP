@@ -127,7 +127,10 @@ function ClaimLineRow({
       updateClaimLine(line.id, {
         period_completed_pct: Number(pct) || 0,
         period_completed_value: Number(value) || 0,
-        cumulative_completed_value: Number(value) || 0,
+        // cumulative_completed_value is cumulative-to-date and is recomputed
+        // server-side from prior non-rejected periods; the client must not
+        // author it (sending the period value here corrupted earned-value and
+        // the AIA 'previous' column).
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['contracts', 'claim-lines', claimId] });

@@ -68,6 +68,9 @@ import { OverlayLayer } from './OverlayLayer';
 import { OverlayPanel, type OverlayEditMode } from './OverlayPanel';
 import { OverlaySidebar } from './OverlaySidebar';
 import type { AnchoredProject, GeoPinBundle } from './types';
+import { BasemapPicker } from './BasemapPicker';
+import { EngineModePicker, type GeoEngine } from './EngineModePicker';
+import { readBasemap, BASEMAP_LS_KEY, type BasemapId } from './mapStyles';
 
 // Persisted scene-mode preference — restored synchronously at mount so
 // the initial Cesium paint already matches the user's choice (no
@@ -85,8 +88,30 @@ function readSceneMode(): GeoSceneMode {
   return '3d';
 }
 
+// Persisted engine preference - which renderer backs the canvas. Defaults
+// to the light, instant 2D map so the page opens fast (and works offline);
+// the user can switch to the 3D globe and that choice is remembered.
+const ENGINE_LS_KEY = 'geoHub.engine';
+
+function readEngine(): GeoEngine {
+  if (typeof window === 'undefined') return '2d';
+  try {
+    const v = window.localStorage.getItem(ENGINE_LS_KEY);
+    if (v === '2d' || v === '3d') return v;
+  } catch {
+    /* localStorage disabled / quota — fall through to default */
+  }
+  return '2d';
+}
+
 const CesiumViewer = lazy(() =>
   import('./CesiumViewer').then((m) => ({ default: m.CesiumViewer })),
+);
+
+// MapLibre is lazy-loaded too: keeping it off the page chunk means the
+// ~800 KB MapLibre runtime only streams in when the 2D engine is active.
+const MapLibreViewer = lazy(() =>
+  import('./MapLibreViewer').then((m) => ({ default: m.MapLibreViewer })),
 );
 
 /**
@@ -710,6 +735,10 @@ export function GeoHubPage() {
   // blow up on ``window``. Persisted under ``geoHub.sceneMode`` so the
   // user's projection choice survives reloads.
   const [sceneMode, setSceneMode] = useState<GeoSceneMode>(readSceneMode);
+  // Renderer (2D MapLibre map vs 3D Cesium globe) + the 2D basemap choice.
+  // Both persisted so the user's preferred view survives reloads.
+  const [engine, setEngine] = useState<GeoEngine>(readEngine);
+  const [basemap, setBasemap] = useState<BasemapId>(readBasemap);
   // OverlaySidebar fly-to handle. ``focusedLayerId`` highlights the row
   // the user last clicked; ``flyToTarget`` carries the nonce + centroid
   // that CesiumViewer's flyToTarget effect reads. Nonced via a click
@@ -739,6 +768,22 @@ export function GeoHubPage() {
       /* localStorage disabled / quota full — UX still works in-memory */
     }
   }, [sceneMode]);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(ENGINE_LS_KEY, engine);
+    } catch {
+      /* localStorage disabled / quota full — UX still works in-memory */
+    }
+  }, [engine]);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(BASEMAP_LS_KEY, basemap);
+    } catch {
+      /* localStorage disabled / quota full — UX still works in-memory */
+    }
+  }, [basemap]);
 
   // One pin per anchored project the user can access — degrades to an
   // empty list on backend failure so the globe still renders. The
@@ -809,6 +854,91 @@ export function GeoHubPage() {
     projectsQuery.error instanceof ApiError &&
     projectsQuery.error.status === 404;
 
+  // Resolve the focused project + the project whose drawing overlays
+  // should paint on the map (the focused row, else the active project).
+  const focusedProjectObj = focusedProjectId
+    ? projects.find((p) => p.project_id === focusedProjectId) ?? null
+    : null;
+  const overlayProjectId = focusedProjectId ?? activeProjectId ?? null;
+
+  // Floating chrome shared by BOTH engines: address search, the cursor
+  // HUD, the anchored-projects rail, the overlay fly-to list, and the
+  // empty state. Built once and handed to whichever viewer is mounted.
+  const sharedChrome = (
+    <>
+      <GeoSearchOverlay
+        pin={searchPin}
+        onSelect={setSearchPin}
+        onClear={() => setSearchPin(null)}
+      />
+      <GeoOverlayHud
+        cursorLat={cursorCoords?.lat ?? null}
+        cursorLon={cursorCoords?.lon ?? null}
+        altitudeM={cameraState?.cameraAltitudeM ?? null}
+        headingDeg={cameraState?.headingDeg ?? null}
+        active
+      />
+      <AnchoredProjectsOverlay
+        projects={projects}
+        isLoading={projectsQuery.isLoading}
+        isError={projectsQuery.isError}
+        onRetry={() => projectsQuery.refetch()}
+        focusedProjectId={focusedProjectId}
+        onFocus={(p) => setFocusedProjectId(p.project_id)}
+        collapsed={panelCollapsed}
+        onToggleCollapsed={() => setPanelCollapsed((v) => !v)}
+      />
+      {overlayProjectId && (
+        <OverlaySidebar
+          projectId={overlayProjectId}
+          focusedId={focusedLayerId}
+          onFly={(target) => {
+            setFocusedLayerId(target.id);
+            // Nonce every click so re-clicking the same row re-flies.
+            setFlyToTarget({
+              key: `${target.kind}:${target.id}:${Date.now()}`,
+              lat: target.lat,
+              lon: target.lon,
+            });
+          }}
+        />
+      )}
+      {!projectsQuery.isLoading &&
+        !projectsQuery.isError &&
+        projects.length === 0 && (
+          <GlobalNoProjectsEmpty onAnchored={() => projectsQuery.refetch()} />
+        )}
+    </>
+  );
+
+  // Cesium-only raster overlay plumbing: the OverlayPanel mutation UI and
+  // the OverlayLayer that paints rasters into the globe and hosts the
+  // corner / crop editing. The 2D map paints rasters itself (via
+  // MapLibreViewer's overlayProjectId), so these only mount in 3D.
+  const cesiumOverlayChrome = overlayProjectId ? (
+    <>
+      <OverlayPanel
+        projectId={overlayProjectId}
+        activeOverlayId={activeOverlayId}
+        editMode={overlayEditMode}
+        onSelectOverlay={(id) => {
+          setActiveOverlayId(id);
+          if (id === null) setOverlayEditMode('idle');
+        }}
+        onChangeEditMode={setOverlayEditMode}
+      />
+      <OverlayLayer
+        projectId={overlayProjectId}
+        cesium={cesiumRuntime?.cesium ?? null}
+        viewer={cesiumRuntime?.viewer ?? null}
+        activeOverlayId={activeOverlayId}
+        editMode={overlayEditMode}
+        onSelectOverlay={setActiveOverlayId}
+        onChangeEditMode={setOverlayEditMode}
+      />
+    </>
+  ) : null;
+
   return (
     // Full-bleed layout — negate AppLayout's <main> padding (px-4 pt-6 pb-4 sm:px-7)
     // so the globe fills the viewport, then claim exactly viewport-minus-header
@@ -850,7 +980,14 @@ export function GeoHubPage() {
           })}
         </p>
         <div className="ml-auto flex items-center gap-2">
-          <GeoSceneModePicker current={sceneMode} onChange={setSceneMode} />
+          <EngineModePicker current={engine} onChange={setEngine} />
+          {/* The 3D globe carries Cesium's projection picker; the 2D map
+              carries the basemap picker (streets / minimal / paper). */}
+          {engine === '3d' ? (
+            <GeoSceneModePicker current={sceneMode} onChange={setSceneMode} />
+          ) : (
+            <BasemapPicker current={basemap} onChange={setBasemap} />
+          )}
           <GeoModePicker current="global" projectId={activeProjectId} />
           {/* "How it works" explainer, a concept-level companion to the Tour. */}
           <ModuleGuideButton content={geoHubGuide} />
@@ -950,119 +1087,69 @@ export function GeoHubPage() {
           (via CesiumViewer's ``overlay`` slot) so the globe always gets
           the full viewport width. */}
       <main className="relative flex-1 overflow-hidden bg-slate-900">
-        <Suspense
-          fallback={
-            <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-slate-300">
-              <Loader2 size={20} className="animate-spin text-emerald-300" />
-              <span className="font-medium">
-                {t('geo_hub.loading_viewer_title', {
-                  defaultValue: 'Loading 3D globe runtime',
-                })}
-              </span>
-              <span className="text-xs text-slate-400">
-                {t('geo_hub.loading_viewer_hint', {
-                  defaultValue: 'Streaming Cesium chunks (~3 MB) - first load only.',
-                })}
-              </span>
-            </div>
-          }
-        >
-          <CesiumViewer
-            mode="global"
-            pins={pins}
-            sceneMode={sceneMode}
-            focusedProject={
-              focusedProjectId
-                ? projects.find((p) => p.project_id === focusedProjectId) ?? null
-                : null
+        {engine === '2d' ? (
+          <Suspense
+            fallback={
+              <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-slate-300">
+                <Loader2 size={20} className="animate-spin text-emerald-300" />
+                <span className="font-medium">
+                  {t('geo_hub.loading_map_title', { defaultValue: 'Loading map' })}
+                </span>
+              </div>
             }
-            flyToTarget={flyToTarget}
-            searchPin={searchPin}
-            onPinSelect={handlePinSelect}
-            onMouseMove={setCursorCoords}
-            onCameraChange={setCameraState}
-            onViewerReady={setCesiumRuntime}
-            overlay={
-              <>
-                <GeoSearchOverlay
-                  pin={searchPin}
-                  onSelect={setSearchPin}
-                  onClear={() => setSearchPin(null)}
-                />
-                <GeoOverlayHud
-                  cursorLat={cursorCoords?.lat ?? null}
-                  cursorLon={cursorCoords?.lon ?? null}
-                  altitudeM={cameraState?.cameraAltitudeM ?? null}
-                  headingDeg={cameraState?.headingDeg ?? null}
-                  active
-                />
-                <AnchoredProjectsOverlay
-                  projects={projects}
-                  isLoading={projectsQuery.isLoading}
-                  isError={projectsQuery.isError}
-                  onRetry={() => projectsQuery.refetch()}
-                  focusedProjectId={focusedProjectId}
-                  onFocus={(p) => setFocusedProjectId(p.project_id)}
-                  collapsed={panelCollapsed}
-                  onToggleCollapsed={() => setPanelCollapsed((v) => !v)}
-                />
-                {/* Raster overlay panel — only meaningful when a project
-                    is in context. Uses the focused project (clicked in
-                    the rail) or falls back to the user's active project. */}
-                {(focusedProjectId || activeProjectId) && (
-                  <>
-                    <OverlayPanel
-                      projectId={focusedProjectId ?? activeProjectId ?? ''}
-                      activeOverlayId={activeOverlayId}
-                      editMode={overlayEditMode}
-                      onSelectOverlay={(id) => {
-                        setActiveOverlayId(id);
-                        if (id === null) setOverlayEditMode('idle');
-                      }}
-                      onChangeEditMode={setOverlayEditMode}
-                    />
-                    <OverlayLayer
-                      projectId={focusedProjectId ?? activeProjectId ?? ''}
-                      cesium={cesiumRuntime?.cesium ?? null}
-                      viewer={cesiumRuntime?.viewer ?? null}
-                      activeOverlayId={activeOverlayId}
-                      editMode={overlayEditMode}
-                      onSelectOverlay={setActiveOverlayId}
-                      onChangeEditMode={setOverlayEditMode}
-                    />
-                    {/* Discoverable list — bottom-left, complements the
-                        top-left anchored-projects rail. Read-only here;
-                        OverlayPanel (top-right) still owns mutations. */}
-                    <OverlaySidebar
-                      projectId={focusedProjectId ?? activeProjectId ?? ''}
-                      focusedId={focusedLayerId}
-                      onFly={(target) => {
-                        setFocusedLayerId(target.id);
-                        // Nonce on every click so re-clicking the same row
-                        // bumps the effect dep + re-flies the camera.
-                        setFlyToTarget({
-                          key: `${target.kind}:${target.id}:${Date.now()}`,
-                          lat: target.lat,
-                          lon: target.lon,
-                        });
-                      }}
-                    />
-                  </>
-                )}
-                {/* Empty-state card only when the fetch succeeded and we
-                    really do have zero anchored projects — never on
-                    error, never while loading. */}
-                {!projectsQuery.isLoading &&
-                  !projectsQuery.isError &&
-                  projects.length === 0 && (
-                    <GlobalNoProjectsEmpty
-                      onAnchored={() => projectsQuery.refetch()}
-                    />
-                  )}
-              </>
+          >
+            <MapLibreViewer
+              mode="global"
+              pins={pins}
+              basemap={basemap}
+              focusedProject={focusedProjectObj}
+              flyToTarget={flyToTarget}
+              searchPin={searchPin}
+              overlayProjectId={overlayProjectId}
+              onPinSelect={handlePinSelect}
+              onMouseMove={setCursorCoords}
+              onCameraChange={setCameraState}
+              overlay={sharedChrome}
+            />
+          </Suspense>
+        ) : (
+          <Suspense
+            fallback={
+              <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-slate-300">
+                <Loader2 size={20} className="animate-spin text-emerald-300" />
+                <span className="font-medium">
+                  {t('geo_hub.loading_viewer_title', {
+                    defaultValue: 'Loading 3D globe runtime',
+                  })}
+                </span>
+                <span className="text-xs text-slate-400">
+                  {t('geo_hub.loading_viewer_hint', {
+                    defaultValue: 'Streaming Cesium chunks (~3 MB) - first load only.',
+                  })}
+                </span>
+              </div>
             }
-          />
-        </Suspense>
+          >
+            <CesiumViewer
+              mode="global"
+              pins={pins}
+              sceneMode={sceneMode}
+              focusedProject={focusedProjectObj}
+              flyToTarget={flyToTarget}
+              searchPin={searchPin}
+              onPinSelect={handlePinSelect}
+              onMouseMove={setCursorCoords}
+              onCameraChange={setCameraState}
+              onViewerReady={setCesiumRuntime}
+              overlay={
+                <>
+                  {sharedChrome}
+                  {cesiumOverlayChrome}
+                </>
+              }
+            />
+          </Suspense>
+        )}
       </main>
     </div>
   );

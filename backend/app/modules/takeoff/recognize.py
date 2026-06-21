@@ -354,3 +354,132 @@ def recognize_candidates(
     candidates = detect_areas(prims, scale) + detect_lengths(prims, scale) + detect_counts(prims)
     candidates.sort(key=lambda c: c.get("confidence", 0.0), reverse=True)
     return candidates[:max_candidates]
+
+
+# ── seeded similar-symbol search ("count by example") ────────────────────────
+#
+# The user clicks one symbol on the page; we find every near-identical symbol
+# and return their centroids so the user confirms them as a single count
+# measurement (CLAUDE.md rule 7: nothing is persisted here). This reuses the
+# exact (width, height, vertex-count) signature the cluster detector buckets
+# by, but seeds the signature from the clicked symbol instead of auto-grouping.
+
+# A click is taken to "land on" a symbol when it is within this many PDF points
+# of the symbol's centroid, or within the symbol's own size, whichever is more
+# forgiving (so a click anywhere on a small symbol still selects it).
+_SEED_PICK_TOL_PX = 24.0
+# Two hits whose centroids are closer than this are the same symbol (NMS dedup).
+_HIT_NMS_PX = 6.0
+# Cap the hits returned from a single seed so the review panel stays sane.
+_MAX_SIMILAR = 200
+
+
+def _symbol_primitives(
+    prims: list[_Primitive],
+) -> list[tuple[_Primitive, Point, float, float, float]]:
+    """Small closed shapes as ``(prim, centroid, w, h, diag)``.
+
+    Only countable-symbol-sized closed shapes are returned (the same size gate
+    the count detector applies); larger regions are walls/rooms, not symbols.
+    """
+    out: list[tuple[_Primitive, Point, float, float, float]] = []
+    for prim in prims:
+        if prim.kind not in ("rect", "loop"):
+            continue
+        pts = prim.points
+        if len(pts) < 3:
+            continue
+        x0, y0, x1, y1 = _bbox(pts)
+        w, h = x1 - x0, y1 - y0
+        diag = math.hypot(w, h)
+        if diag == 0 or diag > _SYMBOL_MAX_DIAG_PX:
+            continue
+        out.append((prim, ((x0 + x1) / 2.0, (y0 + y1) / 2.0), w, h, diag))
+    return out
+
+
+def find_similar_symbols(
+    drawings: list[Any],
+    seed_x: float,
+    seed_y: float,
+    *,
+    max_hits: int = _MAX_SIMILAR,
+) -> dict[str, Any]:
+    """Find every symbol matching the one under ``(seed_x, seed_y)`` on a page.
+
+    The seed is the small closed shape whose centroid is nearest the click; its
+    ``(round(w / 4), round(h / 4))`` signature and vertex count select the
+    matches (within +/-25% of the seed's size). Hits are de-duplicated by
+    centroid proximity and scored by how closely they match the seed's size.
+
+    Pure and DB-free: ``drawings`` is the already-extracted
+    ``page.get_drawings()`` output. Returns ``{"hits", "seed_found", "note"}``
+    where ``note`` is ``"no_vector_layer"`` (page has no drawing layer, e.g. a
+    scan), ``"no_symbol_at_point"`` (nothing small enough under the click) or
+    ``None``. Each hit is ``{x, y, bbox_x0..y1, confidence, is_seed}`` in PDF
+    points - the same space the canvas stores measurements in.
+    """
+    prims = primitives_from_drawings(drawings)
+    symbols = _symbol_primitives(prims)
+    if not symbols:
+        return {
+            "hits": [],
+            "seed_found": False,
+            "note": "no_symbol_at_point" if prims else "no_vector_layer",
+        }
+
+    # Locate the seed: the symbol nearest the click within a size-aware radius.
+    best: tuple[float, tuple[_Primitive, Point, float, float, float]] | None = None
+    for entry in symbols:
+        cx, cy = entry[1]
+        diag = entry[4]
+        dist = math.hypot(cx - seed_x, cy - seed_y)
+        if dist <= max(_SEED_PICK_TOL_PX, diag) and (best is None or dist < best[0]):
+            best = (dist, entry)
+    if best is None:
+        return {"hits": [], "seed_found": False, "note": "no_symbol_at_point"}
+
+    seed_entry = best[1]
+    s_cx, s_cy = seed_entry[1]
+    s_w, s_h, s_diag = seed_entry[2], seed_entry[3], seed_entry[4]
+    seed_sig = (round(s_w / 4), round(s_h / 4))
+    seed_verts = len(seed_entry[0].points)
+
+    scored: list[tuple[Point, tuple[float, float, float, float], float]] = []
+    for entry in symbols:
+        prim, (cx, cy), w, h, diag = entry
+        if s_diag > 0 and (diag < s_diag * 0.75 or diag > s_diag * 1.25):
+            continue
+        sig = (round(w / 4), round(h / 4))
+        if abs(sig[0] - seed_sig[0]) > 1 or abs(sig[1] - seed_sig[1]) > 1:
+            continue
+        if abs(len(prim.points) - seed_verts) > 2:
+            continue
+        spread = abs(diag - s_diag) / (s_diag or 1.0)
+        confidence = round(max(0.5, min(0.92, 0.92 - spread * 0.4)), 2)
+        scored.append(((cx, cy), _bbox(prim.points), confidence))
+
+    # Non-maximum suppression: drop a hit that overlaps a higher-scored one.
+    scored.sort(key=lambda s: s[2], reverse=True)
+    kept: list[tuple[Point, tuple[float, float, float, float], float]] = []
+    for centroid, bbox, confidence in scored:
+        if any(math.hypot(centroid[0] - k[0][0], centroid[1] - k[0][1]) <= _HIT_NMS_PX for k in kept):
+            continue
+        kept.append((centroid, bbox, confidence))
+        if len(kept) >= max_hits:
+            break
+
+    hits = [
+        {
+            "x": centroid[0],
+            "y": centroid[1],
+            "bbox_x0": bbox[0],
+            "bbox_y0": bbox[1],
+            "bbox_x1": bbox[2],
+            "bbox_y1": bbox[3],
+            "confidence": confidence,
+            "is_seed": math.hypot(centroid[0] - s_cx, centroid[1] - s_cy) <= _HIT_NMS_PX,
+        }
+        for centroid, bbox, confidence in kept
+    ]
+    return {"hits": hits, "seed_found": any(h["is_seed"] for h in hits), "note": None}

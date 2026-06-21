@@ -1054,6 +1054,20 @@ export function TransmittalsPage() {
         item_number: idx + 1,
         description: `${r.container_code} · ${r.revision_code}`,
       }));
+      // The free-text "Document Items" field holds comma-separated document
+      // titles that have no linked CDE revision. They were being dropped on
+      // submit, so append them as plain items, continuing the item_number
+      // sequence after the revision items and skipping empty tokens.
+      formData.items
+        .split(',')
+        .map((title) => title.trim())
+        .filter((title) => title.length > 0)
+        .forEach((title) => {
+          items.push({
+            item_number: items.length + 1,
+            description: title,
+          });
+        });
       // The free-text "Recipients" field has no dedicated backend column (the
       // recipients table keys on org/user UUIDs), so the typed names were being
       // silently dropped on submit. Persist them in the transmittal's free-form

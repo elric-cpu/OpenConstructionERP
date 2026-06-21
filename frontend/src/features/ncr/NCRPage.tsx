@@ -25,7 +25,7 @@ import {
   ListChecks,
   Link2,
 } from 'lucide-react';
-import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, RecoveryCard, SkeletonTable, IntroRichText, ModuleGuideButton } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, RecoveryCard, SkeletonTable, IntroRichText, ModuleGuideButton, MoneyDisplay } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { SectionIntro } from '@/features/validation';
@@ -51,6 +51,7 @@ import { ncrGuide } from './ncrGuide';
 interface Project {
   id: string;
   name: string;
+  currency?: string;
 }
 
 const NCR_TYPE_COLORS: Record<
@@ -414,11 +415,15 @@ function CreateNCRModal({
 
 const NCRRow = React.memo(function NCRRow({
   ncr,
+  currency,
   onClose,
   onCreateVariation,
   highlight,
 }: {
   ncr: NCR;
+  /** Active project's ISO-4217 currency, so cost impact renders in the right
+   *  currency instead of a hardcoded dollar symbol. */
+  currency?: string;
   onClose: (id: string) => void;
   onCreateVariation: (id: string) => void;
   /** When set (from a ?highlight deep-link) the row auto-expands, scrolls into
@@ -515,10 +520,12 @@ const NCRRow = React.memo(function NCRRow({
         {/* Cost Impact */}
         <span className="text-xs text-content-tertiary w-20 text-right shrink-0 hidden md:block tabular-nums">
           {ncr.cost_impact != null && ncr.cost_impact > 0 ? (
-            <span className="flex items-center justify-end gap-0.5 text-amber-500 font-medium">
-              <DollarSign size={12} />
-              {ncr.cost_impact.toLocaleString()}
-            </span>
+            <MoneyDisplay
+              amount={ncr.cost_impact}
+              currency={currency}
+              compact
+              className="text-amber-500 font-medium"
+            />
           ) : (
             '\u2014'
           )}
@@ -767,7 +774,11 @@ export function NCRPage() {
   });
 
   const projectId = routeProjectId || activeProjectId || projects[0]?.id || '';
-  const projectName = projects.find((p) => p.id === projectId)?.name || '';
+  const activeProject = projects.find((p) => p.id === projectId);
+  const projectName = activeProject?.name || '';
+  // Active project's currency, so cost impact renders in the project's own
+  // currency rather than a hardcoded dollar symbol (matches Risk Register).
+  const projectCurrency = activeProject?.currency || 'EUR';
   // Genuinely-selected project (route param or shared context) — used for
   // the breadcrumb so the trail never shows a first-project guess.
   const selectedProjectId = routeProjectId || activeProjectId || '';
@@ -1168,6 +1179,7 @@ export function NCRPage() {
                 <NCRRow
                   key={ncr.id}
                   ncr={ncr}
+                  currency={projectCurrency}
                   onClose={handleClose}
                   onCreateVariation={handleCreateVariation}
                   highlight={highlightId === ncr.id}

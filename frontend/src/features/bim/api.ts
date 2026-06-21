@@ -275,6 +275,18 @@ export interface BIMConverterInstallResult {
   /** Whether the post-install smoke test passed (Windows only). */
   smoke_test_passed?: boolean;
   platform?: string;
+  /** v8.8.0: the download now runs in the background so the request can't be
+   *  aborted mid-download ("signal timed out") on slow servers / behind
+   *  proxies. When true the POST returned immediately; watch
+   *  ``install-progress`` for the terminal ``done``/``error`` stage instead
+   *  of treating this response as the final outcome. */
+  async_install?: boolean;
+  /** True when this call kicked off a fresh background install. */
+  started?: boolean;
+  /** True when an install for this converter was already in flight. */
+  already_running?: boolean;
+  /** Initial background stage (``starting``) when ``async_install`` is true. */
+  stage?: string;
 }
 
 const EMPTY_CONVERTERS: BIMConvertersResponse = {
@@ -381,35 +393,92 @@ export async function fetchConverterVersionCheck(): Promise<ConverterVersionChec
  *  "Update" button when the version-check banner reports an outdated
  *  converter SHA.
  *
- *  The shared ``apiPost`` request helper has its own 5-minute default
- *  abort timer for POSTs, but in some browsers / proxy setups the
- *  default fetch ``AbortSignal`` ends up bound to a much shorter
- *  window (the user error log for v4.3.2 captured 4 ``AbortError``
- *  exceptions on these endpoints). Bind an explicit 120 s signal so
- *  the timeout is deterministic and long enough for the slowest
- *  converter (RVT) to extract.
+ *  v8.8.0: the backend no longer downloads inline. The POST kicks off a
+ *  background download and returns immediately (``async_install: true``),
+ *  which is what fixed the user-reported "signal timed out" on slow Ubuntu
+ *  servers - a 100-300 MB download could never finish inside any single
+ *  request window (and a reverse proxy would cut it even sooner). This
+ *  helper then polls the lightweight ``install-progress`` endpoint until the
+ *  background task reaches a terminal stage and resolves with the final
+ *  result, so every caller (and its in-flight progress bar) keeps working
+ *  unchanged - just without one multi-minute HTTP request held open.
  */
 export async function installBIMConverter(
   converterId: string,
   options: { force?: boolean } = {},
 ): Promise<BIMConverterInstallResult> {
   const qs = options.force ? '?force=true' : '';
-  // AbortSignal.timeout is available in all evergreen browsers we
-  // support (Chrome 103+, FF 100+, Safari 16+). We guard for SSR /
-  // test environments that may stub fetch without it.
+  // The POST returns at once now, so a short, deterministic signal is enough
+  // (guarded for SSR / test stubs without AbortSignal.timeout).
   const signal: AbortSignal | undefined =
     typeof AbortSignal !== 'undefined' &&
     typeof (AbortSignal as { timeout?: (ms: number) => AbortSignal }).timeout ===
       'function'
       ? (AbortSignal as unknown as { timeout: (ms: number) => AbortSignal }).timeout(
-          120_000,
+          60_000,
         )
       : undefined;
-  return apiPost<BIMConverterInstallResult>(
+  const initial = await apiPost<BIMConverterInstallResult>(
     `/v1/takeoff/converters/${encodeURIComponent(converterId)}/install/${qs}`,
     {},
     signal ? { signal } : undefined,
   );
+
+  // Back-compat: an older backend ran the install inline and already returned
+  // the terminal result; an "already installed" answer is terminal too.
+  if (!initial.async_install) return initial;
+
+  // Poll the background install to completion. Each poll is a cheap, fast GET
+  // (its own short timeout), so no single request is ever held open for the
+  // whole download - the resilient part of the fix.
+  const POLL_MS = 1500;
+  const MAX_WAIT_MS = 20 * 60 * 1000; // generous: RVT on a slow link
+  const startedAt = Date.now();
+  const sleep = (ms: number): Promise<void> =>
+    new Promise((resolve) => setTimeout(resolve, ms));
+
+  await sleep(POLL_MS);
+  while (Date.now() - startedAt < MAX_WAIT_MS) {
+    let prog: BIMConverterInstallProgress | null = null;
+    try {
+      prog = await fetchBIMConverterInstallProgress(converterId);
+    } catch {
+      // Transient poll failure (slow backend) - keep waiting.
+      await sleep(POLL_MS);
+      continue;
+    }
+    if (prog.stage === 'done' || prog.stage === 'error') {
+      return {
+        converter_id: converterId,
+        installed: Boolean(prog.installed),
+        path: prog.path,
+        message: prog.message ?? initial.message ?? '',
+        smoke_test_passed: prog.smoke_test_passed,
+        platform: prog.platform,
+        platform_unsupported: prog.platform_unsupported,
+        apt_package: prog.apt_package,
+        apt_source_present: prog.apt_source_present,
+        instructions: prog.instructions,
+        already_installed: false,
+      };
+    }
+    if (!prog.active) {
+      // Progress vanished (backend restart / TTL) with no terminal record.
+      break;
+    }
+    await sleep(POLL_MS);
+  }
+
+  // Timed out waiting, or the progress feed dropped. Don't claim failure - the
+  // install may still be finishing server-side; tell the caller to re-check.
+  return {
+    converter_id: converterId,
+    installed: false,
+    async_install: true,
+    message:
+      initial.message ||
+      'The converter is still downloading in the background. Check the BIM converters panel in a moment.',
+  };
 }
 
 /** Lightweight progress poll for an in-flight converter install.
@@ -419,16 +488,37 @@ export async function installBIMConverter(
  *  the install mutation is pending. */
 export interface BIMConverterInstallProgress {
   active: boolean;
-  /** Backend stages, in order: ``listing`` (resolving the file/package
-   *  set) → ``downloading`` (fetching files) → ``extracting`` (Windows
-   *  has none; Linux unpacks .deb archives here) → ``verifying`` (post
-   *  -install smoke test). */
-  stage?: 'listing' | 'downloading' | 'extracting' | 'verifying';
+  /** Backend stages, in order: ``starting`` (background task spawned) →
+   *  ``listing`` (resolving the file/package set) → ``downloading``
+   *  (fetching files) → ``extracting`` (Windows has none; Linux unpacks .deb
+   *  archives here) → ``verifying`` (post-install smoke test) → terminal
+   *  ``done`` / ``error``. The terminal stages carry the outcome so the
+   *  frontend can finalize without holding the install request open. */
+  stage?:
+    | 'starting'
+    | 'listing'
+    | 'downloading'
+    | 'extracting'
+    | 'verifying'
+    | 'done'
+    | 'error';
   current?: number;
   total?: number;
   bytes_done?: number;
   file?: string | null;
   started_at?: number;
+  /** Terminal record fields (present when ``stage`` is ``done``/``error``). */
+  installed?: boolean;
+  message?: string;
+  error?: string;
+  instructions?: string;
+  apt_package?: string;
+  apt_source_present?: boolean;
+  platform_unsupported?: boolean;
+  smoke_test_passed?: boolean;
+  path?: string;
+  platform?: string;
+  finished_at?: number;
 }
 
 export async function fetchBIMConverterInstallProgress(

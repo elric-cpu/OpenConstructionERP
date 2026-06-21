@@ -1212,6 +1212,19 @@ async def update_claim_line(
     service._assert_claim_editable(claim)
     fields = {k: v for k, v in data.model_dump(exclude_unset=True).items() if v is not None}
     if fields:
+        # cumulative_completed_value is cumulative-to-date, never client-authored:
+        # accepting it lets the inline editor clobber the running total and corrupt
+        # earned-value + the AIA 'previous' column. Recompute it server-side with
+        # the same semantics as commit_preview_to_claim: prior non-rejected period
+        # values on this SoV line (excluding this claim) + this period's value.
+        fields.pop("cumulative_completed_value", None)
+        period_value = fields.get("period_completed_value", obj.period_completed_value)
+        prior_by_line = await repo.prior_period_value_by_line(
+            claim.contract_id,
+            exclude_claim_id=obj.progress_claim_id,
+        )
+        prior = prior_by_line.get(obj.contract_line_id, Decimal("0"))
+        fields["cumulative_completed_value"] = (prior + Decimal(str(period_value or 0))).quantize(Decimal("0.0001"))
         await repo.update_fields(line_id, **fields)
         await session.refresh(obj)
     return ProgressClaimLineResponse.model_validate(obj)

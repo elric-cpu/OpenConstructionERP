@@ -68,6 +68,15 @@ import { pointcloudGuide } from './pointcloudGuide';
 const SUPPORTED_FORMATS = ACCEPTED_SCAN_FORMATS.map((f) => f.toUpperCase());
 const ACCEPT_ATTR = ACCEPTED_SCAN_FORMATS.map((f) => `.${f}`).join(',');
 
+/* Frosted-glass styling for this page's cards: the blocks sit ~90% transparent
+   with a backdrop blur so the animated point-cloud background reads richly
+   through them. The surface-* tokens are CSS-var colours whose /alpha Tailwind
+   silently drops, so we use literal white with alpha + `!` to beat the Card's
+   own opaque `bg-surface-elevated`, plus a backdrop blur for the glass look. */
+const GLASS_CARD =
+  '!bg-white/10 dark:!bg-white/[0.06] !border-white/25 dark:!border-white/10 '
+  + 'backdrop-blur-xl !shadow-lg';
+
 type BadgeVariant = 'neutral' | 'blue' | 'success' | 'warning' | 'error';
 
 const STATUS_VARIANT: Record<string, BadgeVariant> = {
@@ -539,7 +548,7 @@ export function PointCloudPage() {
 
       {/* ── Upload window ──────────────────────────────────────────────── */}
       {!noProjects && (
-        <Card>
+        <Card className={GLASS_CARD}>
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -764,7 +773,7 @@ export function PointCloudPage() {
 
       {/* ── Scan registry ──────────────────────────────────────────────── */}
       {noProjects ? (
-        <Card>
+        <Card className={GLASS_CARD}>
           <EmptyState
             icon={<FolderOpen size={28} />}
             title={t('pointcloud.no_project_title', 'Open a project first')}
@@ -779,14 +788,14 @@ export function PointCloudPage() {
           />
         </Card>
       ) : isLoading ? (
-        <Card>
+        <Card className={GLASS_CARD}>
           <div className="flex items-center justify-center gap-2 py-10 text-content-tertiary">
             <Loader2 size={18} className="animate-spin" />
             <span className="text-sm">{t('common.loading', 'Loading...')}</span>
           </div>
         </Card>
       ) : isError ? (
-        <Card>
+        <Card className={GLASS_CARD}>
           <div className="flex items-start gap-3 py-6 text-content-secondary">
             <AlertCircle size={20} className="mt-0.5 shrink-0 text-danger" />
             <div>
@@ -803,7 +812,7 @@ export function PointCloudPage() {
           </div>
         </Card>
       ) : scans.length === 0 ? (
-        <Card>
+        <Card className={GLASS_CARD}>
           <EmptyState
             icon={<ScanLine size={28} />}
             title={t('pointcloud.empty_title', 'No scans in this project yet')}
@@ -824,7 +833,7 @@ export function PointCloudPage() {
           </div>
         </Card>
       ) : (
-        <Card padding="none">
+        <Card padding="none" className={GLASS_CARD}>
           <div className="border-b border-border-light px-4 py-2.5">
             <span className="text-sm font-semibold text-content-primary">
               {t('pointcloud.scans_title', 'Scans')}
@@ -905,7 +914,7 @@ export function PointCloudPage() {
 
       {/* ── Viewer ─────────────────────────────────────────────────────── */}
       {activeScan && (
-        <Card>
+        <Card className={GLASS_CARD}>
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -935,7 +944,7 @@ export function PointCloudPage() {
         {CAPABILITY_CARDS.map((cap, i) => {
           const Icon = cap.icon;
           return (
-            <Card key={i} className="space-y-2">
+            <Card key={i} className={`space-y-2 ${GLASS_CARD}`}>
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface-secondary text-content-secondary">
                 <Icon size={16} />
               </div>

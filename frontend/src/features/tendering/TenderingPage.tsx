@@ -1616,17 +1616,6 @@ function PackageDetail({
                 {t('tendering.evaluate', 'Evaluate Bids')}
               </Button>
             )}
-            {pkg.status === 'evaluating' && (
-              <Button
-                variant="primary"
-                size="sm"
-                icon={<Award size={14} />}
-                loading={updateStatusMutation.isPending}
-                onClick={() => updateStatusMutation.mutate('awarded')}
-              >
-                {t('tendering.mark_awarded', 'Mark Awarded')}
-              </Button>
-            )}
             {/* CONN-40: once a tender is awarded, take the winning scope into
                 Contracts instead of dead-ending. The awarded rates already
                 live on the BOQ, so the contract is formalised downstream. */}

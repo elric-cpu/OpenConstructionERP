@@ -7053,18 +7053,22 @@ async def dashboard_broker_performance(
 ) -> Response:
     """Per-broker leaderboard: leads, reservations, sales, GMV, commission.
 
-    Brokers are tenant-bound through ``Broker.tenant_id``. The endpoint
-    delegates tenant scoping to the SQL where-clauses on accessible
-    developments: a broker only appears on a tenant's leaderboard when
-    that broker has ≥1 row attributable to a development the tenant owns.
+    Brokers are tenant-bound through ``Broker.tenant_id``, so the leaderboard
+    is scoped to the caller's tenant: every aggregate in
+    ``broker_performance`` is restricted to that tenant's broker IDs. A
+    non-admin with no resolvable tenant gets an empty board rather than
+    every tenant's brokers (closes a cross-tenant analytics IDOR where the
+    full platform leaderboard was returned to anyone who could reach it).
+    Admins are unscoped.
     """
     from app.modules.property_dev.analytics_service import AnalyticsService
 
     _validate_iso_date(since, "since")
     _validate_iso_date(until, "until")
     user_id = str(payload.get("sub") or payload.get("user_id") or "")
-    dev_ids = await _list_accessible_dev_ids(session, payload)
-    if not dev_ids and payload.get("role") != "admin":
+    is_admin = payload.get("role") == "admin"
+    caller_tenant = _payload_tenant_id(payload)
+    if not is_admin and caller_tenant is None:
         empty = {"since": since, "until": until, "rows": [], "total_brokers": 0}
         return _serve_analytics(
             empty,
@@ -7074,7 +7078,11 @@ async def dashboard_broker_performance(
         )
 
     svc = AnalyticsService(session)
-    raw = await svc.broker_performance(since=since, until=until)
+    raw = await svc.broker_performance(
+        since=since,
+        until=until,
+        tenant_id=None if is_admin else caller_tenant,
+    )
     return _serve_analytics(
         raw,
         response_cls=BrokerPerformanceResponse,

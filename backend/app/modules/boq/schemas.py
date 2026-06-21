@@ -1554,7 +1554,15 @@ class EstimateClassificationResponse(BaseModel):
 
 
 class SensitivityItem(BaseModel):
-    """A single item in the sensitivity / tornado chart analysis."""
+    """A single item in the sensitivity / tornado chart analysis.
+
+    ``impact_low``/``impact_high`` are the deterministic +/-``variation_pct``
+    band (kept for the detail table and backward compatibility). The optional
+    fields are the probabilistic upgrade: ``variance_contribution_pct`` is the
+    line's share of total cost variance from the Monte Carlo run, and
+    ``swing_low``/``swing_high`` are its real P10/P90 deviation from its mean -
+    the tornado bars now reflect the distribution, not a flat poke.
+    """
 
     ordinal: str
     description: str
@@ -1562,19 +1570,27 @@ class SensitivityItem(BaseModel):
     share_pct: float
     impact_low: float
     impact_high: float
+    variance_contribution_pct: float | None = None
+    rank_correlation: float | None = None
+    swing_low: float | None = None
+    swing_high: float | None = None
 
 
 class SensitivityResponse(BaseModel):
     """Sensitivity analysis (tornado chart) result for a BOQ.
 
-    Shows which positions have the biggest impact on the total cost when
-    their cost varies by ``variation_pct`` percent.
+    Shows which positions have the biggest impact on the total cost. When
+    ``method == "monte_carlo"`` the ranking is driven by each line's share of
+    total variance (with correlation), not just its magnitude.
 
     v3 §10 - ``base_total`` is money; Decimal-as-string in JSON.
     """
 
     base_total: Decimal = Decimal("0")
     variation_pct: float = 10.0
+    method: str = "monte_carlo"
+    iterations: int = 0
+    correlation: float = 0.0
     items: list[SensitivityItem] = Field(default_factory=list)
 
     @field_serializer("base_total", when_used="json")
@@ -1594,45 +1610,74 @@ class CostRiskHistogramBin(BaseModel):
 
 
 class CostRiskDriver(BaseModel):
-    """A position contributing to total cost variance in Monte Carlo simulation."""
+    """A position contributing to total cost variance in Monte Carlo simulation.
+
+    ``contribution_pct`` is the line's share of total variance (drivers sum to
+    ~100%). ``rank_correlation`` is its Spearman correlation to the total, and
+    ``swing_low``/``swing_high`` are its P10/P90 deviation from its own mean.
+    """
 
     ordinal: str
     description: str
     contribution_pct: float
+    rank_correlation: float = 0.0
+    swing_low: float = 0.0
+    swing_high: float = 0.0
 
 
 class CostRiskPercentiles(BaseModel):
     """Percentile values from the Monte Carlo simulation."""
 
+    p5: float = 0.0
     p10: float
     p25: float
     p50: float
     p75: float
     p80: float
     p90: float
+    p95: float = 0.0
+
+
+class CostRiskCdfPoint(BaseModel):
+    """A point on the cumulative cost S-curve (probability the total is <= cost)."""
+
+    cost: float
+    cumulative_prob: float
 
 
 class CostRiskResponse(BaseModel):
     """Monte Carlo cost risk simulation result for a BOQ.
 
-    Runs N iterations of PERT-distributed cost sampling per position,
-    collects total costs, and returns percentiles, histogram, contingency,
-    and risk drivers (positions contributing most to variance).
+    Runs N correlated iterations of PERT-distributed cost sampling per position
+    (a one-factor Gaussian copula links the lines so systemic risk does not
+    cancel out), then returns the full distribution: P5..P95 percentiles, mean,
+    standard deviation, coefficient of variation, a histogram, a cumulative
+    S-curve, contingency at a target confidence, and the variance drivers.
 
-    v3 §10 - ``base_total`` and ``recommended_budget`` are money;
-    Decimal-as-string in JSON.
+    v3 §10 - ``base_total``, ``recommended_budget``, ``mean`` and ``std_dev``
+    are money; Decimal-as-string in JSON.
     """
 
     iterations: int
     base_total: Decimal = Decimal("0")
+    mean: Decimal = Decimal("0")
+    std_dev: Decimal = Decimal("0")
+    cv_pct: float = 0.0
     percentiles: CostRiskPercentiles
     contingency_p80: float
     contingency_pct: float
     recommended_budget: Decimal = Decimal("0")
+    target_confidence: int = 80
+    prob_within_base: float = 0.0
+    correlation: float = 0.0
+    seed: int = 0
+    convergence_status: str = "converged"
+    convergence_margin_pct: float = 0.0
     histogram: list[CostRiskHistogramBin] = Field(default_factory=list)
+    cdf: list[CostRiskCdfPoint] = Field(default_factory=list)
     risk_drivers: list[CostRiskDriver] = Field(default_factory=list)
 
-    @field_serializer("base_total", "recommended_budget", when_used="json")
+    @field_serializer("base_total", "recommended_budget", "mean", "std_dev", when_used="json")
     def _ser_money(self, v: Decimal) -> str | None:
         return _serialise_money(v)
 

@@ -1693,6 +1693,74 @@ class TakeoffService:
             "notes": "no_vector_layer",
         }
 
+    async def find_similar_symbols(
+        self,
+        doc_id: str,
+        page: int,
+        seed_x: float,
+        seed_y: float,
+    ) -> dict[str, Any]:
+        """Find every symbol on a page matching the one under ``(seed_x, seed_y)``.
+
+        Seeded "count by example": the user clicks one symbol on the vector PDF
+        page and this returns the centroids of all near-identical symbols so
+        they can confirm them as a single count measurement. Vector-only and
+        DB-free - nothing is persisted (CLAUDE.md rule 7). A scanned/raster
+        page (no vector layer) returns an empty hit set with
+        ``note='no_vector_layer'`` rather than fabricated geometry.
+        """
+        from app.modules.takeoff import recognize as _recognize
+
+        doc = await self.repo.get_by_id(uuid.UUID(doc_id))
+        if doc is None:
+            raise HTTPException(status_code=404, detail="Takeoff document not found")
+        validate_page_for_document(doc, page)
+
+        # Same read-only back-compat resolution as recognize_candidates.
+        file_path = _find_existing_takeoff_pdf(doc_id)
+        if file_path is None and doc.file_path:
+            candidate = Path(doc.file_path)
+            if candidate.exists():
+                file_path = candidate
+        if file_path is None:
+            raise HTTPException(
+                status_code=404,
+                detail="The stored PDF for this document is no longer on disk. Re-upload it to search.",
+            )
+
+        try:
+            import pymupdf  # noqa: PLC0415 - base dep; lazy-imported so a broken wheel degrades to a clear 400
+        except ImportError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Symbol search could not load its PDF reader (PyMuPDF). It ships with "
+                    "the platform, so this usually means a broken install. Reinstall "
+                    "openconstructionerp."
+                ),
+            ) from exc
+
+        try:
+            content = file_path.read_bytes()
+            pdf = pymupdf.open(stream=content, filetype="pdf")
+            try:
+                pg = pdf[page - 1]
+                drawings = pg.get_drawings()
+            finally:
+                pdf.close()
+        except HTTPException:
+            raise
+        except Exception:
+            logger.exception("takeoff.similar_symbols failed to read page for doc %s page %s", doc_id, page)
+            raise HTTPException(
+                status_code=422,
+                detail="Could not read this page. The PDF may be corrupt or password-protected.",
+            ) from None
+
+        result = _recognize.find_similar_symbols(drawings, seed_x, seed_y)
+        result["page"] = page
+        return result
+
     async def update_measurement(
         self,
         measurement_id: uuid.UUID,

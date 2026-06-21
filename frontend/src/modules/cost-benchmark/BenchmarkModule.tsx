@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { BarChart3, Info, FolderOpen, X } from 'lucide-react';
+import { BarChart3, Info, FolderOpen, X, Layers, Lightbulb } from 'lucide-react';
 import { ModuleGuideButton } from '@/shared/ui';
 import { projectsApi } from '@/features/projects/api';
 import { benchmarksGuide } from '@/features/benchmarks/benchmarksGuide';
@@ -11,9 +11,11 @@ import {
   BENCHMARKS,
   calculatePercentile,
   splitByCostGroup,
+  breakdownByElement,
   comparisonConfidence,
   type BuildingType,
   type BenchmarkRegion,
+  type ElementBreakdownRow,
 } from './data/benchmarks';
 import { useProjectBenchmarkData } from './hooks/useProjectBenchmarkData';
 import { fetchOwnPortfolio, type BenchmarkResponse } from './api';
@@ -66,6 +68,42 @@ function getConfidenceMeta(level: 'high' | 'medium' | 'low'): {
     defaultValue: 'Low',
     className: 'text-content-tertiary',
   };
+}
+
+/* ── Element breakdown row ─────────────────────────────────────────── */
+
+function ElementRow({
+  row,
+  max,
+  currency,
+  barClass,
+  t,
+}: {
+  row: ElementBreakdownRow;
+  max: number;
+  currency: string;
+  barClass: string;
+  t: (key: string, opts?: Record<string, unknown>) => string;
+}) {
+  const widthPct = max > 0 ? (row.value / max) * 100 : 0;
+  const label = t(`benchmarks.elem_${row.code}`, { defaultValue: row.label });
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span className="w-9 shrink-0 font-mono text-2xs text-content-quaternary">{row.code}</span>
+      <span className="w-40 shrink-0 truncate text-content-secondary" title={label}>
+        {label}
+      </span>
+      <div className="relative h-3 flex-1 overflow-hidden rounded-sm bg-surface-secondary">
+        <div className={`h-full rounded-sm ${barClass}`} style={{ width: `${widthPct}%` }} />
+      </div>
+      <span className="w-9 shrink-0 text-right tabular-nums text-content-tertiary">
+        {(row.pct * 100).toFixed(0)}%
+      </span>
+      <span className="w-20 shrink-0 text-right tabular-nums font-medium text-content-primary">
+        {formatCurrency(row.value, currency)}
+      </span>
+    </div>
+  );
 }
 
 /* ── Component ─────────────────────────────────────────────────────── */
@@ -163,6 +201,24 @@ export default function BenchmarkModule() {
       q4W: ((benchmarkRange.max - benchmarkRange.q3) / range) * 100,
     };
   }, [benchmarkRange]);
+
+  // ── Element-level breakdown (DIN 276) of the user's cost/m2 ──────────
+  const elementRows = useMemo(
+    () => breakdownByElement(analysis.costPerM2, buildingType, benchmarkRange.split),
+    [analysis.costPerM2, buildingType, benchmarkRange.split],
+  );
+  const kg300Rows = useMemo(
+    () => elementRows.filter((r) => r.kg === 'KG300').sort((a, b) => b.value - a.value),
+    [elementRows],
+  );
+  const kg400Rows = useMemo(
+    () => elementRows.filter((r) => r.kg === 'KG400').sort((a, b) => b.value - a.value),
+    [elementRows],
+  );
+  const maxElementValue = useMemo(() => Math.max(...elementRows.map((r) => r.value), 1), [elementRows]);
+
+  // Plain-language reading inputs.
+  const pctLabel = getPercentileLabelKey(analysis.percentile);
 
   return (
     <div className="space-y-6">
@@ -393,6 +449,52 @@ export default function BenchmarkModule() {
         </div>
       </div>
 
+      {/* Plain-language reading: ties the four KPIs together so the page is
+          self-explanatory without opening the guide. */}
+      <div className="rounded-xl border border-indigo-200 dark:border-indigo-900/40 bg-indigo-50/50 dark:bg-indigo-950/20 p-5">
+        <div className="flex items-start gap-3">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-100 dark:bg-indigo-900/40">
+            <Lightbulb className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+          </div>
+          <div className="min-w-0 space-y-1.5 text-sm text-content-secondary">
+            <p className="font-semibold text-content-primary">
+              {t('benchmarks.reading_title', { defaultValue: 'How to read your result' })}
+            </p>
+            <p>
+              {t('benchmarks.reading_position', {
+                defaultValue:
+                  'At {{cost}}/m2, your {{type}} in {{region}} sits at P{{pct}} of the {{source}} reference - {{label}}. That is {{sign}}{{diff}}% versus the median of {{median}}/m2.',
+                cost: formatCurrency(analysis.costPerM2, regionInfo.currency),
+                type: buildingInfo.label,
+                region: regionInfo.label,
+                pct: analysis.percentile.toFixed(0),
+                label: t(pctLabel.key, { defaultValue: pctLabel.defaultValue }).toLowerCase(),
+                sign: analysis.diffPct > 0 ? '+' : '',
+                diff: analysis.diffPct.toFixed(1),
+                median: formatCurrency(benchmarkRange.median, regionInfo.currency),
+              })}
+            </p>
+            <p>
+              {t('benchmarks.reading_split', {
+                defaultValue:
+                  'Of that, construction works (KG300) are about {{kg300}}/m2 and technical systems (KG400) about {{kg400}}/m2 - see the element breakdown below for where the money concentrates.',
+                kg300: formatCurrency(kgSplit.kg300, regionInfo.currency),
+                kg400: formatCurrency(kgSplit.kg400, regionInfo.currency),
+              })}
+            </p>
+            <p className="text-xs text-content-tertiary">
+              {t('benchmarks.reading_confidence', {
+                defaultValue:
+                  'Reference confidence: {{conf}}. Benchmarks are typical planning values from {{source}} ({{year}}), not a live market feed.',
+                conf: t(dataConfidence.key, { defaultValue: dataConfidence.defaultValue }),
+                source: benchmarkRange.source,
+                year: benchmarkRange.sourceYear,
+              })}
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Visual benchmark bar */}
       <div data-guide="benchmarks-bar" className="rounded-xl border border-border bg-surface-primary p-5">
         <h3 className="text-sm font-semibold text-content-primary mb-4">
@@ -599,6 +701,81 @@ export default function BenchmarkModule() {
             </p>
           </div>
         )}
+      </div>
+
+      {/* DIN 276 element-level breakdown: one level deeper than KG300/KG400,
+          showing where the cost/m2 actually concentrates. */}
+      <div className="rounded-xl border border-border bg-surface-primary p-5">
+        <div className="mb-1 flex items-center gap-2">
+          <Layers className="h-4 w-4 text-content-tertiary" />
+          <h3 className="text-sm font-semibold text-content-primary">
+            {t('benchmarks.elements_title', { defaultValue: 'Cost breakdown by DIN 276 element group' })}
+          </h3>
+        </div>
+        <p className="mb-4 text-xs text-content-tertiary">
+          {t('benchmarks.elements_hint', {
+            defaultValue:
+              'Typical planning distribution of your {{cost}}/m2 across DIN 276 element groups for this building type. Indicative shares, not a live feed - use them to see where the budget concentrates.',
+            cost: formatCurrency(analysis.costPerM2, regionInfo.currency),
+          })}
+        </p>
+
+        <div className="grid grid-cols-1 gap-x-8 gap-y-4 lg:grid-cols-2">
+          {/* KG300 column */}
+          <div>
+            <div className="mb-2 flex items-center justify-between border-b border-border pb-1.5">
+              <span className="text-xs font-semibold text-content-secondary">
+                {t('benchmarks.kg300', { defaultValue: 'KG300 Construction' })}
+              </span>
+              <span className="text-xs font-bold text-content-primary tabular-nums">
+                {formatCurrency(kgSplit.kg300, regionInfo.currency)}/m2
+              </span>
+            </div>
+            <div className="space-y-1.5">
+              {kg300Rows.map((row) => (
+                <ElementRow
+                  key={row.code}
+                  row={row}
+                  max={maxElementValue}
+                  currency={regionInfo.currency}
+                  barClass="bg-oe-blue/70"
+                  t={t}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* KG400 column */}
+          <div>
+            <div className="mb-2 flex items-center justify-between border-b border-border pb-1.5">
+              <span className="text-xs font-semibold text-content-secondary">
+                {t('benchmarks.kg400', { defaultValue: 'KG400 Technical' })}
+              </span>
+              <span className="text-xs font-bold text-content-primary tabular-nums">
+                {formatCurrency(kgSplit.kg400, regionInfo.currency)}/m2
+              </span>
+            </div>
+            <div className="space-y-1.5">
+              {kg400Rows.map((row) => (
+                <ElementRow
+                  key={row.code}
+                  row={row}
+                  max={maxElementValue}
+                  currency={regionInfo.currency}
+                  barClass="bg-amber-500/70"
+                  t={t}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <p className="mt-4 text-2xs text-content-quaternary">
+          {t('benchmarks.elements_note', {
+            defaultValue:
+              'Element shares are typical DIN 276 planning ratios grouped by building profile and sum back to your cost/m2. Actual splits vary with design, specification and procurement.',
+          })}
+        </p>
       </div>
 
       {/* All building types comparison */}

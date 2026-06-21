@@ -96,7 +96,7 @@ export function ResourceSummary({ boqId, locale = 'de-DE' }: { boqId: string; lo
           base_price: resource.avg_unit_rate,
           min_price: resource.avg_unit_rate,
           max_price: resource.avg_unit_rate,
-          currency: 'EUR',
+          currency: resource.currency || 'EUR',
           source: 'boq_import',
           region: 'CUSTOM',
           specifications: {

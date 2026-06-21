@@ -212,6 +212,14 @@ backend/data/dwg_thumbnails/
 
 # Local-only working state (not for commit)
 tmp/
+
+# How-it-works translation pipeline scratch (regenerable inputs; the
+# per-locale frontend/src/app/locales/*.ts are the committed source of truth).
+frontend/scripts/.howto-i18n/
+
+# Smoke-sweep E2E run artefacts (regenerable test output, not source).
+frontend/qa-smoke/
+frontend/qa-smoke-report/
 backend/_frontend_dist/
 backend/app/_frontend_dist/
 backend/*.log.err

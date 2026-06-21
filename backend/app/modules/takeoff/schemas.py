@@ -112,6 +112,37 @@ class RecognizeResponse(BaseModel):
     notes: str | None = None
 
 
+class SimilarSymbolHit(BaseModel):
+    """One matched symbol from a seeded "count by example" search.
+
+    Coordinates are in PDF points - the same space the canvas stores
+    measurements in - so the frontend can place a marker directly.
+    """
+
+    x: float
+    y: float
+    bbox_x0: float
+    bbox_y0: float
+    bbox_x1: float
+    bbox_y1: float
+    confidence: float
+    is_seed: bool = False
+
+
+class SimilarSymbolsResponse(BaseModel):
+    """Result of a seeded similar-symbol search (nothing persisted).
+
+    ``note`` is ``no_vector_layer`` (the page is a scan with no drawing
+    layer), ``no_symbol_at_point`` (nothing small enough under the click) or
+    ``None`` on success.
+    """
+
+    hits: list[SimilarSymbolHit] = Field(default_factory=list)
+    seed_found: bool = False
+    page: int
+    note: str | None = None
+
+
 # ── Tier-1 scale detection from the PDF text layer ──────────────────────────
 #
 # The deterministic, AI-free counterpart to the vision plan-reader's scale

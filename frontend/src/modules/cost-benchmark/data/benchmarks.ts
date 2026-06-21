@@ -342,6 +342,171 @@ export function splitByCostGroup(
   return { kg300: costPerM2 - kg400, kg400 };
 }
 
+/* ── DIN 276 element-level breakdown ──────────────────────────────────────
+ *
+ * One level deeper than the KG300/KG400 split: the typical distribution of a
+ * cost/m2 across the DIN 276 second-level element groups (310..390 within
+ * KG300, 410..490 within KG400). These are documented *typical planning*
+ * shares, not survey output - they let an estimator see roughly where the
+ * money sits (facade vs slabs vs HVAC vs electrical) instead of a single bar.
+ *
+ * To stay honest and maintainable the shares are grouped into a handful of
+ * building "profiles" rather than a full type x region matrix: a shed (heavy
+ * structure, minimal services), a services-dense building (hospital/hotel),
+ * residential, and a default (office/school/retail). Each profile's KG300 and
+ * KG400 shares sum to 1.0.
+ */
+
+export type ElementProfile = 'default' | 'shed' | 'services_dense' | 'residential';
+
+/** A DIN 276 element group share within its parent cost group (KG300 or KG400). */
+export interface ElementShare {
+  /** DIN 276 element code, e.g. '330'. */
+  code: string;
+  /** Plain English label, rendered via a t() defaultValue. */
+  label: string;
+  /** Share of the parent KG group, 0..1. */
+  pct: number;
+}
+
+/** One element row of a concrete breakdown (already multiplied out to cost/m2). */
+export interface ElementBreakdownRow {
+  /** Parent cost group. */
+  kg: 'KG300' | 'KG400';
+  code: string;
+  label: string;
+  /** Share of the *total* KG300+400 cost/m2, 0..1. */
+  pct: number;
+  /** Cost per m2 attributed to this element group. */
+  value: number;
+}
+
+const KG300_ELEMENTS: Record<ElementProfile, ElementShare[]> = {
+  default: [
+    { code: '310', label: 'Excavation & earthworks', pct: 0.05 },
+    { code: '320', label: 'Foundations & substructure', pct: 0.12 },
+    { code: '330', label: 'Exterior walls & facade', pct: 0.25 },
+    { code: '340', label: 'Interior walls & partitions', pct: 0.15 },
+    { code: '350', label: 'Floors, ceilings & slabs', pct: 0.2 },
+    { code: '360', label: 'Roofs', pct: 0.1 },
+    { code: '370', label: 'Built-in fixtures', pct: 0.05 },
+    { code: '390', label: 'Other construction', pct: 0.08 },
+  ],
+  shed: [
+    { code: '310', label: 'Excavation & earthworks', pct: 0.06 },
+    { code: '320', label: 'Foundations & substructure', pct: 0.16 },
+    { code: '330', label: 'Exterior walls & facade', pct: 0.3 },
+    { code: '340', label: 'Interior walls & partitions', pct: 0.06 },
+    { code: '350', label: 'Floors, ceilings & slabs', pct: 0.2 },
+    { code: '360', label: 'Roofs', pct: 0.16 },
+    { code: '370', label: 'Built-in fixtures', pct: 0.02 },
+    { code: '390', label: 'Other construction', pct: 0.04 },
+  ],
+  services_dense: [
+    { code: '310', label: 'Excavation & earthworks', pct: 0.04 },
+    { code: '320', label: 'Foundations & substructure', pct: 0.11 },
+    { code: '330', label: 'Exterior walls & facade', pct: 0.22 },
+    { code: '340', label: 'Interior walls & partitions', pct: 0.18 },
+    { code: '350', label: 'Floors, ceilings & slabs', pct: 0.21 },
+    { code: '360', label: 'Roofs', pct: 0.08 },
+    { code: '370', label: 'Built-in fixtures', pct: 0.08 },
+    { code: '390', label: 'Other construction', pct: 0.08 },
+  ],
+  residential: [
+    { code: '310', label: 'Excavation & earthworks', pct: 0.04 },
+    { code: '320', label: 'Foundations & substructure', pct: 0.12 },
+    { code: '330', label: 'Exterior walls & facade', pct: 0.24 },
+    { code: '340', label: 'Interior walls & partitions', pct: 0.16 },
+    { code: '350', label: 'Floors, ceilings & slabs', pct: 0.22 },
+    { code: '360', label: 'Roofs', pct: 0.12 },
+    { code: '370', label: 'Built-in fixtures', pct: 0.04 },
+    { code: '390', label: 'Other construction', pct: 0.06 },
+  ],
+};
+
+const KG400_ELEMENTS: Record<ElementProfile, ElementShare[]> = {
+  default: [
+    { code: '410', label: 'Plumbing, water & gas', pct: 0.16 },
+    { code: '420', label: 'Heating', pct: 0.18 },
+    { code: '430', label: 'Ventilation & cooling', pct: 0.2 },
+    { code: '440', label: 'Electrical & power', pct: 0.22 },
+    { code: '450', label: 'Telecom & IT', pct: 0.08 },
+    { code: '460', label: 'Lifts & conveying', pct: 0.08 },
+    { code: '480', label: 'Building automation', pct: 0.05 },
+    { code: '490', label: 'Other technical', pct: 0.03 },
+  ],
+  shed: [
+    { code: '410', label: 'Plumbing, water & gas', pct: 0.12 },
+    { code: '420', label: 'Heating', pct: 0.14 },
+    { code: '430', label: 'Ventilation & cooling', pct: 0.12 },
+    { code: '440', label: 'Electrical & power', pct: 0.38 },
+    { code: '450', label: 'Telecom & IT', pct: 0.06 },
+    { code: '460', label: 'Lifts & conveying', pct: 0.04 },
+    { code: '480', label: 'Building automation', pct: 0.04 },
+    { code: '490', label: 'Other technical', pct: 0.1 },
+  ],
+  services_dense: [
+    { code: '410', label: 'Plumbing, water & gas', pct: 0.14 },
+    { code: '420', label: 'Heating', pct: 0.12 },
+    { code: '430', label: 'Ventilation & cooling', pct: 0.26 },
+    { code: '440', label: 'Electrical & power', pct: 0.22 },
+    { code: '450', label: 'Telecom & IT', pct: 0.07 },
+    { code: '460', label: 'Lifts & conveying', pct: 0.07 },
+    { code: '470', label: 'Process / use-specific', pct: 0.06 },
+    { code: '480', label: 'Building automation', pct: 0.04 },
+    { code: '490', label: 'Other technical', pct: 0.02 },
+  ],
+  residential: [
+    { code: '410', label: 'Plumbing, water & gas', pct: 0.22 },
+    { code: '420', label: 'Heating', pct: 0.26 },
+    { code: '430', label: 'Ventilation & cooling', pct: 0.1 },
+    { code: '440', label: 'Electrical & power', pct: 0.2 },
+    { code: '450', label: 'Telecom & IT', pct: 0.08 },
+    { code: '460', label: 'Lifts & conveying', pct: 0.08 },
+    { code: '480', label: 'Building automation', pct: 0.03 },
+    { code: '490', label: 'Other technical', pct: 0.03 },
+  ],
+};
+
+/** Map each building type to an element-distribution profile. */
+const TYPE_ELEMENT_PROFILE: Record<BuildingType, ElementProfile> = {
+  office: 'default',
+  hospital: 'services_dense',
+  school: 'default',
+  residential_single: 'residential',
+  residential_multi: 'residential',
+  industrial: 'shed',
+  retail: 'default',
+  hotel: 'services_dense',
+  warehouse: 'shed',
+};
+
+/**
+ * Break a cost/m2 figure into DIN 276 element groups (310..490) using the
+ * building type's typical element profile and its KG300/KG400 split. The row
+ * values sum back to ``costPerM2``; ``pct`` is each element's share of the
+ * total. Rows are returned in DIN code order; callers may re-sort by value.
+ */
+export function breakdownByElement(
+  costPerM2: number,
+  type: BuildingType,
+  split: CostGroupSplit,
+): ElementBreakdownRow[] {
+  const profile = TYPE_ELEMENT_PROFILE[type];
+  const kg300Total = costPerM2 * split.kg300Pct;
+  const kg400Total = costPerM2 * split.kg400Pct;
+  const rows: ElementBreakdownRow[] = [];
+  for (const el of KG300_ELEMENTS[profile]) {
+    const value = kg300Total * el.pct;
+    rows.push({ kg: 'KG300', code: el.code, label: el.label, pct: costPerM2 > 0 ? value / costPerM2 : 0, value });
+  }
+  for (const el of KG400_ELEMENTS[profile]) {
+    const value = kg400Total * el.pct;
+    rows.push({ kg: 'KG400', code: el.code, label: el.label, pct: costPerM2 > 0 ? value / costPerM2 : 0, value });
+  }
+  return rows;
+}
+
 /**
  * Confidence label for a user value versus a cell: how trustworthy the
  * comparison is. Driven by the cell confidence, which already folds in

@@ -121,6 +121,26 @@ export interface RecognizeResult {
   notes: string | null;
 }
 
+/** One matched symbol from a seeded "count by example" search (#194). All
+ *  coordinates are in PDF points - the same space measurements are stored in. */
+export interface SimilarSymbolHit {
+  x: number;
+  y: number;
+  bbox_x0: number;
+  bbox_y0: number;
+  bbox_x1: number;
+  bbox_y1: number;
+  confidence: number;
+  is_seed: boolean;
+}
+
+export interface SimilarSymbolsResult {
+  hits: SimilarSymbolHit[];
+  seed_found: boolean;
+  page: number;
+  note: string | null;
+}
+
 /* ── Vision-LLM plan reading (issue #194) ──────────────────────────────────
  * An ADDITIONAL, higher-quality suggestion source alongside the offline
  * Recognize tool. Bring-your-own-key, cost-capped, and human-confirmed: a run
@@ -301,6 +321,16 @@ export const takeoffApi = {
       {},
     );
   },
+
+  /** Seeded "count by example": the user clicks one symbol on a vector page
+   *  and the backend returns the centroids of every near-identical symbol so
+   *  they can be confirmed as a single count measurement. Coordinates are in
+   *  PDF points. Nothing is persisted server-side. */
+  similarSymbols: (docId: string, page: number, seedX: number, seedY: number) =>
+    apiPost<SimilarSymbolsResult>(
+      `/v1/takeoff/documents/${encodeURIComponent(docId)}/similar-symbols/?page=${page}&seed_x=${seedX}&seed_y=${seedY}`,
+      {},
+    ),
 
   /** Detect an explicit drawing scale from the document's text layer (tier-1,
    *  AI-free). Reads the scale note the architect typed in the title block and

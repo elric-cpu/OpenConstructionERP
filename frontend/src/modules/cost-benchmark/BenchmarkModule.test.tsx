@@ -8,6 +8,7 @@ import {
   BUILDING_TYPES,
   BENCHMARK_REGIONS,
   calculatePercentile,
+  breakdownByElement,
 } from './data/benchmarks';
 
 // Phase 2/3 wiring: the page now lists the tenant's projects and fetches an
@@ -178,5 +179,36 @@ describe('Benchmark data integrity', () => {
         expect(r.q3).toBeLessThan(r.max);
       }
     }
+  });
+});
+
+describe('breakdownByElement (DIN 276 element split)', () => {
+  it('rows sum back to the input cost/m2', () => {
+    const r = BENCHMARKS.DE.office;
+    const rows = breakdownByElement(2650, 'office', r.split);
+    const sum = rows.reduce((s, x) => s + x.value, 0);
+    expect(sum).toBeCloseTo(2650, 0);
+  });
+
+  it('covers both KG300 and KG400 with valid DIN codes for every type', () => {
+    for (const bt of BUILDING_TYPES) {
+      const split = BENCHMARKS.DE[bt.id].split;
+      const rows = breakdownByElement(2000, bt.id, split);
+      expect(rows.some((x) => x.kg === 'KG300')).toBe(true);
+      expect(rows.some((x) => x.kg === 'KG400')).toBe(true);
+      for (const row of rows) {
+        expect(row.value).toBeGreaterThanOrEqual(0);
+        expect(row.code).toMatch(/^\d{3}$/);
+      }
+    }
+  });
+
+  it('respects the KG300 / KG400 split totals', () => {
+    const split = BENCHMARKS.DE.hospital.split;
+    const rows = breakdownByElement(5000, 'hospital', split);
+    const kg300 = rows.filter((x) => x.kg === 'KG300').reduce((s, x) => s + x.value, 0);
+    const kg400 = rows.filter((x) => x.kg === 'KG400').reduce((s, x) => s + x.value, 0);
+    expect(kg300).toBeCloseTo(5000 * split.kg300Pct, 0);
+    expect(kg400).toBeCloseTo(5000 * split.kg400Pct, 0);
   });
 });

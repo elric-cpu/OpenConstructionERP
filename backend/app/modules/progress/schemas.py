@@ -131,7 +131,8 @@ class PositionProgressSummary(BaseModel):
     last_recorded_at: datetime | None = None
     last_period_label: str | None = None
     """Rollup from children: if this position has children in the BOQ hierarchy,
-    current_pct is the weighted average of their latest percent_completes."""
+    current_pct is the quantity-weighted average of their latest
+    percent_completes (unweighted mean when children carry no quantity)."""
     is_rollup: bool = False
 
 

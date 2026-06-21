@@ -67,7 +67,13 @@ export function ConverterInstallProgressBar({
     queryKey: ['bim-converter-install-progress', converterId],
     queryFn: () => fetchBIMConverterInstallProgress(converterId),
     enabled: installing,
-    refetchInterval: installing ? 500 : false,
+    refetchInterval: (query) => {
+      if (!installing) return false;
+      const s = query.state.data?.stage;
+      // Stop polling once the background install reaches a terminal stage -
+      // installBIMConverter's own poll resolves the mutation at that point.
+      return s === 'done' || s === 'error' ? false : 500;
+    },
     refetchIntervalInBackground: false,
     staleTime: 0,
     gcTime: 0,

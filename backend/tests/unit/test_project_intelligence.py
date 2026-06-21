@@ -219,11 +219,17 @@ class _StubRepo:
 
 @pytest.mark.asyncio
 async def test_verify_project_access_blocks_cross_project() -> None:
-    """A non-admin user requesting another user's project gets 403."""
+    """A non-admin user requesting another user's project gets 404.
+
+    The shared ``verify_project_access`` returns 404 (not 403) on denial so the
+    status code cannot be used to probe which project UUIDs exist (IDOR oracle
+    defence). User IDs are real UUIDs - the helper coerces them with
+    ``uuid.UUID(str(user_id))`` for the admin / team-member lookups.
+    """
     from app.modules.project_intelligence import router as pi_router
 
-    owner_id = "owner-user"
-    other_id = "intruder-user"
+    owner_id = str(uuid.uuid4())
+    other_id = str(uuid.uuid4())
     project_id = uuid.uuid4()
 
     with (
@@ -234,6 +240,10 @@ async def test_verify_project_access_blocks_cross_project() -> None:
         patch(
             "app.modules.users.repository.UserRepository",
             new=lambda _s: _StubRepo(_StubUser(role="user")),
+        ),
+        patch(
+            "app.modules.teams.access.is_project_member",
+            new=AsyncMock(return_value=False),
         ),
     ):
         with pytest.raises(HTTPException) as exc_info:
@@ -243,7 +253,7 @@ async def test_verify_project_access_blocks_cross_project() -> None:
                 user_id=other_id,
             )
 
-    assert exc_info.value.status_code == 403
+    assert exc_info.value.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -251,7 +261,7 @@ async def test_verify_project_access_allows_owner() -> None:
     """Owner of the project is permitted (sanity check on the same path)."""
     from app.modules.project_intelligence import router as pi_router
 
-    owner_id = "owner-user"
+    owner_id = str(uuid.uuid4())
     project_id = uuid.uuid4()
 
     with (
@@ -264,7 +274,7 @@ async def test_verify_project_access_allows_owner() -> None:
             new=lambda _s: _StubRepo(_StubUser(role="user")),
         ),
     ):
-        # Should NOT raise
+        # Should NOT raise - owner has full access.
         await pi_router._verify_project_access(
             session=SimpleNamespace(),  # type: ignore[arg-type]
             project_id=project_id,
@@ -289,23 +299,30 @@ async def test_verify_project_access_requires_authentication() -> None:
 
 @pytest.mark.asyncio
 async def test_verify_project_access_admin_bypass() -> None:
-    """Admins can read any project — used by support/debug flows."""
+    """Admins can read any project - used by support/debug flows.
+
+    The admin check coerces ``user_id`` via ``uuid.UUID(str(user_id))`` before
+    reading the role, so the test uses a real UUID admin id (a non-UUID id
+    would make the coercion raise and silently skip the bypass).
+    """
     from app.modules.project_intelligence import router as pi_router
 
+    admin_id = str(uuid.uuid4())
     project_id = uuid.uuid4()
 
     with (
         patch(
             "app.modules.projects.repository.ProjectRepository",
-            new=lambda _s: _StubRepo(_StubProject(owner_id="someone-else")),
+            new=lambda _s: _StubRepo(_StubProject(owner_id=str(uuid.uuid4()))),
         ),
         patch(
             "app.modules.users.repository.UserRepository",
             new=lambda _s: _StubRepo(_StubUser(role="admin")),
         ),
     ):
+        # Should NOT raise - admin bypasses ownership.
         await pi_router._verify_project_access(
             session=SimpleNamespace(),  # type: ignore[arg-type]
             project_id=project_id,
-            user_id="admin-user",
+            user_id=admin_id,
         )

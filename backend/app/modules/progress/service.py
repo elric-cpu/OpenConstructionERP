@@ -7,8 +7,9 @@ Handles:
 - percent_complete range enforcement [0, 100]
 - Per-period delta calculation from the cumulative series
 - S-curve: actual vs planned per period
-- Parent rollup: a BOQ parent's current_pct is the weighted average
-  of its direct children's latest percent_completes
+- Parent rollup: a BOQ parent's current_pct is the quantity-weighted
+  average of its direct children's latest percent_completes (falls back
+  to the unweighted mean when the children carry no quantity)
 - Geo-tagging validation (lat ∈ [-90, 90], lon ∈ [-180, 180])
 """
 
@@ -252,19 +253,33 @@ class ProgressService:
         """Compute current progress for a BOQ position.
 
         Parent rollup: if this position has child positions in the BOQ
-        hierarchy, ``current_pct`` is the **unweighted average** of their
-        latest percent_completes (weights would require BOQ quantity data
-        which this module does not import to avoid circular dependency).
-        The ``is_rollup`` flag signals this to the caller.
+        hierarchy, ``current_pct`` is the **quantity-weighted average** of
+        their latest percent_completes, weighting each child by its BOQ
+        ``quantity``. When the children carry no quantity (weights sum to
+        zero) it falls back to the unweighted mean. The ``is_rollup`` flag
+        signals a rolled-up value to the caller.
         """
-        # Fetch child position IDs from BOQ (lazy import to avoid circular dep)
-        child_ids = await self._fetch_child_ids(project_id, boq_position_id)
+        # Fetch child positions (id -> quantity) from BOQ
+        # (lazy import to avoid circular dep)
+        child_quantities = await self._fetch_child_ids(project_id, boq_position_id)
 
-        if child_ids:
+        if child_quantities:
             # Parent rollup path
+            child_ids = list(child_quantities)
             child_pcts = await self.repo.latest_pct_for_positions(project_id, child_ids)
             if child_pcts:
-                current_pct = round(sum(child_pcts.values()) / len(child_pcts), 3)
+                weighted_sum = Decimal("0")
+                weight_total = Decimal("0")
+                for pos_id, pct in child_pcts.items():
+                    weight = child_quantities.get(pos_id, Decimal("0"))
+                    weighted_sum += weight * Decimal(str(pct))
+                    weight_total += weight
+                if weight_total > 0:
+                    current_pct = round(float(weighted_sum / weight_total), 3)
+                else:
+                    # All children carry zero quantity: fall back to the
+                    # unweighted mean so a parent still reports progress.
+                    current_pct = round(sum(child_pcts.values()) / len(child_pcts), 3)
             else:
                 current_pct = 0.0
 
@@ -294,24 +309,36 @@ class ProgressService:
         self,
         project_id: uuid.UUID,
         parent_id: uuid.UUID,
-    ) -> list[uuid.UUID]:
-        """Return direct child position IDs for the given parent in the BOQ."""
+    ) -> dict[uuid.UUID, Decimal]:
+        """Return ``{child_id: quantity}`` for the parent's direct BOQ children.
+
+        The quantity is used as the rollup weight by
+        :meth:`get_position_summary`. ``Position.quantity`` is stored as a
+        String, so it is coerced to Decimal here; an unparseable or missing
+        value becomes ``Decimal("0")`` (i.e. it contributes no weight).
+        """
         try:
             from sqlalchemy import select as sa_select
 
             from app.modules.boq.models import Position
 
-            stmt = sa_select(Position.id).where(
+            stmt = sa_select(Position.id, Position.quantity).where(
                 Position.parent_id == parent_id,
             )
-            rows = (await self.session.execute(stmt)).scalars().all()
-            return list(rows)
+            rows = (await self.session.execute(stmt)).all()
+            result: dict[uuid.UUID, Decimal] = {}
+            for pos_id, quantity in rows:
+                try:
+                    result[pos_id] = Decimal(str(quantity)) if quantity is not None else Decimal("0")
+                except (ArithmeticError, ValueError):
+                    result[pos_id] = Decimal("0")
+            return result
         except Exception:
             logger.debug(
                 "Could not fetch BOQ children for position %s - treating as leaf",
                 parent_id,
             )
-            return []
+            return {}
 
     # ── S-curve ───────────────────────────────────────────────────────────
 

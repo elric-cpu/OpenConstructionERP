@@ -208,6 +208,11 @@ export const CostBenchmark = memo(function CostBenchmark({ totalBudget, currency
   const areaNum = parseFloat(area);
   const hasValidArea = !isNaN(areaNum) && areaNum > 0;
 
+  // Benchmark ranges are expressed in EUR/m². If the project uses a different
+  // (valid) currency, the pass/fail verdict would be meaningless, so we hide it.
+  const isValidCurrency = /^[A-Z]{3}$/.test(currency);
+  const currencyMismatch = isValidCurrency && currency !== 'EUR';
+
   const benchmark = useMemo(() => {
     if (!hasValidArea) return null;
 
@@ -291,40 +296,44 @@ export const CostBenchmark = memo(function CostBenchmark({ totalBudget, currency
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 {/* Current cost/m² */}
                 <div
-                  className={`rounded-xl p-4 ${getStatusColor(benchmark.status).bg}`}
+                  className={`rounded-xl p-4 ${currencyMismatch ? 'bg-surface-secondary' : getStatusColor(benchmark.status).bg}`}
                 >
                   <div className="text-2xs font-medium uppercase tracking-wider text-content-tertiary mb-1">
                     {t('costmodel.benchmark_cost_per_m2', { defaultValue: 'Cost / m\u00B2' })}
                   </div>
                   <div
-                    className={`text-xl font-bold tabular-nums ${getStatusColor(benchmark.status).text}`}
+                    className={`text-xl font-bold tabular-nums ${currencyMismatch ? 'text-content-primary' : getStatusColor(benchmark.status).text}`}
                   >
                     {formatCurrencyValue(benchmark.costPerM2, currency)}
                   </div>
-                  <div className="mt-1 flex items-center gap-1.5">
-                    <div
-                      className={`h-2 w-2 rounded-full ${getStatusColor(benchmark.status).indicator}`}
-                    />
-                    <span className="text-2xs font-medium text-content-secondary">
-                      {statusLabel}
-                    </span>
-                  </div>
+                  {!currencyMismatch && (
+                    <div className="mt-1 flex items-center gap-1.5">
+                      <div
+                        className={`h-2 w-2 rounded-full ${getStatusColor(benchmark.status).indicator}`}
+                      />
+                      <span className="text-2xs font-medium text-content-secondary">
+                        {statusLabel}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
-                {/* Benchmark range */}
-                <div className="rounded-xl border border-border-light bg-surface-elevated/90 p-4 shadow-xs transition-shadow duration-normal ease-oe hover:shadow-sm">
-                  <div className="text-2xs font-medium uppercase tracking-wider text-content-tertiary mb-1">
-                    {t('costmodel.benchmark_range_label', { defaultValue: 'Benchmark Range' })}
+                {/* Benchmark range \u2014 only meaningful when the project currency matches the band */}
+                {!currencyMismatch && (
+                  <div className="rounded-xl border border-border-light bg-surface-elevated/90 p-4 shadow-xs transition-shadow duration-normal ease-oe hover:shadow-sm">
+                    <div className="text-2xs font-medium uppercase tracking-wider text-content-tertiary mb-1">
+                      {t('costmodel.benchmark_range_label', { defaultValue: 'Benchmark Range' })}
+                    </div>
+                    <div className="text-sm font-semibold tabular-nums text-content-primary">
+                      {formatCurrencyValue(benchmark.range.min, currency)}{' '}
+                      {t('costmodel.benchmark_range_to', { defaultValue: 'to' })}{' '}
+                      {formatCurrencyValue(benchmark.range.max, currency)}
+                    </div>
+                    <div className="mt-1 text-2xs text-content-tertiary">
+                      {t('costmodel.benchmark_per_m2', { defaultValue: 'per m\u00B2' })}
+                    </div>
                   </div>
-                  <div className="text-sm font-semibold tabular-nums text-content-primary">
-                    {formatCurrencyValue(benchmark.range.min, currency)}{' '}
-                    {t('costmodel.benchmark_range_to', { defaultValue: 'to' })}{' '}
-                    {formatCurrencyValue(benchmark.range.max, currency)}
-                  </div>
-                  <div className="mt-1 text-2xs text-content-tertiary">
-                    {t('costmodel.benchmark_per_m2', { defaultValue: 'per m\u00B2' })}
-                  </div>
-                </div>
+                )}
 
                 {/* Total budget / area summary */}
                 <div className="rounded-xl border border-border-light bg-surface-elevated/90 p-4 shadow-xs transition-shadow duration-normal ease-oe hover:shadow-sm">
@@ -343,13 +352,23 @@ export const CostBenchmark = memo(function CostBenchmark({ totalBudget, currency
                 </div>
               </div>
 
-              {/* Visual range indicator */}
-              <RangeIndicator
-                costPerM2={benchmark.costPerM2}
-                range={benchmark.range}
-                status={benchmark.status}
-                currency={currency}
-              />
+              {/* Visual range indicator — hidden for non-EUR currencies (bands are EUR) */}
+              {currencyMismatch ? (
+                <p className="text-2xs text-content-tertiary">
+                  {t('costmodel.benchmark_no_currency_band', {
+                    defaultValue:
+                      'No benchmark range for {{currency}} - showing cost per m² only. Benchmark ranges are available in EUR.',
+                    currency,
+                  })}
+                </p>
+              ) : (
+                <RangeIndicator
+                  costPerM2={benchmark.costPerM2}
+                  range={benchmark.range}
+                  status={benchmark.status}
+                  currency={currency}
+                />
+              )}
             </div>
           ) : (
             /* Empty state when no area entered */

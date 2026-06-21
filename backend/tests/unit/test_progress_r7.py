@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -320,7 +321,13 @@ async def test_s_curve_merges_actual_and_planned() -> None:
 
 @pytest.mark.asyncio
 async def test_parent_rollup_averages_child_pcts() -> None:
-    """A parent position's current_pct is the avg of children's latest pct."""
+    """A parent's current_pct is the quantity-weighted average of children's pct.
+
+    ``_fetch_child_ids`` returns ``{child_id: quantity}`` (the quantity is the
+    rollup weight). With equal weights the weighted average reduces to the
+    simple average, so the expected value stays 50.0 while still exercising the
+    weighted-sum branch.
+    """
     svc = _make_service()
     repo: _StubProgressRepo = svc.repo  # type: ignore[assignment]
 
@@ -331,17 +338,17 @@ async def test_parent_rollup_averages_child_pcts() -> None:
     # Inject child IDs and their latest pcts directly (avoids BOQ DB query)
     repo._child_pcts = {child_a: 60.0, child_b: 40.0}
 
-    # Override the _fetch_child_ids method to return our fake children
-    async def _fake_fetch(project_id: uuid.UUID, pid: uuid.UUID) -> list[uuid.UUID]:
+    # Override _fetch_child_ids to return our fake children -> equal weights.
+    async def _fake_fetch(project_id: uuid.UUID, pid: uuid.UUID) -> dict[uuid.UUID, Decimal]:
         if pid == parent_id:
-            return [child_a, child_b]
-        return []
+            return {child_a: Decimal("1"), child_b: Decimal("1")}
+        return {}
 
     svc._fetch_child_ids = _fake_fetch  # type: ignore[method-assign]
 
     summary = await svc.get_position_summary(PROJECT_ID, parent_id)
     assert summary.is_rollup is True
-    # (60 + 40) / 2 == 50
+    # (1*60 + 1*40) / (1 + 1) == 50
     assert summary.current_pct == 50.0
 
 
@@ -351,8 +358,8 @@ async def test_leaf_position_uses_own_latest_entry() -> None:
     svc = _make_service()
 
     # No children
-    async def _no_children(project_id: uuid.UUID, pid: uuid.UUID) -> list[uuid.UUID]:
-        return []
+    async def _no_children(project_id: uuid.UUID, pid: uuid.UUID) -> dict[uuid.UUID, Decimal]:
+        return {}
 
     svc._fetch_child_ids = _no_children  # type: ignore[method-assign]
 

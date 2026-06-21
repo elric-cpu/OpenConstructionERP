@@ -5,6 +5,31 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [8.8.0] - 2026-06-21
+
+### Added
+
+- Monte-Carlo cost-risk analysis for a bill of quantities. It runs thousands of correlated, PERT-distributed iterations to produce a full cost distribution rather than a single point estimate: P5 to P95 percentile bands, mean and standard deviation, a probability S-curve (the chance the total lands at or under any given figure), a recommended contingency at your target confidence level, and a tornado chart showing which positions drive the most variance. A one-factor correlation keeps systemic risk from cancelling out across lines.
+- An in-app "How it works" hub, reachable from the Help menu, that explains every module - what it does, the main steps to use it, and a few practical tips - translated into all 27 languages.
+- Lightweight 2D maps in the Geo Hub with a basemap switcher, so you can place and review project locations without loading the full 3D globe.
+- A DIN 276 element breakdown in cost benchmarks, with a short plain-language guide to reading it.
+- Count by example in takeoff: pick one symbol on a drawing and the tool finds and counts the matching symbols across the sheet.
+
+### Fixed
+
+- A bill-of-quantities parent position now rolls its children's progress up as a quantity-weighted average (falling back to a simple average when the children carry no quantity), so a parent's percent-complete reflects the relative size of its parts instead of treating every child equally.
+- Contract cumulative completed value is now recomputed on the server, so progress claims always reconcile to the stored line items rather than drifting from a client-side figure.
+- A quality pass across the lower-traffic modules fixed currency display, action-button gating and several save and persistence issues, so edits land reliably and amounts render in the project's currency.
+- Installing a BIM/CAD converter no longer fails with "signal timed out" on a slow server, leaving you stuck on simplified placeholder geometry. The download now runs in the background and the converter panel updates when it finishes, instead of the request being cancelled mid-download (a 100-300 MB download could never complete inside a single request window, especially behind a reverse proxy). The Linux download also retries and resumes interrupted transfers, and the offline package list was refreshed to match the published repository. If automatic install still cannot finish on a locked-down network, terminal install steps for Linux are documented in `docs/INSTALL_LINUX.md`.
+
+### Security
+
+- The ERP chat assistant and the project-intelligence advisor now honour project team membership when checking access. A user added to a project's team can reach it, while a project the caller may not see returns the same "not found" result as a missing one, so neither data nor a project's existence leaks across the tenant boundary.
+- The property-development broker performance leaderboard now scopes strictly to the caller's own brokers. Previously any account that could open the dashboard saw every tenant's broker activity, gross merchandise value and commission; the figures are now restricted to brokers the account owns (administrators still see the whole platform).
+- Updated the bundled undici, ws, js-yaml, vite and @babel/core build-time dependencies to their patched releases, clearing all known advisories (twelve in total, five high-severity). These are development and build-time tooling libraries that do not ship in the running application, so the update changes no application behaviour.
+
 ## [8.7.1] - 2026-06-20
 
 ### Fixed

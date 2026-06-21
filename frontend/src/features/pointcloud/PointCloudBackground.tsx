@@ -181,7 +181,7 @@ export function PointCloudBackground() {
     <div
       ref={containerRef}
       aria-hidden="true"
-      className="pointer-events-none absolute inset-0 -z-10 overflow-hidden opacity-70 [mask-image:radial-gradient(ellipse_75%_65%_at_50%_35%,black,transparent)]"
+      className="pointer-events-none absolute inset-0 -z-10 overflow-hidden opacity-90 [mask-image:radial-gradient(ellipse_85%_75%_at_50%_40%,black,transparent)]"
     />
   );
 }
