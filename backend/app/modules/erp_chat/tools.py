@@ -76,14 +76,19 @@ async def _require_project_access(
     project_id: uuid.UUID,
     user_id: str,
 ) -> None:
-    """Verify the user owns or is an admin on the referenced project.
+    """Verify the user owns, administers, or is a team-member of the project.
 
     Raises ToolAuthError if the project doesn't exist or the user has no
     access. Central choke-point for tool authorization - every project-scoped
-    tool must call this before querying data.
+    tool must call this before querying data. Mirrors the platform-wide
+    :func:`app.dependencies.verify_project_access` rule (owner OR admin OR
+    team-member) so the chat tools honour team membership exactly like every
+    other module, while keeping the 404-style ToolAuthError posture instead of
+    raising an HTTPException.
     """
     try:
         from app.modules.projects.repository import ProjectRepository
+        from app.modules.teams.access import is_project_member
         from app.modules.users.repository import UserRepository
 
         proj_repo = ProjectRepository(session)
@@ -100,8 +105,19 @@ async def _require_project_access(
         except Exception:
             pass
 
-        if str(project.owner_id) != str(user_id):
-            raise ToolAuthError(f"Access denied: you do not own project {project_id}")
+        # Owner has full access.
+        if str(project.owner_id) == str(user_id):
+            return
+
+        # Team-member check - any TeamMembership row for this project grants
+        # access, identical to verify_project_access in app.dependencies.
+        try:
+            if await is_project_member(session, project_id, uuid.UUID(str(user_id))):
+                return
+        except (ValueError, TypeError):
+            pass  # malformed user_id - fall through to access-denied
+
+        raise ToolAuthError(f"Access denied to project {project_id}")
     except ToolAuthError:
         raise
     except Exception as exc:

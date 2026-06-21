@@ -21,7 +21,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import CurrentUserId, RequirePermission, SessionDep
+from app.dependencies import (
+    CurrentUserId,
+    RequirePermission,
+    SessionDep,
+    verify_project_access,
+)
 from app.modules.project_intelligence.actions import (
     execute_action,
     get_available_actions,
@@ -73,12 +78,17 @@ async def _verify_project_access(
     project_id: uuid.UUID | str,
     user_id: str | None,
 ) -> None:
-    """‌⁠‍Verify the current user owns (or is admin on) the referenced project.
+    """‌⁠‍Verify the caller may access the referenced project (owner / team / admin).
 
     Every project_intelligence endpoint must call this before touching
     collector / scorer / advisor - those helpers trust the project_id
     and will happily return cross-tenant data otherwise.
-    Mirrors ``erp_chat.tools._require_project_access``.
+
+    Delegates to the shared :func:`app.dependencies.verify_project_access`
+    so this module uses the exact same access policy as the rest of the
+    platform: owner OR project team-member access, admin bypass, and a
+    404 (not 403) on both "missing" and "denied" so a caller cannot use
+    the status code to probe which project UUIDs exist.
     """
     if user_id is None:
         raise HTTPException(
@@ -94,40 +104,7 @@ async def _verify_project_access(
             detail="Invalid project_id",
         )
 
-    try:
-        from app.modules.projects.repository import ProjectRepository
-        from app.modules.users.repository import UserRepository
-
-        proj_repo = ProjectRepository(session)
-        project = await proj_repo.get_by_id(pid)
-        if project is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Project {pid} not found",
-            )
-
-        # Admin bypass
-        try:
-            user_repo = UserRepository(session)
-            user = await user_repo.get_by_id(user_id)
-            if user is not None and getattr(user, "role", "") == "admin":
-                return
-        except Exception:  # noqa: BLE001 - best-effort admin check
-            pass
-
-        if str(getattr(project, "owner_id", "")) != str(user_id):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: you do not own this project",
-            )
-    except HTTPException:
-        raise
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Project Intelligence access check failed for %s: %s", project_id, exc)
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Authorization check failed",
-        )
+    await verify_project_access(pid, user_id, session)
 
 
 # ── Bounded in-memory cache (keyed by user + project to avoid leakage) ────
