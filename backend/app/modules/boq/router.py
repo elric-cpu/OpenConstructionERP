@@ -57,13 +57,13 @@ import asyncio
 import csv
 import io
 import logging
-import random
 import re
 import tempfile
 import uuid
 import zipfile
 from collections.abc import Iterator
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -97,6 +97,7 @@ from app.dependencies import (
     SessionDep,
     verify_project_access,
 )
+from app.modules.boq import cost_risk_engine as cre
 from app.modules.boq.copilot_schemas import (
     CopilotApplyRequest,
     CopilotApplyResponse,
@@ -136,6 +137,7 @@ from app.modules.boq.schemas import (
     CostItemSearchRequest,
     CostItemSearchResponse,
     CostItemSearchResult,
+    CostRiskCdfPoint,
     CostRiskDriver,
     CostRiskHistogramBin,
     CostRiskPercentiles,
@@ -6935,10 +6937,22 @@ async def get_resource_summary(
             )
 
     # Build flat resource list sorted by total_cost descending
+    from decimal import ROUND_HALF_UP as _RHU2
+    from decimal import Decimal as _Dec2
+
+    _Q2_RATE = _Dec2("0.01")
     resource_items: list[ResourceSummaryItem] = []
     for entry in agg.values():
         rates_list: list[float] = entry["rates"]
-        avg_rate = sum(rates_list) / len(rates_list) if rates_list else 0.0
+        # Quantity-weighted unit rate so avg_unit_rate * total_quantity
+        # reconciles with total_cost. Fall back to the unweighted arithmetic
+        # mean only when total_quantity is zero (no quantity to weight by).
+        total_qty = entry["total_quantity"]
+        if total_qty:
+            avg_rate = _Dec2(str(entry["total_cost"])) / _Dec2(str(total_qty))
+        else:
+            avg_rate = _Dec2(str(sum(rates_list) / len(rates_list))) if rates_list else _Dec2("0")
+        avg_rate = avg_rate.quantize(_Q2_RATE, rounding=_RHU2)
 
         # Resolve consensus pick across positions:
         #   * single non-"__unset__" label  → that pick
@@ -6962,7 +6976,7 @@ async def get_resource_summary(
                 type=entry["type"],
                 unit=entry["unit"],
                 total_quantity=round(entry["total_quantity"], 3),
-                avg_unit_rate=round(avg_rate, 2),
+                avg_unit_rate=avg_rate,
                 total_cost=round(entry["total_cost"], 2),
                 positions_used=len(entry["positions"]),
                 available_variants=entry["available_variants"],
@@ -7512,6 +7526,28 @@ async def get_boq_statistics(
     return await service.get_statistics(boq_id)
 
 
+# ── Cost-risk simulation helpers (shared by sensitivity + Monte Carlo) ───────
+
+
+def _risk_seed(boq_id: uuid.UUID) -> int:
+    """Deterministic per-BOQ seed so the risk analysis is reproducible across
+    renders - the same BOQ always yields the same simulation."""
+    return (boq_id.int % 2_000_000_000) or 1
+
+
+def _positions_for_risk(items: list[PositionResponse]) -> list[cre.PositionInput]:
+    """Map BOQ positions to the engine's plain-float position inputs.
+
+    The line total is the most-likely value; the engine derives optimistic /
+    pessimistic bounds from the global band (a position may later carry an
+    explicit three-point estimate).
+    """
+    return [
+        cre.PositionInput(ordinal=p.ordinal, description=p.description or "", base=float(p.total))
+        for p in items
+    ]
+
+
 # ── Sensitivity Analysis (Tornado Chart) ─────────────────────────────────────
 
 
@@ -7554,22 +7590,41 @@ async def get_sensitivity(
     # sensitivity model multiplies by a float factor, so work in float
     # locally (the exact value is preserved in storage / JSON response -
     # a ±10% sensitivity band does not need sub-cent exactness).
-    base_total = float(sum(p.total for p in items))
+    base_total_dec = sum((p.total for p in items), Decimal("0"))
+    base_total = float(base_total_dec)
 
     if base_total == 0 or len(items) == 0:
         return SensitivityResponse(
-            base_total=0.0,
+            base_total=Decimal("0"),
             variation_pct=variation_pct,
+            method="monte_carlo",
+            iterations=0,
+            correlation=0.0,
             items=[],
         )
 
-    factor = variation_pct / 100.0
+    # Probabilistic tornado: run the shared Monte Carlo engine so the ranking
+    # reflects each line's real share of total cost variance (under systemic
+    # correlation), and the bars can show its true P10..P90 swing - not a flat
+    # poke. The deterministic +/- variation_pct band is retained for the table.
+    result = cre.simulate(
+        _positions_for_risk(items),
+        iterations=2000,
+        optimistic_pct=variation_pct,
+        pessimistic_pct=variation_pct,
+        correlation=cre.DEFAULT_CORRELATION,
+        seed=_risk_seed(boq_id),
+        max_drivers=len(items),
+    )
+    driver_by_ord = {d.ordinal: d for d in result.drivers}
 
+    factor = variation_pct / 100.0
     sensitivity_items: list[SensitivityItem] = []
     for pos in items:
         pos_total = float(pos.total)
         share_pct = round(pos_total / base_total * 100, 2)
         impact = round(pos_total * factor, 2)
+        d = driver_by_ord.get(pos.ordinal)
         sensitivity_items.append(
             SensitivityItem(
                 ordinal=pos.ordinal,
@@ -7578,16 +7633,31 @@ async def get_sensitivity(
                 share_pct=share_pct,
                 impact_low=round(-impact, 2),
                 impact_high=round(impact, 2),
+                variance_contribution_pct=round(d.contribution_pct, 2) if d else None,
+                rank_correlation=round(d.rank_correlation, 3) if d else None,
+                swing_low=round(d.swing_low, 2) if d else None,
+                swing_high=round(d.swing_high, 2) if d else None,
             )
         )
 
-    # Sort by absolute impact descending, take top N
-    sensitivity_items.sort(key=lambda x: abs(x.impact_high), reverse=True)
+    # Rank by variance contribution (probabilistic) when available, else by the
+    # deterministic absolute impact. Take the top N.
+    sensitivity_items.sort(
+        key=lambda x: (
+            x.variance_contribution_pct
+            if x.variance_contribution_pct is not None
+            else abs(x.impact_high)
+        ),
+        reverse=True,
+    )
     sensitivity_items = sensitivity_items[:top_n]
 
     return SensitivityResponse(
-        base_total=round(base_total, 2),
+        base_total=base_total_dec,
         variation_pct=variation_pct,
+        method="monte_carlo",
+        iterations=result.iterations,
+        correlation=result.correlation,
         items=sensitivity_items,
     )
 
@@ -7624,28 +7694,6 @@ async def get_estimate_classification(
 # ── Monte Carlo Cost Risk Analysis ───────────────────────────────────────────
 
 
-def _pert_sample(low: float, mode: float, high: float) -> float:
-    """Sample from a Beta-PERT distribution.
-
-    Uses the standard PERT parameterization with lambda=4.
-
-    Args:
-        low: Minimum value (optimistic).
-        mode: Most likely value.
-        high: Maximum value (pessimistic).
-
-    Returns:
-        A random sample from the PERT distribution in [low, high].
-    """
-    if high <= low:
-        return mode
-    lam = 4.0
-    alpha = 1.0 + lam * (mode - low) / (high - low)
-    beta_param = 1.0 + lam * (high - mode) / (high - low)
-    sample = random.betavariate(alpha, beta_param)
-    return low + (high - low) * sample
-
-
 @router.get(
     "/boqs/{boq_id}/cost-risk/",
     response_model=CostRiskResponse,
@@ -7657,33 +7705,54 @@ async def get_cost_risk(
     _user_id: CurrentUserId,
     payload: CurrentUserPayload,
     session: SessionDep,
-    iterations: int = Query(default=1000, ge=100, le=10000, description="Number of Monte Carlo iterations"),
+    iterations: int = Query(
+        default=cre.DEFAULT_ITERATIONS,
+        ge=100,
+        le=cre.MAX_ITERATIONS,
+        description="Number of Monte Carlo iterations",
+    ),
     optimistic_pct: float = Query(default=15.0, ge=0.0, le=50.0, description="Optimistic cost reduction %"),
     pessimistic_pct: float = Query(default=25.0, ge=0.0, le=100.0, description="Pessimistic cost increase %"),
+    correlation: float = Query(
+        default=cre.DEFAULT_CORRELATION,
+        ge=0.0,
+        le=0.95,
+        description="Systemic correlation between positions (0 = independent lines)",
+    ),
+    target_confidence: int = Query(
+        default=80,
+        ge=50,
+        le=95,
+        description="Confidence percentile used for the recommended budget",
+    ),
     service: BOQService = Depends(_get_service),
 ) -> CostRiskResponse:
-    """Run a Monte Carlo cost risk simulation for a BOQ.
+    """Run a correlated Monte Carlo cost risk simulation for a BOQ.
 
-    For each iteration, every non-section position's total cost is sampled
-    using a Beta-PERT distribution with:
-        - optimistic = total * (1 - optimistic_pct/100)
-        - most_likely = total
-        - pessimistic = total * (1 + pessimistic_pct/100)
+    Every non-section position is sampled from a Beta-PERT distribution; unless a
+    position carries an explicit three-point estimate, its band is derived from
+    the base total (optimistic = base*(1 - optimistic_pct/100), most-likely =
+    base, pessimistic = base*(1 + pessimistic_pct/100)). A one-factor Gaussian
+    copula links the positions with strength ``correlation`` so systemic risk
+    does not unrealistically cancel between lines.
 
-    After all iterations, percentiles (P10..P90) are computed, a histogram
-    with ~20 bins is built, and the top risk drivers (positions contributing
-    most to total variance) are identified.
-
-    Contingency is defined as P80 - P50.  Recommended budget is P80.
+    The result carries the full distribution: P5..P95 percentiles, mean,
+    standard deviation, coefficient of variation, a histogram, a cumulative
+    S-curve, the contingency needed to reach ``target_confidence``, the
+    probability the deterministic base is even achievable, a reproducible seed,
+    a convergence verdict, and the variance drivers (each line's share of total
+    variance, rank correlation to the total and P10/P90 swing).
 
     Args:
         boq_id: Target BOQ identifier.
-        iterations: Number of simulation iterations (default 1000).
-        optimistic_pct: Optimistic cost reduction percentage (default 15).
-        pessimistic_pct: Pessimistic cost increase percentage (default 25).
+        iterations: Number of simulation iterations.
+        optimistic_pct: Default downside band as a percent of base (default 15).
+        pessimistic_pct: Default upside band as a percent of base (default 25).
+        correlation: Systemic correlation between positions (0 = independent).
+        target_confidence: Percentile used for the recommended budget (default 80).
 
     Returns:
-        CostRiskResponse with percentiles, histogram, contingency, and risk drivers.
+        CostRiskResponse with the full distribution, contingency and drivers.
     """
     await _verify_boq_owner(session, boq_id, _user_id, payload)
     boq_data = await service.get_boq_with_positions(boq_id)
@@ -7694,126 +7763,96 @@ async def get_cost_risk(
     # Monte-Carlo model runs in float (the exact value is preserved in
     # storage / JSON response - a stochastic risk band does not need
     # sub-cent exactness).
-    base_total = float(sum(p.total for p in items))
+    base_total_dec = sum((p.total for p in items), Decimal("0"))
+    base_total = float(base_total_dec)
 
     if base_total == 0 or len(items) == 0:
+        zero_pct = CostRiskPercentiles(
+            p5=0.0, p10=0.0, p25=0.0, p50=0.0, p75=0.0, p80=0.0, p90=0.0, p95=0.0
+        )
         return CostRiskResponse(
             iterations=iterations,
-            base_total=0.0,
-            percentiles=CostRiskPercentiles(p10=0.0, p25=0.0, p50=0.0, p75=0.0, p80=0.0, p90=0.0),
+            base_total=Decimal("0"),
+            mean=Decimal("0"),
+            std_dev=Decimal("0"),
+            cv_pct=0.0,
+            percentiles=zero_pct,
             contingency_p80=0.0,
             contingency_pct=0.0,
-            recommended_budget=0.0,
+            recommended_budget=Decimal("0"),
+            target_confidence=target_confidence,
+            prob_within_base=100.0,
+            correlation=correlation,
+            seed=0,
+            convergence_status="insufficient",
+            convergence_margin_pct=0.0,
             histogram=[],
+            cdf=[],
             risk_drivers=[],
         )
 
-    opt_factor = 1.0 - optimistic_pct / 100.0
-    pess_factor = 1.0 + pessimistic_pct / 100.0
+    result = cre.simulate(
+        _positions_for_risk(items),
+        iterations=iterations,
+        optimistic_pct=optimistic_pct,
+        pessimistic_pct=pessimistic_pct,
+        correlation=correlation,
+        seed=_risk_seed(boq_id),
+        target_confidence=target_confidence,
+    )
 
-    # Pre-compute per-position bounds
-    position_bounds: list[tuple[float, float, float, str, str]] = []
-    for pos in items:
-        t = float(pos.total)
-        position_bounds.append((t * opt_factor, t, t * pess_factor, pos.ordinal, pos.description))
+    def _money(x: float) -> Decimal:
+        return Decimal(str(round(x, 2)))
 
-    # Run Monte Carlo simulation
-    iteration_totals: list[float] = []
-    # Track per-position sampled values for variance analysis
-    n_positions = len(position_bounds)
-    position_sums: list[float] = [0.0] * n_positions
-    position_sq_sums: list[float] = [0.0] * n_positions
-
-    for _ in range(iterations):
-        iter_total = 0.0
-        for idx, (low, mode, high, _ordinal, _desc) in enumerate(position_bounds):
-            sampled = _pert_sample(low, mode, high)
-            iter_total += sampled
-            position_sums[idx] += sampled
-            position_sq_sums[idx] += sampled * sampled
-        iteration_totals.append(iter_total)
-
-    # Sort for percentile extraction
-    iteration_totals.sort()
-
-    def _percentile(sorted_data: list[float], pct: float) -> float:
-        """Extract a percentile from sorted data using linear interpolation."""
-        n = len(sorted_data)
-        idx = pct / 100.0 * (n - 1)
-        lower = int(idx)
-        upper = min(lower + 1, n - 1)
-        frac = idx - lower
-        return sorted_data[lower] + frac * (sorted_data[upper] - sorted_data[lower])
-
-    p10 = round(_percentile(iteration_totals, 10), 2)
-    p25 = round(_percentile(iteration_totals, 25), 2)
-    p50 = round(_percentile(iteration_totals, 50), 2)
-    p75 = round(_percentile(iteration_totals, 75), 2)
-    p80 = round(_percentile(iteration_totals, 80), 2)
-    p90 = round(_percentile(iteration_totals, 90), 2)
-
-    contingency_p80 = round(p80 - p50, 2)
-    contingency_pct = round((contingency_p80 / p50 * 100) if p50 > 0 else 0.0, 1)
-
-    # Build histogram with ~20 bins
-    min_val = iteration_totals[0]
-    max_val = iteration_totals[-1]
-    num_bins = 20
-    bin_width = (max_val - min_val) / num_bins if max_val > min_val else 1.0
-
-    histogram: list[CostRiskHistogramBin] = []
-    for i in range(num_bins):
-        bin_start = min_val + i * bin_width
-        bin_end = min_val + (i + 1) * bin_width
-        count = 0
-        for val in iteration_totals:
-            if i == num_bins - 1:
-                # Last bin includes the upper bound
-                if bin_start <= val <= bin_end:
-                    count += 1
-            else:
-                if bin_start <= val < bin_end:
-                    count += 1
-        histogram.append(
-            CostRiskHistogramBin(
-                bin_start=round(bin_start, 2),
-                bin_end=round(bin_end, 2),
-                count=count,
-            )
+    p = result.percentiles
+    percentiles = CostRiskPercentiles(
+        p5=round(p["p5"], 2),
+        p10=round(p["p10"], 2),
+        p25=round(p["p25"], 2),
+        p50=round(p["p50"], 2),
+        p75=round(p["p75"], 2),
+        p80=round(p["p80"], 2),
+        p90=round(p["p90"], 2),
+        p95=round(p["p95"], 2),
+    )
+    histogram = [
+        CostRiskHistogramBin(bin_start=round(b.bin_start, 2), bin_end=round(b.bin_end, 2), count=b.count)
+        for b in result.histogram
+    ]
+    cdf = [
+        CostRiskCdfPoint(cost=round(c.cost, 2), cumulative_prob=round(c.cumulative_prob, 4))
+        for c in result.cdf
+    ]
+    risk_drivers = [
+        CostRiskDriver(
+            ordinal=d.ordinal,
+            description=d.description,
+            contribution_pct=round(d.contribution_pct, 1),
+            rank_correlation=round(d.rank_correlation, 3),
+            swing_low=round(d.swing_low, 2),
+            swing_high=round(d.swing_high, 2),
         )
-
-    # Calculate risk drivers - positions sorted by their share of total variance
-    position_variances: list[tuple[float, str, str]] = []
-    for idx in range(n_positions):
-        mean = position_sums[idx] / iterations
-        variance = (position_sq_sums[idx] / iterations) - (mean * mean)
-        ordinal = position_bounds[idx][3]
-        description = position_bounds[idx][4]
-        position_variances.append((variance, ordinal, description))
-
-    total_variance = sum(v[0] for v in position_variances)
-
-    risk_drivers: list[CostRiskDriver] = []
-    if total_variance > 0:
-        position_variances.sort(key=lambda x: x[0], reverse=True)
-        for variance, ordinal, description in position_variances[:10]:
-            contribution_pct = round(variance / total_variance * 100, 1)
-            risk_drivers.append(
-                CostRiskDriver(
-                    ordinal=ordinal,
-                    description=description,
-                    contribution_pct=contribution_pct,
-                )
-            )
+        for d in result.drivers
+    ]
 
     return CostRiskResponse(
-        iterations=iterations,
-        base_total=round(base_total, 2),
-        percentiles=CostRiskPercentiles(p10=p10, p25=p25, p50=p50, p75=p75, p80=p80, p90=p90),
-        contingency_p80=contingency_p80,
-        contingency_pct=contingency_pct,
-        recommended_budget=p80,
+        iterations=result.iterations,
+        base_total=_money(result.base_total),
+        mean=_money(result.mean),
+        std_dev=_money(result.std_dev),
+        cv_pct=round(result.cv_pct, 1),
+        percentiles=percentiles,
+        contingency_p80=round(result.contingency, 2),
+        contingency_pct=round(result.contingency_pct, 1),
+        recommended_budget=_money(result.recommended_budget),
+        target_confidence=result.target_confidence,
+        prob_within_base=round(result.prob_within_base, 1),
+        correlation=round(result.correlation, 2),
+        seed=result.seed,
+        convergence_status=result.convergence_status,
+        convergence_margin_pct=round(result.convergence_margin_pct, 2),
         histogram=histogram,
+        cdf=cdf,
         risk_drivers=risk_drivers,
     )
 

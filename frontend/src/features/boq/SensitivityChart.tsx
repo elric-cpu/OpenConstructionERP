@@ -40,11 +40,20 @@ export function SensitivityChart({ boqId, locale = 'de-DE' }: { boqId: string; l
   const items: SensitivityItem[] = data?.items ?? [];
   const baseTotal = data?.base_total ?? 0;
   const variationPct = data?.variation_pct ?? 10;
+  const probabilistic = data?.method === 'monte_carlo';
+  const iterations = data?.iterations ?? 0;
+  const correlation = data?.correlation ?? 0;
 
-  // Max absolute impact for scaling bars
-  const maxImpact = useMemo(() => {
+  // Bar magnitude prefers the probabilistic P10..P90 swing; falls back to the
+  // deterministic +/- variation impact when the engine fields are absent.
+  const maxBar = useMemo(() => {
     if (items.length === 0) return 1;
-    return Math.max(...items.map((it) => Math.abs(it.impact_high)));
+    return Math.max(
+      ...items.map((it) =>
+        Math.max(Math.abs(it.swing_high ?? it.impact_high), Math.abs(it.swing_low ?? it.impact_low)),
+      ),
+      1,
+    );
   }, [items]);
 
   return (
@@ -105,11 +114,11 @@ export function SensitivityChart({ boqId, locale = 'de-DE' }: { boqId: string; l
           ) : (
             <>
               {/* Header info */}
-              <div className="px-5 py-3 flex items-center gap-4 text-xs text-content-secondary bg-surface-secondary/30 border-b border-border-light">
+              <div className="px-5 py-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-content-secondary bg-surface-secondary/30 border-b border-border-light">
                 <span>
                   {t('boq.sensitivity_base_total', { defaultValue: 'Base Total' })}:{' '}
                   <span className="font-semibold text-content-primary tabular-nums">
-                    {fmtCompact(baseTotal, fmt)}
+                    {fmtCompact(Number(baseTotal), fmt)}
                   </span>
                 </span>
                 <span className="text-content-quaternary">|</span>
@@ -119,14 +128,29 @@ export function SensitivityChart({ boqId, locale = 'de-DE' }: { boqId: string; l
                     +/- {variationPct}%
                   </span>
                 </span>
+                {probabilistic && (
+                  <>
+                    <span className="text-content-quaternary">|</span>
+                    <span>
+                      {t('boq.sensitivity_ranked_by', { defaultValue: 'Ranked by variance' })}{' '}
+                      <span className="font-semibold text-content-primary">
+                        ({t('boq.sensitivity_montecarlo', { defaultValue: 'Monte Carlo' })},{' '}
+                        {iterations.toLocaleString()}{' '}
+                        {t('boq.cost_risk_iterations_label', { defaultValue: 'iter.' })}, r={correlation})
+                      </span>
+                    </span>
+                  </>
+                )}
               </div>
 
               {/* Tornado chart */}
               <div className="px-5 py-4">
                 <div className="space-y-1.5">
                   {items.map((item, idx) => {
-                    const barWidthPct =
-                      maxImpact > 0 ? (Math.abs(item.impact_high) / maxImpact) * 100 : 0;
+                    const lowVal = item.swing_low ?? item.impact_low;
+                    const highVal = item.swing_high ?? item.impact_high;
+                    const lowPct = (Math.abs(lowVal) / maxBar) * 100;
+                    const highPct = (Math.abs(highVal) / maxBar) * 100;
 
                     return (
                       <div key={`${item.ordinal}-${idx}`} className="group">
@@ -150,11 +174,11 @@ export function SensitivityChart({ boqId, locale = 'de-DE' }: { boqId: string; l
                             <div className="flex-1 flex justify-end">
                               <div
                                 className="h-5 rounded-l-sm bg-emerald-500/70 group-hover:bg-emerald-500 transition-colors relative"
-                                style={{ width: `${barWidthPct}%`, minWidth: barWidthPct > 0 ? '2px' : '0' }}
+                                style={{ width: `${lowPct}%`, minWidth: lowPct > 0 ? '2px' : '0' }}
                               >
-                                {barWidthPct > 15 && (
+                                {lowPct > 15 && (
                                   <span className="absolute inset-0 flex items-center justify-center text-[10px] font-medium text-white tabular-nums">
-                                    {fmtCompact(item.impact_low, fmt)}
+                                    {fmtCompact(lowVal, fmt)}
                                   </span>
                                 )}
                               </div>
@@ -167,22 +191,33 @@ export function SensitivityChart({ boqId, locale = 'de-DE' }: { boqId: string; l
                             <div className="flex-1 flex justify-start">
                               <div
                                 className="h-5 rounded-r-sm bg-rose-500/70 group-hover:bg-rose-500 transition-colors relative"
-                                style={{ width: `${barWidthPct}%`, minWidth: barWidthPct > 0 ? '2px' : '0' }}
+                                style={{ width: `${highPct}%`, minWidth: highPct > 0 ? '2px' : '0' }}
                               >
-                                {barWidthPct > 15 && (
+                                {highPct > 15 && (
                                   <span className="absolute inset-0 flex items-center justify-center text-[10px] font-medium text-white tabular-nums">
-                                    +{fmtCompact(item.impact_high, fmt)}
+                                    +{fmtCompact(highVal, fmt)}
                                   </span>
                                 )}
                               </div>
                             </div>
                           </div>
 
-                          {/* Share percentage */}
-                          <div className="w-14 shrink-0 text-right">
-                            <span className="text-2xs font-medium text-content-tertiary tabular-nums">
-                              {fmt.format(item.share_pct)}%
-                            </span>
+                          {/* Variance share (probabilistic) or cost share */}
+                          <div className="w-16 shrink-0 text-right leading-tight">
+                            {item.variance_contribution_pct != null ? (
+                              <>
+                                <span className="block text-2xs font-semibold text-content-secondary tabular-nums">
+                                  {fmt.format(item.variance_contribution_pct)}%
+                                </span>
+                                <span className="block text-[9px] text-content-quaternary">
+                                  {t('boq.sensitivity_variance', { defaultValue: 'variance' })}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-2xs font-medium text-content-tertiary tabular-nums">
+                                {fmt.format(item.share_pct)}%
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -225,6 +260,9 @@ export function SensitivityChart({ boqId, locale = 'de-DE' }: { boqId: string; l
                         {t('boq.sensitivity_share', { defaultValue: 'Share' })}
                       </th>
                       <th className="px-4 py-2 text-right font-medium text-content-secondary">
+                        {t('boq.cost_risk_variance_share', { defaultValue: 'Variance Share' })}
+                      </th>
+                      <th className="px-4 py-2 text-right font-medium text-content-secondary">
                         {t('boq.sensitivity_impact_low', { defaultValue: 'Impact (-)' })}
                       </th>
                       <th className="px-4 py-2 text-right font-medium text-content-secondary">
@@ -251,6 +289,11 @@ export function SensitivityChart({ boqId, locale = 'de-DE' }: { boqId: string; l
                         </td>
                         <td className="px-4 py-2 text-right tabular-nums text-content-secondary">
                           {fmt.format(item.share_pct)}%
+                        </td>
+                        <td className="px-4 py-2 text-right tabular-nums text-content-secondary">
+                          {item.variance_contribution_pct != null
+                            ? `${fmt.format(item.variance_contribution_pct)}%`
+                            : '-'}
                         </td>
                         <td className="px-4 py-2 text-right tabular-nums text-emerald-600 font-medium">
                           {fmtCompact(item.impact_low, fmt)}
