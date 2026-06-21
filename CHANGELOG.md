@@ -5,6 +5,22 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.7.1] - 2026-06-20
+
+### Fixed
+
+- The recurring "Request timed out" message no longer floods the screen on a busy or slow server. Repeated timeout notices are coalesced to one, a timed-out request is no longer retried (which previously produced a second notice), and the request budget was raised so a slow-but-valid response now succeeds instead of being cancelled.
+- A CAD drawing whose conversion was interrupted by a server restart or update no longer shows a "Converting..." spinner forever. An interrupted conversion is detected and reported as a clear, actionable error so you can remove the drawing and upload it again instead of waiting indefinitely.
+- The AI Estimator no longer runs its source-analysis step twice when you start a new estimate, halving the time and cost of that first stage.
+- The transmittals page now reflects the real transmittal lifecycle (draft, issued, responded) instead of statuses that were never produced, so its filter and summary cards match what you see.
+- The guided AI estimate form (used when no AI provider key is configured) no longer shows raw internal labels for its questions, and its Yes/No answers are now translated.
+- Point cloud files using the conventional COPC double extension (.copc.laz) are now recognised as COPC rather than plain LAZ.
+- The Geo Hub "auto-anchor all projects" action no longer appears to fail on workspaces with many projects: it waits for the server to finish placing every project instead of giving up early.
+
+### Security
+
+- The AI agent tools that read a project's documents, cost summary or bill of quantities now verify that the person running the agent has access to the target project before reading anything. Previously a custom agent could be pointed at another project's id and read data across the tenant boundary; a denied or unknown target now returns the same "not found" result as a missing one, so neither data nor a resource's existence is leaked. Scheduled and event-triggered agent runs are likewise confined to projects their owner can access.
+
 ## [8.7.0] - 2026-06-20
 
 ### Added
