@@ -354,12 +354,18 @@ _DDC_DEB_DEPS: dict[str, list[str]] = {
     "dwg": ["ddc-dwgconverter", "ddc-deps-kernel", "ddc-deps-drawings", "ddc-deps-architecture", "ddc-thirdparty"],
     "dgn": ["ddc-dgnconverter", "ddc-deps-kernel", "ddc-deps-drawings", "ddc-deps-architecture", "ddc-thirdparty"],
 }
+# NOTE: these are only the OFFLINE fallback used when the live apt `Packages`
+# index can't be fetched (the primary path reads versions straight from the
+# index and self-heals across upstream bumps). Keep them in step with the
+# published repo so an index-fetch hiccup doesn't build 404 URLs - last
+# reconciled against pkg.datadrivenconstruction.io on 2026-06-21
+# (converters 18.4.3.0, deps 27.2).
 _DDC_DEB_VERSIONS: dict[str, str] = {
-    "ddc-rvtconverter": "18.4.1.0",
-    "ddc-ifcconverter": "18.4.1.0",
-    "ddc-dwgconverter": "18.4.1.0",
-    "ddc-dgnconverter": "18.4.1.0",
-    "ddc-thirdparty": "18.4.1.0",
+    "ddc-rvtconverter": "18.4.3.0",
+    "ddc-ifcconverter": "18.4.3.0",
+    "ddc-dwgconverter": "18.4.3.0",
+    "ddc-dgnconverter": "18.4.3.0",
+    "ddc-thirdparty": "18.4.3.0",
     "ddc-deps-kernel": "27.2",
     "ddc-deps-revit": "27.2",
     "ddc-deps-ifc": "27.2",
@@ -453,6 +459,29 @@ def _resolve_deb_deps(root_pkg: str, index: dict[str, dict[str, str]]) -> list[s
     return order
 
 
+def _fallback_deb_plan(converter_id: str, arch: str) -> list[tuple[str, str]]:
+    """Offline fallback ``.deb`` plan: ``[(package, pool-relative path)]``.
+
+    Used only when the live apt ``Packages`` index can't be fetched. Builds the
+    pool path from the deterministic dep chain + pinned versions, which must be
+    kept in step with the published repo (see ``_DDC_DEB_VERSIONS``). Raises
+    ``RuntimeError`` when no chain / version is known for the converter.
+    """
+    deps = _DDC_DEB_DEPS.get(converter_id)
+    if not deps:
+        raise RuntimeError(
+            f"Could not resolve the .deb set for '{converter_id}' from the apt "
+            f"index and no deterministic fallback chain is defined."
+        )
+    plan: list[tuple[str, str]] = []
+    for pkg in deps:
+        ver = _DDC_DEB_VERSIONS.get(pkg)
+        if not ver:
+            raise RuntimeError(f"No fallback version known for package '{pkg}'.")
+        plan.append((pkg, f"pool/main/{pkg[0]}/{pkg}/{pkg}_{ver}_{arch}.deb"))
+    return plan
+
+
 def _fetch_apt_index(arch: str) -> dict[str, dict[str, str]] | None:
     """Fetch + parse the apt ``Packages`` index for ``arch`` (uncompressed or .gz)."""
     import gzip
@@ -483,6 +512,101 @@ def _fetch_apt_index(arch: str) -> dict[str, dict[str, str]] | None:
     return None
 
 
+# Per-.deb download tuning. The apt mirror serves packages of very different
+# sizes (the IFC chain tops out ~58 MB; the RVT chain's revit deps are ~280 MB)
+# and community VPS uplinks are frequently slow, so a single short deadline
+# produced spurious failures (the user-visible "signal timed out"). We use a
+# generous per-read socket timeout, retry transient network errors, and resume
+# with an HTTP Range request so a dropped connection on a large package does
+# not restart the whole download.
+_DEB_READ_TIMEOUT_SEC = 180
+_DEB_DOWNLOAD_ATTEMPTS = 3
+_DEB_RETRY_BACKOFF_SEC = 2.0
+
+
+def _download_one_deb(
+    deb_url: str,
+    dest: Path,
+    *,
+    converter_id: str,
+    pkg: str,
+    index: int,
+    total_count: int,
+    completed_bytes: int,
+    apt_pkg: str,
+    arch: str,
+) -> int:
+    """Download a single ``.deb`` with retry + HTTP-Range resume.
+
+    Returns the downloaded file size in bytes. Raises ``RuntimeError`` with an
+    actionable message when every attempt fails. ``completed_bytes`` is the
+    cumulative size of already-finished packages, used only to keep the
+    progress feed (``bytes_done``) monotonic across the whole set.
+    """
+    import urllib.error
+    import urllib.request
+
+    last_exc: Exception | None = None
+    for attempt in range(1, _DEB_DOWNLOAD_ATTEMPTS + 1):
+        have = dest.stat().st_size if dest.exists() else 0
+        headers = {"User-Agent": "OpenConstructionERP-converter-installer"}
+        if have > 0:
+            headers["Range"] = f"bytes={have}-"
+        req = urllib.request.Request(deb_url, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=_DEB_READ_TIMEOUT_SEC) as resp:  # noqa: S310 - allow-listed
+                # If we asked to resume but the server ignored Range (status
+                # 200, not 206), start the file over so we don't corrupt it.
+                status = getattr(resp, "status", None) or resp.getcode()
+                resuming = have > 0 and status == 206
+                size = have if resuming else 0
+                with open(dest, "ab" if resuming else "wb") as fh:
+                    while True:
+                        chunk = resp.read(1024 * 256)
+                        if not chunk:
+                            break
+                        size += len(chunk)
+                        if size > _MAX_DOWNLOAD_BYTES:
+                            raise RuntimeError(
+                                f"{pkg}.deb exceeds the per-file cap ({_MAX_DOWNLOAD_BYTES // (1024 * 1024)} MB)."
+                            )
+                        if completed_bytes + size > _MAX_INSTALL_BYTES:
+                            raise RuntimeError(
+                                f"Converter download exceeds the total cap ({_MAX_INSTALL_BYTES // (1024 * 1024)} MB)."
+                            )
+                        fh.write(chunk)
+                        _set_install_progress(
+                            converter_id,
+                            stage="downloading",
+                            current=index,
+                            total=total_count,
+                            bytes_done=completed_bytes + size,
+                            file=f"{pkg}.deb",
+                        )
+            return size
+        except urllib.error.HTTPError as exc:
+            # 4xx (other than 408/429) will not fix on retry - a 404 means the
+            # version/arch is not published; fail fast with the apt hint.
+            if exc.code in (408, 429) or 500 <= exc.code < 600:
+                last_exc = exc
+            else:
+                raise RuntimeError(
+                    f"Download failed for {pkg} (HTTP {exc.code}) from {deb_url}. "
+                    f"This architecture ({arch}) may not be published - install via "
+                    f"`sudo apt install -y {apt_pkg}` instead."
+                ) from exc
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            last_exc = exc
+        # Transient failure - back off and retry, resuming from bytes on disk.
+        if attempt < _DEB_DOWNLOAD_ATTEMPTS:
+            _time.sleep(_DEB_RETRY_BACKOFF_SEC * attempt)
+    raise RuntimeError(
+        f"Download failed for {pkg} after {_DEB_DOWNLOAD_ATTEMPTS} attempts: {last_exc}. "
+        f"The connection to {_DDC_APT_BASE_URL} may be slow or blocked - you can install "
+        f"manually with `sudo apt install -y {apt_pkg}` once the DDC apt source is configured."
+    )
+
+
 def _download_converter_files_linux(converter_id: str) -> Path:
     """Auto-download + extract the DDC Linux converter for ``converter_id``.
 
@@ -502,8 +626,6 @@ def _download_converter_files_linux(converter_id: str) -> Path:
     import shutil
     import subprocess
     import tempfile
-    import urllib.error
-    import urllib.request
 
     binary_name = _LINUX_CONVERTER_BINARIES.get(converter_id)
     apt_pkg = _LINUX_APT_PACKAGES.get(converter_id)
@@ -546,17 +668,7 @@ def _download_converter_files_linux(converter_id: str) -> Path:
                 break
             plan.append((pkg, fn.lstrip("/")))
     if not plan:
-        deps = _DDC_DEB_DEPS.get(converter_id)
-        if not deps:
-            raise RuntimeError(
-                f"Could not resolve the .deb set for '{converter_id}' from the apt "
-                f"index and no deterministic fallback chain is defined."
-            )
-        for pkg in deps:
-            ver = _DDC_DEB_VERSIONS.get(pkg)
-            if not ver:
-                raise RuntimeError(f"No fallback version known for package '{pkg}'.")
-            plan.append((pkg, f"pool/main/{pkg[0]}/{pkg}/{pkg}_{ver}_{arch}.deb"))
+        plan = _fallback_deb_plan(converter_id, arch)
         logger.info(
             "Linux converter %s using deterministic .deb fallback (%d packages)",
             converter_id,
@@ -574,7 +686,7 @@ def _download_converter_files_linux(converter_id: str) -> Path:
     n = len(plan)
     with tempfile.TemporaryDirectory(prefix="ddc_deb_") as tmp:
         tmpdir = Path(tmp)
-        total = 0
+        completed_total = 0
         for i, (pkg, rel) in enumerate(plan, 1):
             deb_url = f"{_DDC_APT_BASE_URL}/{rel}"
             _check_apt_url_allowed(deb_url)
@@ -584,45 +696,28 @@ def _download_converter_files_linux(converter_id: str) -> Path:
                 stage="downloading",
                 current=i,
                 total=n,
-                bytes_done=total,
+                bytes_done=completed_total,
                 file=f"{pkg}.deb",
             )
-            req = urllib.request.Request(deb_url, headers={"User-Agent": "OpenConstructionERP-converter-installer"})
-            try:
-                with urllib.request.urlopen(req, timeout=120) as resp:  # noqa: S310 - allow-listed
-                    size = 0
-                    with open(dest, "wb") as fh:
-                        while True:
-                            chunk = resp.read(1024 * 256)
-                            if not chunk:
-                                break
-                            size += len(chunk)
-                            total += len(chunk)
-                            if size > _MAX_DOWNLOAD_BYTES:
-                                raise RuntimeError(
-                                    f"{pkg}.deb exceeds the per-file cap ({_MAX_DOWNLOAD_BYTES // (1024 * 1024)} MB)."
-                                )
-                            if total > _MAX_INSTALL_BYTES:
-                                raise RuntimeError(
-                                    f"Converter download exceeds the total cap "
-                                    f"({_MAX_INSTALL_BYTES // (1024 * 1024)} MB)."
-                                )
-                            fh.write(chunk)
-            except urllib.error.HTTPError as exc:
-                raise RuntimeError(
-                    f"Download failed for {pkg} (HTTP {exc.code}) from {deb_url}. "
-                    f"This architecture ({arch}) may not be published - install via "
-                    f"`sudo apt install -y {apt_pkg}` instead."
-                ) from exc
-            except (urllib.error.URLError, TimeoutError, OSError) as exc:
-                raise RuntimeError(f"Download failed for {pkg}: {exc}") from exc
+            size = _download_one_deb(
+                deb_url,
+                dest,
+                converter_id=converter_id,
+                pkg=pkg,
+                index=i,
+                total_count=n,
+                completed_bytes=completed_total,
+                apt_pkg=apt_pkg,
+                arch=arch,
+            )
+            completed_total += size
 
         _set_install_progress(
             converter_id,
             stage="extracting",
             current=n,
             total=n,
-            bytes_done=total,
+            bytes_done=completed_total,
             file=None,
         )
         for i, (pkg, _rel) in enumerate(plan, 1):
@@ -659,6 +754,19 @@ _META_BY_ID: dict[str, dict[str, Any]] = {m["id"]: m for m in _CONVERTER_META}
 # concurrently while the FastAPI handler may read at any moment.
 _INSTALL_PROGRESS: dict[str, dict[str, Any]] = {}
 _INSTALL_PROGRESS_LOCK = threading.Lock()
+
+# Background install tasks, keyed by converter_id, so the install endpoint can
+# return immediately while the heavy download/extract/smoke runs off the
+# request. Holding the HTTP request open for a multi-minute, multi-hundred-MB
+# download is what produced the user-visible "signal timed out" abort on slow
+# servers and behind reverse proxies; the frontend now watches
+# /install-progress/ for the terminal ``done``/``error`` stage instead.
+_INSTALL_TASKS: dict[str, Any] = {}
+
+# How long a terminal (done/error) progress record lingers so the frontend can
+# read the outcome, after which it auto-expires so a later page load doesn't
+# resurface a stale result.
+_INSTALL_RESULT_TTL_SEC = 180.0
 
 
 def _set_install_progress(converter_id: str, **fields: Any) -> None:
@@ -1146,6 +1254,12 @@ async def get_install_progress(converter_id: str) -> dict[str, Any]:
     progress = _get_install_progress(converter_id)
     if progress is None:
         return {"active": False}
+    # Auto-expire a terminal record (done/error) so a stale outcome from an
+    # earlier install doesn't resurface on a later page load.
+    finished_at = progress.get("finished_at")
+    if finished_at and (_time.time() - float(finished_at)) > _INSTALL_RESULT_TTL_SEC:
+        _clear_install_progress(converter_id)
+        return {"active": False}
     return {"active": True, **progress}
 
 
@@ -1166,33 +1280,24 @@ async def install_converter(
         ),
     ),
 ) -> dict[str, Any]:
-    """Download and install a DDC CAD/BIM converter.
+    """Kick off a DDC CAD/BIM converter install (non-blocking).
 
-    On Windows: walks the
-    ``DDC_WINDOWS_Converters/DDC_CONVERTER_{FORMAT}/`` directory in
-    the upstream repo via the GitHub Contents API and downloads each
-    file (binary, Qt6 DLLs, plugins) into a per-format folder under
-    ``~/.openestimator/converters/{format}_windows/``.
+    The actual download is large (100-600 MB) and slow on many servers, so
+    holding the HTTP request open for it aborted with "signal timed out" on
+    slow links and behind reverse proxies, leaving the user stuck on the IFC
+    fallback. This endpoint therefore returns immediately:
 
-    On Linux: returns ``platform_unsupported`` with the apt-get
-    command the user should run themselves. We deliberately do NOT
-    auto-shell-out to ``apt`` here because that would require root
-    + writing to ``/etc/apt/sources.list.d/`` and silently elevating
-    privileges from a web request is exactly the wrong default.
+    * already installed (and not ``force``) -> ``installed: true`` synchronously
+    * macOS / unsupported OS -> ``platform_unsupported: true`` synchronously
+    * otherwise -> ``async_install: true`` while :func:`_install_converter_impl`
+      runs in a background task. The frontend (and ``installBIMConverter`` in
+      the client) polls ``/install-progress/`` for the terminal ``done`` /
+      ``error`` stage, which carries the same fields the inline result used to.
 
-    Returns 200 with ``installed: true`` on success, or 200 with
-    ``installed: false`` + ``platform_unsupported`` on Linux/Mac. Only
-    truly unrecoverable failures (network down, repo layout changed)
-    raise HTTPException 502 - and even then, the response body carries
-    the real error message so the user can act on it.
-
-    Hardening note (v2.6.22): the function body is wrapped in a top-
-    level try/except so an unexpected exception class (anything that
-    isn't ``RuntimeError``) translates to a 502 with the underlying
-    error class + message in ``detail`` instead of leaking a generic
-    "Internal server error" 500.  Without this guard the install banner
-    showed a useless toast when GitHub rate-limited or returned an
-    unexpected payload - Hans's reproducible DWG/DGN failure case.
+    On Windows the worker walks ``DDC_WINDOWS_Converters/DDC_CONVERTER_{FORMAT}/``
+    via the GitHub Contents API; on Linux it streams the signed ``.deb`` set from
+    the apt repo and extracts it without root. The endpoint itself never raises
+    for a failed download - failures are reported through the progress feed.
     """
     import asyncio
     import sys
@@ -1206,21 +1311,144 @@ async def install_converter(
             detail=(f"Unknown converter: '{converter_id}'. Available: {list(_META_BY_ID.keys())}"),
         )
 
-    try:
-        # Already installed?
-        existing = find_converter(converter_id)
-        if existing and not force:
-            # Skip the short-circuit when ``force=true`` so the "Update"
-            # button can re-download a binary whose blob SHA no longer
-            # matches the upstream GitHub Contents API.
-            return {
-                "converter_id": converter_id,
-                "installed": True,
-                "path": str(existing),
-                "already_installed": True,
-                "message": f"{meta['name']} is already installed at {existing}",
-            }
+    # Already installed? (cheap file-stat) - answer synchronously. ``force``
+    # bypasses this so the "Update" button can re-download an outdated binary
+    # whose blob SHA no longer matches upstream.
+    existing = find_converter(converter_id)
+    if existing and not force:
+        return {
+            "converter_id": converter_id,
+            "installed": True,
+            "path": str(existing),
+            "already_installed": True,
+            "message": f"{meta['name']} is already installed at {existing}",
+        }
 
+    # An install for this converter already running? Don't start a second; point
+    # the client at the in-flight progress instead.
+    running = _INSTALL_TASKS.get(converter_id)
+    if running is not None and not running.done():
+        return {
+            "converter_id": converter_id,
+            "installed": False,
+            "async_install": True,
+            "started": False,
+            "already_running": True,
+            "message": (
+                f"{meta['name']} is already downloading. Watch the progress bar - "
+                f"the panel updates automatically when it finishes."
+            ),
+        }
+
+    # macOS / other: no native DDC build and nothing to download - answer
+    # synchronously rather than spinning up a background task.
+    platform = sys.platform
+    if platform != "win32" and not platform.startswith("linux"):
+        return {
+            "converter_id": converter_id,
+            "installed": False,
+            "platform": platform,
+            "platform_unsupported": True,
+            "message": (
+                f"{meta['name']} has no native build for {platform}. Run "
+                f"OpenConstructionERP in Docker (Linux container - the converter "
+                f"downloads automatically there) or on a Linux host, or convert the "
+                f"file to IFC first and upload the IFC - IFC has a built-in text "
+                f"fallback parser that works on every platform."
+            ),
+        }
+
+    # Launch the heavy download/extract/smoke OFF the request and return at
+    # once. Holding the HTTP request open for a multi-minute, multi-hundred-MB
+    # download is what aborted with "signal timed out" on slow servers and
+    # behind reverse proxies; the frontend watches /install-progress/ for the
+    # terminal done/error stage instead.
+    _set_install_progress(
+        converter_id,
+        stage="starting",
+        current=0,
+        total=0,
+        bytes_done=0,
+        file=None,
+        started_at=_time.time(),
+    )
+    task = asyncio.create_task(_run_background_install(converter_id, force, request.app))
+    _INSTALL_TASKS[converter_id] = task
+    return {
+        "converter_id": converter_id,
+        "installed": False,
+        "async_install": True,
+        "started": True,
+        "stage": "starting",
+        "size_mb": meta.get("size_mb"),
+        "message": (
+            f"Downloading {meta['name']} in the background. This can take a few "
+            f"minutes on a slow connection - the converter panel updates "
+            f"automatically when it finishes."
+        ),
+    }
+
+
+async def _run_background_install(converter_id: str, force: bool, app: Any) -> None:
+    """Run the heavy install and publish its terminal outcome to the progress feed.
+
+    Wraps :func:`_install_converter_impl` (which never raises) and records a
+    terminal ``done``/``error`` record into the in-memory progress feed served
+    by :func:`get_install_progress`, so the frontend learns the result by
+    polling instead of by holding the install request open.
+    """
+    try:
+        result = await _install_converter_impl(converter_id, force, app)
+    except Exception as exc:  # noqa: BLE001 - defensive; impl already traps
+        logger.exception("Background converter install crashed for %s", converter_id)
+        result = {
+            "converter_id": converter_id,
+            "installed": False,
+            "error": f"{type(exc).__name__}: {exc}",
+            "message": f"Install failed: {type(exc).__name__}: {exc}",
+        }
+    finally:
+        _INSTALL_TASKS.pop(converter_id, None)
+    installed = bool(result.get("installed"))
+    carry = {
+        k: result[k]
+        for k in (
+            "path",
+            "message",
+            "smoke_test_passed",
+            "error",
+            "instructions",
+            "apt_package",
+            "apt_source_present",
+            "platform_unsupported",
+            "platform",
+            "size_bytes",
+        )
+        if k in result
+    }
+    _set_install_progress(
+        converter_id,
+        stage="done" if installed else "error",
+        installed=installed,
+        finished_at=_time.time(),
+        **carry,
+    )
+
+
+async def _install_converter_impl(converter_id: str, force: bool, app: Any) -> dict[str, Any]:
+    """Download + extract + smoke-test a converter; always returns a result dict.
+
+    Never raises, so it is safe to run as a detached background task: failures
+    come back as ``installed: False`` with a ``message`` (plus an ``error``
+    string or apt ``instructions`` where useful). Mirrors the previous inline
+    behaviour of :func:`install_converter`, minus the HTTP envelope.
+    """
+    import asyncio
+    import sys
+
+    _ = force  # reserved for future force-redownload semantics
+    meta = _META_BY_ID[converter_id]
+    try:
         platform = sys.platform
         if platform == "win32":
             # Windows: download files from the upstream GitHub repo. The
@@ -1233,21 +1461,21 @@ async def install_converter(
                     converter_id,
                 )
             except RuntimeError as exc:
-                logger.warning(
-                    "Windows converter install failed for %s: %s",
-                    converter_id,
-                    exc,
-                )
-                raise HTTPException(
-                    status_code=502,
-                    detail=(
+                logger.warning("Windows converter install failed for %s: %s", converter_id, exc)
+                return {
+                    "converter_id": converter_id,
+                    "installed": False,
+                    "platform": "windows",
+                    "error": str(exc),
+                    "message": (
                         f"Could not install {meta['name']}: {exc}. "
                         f"You can install it manually from "
                         f"https://github.com/{_DDC_REPO}/tree/{_DDC_BRANCH}/"
                         f"{_WINDOWS_CONVERTER_DIRS[converter_id]}"
                     ),
-                ) from exc
+                }
 
+            _set_install_progress(converter_id, stage="verifying", file=None)
             # Post-install smoke test: launch the binary with a non-existent
             # input + output so it exits quickly. We're only checking that the
             # OS can load the exe + its Qt6 DLLs - a "missing DLL" error here
@@ -1331,11 +1559,10 @@ async def install_converter(
             # this the badge stays "outdated" for up to 6 h after a Windows
             # install and the user thinks the Update button did nothing.
             try:
-                request.app.state._converter_version_cache = None
+                app.state._converter_version_cache = None
             except AttributeError:
                 pass
 
-            _clear_install_progress(converter_id)
             return {
                 "converter_id": converter_id,
                 "installed": smoke_ok,
@@ -1360,7 +1587,6 @@ async def install_converter(
                 exe_path = await asyncio.to_thread(_download_converter_files_linux, converter_id)
             except Exception as exc:  # noqa: BLE001 - fall back to apt instructions
                 logger.warning("Linux converter auto-download failed for %s: %s", converter_id, exc)
-                _clear_install_progress(converter_id)
                 apt_source_path = Path("/etc/apt/sources.list.d/ddc.list")
                 source_already_present = apt_source_path.exists()
                 if source_already_present:
@@ -1380,6 +1606,7 @@ async def install_converter(
                     "apt_package": apt_pkg,
                     "apt_source_present": source_already_present,
                     "instructions": instructions,
+                    "error": str(exc),
                     "message": (
                         f"Automatic download failed: {exc}. Install {meta['name']} "
                         f"manually with the apt commands in `instructions`, or retry."
@@ -1393,14 +1620,14 @@ async def install_converter(
                 smoke_test_converter,
             )
 
+            _set_install_progress(converter_id, stage="verifying", file=None)
             invalidate_converter_health(converter_id)
             health = await asyncio.to_thread(smoke_test_converter, converter_id, True)
             smoke_ok = health.get("status") == "ok"
             try:
-                request.app.state._converter_version_cache = None
+                app.state._converter_version_cache = None
             except AttributeError:
                 pass
-            _clear_install_progress(converter_id)
             return {
                 "converter_id": converter_id,
                 "installed": smoke_ok,
@@ -1431,34 +1658,23 @@ async def install_converter(
                 f"fallback parser that works on every platform."
             ),
         }
-    except HTTPException:
-        # Already a structured response - let FastAPI translate it.
-        raise
     except Exception as exc:  # noqa: BLE001 - last-ditch error envelope
-        # Any uncaught exception (json.JSONDecodeError on a rate-limited
-        # GitHub response, OSError on a permission-denied install dir,
-        # etc.) used to leak as a generic 500 "Internal server error"
-        # which gave the user no actionable signal.  Translate it to a
-        # 502 with the real error class + message so the install banner
-        # shows something useful - Hans's DWG/DGN failure case (Linux
-        # VPS hitting an edge case in find_converter / urlretrieve).
-        _clear_install_progress(converter_id)
-        logger.exception(
-            "Unhandled exception in install_converter for %s: %s",
-            converter_id,
-            exc,
-        )
-        raise HTTPException(
-            status_code=502,
-            detail=(
-                f"Could not install {meta['name']}: "
-                f"{type(exc).__name__}: {exc}. "
-                f"Check the server logs for the full traceback. You can "
-                f"install manually from "
-                f"https://github.com/{_DDC_REPO}/tree/{_DDC_BRANCH}/"
+        # Any uncaught exception (json.JSONDecodeError on a rate-limited GitHub
+        # response, OSError on a permission-denied install dir, etc.) becomes a
+        # structured failure result the progress poll can surface, instead of
+        # leaking a 500 - this runs off the request so there is no HTTP envelope.
+        logger.exception("Unhandled exception in converter install for %s: %s", converter_id, exc)
+        return {
+            "converter_id": converter_id,
+            "installed": False,
+            "error": f"{type(exc).__name__}: {exc}",
+            "message": (
+                f"Could not install {meta['name']}: {type(exc).__name__}: {exc}. "
+                f"Check the server logs for the full traceback. You can install "
+                f"manually from https://github.com/{_DDC_REPO}/tree/{_DDC_BRANCH}/"
                 f"{_WINDOWS_CONVERTER_DIRS.get(converter_id, '')}"
             ),
-        ) from exc
+        }
 
 
 @router.post(

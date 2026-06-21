@@ -5,6 +5,12 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Installing a BIM/CAD converter no longer fails with "signal timed out" on a slow server, leaving you stuck on simplified placeholder geometry. The download now runs in the background and the converter panel updates when it finishes, instead of the request being cancelled mid-download (a 100-300 MB download could never complete inside a single request window, especially behind a reverse proxy). The Linux download also retries and resumes interrupted transfers, and the offline package list was refreshed to match the published repository. If automatic install still cannot finish on a locked-down network, terminal install steps for Linux are documented in `docs/INSTALL_LINUX.md`.
+
 ## [8.7.1] - 2026-06-20
 
 ### Fixed
