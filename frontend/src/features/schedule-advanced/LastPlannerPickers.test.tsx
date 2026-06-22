@@ -16,7 +16,7 @@
  * and ``@/features/projects/api``. React Query retries are disabled.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, configure } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -72,6 +72,13 @@ import {
 } from './api';
 import { fetchTasks } from '@/features/tasks/api';
 import { ScheduleAdvancedPage } from './ScheduleAdvancedPage';
+
+// The Constraints-tab path has the longest async chain (tab switch -> look-ahead
+// auto-select -> constraints query -> empty-state CTA -> modal -> task picker).
+// On a loaded CI runner the default 1000ms findBy window is occasionally too
+// tight and the task picker times out, even though it renders in ~3s locally.
+// Widen the async timeout for the whole suite so the assertions stay reliable.
+configure({ asyncUtilTimeout: 5000 });
 
 const masterSchedule = {
   id: 'ms1',
