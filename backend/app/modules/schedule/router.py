@@ -2521,3 +2521,10 @@ async def diff_schedule(
         target_label=target_label,
         **_diff_to_dict(result),
     )
+
+
+# Activity codes, UDFs and saved layouts (T2.3) live on their own router file to
+# keep this module readable; they mount under the same /api/v1/schedule prefix.
+from app.modules.schedule.codes_router import codes_router as _codes_router  # noqa: E402
+
+router.include_router(_codes_router)

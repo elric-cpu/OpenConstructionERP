@@ -524,3 +524,17 @@ class ScheduleProgressEntry(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - debug repr
         return f"<ScheduleProgressEntry task={self.task_id} recorded_at={self.recorded_at} pct={self.progress_percent}>"
+
+
+# Activity codes, UDFs and saved layouts (T2.3). Imported for the side effect
+# of registering the six ``oe_schedule_code_*`` / ``oe_schedule_udf*`` /
+# ``oe_schedule_layout`` tables on ``Base.metadata`` so ``create_all`` and the
+# module loader pick them up alongside the core schedule tables.
+from app.modules.schedule.codes_models import (  # noqa: E402,F401
+    CodeAssignment,
+    CodeDictionary,
+    CodeValue,
+    ScheduleLayout,
+    ScheduleUdf,
+    ScheduleUdfValue,
+)
