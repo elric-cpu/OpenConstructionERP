@@ -14092,6 +14092,224 @@
     </script>
 
   </section>
+
+  <!-- ============================================================ -->
+  <!-- MODULE IDEAS - per-module animated SVG vignettes               -->
+  <!-- Self-contained (style + section) like #dataflow. Each clip is  -->
+  <!-- a tiny inline SVG that loops the module's core workflow, in the -->
+  <!-- same schematic blue language as the data-flow diagram. KB-sized -->
+  <!-- (no network fetch, no layout shift) and reduced-motion-safe:    -->
+  <!-- under prefers-reduced-motion every clip settles to a still that -->
+  <!-- already tells the story.                                        -->
+  <!-- ============================================================ -->
+  <style>
+    .mod-anim-band { padding-top: 8px; }
+    .mod-anim-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px;
+      margin-top: 30px;
+    }
+    @media (max-width: 980px) { .mod-anim-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 600px) { .mod-anim-grid { grid-template-columns: 1fr; } }
+    .mod-anim-card {
+      border-radius: 16px; overflow: hidden;
+      border: 1px solid var(--line-1);
+      background: color-mix(in oklab, #ffffff 58%, transparent);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    }
+    .mod-anim-card:hover {
+      transform: translateY(-3px);
+      border-color: color-mix(in oklab, var(--accent) 38%, var(--line-1));
+      box-shadow: 0 18px 40px -24px color-mix(in oklab, var(--accent) 55%, transparent);
+    }
+    .mod-anim-cap { padding: 13px 16px 15px; }
+    .mod-anim-cap h3 {
+      font-family: 'Inter Tight', sans-serif; font-weight: 600; font-size: 14.5px;
+      letter-spacing: -0.01em; color: var(--ink-0); margin: 0 0 3px;
+    }
+    .mod-anim-cap p { font-size: 12.5px; color: var(--ink-2); line-height: 1.45; margin: 0; }
+
+    /* The stage: fixed 16:9 box so the layout never shifts. */
+    .ma {
+      width: 100%; aspect-ratio: 16 / 9; display: block;
+      background:
+        radial-gradient(120% 120% at 0% 0%, color-mix(in oklab, var(--accent) 8%, transparent), transparent 60%),
+        linear-gradient(180deg, color-mix(in oklab, var(--accent) 4%, transparent), transparent);
+      border-bottom: 1px solid var(--line-1);
+    }
+    .ma svg { width: 100%; height: 100%; display: block; }
+    .ma .st { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+    .ma .st-2 { stroke: var(--accent-2); } .ma .st-3 { stroke: var(--accent-3); }
+    .ma .faint { fill: none; stroke: color-mix(in oklab, var(--ink-3) 55%, transparent); stroke-width: 1.4; }
+    .ma .fl { fill: color-mix(in oklab, var(--accent) 16%, transparent); stroke: none; }
+    .ma .fl-2 { fill: color-mix(in oklab, var(--accent-2) 16%, transparent); stroke: none; }
+    .ma .paper { fill: color-mix(in oklab, #ffffff 88%, transparent); stroke: var(--line-1); stroke-width: 1.2; }
+    .ma .lab { font: 600 11px 'Inter Tight', sans-serif; fill: var(--ink-2); }
+    .ma .lab-sm { font: 500 8.5px 'JetBrains Mono', ui-monospace, monospace; fill: var(--ink-3); letter-spacing: .04em; }
+    .ma .lab-hi { fill: var(--accent-3); }
+    [data-theme="dark"] .ma .paper { fill: color-mix(in oklab, #ffffff 6%, transparent); }
+    [data-theme="dark"] .ma .lab-hi { fill: var(--accent-2); }
+
+    /* motion vocabulary - mirrors #dataflow's dfPulse flowing-path idea */
+    .ma .flow { fill: none; stroke-width: 2.6; stroke-linecap: round; stroke-dasharray: 7 230; animation: maFlow 3.4s linear infinite; }
+    @keyframes maFlow { 0% { stroke-dashoffset: 230; } 100% { stroke-dashoffset: -230; } }
+    .ma .draw { stroke-dasharray: var(--len, 200); stroke-dashoffset: var(--len, 200); animation: maDraw 3.6s ease-in-out infinite; }
+    @keyframes maDraw { 0% { stroke-dashoffset: var(--len,200); } 45%,70% { stroke-dashoffset: 0; } 92%,100% { stroke-dashoffset: var(--len,200); } }
+    .ma .pop { opacity: 0; transform-box: fill-box; transform-origin: left center; animation: maPop 3.6s ease-in-out infinite; }
+    @keyframes maPop { 0%,8% { opacity: 0; transform: translateX(-6px); } 22%,86% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translateX(-6px); } }
+    .ma .land { opacity: 0; transform-box: fill-box; transform-origin: center; animation: maLand 3.6s ease-in-out infinite; }
+    @keyframes maLand { 0%,55% { opacity: 0; transform: scale(.6); } 66%,90% { opacity: 1; transform: none; } 100% { opacity: 0; transform: scale(.6); } }
+    .ma .scan { animation: maScan 3.4s ease-in-out infinite; }
+    @keyframes maScan { 0% { transform: translateX(0); } 50% { transform: translateX(var(--sx, 120px)); } 100% { transform: translateX(0); } }
+    .ma .ping { transform-box: fill-box; transform-origin: center; animation: maPing 2.4s ease-out infinite; }
+    @keyframes maPing { 0% { opacity: .9; transform: scale(.5); } 80%,100% { opacity: 0; transform: scale(2.4); } }
+    .ma .d1 { animation-delay: .15s; } .ma .d2 { animation-delay: .3s; } .ma .d3 { animation-delay: .45s; }
+    .ma .d4 { animation-delay: .6s; } .ma .d5 { animation-delay: .75s; } .ma .d6 { animation-delay: .9s; }
+    .ma .f3 { animation-delay: .8s; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .ma .flow, .ma .draw, .ma .pop, .ma .land, .ma .scan, .ma .ping { animation: none; }
+      .ma .draw { stroke-dashoffset: 0; }
+      .ma .pop, .ma .land { opacity: 1; transform: none; }
+      .ma .ping { display: none; }
+    }
+  </style>
+
+  <section class="section mod-anim-band reveal" id="module-ideas" aria-label="How the core modules work">
+    <div class="section-head reveal">
+      <div class="section-eyebrow">
+        <span class="bar"></span>
+        <span data-i18n="modideas.eyebrow">How the core modules work</span>
+      </div>
+      <h2 class="section-title" data-i18n-html="modideas.title">
+        Not just a list of features. <em>See what each one actually does.</em>
+      </h2>
+      <p class="section-lede" data-i18n="modideas.lede">
+        Six of the flagship modules, each shown as a short loop of its core workflow - the same idea you act out the first time you open it.
+      </p>
+    </div>
+
+    <div class="mod-anim-grid reveal-up">
+      <div class="mod-anim-card">
+        <div class="ma" role="img" aria-label="BOQ editor - positions with quantity and rate fill in and the total rolls up">
+          <svg viewBox="0 0 320 180" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+            <rect class="paper" x="24" y="22" width="272" height="136" rx="10"/>
+            <line class="faint" x1="24" y1="48" x2="296" y2="48"/>
+            <text class="lab-sm" x="38" y="40">POSITION</text><text class="lab-sm" x="180" y="40">QTY</text><text class="lab-sm" x="222" y="40">RATE</text><text class="lab-sm" x="262" y="40">SUM</text>
+            <g class="pop d1"><text class="lab" x="38" y="68">Concrete C30/37</text><text class="lab-sm" x="178" y="68">120</text><text class="lab-sm" x="220" y="68">98.5</text><text class="lab-sm lab-hi" x="258" y="68">11 820</text></g>
+            <g class="pop d3"><text class="lab" x="38" y="90">Rebar B500B</text><text class="lab-sm" x="180" y="90">8.4</text><text class="lab-sm" x="220" y="90">1 240</text><text class="lab-sm lab-hi" x="258" y="90">10 416</text></g>
+            <g class="pop d5"><text class="lab" x="38" y="112">Formwork walls</text><text class="lab-sm" x="180" y="112">340</text><text class="lab-sm" x="222" y="112">42</text><text class="lab-sm lab-hi" x="258" y="112">14 280</text></g>
+            <line class="faint" x1="24" y1="126" x2="296" y2="126"/>
+            <text class="lab" x="38" y="146">Total</text>
+            <g class="land"><rect class="fl" x="232" y="134" width="56" height="16" rx="4"/><text class="lab lab-hi" x="240" y="146">36 516</text></g>
+          </svg>
+        </div>
+        <div class="mod-anim-cap"><h3 data-i18n="modideas.boq_title">BOQ editor</h3><p data-i18n="modideas.boq_desc">Type a position, quantity x rate fills in, the total rolls up live.</p></div>
+      </div>
+
+      <div class="mod-anim-card">
+        <div class="ma" role="img" aria-label="Takeoff - trace a wall on the drawing and the measured length drops into a position">
+          <svg viewBox="0 0 320 180" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+            <rect class="paper" x="24" y="22" width="200" height="136" rx="10"/>
+            <path class="faint" d="M44 132 L44 52 L120 52 L120 92 L188 92 L188 132 Z"/>
+            <path class="faint" d="M120 52 L120 40 M150 92 L150 80"/>
+            <path class="st st-3 draw" style="--len:300" d="M44 132 L44 52 L120 52 L120 92 L188 92"/>
+            <circle class="fl" cx="44" cy="132" r="3"/><circle class="fl" cx="44" cy="52" r="3"/><circle class="fl" cx="120" cy="52" r="3"/><circle class="fl" cx="120" cy="92" r="3"/>
+            <g class="land"><rect class="fl" x="92" y="58" width="58" height="15" rx="4"/><text class="lab-sm lab-hi" x="99" y="69">42.6 m</text></g>
+            <path class="st st-2 flow f3" d="M226 90 L252 90"/>
+            <rect class="paper" x="252" y="64" width="44" height="52" rx="8"/>
+            <line class="faint" x1="260" y1="82" x2="288" y2="82"/>
+            <g class="land f3"><rect class="fl-2" x="258" y="88" width="34" height="12" rx="3"/></g>
+            <text class="lab-sm" x="260" y="76">BOQ</text>
+          </svg>
+        </div>
+        <div class="mod-anim-cap"><h3 data-i18n="modideas.takeoff_title">PDF / CAD takeoff</h3><p data-i18n="modideas.takeoff_desc">Trace a wall on the drawing, the measured length drops into a position.</p></div>
+      </div>
+
+      <div class="mod-anim-card">
+        <div class="ma" role="img" aria-label="BIM to BOQ - select model elements and their quantities flow into priced lines">
+          <svg viewBox="0 0 320 180" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+            <g transform="translate(40 30)">
+              <path class="fl" d="M0 44 L40 22 L80 44 L40 66 Z"/>
+              <path class="st" d="M0 44 L40 22 L80 44 L40 66 Z M0 44 L0 78 L40 100 L40 66 M80 44 L80 78 L40 100"/>
+              <path class="st st-3" d="M40 22 L80 44 L80 78 L40 100 L40 66 Z"/>
+              <circle class="st st-3 ping" cx="62" cy="58" r="6"/>
+            </g>
+            <path class="st st-2 flow" d="M150 86 L196 86"/>
+            <path class="st st-2 flow f3" d="M150 86 L196 110"/>
+            <rect class="paper" x="200" y="44" width="96" height="96" rx="10"/>
+            <line class="faint" x1="200" y1="68" x2="296" y2="68"/>
+            <text class="lab-sm" x="212" y="61">ELEMENT -&gt; POSITION</text>
+            <g class="pop d2"><rect class="fl" x="210" y="78" width="62" height="9" rx="3"/><text class="lab-sm lab-hi" x="278" y="86">42</text></g>
+            <g class="pop d4"><rect class="fl" x="210" y="96" width="76" height="9" rx="3"/><text class="lab-sm lab-hi" x="278" y="104">18</text></g>
+            <g class="pop d6"><rect class="fl" x="210" y="114" width="50" height="9" rx="3"/><text class="lab-sm lab-hi" x="278" y="122">7</text></g>
+          </svg>
+        </div>
+        <div class="mod-anim-cap"><h3 data-i18n="modideas.bim_title">BIM to BOQ</h3><p data-i18n="modideas.bim_desc">Select model elements, their quantities flow straight into priced lines.</p></div>
+      </div>
+
+      <div class="mod-anim-card">
+        <div class="ma" role="img" aria-label="Cost database - search priced positions and the matched rate lands on your line">
+          <svg viewBox="0 0 320 180" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+            <rect class="paper" x="40" y="30" width="240" height="26" rx="13"/>
+            <circle class="st" cx="58" cy="43" r="6"/><path class="st" d="M62 47 L68 53"/>
+            <text class="lab" x="78" y="47">concrete c30/37 wall</text>
+            <rect class="paper" x="40" y="66" width="240" height="86" rx="10"/>
+            <g class="pop d1"><text class="lab-sm" x="48" y="86">DIN 276 . 331 . concrete wall</text><text class="lab-sm lab-hi" x="240" y="86">98.50</text></g>
+            <g class="pop d3"><text class="lab-sm" x="48" y="108">NRM . 2.3 . rc wall 300mm</text><text class="lab-sm lab-hi" x="240" y="108">102.0</text></g>
+            <g class="pop d5"><text class="lab-sm" x="48" y="130">MF . 03 30 . cast-in-place</text><text class="lab-sm lab-hi" x="240" y="130">96.20</text></g>
+            <g class="land"><rect class="fl" x="232" y="74" width="44" height="16" rx="4"/></g>
+          </svg>
+        </div>
+        <div class="mod-anim-cap"><h3 data-i18n="modideas.costs_title">Cost database</h3><p data-i18n="modideas.costs_desc">Search 55,000+ priced positions, the matched rate lands on your line.</p></div>
+      </div>
+
+      <div class="mod-anim-card">
+        <div class="ma" role="img" aria-label="Schedule - tasks roll out as Gantt bars and the critical path threads through them">
+          <svg viewBox="0 0 320 180" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+            <rect class="paper" x="24" y="22" width="272" height="136" rx="10"/>
+            <g class="faint"><line x1="120" y1="34" x2="120" y2="150"/><line x1="170" y1="34" x2="170" y2="150"/><line x1="220" y1="34" x2="220" y2="150"/><line x1="270" y1="34" x2="270" y2="150"/></g>
+            <text class="lab-sm" x="38" y="33">TASK</text>
+            <text class="lab-sm" x="38" y="58">Earthworks</text><text class="lab-sm" x="38" y="84">Foundations</text><text class="lab-sm" x="38" y="110">Structure</text><text class="lab-sm" x="38" y="136">Envelope</text>
+            <line class="st st-2 draw" style="--len:60" x1="104" y1="53" x2="164" y2="53" stroke-width="9"/>
+            <line class="st st-2 draw d2" style="--len:50" x1="150" y1="79" x2="200" y2="79" stroke-width="9"/>
+            <line class="st st-3 draw d4" style="--len:70" x1="190" y1="105" x2="260" y2="105" stroke-width="9"/>
+            <line class="st st-2 draw d6" style="--len:40" x1="244" y1="131" x2="284" y2="131" stroke-width="9"/>
+            <path class="st st-3 flow f3" d="M164 53 L150 79 L200 79 L190 105 L260 105 L244 131"/>
+          </svg>
+        </div>
+        <div class="mod-anim-cap"><h3 data-i18n="modideas.schedule_title">Schedule (4D)</h3><p data-i18n="modideas.schedule_desc">Tasks roll out as Gantt bars; the critical path threads through them.</p></div>
+      </div>
+
+      <div class="mod-anim-card">
+        <div class="ma" role="img" aria-label="AI estimate - drop a photo or PDF and a scoped priced first-pass estimate comes back">
+          <svg viewBox="0 0 320 180" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+            <g transform="translate(40 46)">
+              <rect class="paper" x="0" y="0" width="74" height="88" rx="8"/>
+              <path class="st st-2" d="M12 64 L30 44 L44 60 L54 50 L62 60"/>
+              <circle class="st st-2" cx="22" cy="26" r="6"/>
+              <text class="lab-sm" x="6" y="100">photo / pdf</text>
+            </g>
+            <g transform="translate(160 90)">
+              <circle class="fl" r="18"/><circle class="st st-3" r="18"/>
+              <circle class="st st-3 ping" r="10"/>
+              <path class="st st-3" d="M-6 0 L-1 5 L7 -6"/>
+            </g>
+            <path class="st st-2 flow" d="M118 90 L138 90"/>
+            <path class="st st-2 flow f3" d="M182 90 L206 90"/>
+            <rect class="paper" x="210" y="46" width="86" height="88" rx="8"/>
+            <line class="faint" x1="210" y1="68" x2="296" y2="68"/>
+            <text class="lab-sm" x="220" y="61">SCOPED BOQ</text>
+            <g class="pop d2"><rect class="fl" x="220" y="78" width="48" height="8" rx="3"/><text class="lab-sm lab-hi" x="276" y="86">12</text></g>
+            <g class="pop d4"><rect class="fl" x="220" y="94" width="62" height="8" rx="3"/><text class="lab-sm lab-hi" x="276" y="102">8</text></g>
+            <g class="pop d6"><rect class="fl" x="220" y="110" width="40" height="8" rx="3"/><text class="lab-sm lab-hi" x="276" y="118">21</text></g>
+          </svg>
+        </div>
+        <div class="mod-anim-cap"><h3 data-i18n="modideas.ai_title">AI estimate</h3><p data-i18n="modideas.ai_desc">Drop a photo or PDF; a scoped, priced first-pass estimate comes back.</p></div>
+      </div>
+    </div>
+  </section>
+
   <!-- ============================================================ -->
   <!-- SECTION 1.3 - TRUSTED BY (relocated below demo per design)    -->
   <!-- ============================================================ -->
