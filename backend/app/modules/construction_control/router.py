@@ -37,6 +37,18 @@ Hold gates (Pillar 5):
     DELETE /gates/{gate_id}                - delete
     POST   /gates/{gate_id}/release        - release (party-role checked, e-signed)
     POST   /gates/{gate_id}/waive          - waive (witness/surveillance/review only)
+
+Handover packages (Pillar 4):
+    GET    /handover                       - list handover packages for a project
+    POST   /handover                       - create a handover package (optional model link)
+    GET    /handover/{package_id}          - get one (with resolved element links)
+    PATCH  /handover/{package_id}          - update (blocked once issued/revoked)
+    DELETE /handover/{package_id}          - delete
+    GET    /handover/{package_id}/gates    - the computed completion gate
+    POST   /handover/{package_id}/assemble - auto-assemble the acceptance-evidence manifest
+    POST   /handover/{package_id}/override-gate - override a blocked gate (raises a doc NCR)
+    POST   /handover/{package_id}/issue    - e-sign and issue the acceptance certificate
+    POST   /handover/{package_id}/revoke   - revoke an issued certificate
 """
 
 import logging
@@ -47,6 +59,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
 from app.modules.construction_control.asbuilt_service import AsBuiltService
 from app.modules.construction_control.gating_service import GatingService
+from app.modules.construction_control.handover_service import HandoverService
 from app.modules.construction_control.schemas import (
     AcceptanceCriterionCreate,
     AcceptanceCriterionResponse,
@@ -60,6 +73,12 @@ from app.modules.construction_control.schemas import (
     AsBuiltVerifyIn,
     ElementRefResponse,
     GateProceedResponse,
+    HandoverGateReport,
+    HandoverIssueIn,
+    HandoverOverrideIn,
+    HandoverPackageCreate,
+    HandoverPackageResponse,
+    HandoverPackageUpdate,
     HoldGateCreate,
     HoldGateReleaseIn,
     HoldGateResponse,
@@ -96,6 +115,10 @@ def _get_gating_service(session: SessionDep) -> GatingService:
     return GatingService(session)
 
 
+def _get_handover_service(session: SessionDep) -> HandoverService:
+    return HandoverService(session)
+
+
 def _client_ip(request: Request) -> str | None:
     """Best-effort client IP for signature non-repudiation context (never authorisation).
 
@@ -119,6 +142,12 @@ def _asbuilt_response(record, elements) -> AsBuiltRecordResponse:
 
 def _gate_response(gate) -> HoldGateResponse:
     return HoldGateResponse.model_validate(gate)
+
+
+def _handover_response(package, elements) -> HandoverPackageResponse:
+    resp = HandoverPackageResponse.model_validate(package)
+    resp.elements = [ElementRefResponse.model_validate(e) for e in elements]
+    return resp
 
 
 def _criterion_response(criterion) -> AcceptanceCriterionResponse:
@@ -802,3 +831,177 @@ async def waive_gate(
     await verify_project_access(gate.project_id, user_id, session)
     gate = await service.waive_gate(gate_id, data, user_id=user_id)
     return _gate_response(gate)
+
+
+# ── Handover packages (Pillar 4) ───────────────────────────────────────────────
+
+
+@router.get("/handover", response_model=list[HandoverPackageResponse])
+async def list_handover_packages(
+    session: SessionDep,
+    project_id: uuid.UUID = Query(...),
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+    status_filter: str | None = Query(default=None, alias="status"),
+    completion_regime: str | None = Query(default=None),
+    completion_type: str | None = Query(default=None),
+    service: HandoverService = Depends(_get_handover_service),
+) -> list[HandoverPackageResponse]:
+    await verify_project_access(project_id, user_id, session)
+    items, _ = await service.list_packages(
+        project_id,
+        offset=offset,
+        limit=limit,
+        status_filter=status_filter,
+        completion_regime=completion_regime,
+        completion_type=completion_type,
+    )
+    elements_by_owner = await service.elements_for_many([p.id for p in items])
+    return [_handover_response(p, elements_by_owner.get(str(p.id), [])) for p in items]
+
+
+@router.post("/handover", response_model=HandoverPackageResponse, status_code=201)
+async def create_handover_package(
+    data: HandoverPackageCreate,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("cc.handover.create")),
+    service: HandoverService = Depends(_get_handover_service),
+) -> HandoverPackageResponse:
+    await verify_project_access(data.project_id, user_id, session)
+    package = await service.create_package(data, user_id=user_id)
+    elements = await service.elements_for(package.id)
+    return _handover_response(package, elements)
+
+
+@router.get("/handover/{package_id}", response_model=HandoverPackageResponse)
+async def get_handover_package(
+    package_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    service: HandoverService = Depends(_get_handover_service),
+) -> HandoverPackageResponse:
+    package = await service.get_package(package_id)
+    await verify_project_access(package.project_id, str(user_id), session)
+    elements = await service.elements_for(package.id)
+    return _handover_response(package, elements)
+
+
+@router.patch("/handover/{package_id}", response_model=HandoverPackageResponse)
+async def update_handover_package(
+    package_id: uuid.UUID,
+    data: HandoverPackageUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("cc.handover.update")),
+    service: HandoverService = Depends(_get_handover_service),
+) -> HandoverPackageResponse:
+    existing = await service.get_package(package_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
+    package = await service.update_package(package_id, data)
+    elements = await service.elements_for(package.id)
+    return _handover_response(package, elements)
+
+
+@router.delete("/handover/{package_id}", status_code=204)
+async def delete_handover_package(
+    package_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("cc.handover.delete")),
+    service: HandoverService = Depends(_get_handover_service),
+) -> None:
+    existing = await service.get_package(package_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
+    await service.delete_package(package_id)
+
+
+@router.get("/handover/{package_id}/gates", response_model=HandoverGateReport)
+async def handover_gates(
+    package_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    service: HandoverService = Depends(_get_handover_service),
+) -> HandoverGateReport:
+    """The computed completion gate: open NCRs + unreleased hold gates on the project."""
+    package = await service.get_package(package_id)
+    await verify_project_access(package.project_id, str(user_id), session)
+    package, blocking_numbers = await service.validate_gates(package_id)
+    return HandoverGateReport(
+        package_id=package.id,
+        project_id=package.project_id,
+        gating_state=package.gating_state,
+        can_issue=service.can_issue(package),
+        open_ncr_count=package.open_ncr_count,
+        unreleased_hold_count=package.unreleased_hold_count,
+        completeness_pct=package.completeness_pct,
+        blocking_gate_numbers=blocking_numbers,
+    )
+
+
+@router.post("/handover/{package_id}/assemble", response_model=HandoverPackageResponse)
+async def assemble_handover_package(
+    package_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("cc.handover.build")),
+    service: HandoverService = Depends(_get_handover_service),
+) -> HandoverPackageResponse:
+    """Auto-assemble the acceptance-evidence manifest and recompute the completion gate."""
+    package = await service.get_package(package_id)
+    await verify_project_access(package.project_id, user_id, session)
+    package, _ = await service.assemble(package_id, user_id=user_id)
+    elements = await service.elements_for(package.id)
+    return _handover_response(package, elements)
+
+
+@router.post("/handover/{package_id}/override-gate", response_model=HandoverPackageResponse)
+async def override_handover_gate(
+    package_id: uuid.UUID,
+    data: HandoverOverrideIn,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("cc.handover.override")),
+    service: HandoverService = Depends(_get_handover_service),
+) -> HandoverPackageResponse:
+    """Override a blocked completion gate (manager only; recorded as a documentation NCR)."""
+    package = await service.get_package(package_id)
+    await verify_project_access(package.project_id, user_id, session)
+    package = await service.override_gate(package_id, data, user_id=user_id)
+    elements = await service.elements_for(package.id)
+    return _handover_response(package, elements)
+
+
+@router.post("/handover/{package_id}/issue", response_model=HandoverPackageResponse)
+async def issue_handover_certificate(
+    package_id: uuid.UUID,
+    data: HandoverIssueIn,
+    request: Request,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("cc.handover.issue")),
+    service: HandoverService = Depends(_get_handover_service),
+) -> HandoverPackageResponse:
+    """E-sign and issue the acceptance certificate. Refused unless the gate is clear or overridden."""
+    package = await service.get_package(package_id)
+    await verify_project_access(package.project_id, user_id, session)
+    package = await service.issue_certificate(package_id, data, user_id=user_id, signature_ip=_client_ip(request))
+    elements = await service.elements_for(package.id)
+    return _handover_response(package, elements)
+
+
+@router.post("/handover/{package_id}/revoke", response_model=HandoverPackageResponse)
+async def revoke_handover_package(
+    package_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("cc.handover.issue")),
+    service: HandoverService = Depends(_get_handover_service),
+) -> HandoverPackageResponse:
+    """Revoke an issued acceptance certificate (a defect emerges post-handover)."""
+    package = await service.get_package(package_id)
+    await verify_project_access(package.project_id, user_id, session)
+    package = await service.revoke(package_id, user_id=user_id)
+    elements = await service.elements_for(package.id)
+    return _handover_response(package, elements)

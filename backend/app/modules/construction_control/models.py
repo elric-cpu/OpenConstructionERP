@@ -27,10 +27,17 @@ Tables:
         the gating engine on top of an intervention point. A blocking gate stops
         progress on the activity / package / inspection it is attached to until an
         authorised party releases it (e-signed), mirroring the QMS hold-point release.
+    oe_cc_handover_package     - the handover / acceptance package (Pillar 4): the
+        completion-regime wrapper that auto-assembles the acceptance evidence
+        (passed inspections, recorded as-builts, accepted materials, lab tests) into
+        a manifest, computes a completion gate from open NCRs and unreleased hold
+        gates, and issues a regime-specific acceptance certificate behind an
+        e-signature. A certificate can only be issued once the gate is clear, or a
+        manager explicitly overrides it (audited, and recorded as a documentation NCR).
 
 Design note: the UER is a shared table rather than columns inlined on each record,
 so one resolver and one schema serve inspections today and NCR / test results /
-material records / as-built records as later pillars land.
+material records / as-built records / handover packages as later pillars land.
 """
 
 import uuid
@@ -173,7 +180,7 @@ class ElementRef(Base):
     )
 
     # Polymorphic owner: inspection | ncr | criterion | test_result | material_record |
-    # asbuilt.
+    # asbuilt | handover_package.
     owner_type: Mapped[str] = mapped_column(String(40), nullable=False)
     owner_id: Mapped[str] = mapped_column(String(36), nullable=False)
     # Denormalised so every UER is tenant-scoped on its own (IDOR defence + fast filter).
@@ -564,3 +571,105 @@ class HoldGate(Base):
 
     def __repr__(self) -> str:
         return f"<HoldGate {self.gate_number} {self.point_type} ({self.status})>"
+
+
+class HandoverPackage(Base):
+    """Handover / acceptance package (Pillar 4).
+
+    The completion-regime wrapper that turns the project's accumulated control evidence
+    into an acceptance dossier. It auto-assembles a manifest of the acceptance evidence
+    (passed / closed inspections, recorded and legally-attested as-builts, accepted
+    materials, recorded passing lab tests), computes a completion gate from the open
+    non-conformances and the unreleased hold gates on the project, and issues a
+    regime-specific acceptance certificate.
+
+    The acceptance regime spans the major legal traditions through ``completion_regime``
+    (taking-over under FIDIC, substantial completion under US practice, practical
+    completion under UK practice) and ``completion_type`` (whole / sectional / partial),
+    so one table serves every market the platform reaches.
+
+    The completion gate is the heart of the pillar: a certificate can only be issued once
+    ``gating_state`` is ``clear`` (no open NCRs and no unreleased blocking gates), or once
+    a manager explicitly overrides the gate. Issue is captured with an e-signature - a
+    SHA-256 over a canonical snapshot, the signer and their IP - exactly as the as-built
+    legal attestation and the gate release are. Linked model elements (a sectional area,
+    a system) attach through the shared Universal Element Reference
+    (``owner_type="handover_package"``).
+    """
+
+    __tablename__ = "oe_cc_handover_package"
+    __table_args__ = (
+        UniqueConstraint("project_id", "package_number", name="uq_oe_cc_handover_project_number"),
+        Index("ix_oe_cc_handover_project", "project_id"),
+        Index("ix_oe_cc_handover_project_status", "project_id", "status"),
+        Index("ix_oe_cc_handover_closeout", "closeout_package_id"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_projects_project.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # Per-project human number "HOP-NNN", allocated collision-safe in the repository.
+    # Multiple packages per project are allowed (sectional / partial handover).
+    package_number: Mapped[str] = mapped_column(String(20), nullable=False)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+
+    # ── Completion regime ─────────────────────────────────────────────────────
+    # The legal completion regime this package is issued under:
+    # taking_over (FIDIC) | substantial (US) | practical (UK).
+    completion_regime: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="taking_over", server_default="taking_over"
+    )
+    # Whole / sectional / partial handover.
+    completion_type: Mapped[str] = mapped_column(String(20), nullable=False, default="whole", server_default="whole")
+    # Free-text section / area reference for a sectional or partial handover.
+    section_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # ── Lifecycle ───────────────────────────────────────────────────────────--
+    # draft | assembling | ready | issued | revoked
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", server_default="draft")
+
+    # ── Completion gate (the heart of the pillar) ──────────────────────────────
+    # blocked | clear | overridden. The single source of truth for whether the
+    # acceptance certificate may be issued.
+    gating_state: Mapped[str] = mapped_column(String(20), nullable=False, default="blocked", server_default="blocked")
+    # Denormalised gate inputs, recomputed by validate_gates (counts kept as Int,
+    # not money/quantity, so a real integer column is correct here).
+    open_ncr_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    unreleased_hold_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    completeness_pct: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # Manager override of a blocked gate (a legitimate snag-list handover under FIDIC).
+    gating_override_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    gating_override_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # ── Acceptance certificate (e-signed at issue, never auto-issued) ──────────-
+    certificate_no: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    issued_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    issued_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    issue_signature_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    issue_signature_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    # ── Assembled dossier ──────────────────────────────────────────────────────
+    # Soft link to a generic closeout package (lazy-created) that owns the heavy ZIP
+    # build; no FK, so the construction-control module stays decoupled from closeout.
+    closeout_package_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # MinIO / CDE key of the built dossier ZIP, when one exists.
+    dossier_key: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    dossier_built_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # When the evidence manifest was last (re)assembled.
+    assembled_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+    # Optional routed approval (approval_routes) when issue is routed for sign-off.
+    approval_instance_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata",
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+
+    def __repr__(self) -> str:
+        return f"<HandoverPackage {self.package_number} {self.completion_regime} ({self.status})>"

@@ -40,6 +40,12 @@ ASBUILT_UPDATE_STATUS_PATTERN = r"^(draft|surveyed|verified|superseded)$"
 POINT_TYPE_PATTERN = r"^(hold|witness|surveillance|review)$"
 GATE_ATTACHED_KIND_PATTERN = r"^(activity|handover_package|inspection)$"
 
+# Pillar 4 - handover / acceptance package discriminators.
+# The legal completion regime: taking-over (FIDIC) | substantial (US) | practical (UK).
+COMPLETION_REGIME_PATTERN = r"^(taking_over|substantial|practical)$"
+# Whole / sectional / partial handover.
+COMPLETION_TYPE_PATTERN = r"^(whole|sectional|partial)$"
+
 
 # ── Universal Element Reference (UER) ─────────────────────────────────────────
 
@@ -718,3 +724,102 @@ class GateProceedResponse(BaseModel):
     can_proceed: bool
     blocking_gate_numbers: list[str] = Field(default_factory=list)
     blocking_gate_ids: list[str] = Field(default_factory=list)
+
+
+# ── Handover / acceptance package (Pillar 4) ──────────────────────────────────
+
+
+class HandoverPackageCreate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    project_id: UUID
+    title: str = Field(..., min_length=1, max_length=500)
+    completion_regime: str = Field(default="taking_over", pattern=COMPLETION_REGIME_PATTERN)
+    completion_type: str = Field(default="whole", pattern=COMPLETION_TYPE_PATTERN)
+    section_ref: str | None = Field(default=None, max_length=255)
+    # Optional model element the package covers (a sectional area, a system) - the UER.
+    element: ElementRefIn | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class HandoverPackageUpdate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    title: str | None = Field(default=None, min_length=1, max_length=500)
+    completion_regime: str | None = Field(default=None, pattern=COMPLETION_REGIME_PATTERN)
+    completion_type: str | None = Field(default=None, pattern=COMPLETION_TYPE_PATTERN)
+    section_ref: str | None = Field(default=None, max_length=255)
+    certificate_no: str | None = Field(default=None, max_length=120)
+    metadata: dict[str, Any] | None = None
+
+
+class HandoverOverrideIn(BaseModel):
+    """Override a blocked completion gate. A manager act, recorded with a justification
+    and captured as a documentation NCR so the override is auditable."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    reason: str = Field(..., min_length=1, max_length=10000)
+    # Severity of the documentation NCR raised to record the override.
+    ncr_severity: str | None = Field(default=None, pattern=r"^(critical|major|minor|observation)$")
+
+
+class HandoverIssueIn(BaseModel):
+    """Issue the acceptance certificate. Refused unless the gate is clear or overridden;
+    the signature, timestamp and IP are captured (the certificate is never auto-issued)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    certificate_no: str | None = Field(default=None, max_length=120)
+    notes: str | None = Field(default=None, max_length=10000)
+    issued_at: str | None = Field(default=None, max_length=40)
+
+
+class HandoverGateReport(BaseModel):
+    """The computed completion gate for a handover package."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    package_id: UUID
+    project_id: UUID
+    gating_state: str
+    can_issue: bool
+    open_ncr_count: int
+    unreleased_hold_count: int
+    completeness_pct: int
+    # The gate numbers of the unreleased blocking gates attached to this package.
+    blocking_gate_numbers: list[str] = Field(default_factory=list)
+
+
+class HandoverPackageResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    project_id: UUID
+    package_number: str
+    title: str
+    completion_regime: str = "taking_over"
+    completion_type: str = "whole"
+    section_ref: str | None = None
+    status: str = "draft"
+    gating_state: str = "blocked"
+    open_ncr_count: int = 0
+    unreleased_hold_count: int = 0
+    completeness_pct: int = 0
+    gating_override_by: str | None = None
+    gating_override_reason: str | None = None
+    certificate_no: str | None = None
+    issued_at: str | None = None
+    issued_by: str | None = None
+    issue_signature_ip: str | None = None
+    issue_signature_sha256: str | None = None
+    closeout_package_id: str | None = None
+    dossier_key: str | None = None
+    dossier_built_at: str | None = None
+    assembled_at: str | None = None
+    approval_instance_id: str | None = None
+    created_by: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
+    created_at: datetime
+    updated_at: datetime
+    elements: list[ElementRefResponse] = Field(default_factory=list)

@@ -13,6 +13,7 @@ from app.modules.construction_control.models import (
     AcceptanceCriterion,
     AsBuiltRecord,
     ElementRef,
+    HandoverPackage,
     HoldGate,
     Inspection,
     MaterialRecord,
@@ -497,4 +498,73 @@ class HoldGateRepository:
         gate = await self.get_by_id(gate_id)
         if gate is not None:
             await self.session.delete(gate)
+            await self.session.flush()
+
+
+class HandoverPackageRepository:
+    """Data access for handover packages, with collision-safe per-project numbering."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def get_by_id(self, package_id: uuid.UUID) -> HandoverPackage | None:
+        return await self.session.get(HandoverPackage, package_id)
+
+    async def next_package_number(self, project_id: uuid.UUID) -> str:
+        """Next ``HOP-NNN`` from MAX(suffix)+1 (only canonical ``HOP-<digits>`` rows)."""
+        stmt = (
+            select(func.coalesce(func.max(cast(func.substr(HandoverPackage.package_number, 5), SAInteger)), 0))
+            .where(HandoverPackage.project_id == project_id)
+            .where(HandoverPackage.package_number.regexp_match("^HOP-[0-9]+$"))
+        )
+        max_num = (await self.session.execute(stmt)).scalar_one()
+        return f"HOP-{max_num + 1:03d}"
+
+    async def create(self, package: HandoverPackage) -> HandoverPackage:
+        """Insert a handover package, deriving ``package_number`` with a retry on collision."""
+        project_id = package.project_id
+        for _ in range(_NUMBER_RETRY_LIMIT):
+            package.package_number = await self.next_package_number(project_id)
+            savepoint = await self.session.begin_nested()
+            self.session.add(package)
+            try:
+                await self.session.flush()
+            except IntegrityError:
+                await savepoint.rollback()
+                continue
+            return package
+        raise RuntimeError(f"Could not allocate a unique handover-package number for project {project_id}")
+
+    async def list_for_project(
+        self,
+        project_id: uuid.UUID,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        status: str | None = None,
+        completion_regime: str | None = None,
+        completion_type: str | None = None,
+    ) -> tuple[list[HandoverPackage], int]:
+        base = select(HandoverPackage).where(HandoverPackage.project_id == project_id)
+        if status is not None:
+            base = base.where(HandoverPackage.status == status)
+        if completion_regime is not None:
+            base = base.where(HandoverPackage.completion_regime == completion_regime)
+        if completion_type is not None:
+            base = base.where(HandoverPackage.completion_type == completion_type)
+
+        total = (await self.session.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
+        stmt = base.order_by(HandoverPackage.created_at.desc()).offset(offset).limit(limit)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all()), total
+
+    async def update_fields(self, package_id: uuid.UUID, **fields: object) -> None:
+        await self.session.execute(update(HandoverPackage).where(HandoverPackage.id == package_id).values(**fields))
+        await self.session.flush()
+        self.session.expire_all()
+
+    async def delete(self, package_id: uuid.UUID) -> None:
+        package = await self.get_by_id(package_id)
+        if package is not None:
+            await self.session.delete(package)
             await self.session.flush()

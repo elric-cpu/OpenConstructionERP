@@ -52,5 +52,16 @@ def register_construction_control_permissions() -> None:
             "cc.gate.delete": Role.MANAGER,
             # Releasing / waiving a gate is a manager act (plus a service party-role check).
             "cc.gate.release": Role.MANAGER,
+            # Handover / acceptance packages (Pillar 4)
+            "cc.handover.read": Role.VIEWER,
+            "cc.handover.create": Role.EDITOR,
+            "cc.handover.update": Role.EDITOR,
+            # Assembling the evidence manifest is an editor act (no legal effect on its own).
+            "cc.handover.build": Role.EDITOR,
+            "cc.handover.delete": Role.MANAGER,
+            # Overriding the completion gate and issuing the acceptance certificate are
+            # manager acts: the override is recorded as an NCR and the issue is e-signed.
+            "cc.handover.override": Role.MANAGER,
+            "cc.handover.issue": Role.MANAGER,
         },
     )
