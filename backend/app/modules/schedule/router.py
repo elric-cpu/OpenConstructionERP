@@ -66,9 +66,12 @@ from app.modules.schedule.schemas import (
     RelationshipResponse,
     RiskAnalysisResponse,
     ScheduleCreate,
+    ScheduleDiffRequest,
+    ScheduleDiffResponse,
     ScheduleResponse,
     ScheduleStatsResponse,
     ScheduleUpdate,
+    SnapshotEnvelopeResponse,
     WorkCalendarResponse,
     WorkOrderCreate,
     WorkOrderResponse,
@@ -2357,3 +2360,164 @@ async def get_labor_cost_by_phase(
     """Return labour cost per WBS phase for the Estimation Dashboard."""
     await verify_project_access(project_id, _user_id, session)
     return await service.get_labor_cost_by_phase(project_id)
+
+
+# ── Schedule comparison / diff (T1.3) ────────────────────────────────────────
+
+
+async def _load_activities_relationships(session: SessionDep, schedule_id: uuid.UUID) -> tuple[list, list]:
+    """Load all Activity + ScheduleRelationship rows for a schedule."""
+    from sqlalchemy import select
+
+    from app.modules.schedule.models import Activity, ScheduleRelationship
+
+    acts = (await session.execute(select(Activity).where(Activity.schedule_id == schedule_id))).scalars().all()
+    rels = (
+        (await session.execute(select(ScheduleRelationship).where(ScheduleRelationship.schedule_id == schedule_id)))
+        .scalars()
+        .all()
+    )
+    return list(acts), list(rels)
+
+
+async def _load_baseline_for_project(
+    session: SessionDep,
+    baseline_id: uuid.UUID,
+    project_id: uuid.UUID,
+) -> object:
+    """Load a baseline and confirm it belongs to ``project_id``.
+
+    Existence-oracle safe: a baseline from another project 404s exactly like a
+    missing one, so the id can't be enumerated across tenants.
+    """
+    from app.modules.schedule.models import ScheduleBaseline
+
+    baseline = await session.get(ScheduleBaseline, baseline_id)
+    if baseline is None or baseline.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Baseline not found")
+    return baseline
+
+
+def _diff_to_dict(result: object) -> dict:
+    """Map a pure ``DiffResult`` dataclass into a JSON-safe response dict."""
+    s = result.summary
+    return {
+        "activities": [
+            {
+                "key": c.key,
+                "change_type": c.change_type,
+                "categories": list(c.categories),
+                "fields": c.fields,
+                "finish_movement_days": c.finish_movement_days,
+                "critical_path": c.critical_path,
+                "name": c.name,
+                "wbs_code": c.wbs_code,
+            }
+            for c in result.activities
+        ],
+        "relationships": [
+            {
+                "key": list(c.key),
+                "change_type": c.change_type,
+                "categories": list(c.categories),
+                "fields": c.fields,
+            }
+            for c in result.relationships
+        ],
+        "calendars": [
+            {"key": c.key, "change_type": c.change_type, "categories": list(c.categories)} for c in result.calendars
+        ],
+        "summary": {
+            "net_finish_movement_days": s.net_finish_movement_days,
+            "count_by_category": s.count_by_category,
+            "activities_added": s.activities_added,
+            "activities_removed": s.activities_removed,
+            "activities_changed": s.activities_changed,
+            "relationships_added": s.relationships_added,
+            "relationships_removed": s.relationships_removed,
+            "relationships_retyped": s.relationships_retyped,
+            "relationships_relagged": s.relationships_relagged,
+            "critical_path_in": s.critical_path_in,
+            "critical_path_out": s.critical_path_out,
+            "cost_planned_delta": str(s.cost_planned_delta),
+            "cost_actual_delta": str(s.cost_actual_delta),
+            "largest_slips": s.largest_slips,
+        },
+    }
+
+
+@router.get(
+    "/schedules/{schedule_id}/snapshot-envelope",
+    response_model=SnapshotEnvelopeResponse,
+    summary="Capture the live schedule as a comparison envelope",
+    dependencies=[Depends(RequirePermission("schedule.read"))],
+)
+async def get_snapshot_envelope(
+    schedule_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    service: ScheduleService = Depends(_get_service),
+) -> SnapshotEnvelopeResponse:
+    """Return the current schedule flattened into the canonical diff envelope."""
+    from app.modules.schedule.snapshot_envelope import live_envelope
+
+    await _verify_schedule_owner(service, session, schedule_id, user_id)
+    acts, rels = await _load_activities_relationships(session, schedule_id)
+    return SnapshotEnvelopeResponse(schedule_id=schedule_id, envelope=live_envelope(acts, rels))
+
+
+@router.post(
+    "/schedules/{schedule_id}/diff",
+    response_model=ScheduleDiffResponse,
+    summary="Compare two schedule snapshots (baseline vs live, or baseline vs baseline)",
+    dependencies=[Depends(RequirePermission("schedule.read"))],
+)
+async def diff_schedule(
+    schedule_id: uuid.UUID,
+    data: ScheduleDiffRequest,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    service: ScheduleService = Depends(_get_service),
+) -> ScheduleDiffResponse:
+    """Categorized diff between a base and a target snapshot of this schedule.
+
+    Base is a captured baseline or an inline envelope; target defaults to the
+    live schedule or another baseline. Returns per-activity, per-relationship
+    and per-calendar changes plus roll-up metrics (net finish movement,
+    critical-path in/out, cost deltas, largest slips). Read-only.
+    """
+    from app.modules.schedule.diff_engine import diff_snapshots
+    from app.modules.schedule.snapshot_envelope import live_envelope, normalize_envelope
+
+    schedule = await _verify_schedule_owner(service, session, schedule_id, user_id)
+    project_id = schedule.project_id
+
+    if data.base_baseline_id is not None:
+        base_bl = await _load_baseline_for_project(session, data.base_baseline_id, project_id)
+        base_env = normalize_envelope(base_bl.snapshot_data)
+        base_label = base_bl.name
+    elif data.base_envelope is not None:
+        base_env = normalize_envelope(data.base_envelope)
+        base_label = "provided"
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Provide base_baseline_id or base_envelope.",
+        )
+
+    if data.target_baseline_id is not None:
+        target_bl = await _load_baseline_for_project(session, data.target_baseline_id, project_id)
+        target_env = normalize_envelope(target_bl.snapshot_data)
+        target_label = target_bl.name
+    else:
+        acts, rels = await _load_activities_relationships(session, schedule_id)
+        target_env = live_envelope(acts, rels)
+        target_label = "current"
+
+    result = diff_snapshots(base_env, target_env)
+    return ScheduleDiffResponse(
+        schedule_id=schedule_id,
+        base_label=base_label,
+        target_label=target_label,
+        **_diff_to_dict(result),
+    )

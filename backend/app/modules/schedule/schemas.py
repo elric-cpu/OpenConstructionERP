@@ -840,3 +840,95 @@ class EvmSummaryResponse(BaseModel):
     )
     def _ser_money(self, v: Decimal | None) -> str | None:
         return _serialise_money(v)
+
+
+# ── Schedule comparison / diff (T1.3) ────────────────────────────────────────
+
+
+class SnapshotEnvelopeResponse(BaseModel):
+    """The live schedule flattened into the canonical diff envelope.
+
+    Returned by ``GET /schedules/{id}/snapshot-envelope`` so a client can
+    capture the current state (e.g. store it as a baseline) and later diff two
+    envelopes. The ``envelope`` is opaque to the API and consumed verbatim by
+    the diff engine.
+    """
+
+    schedule_id: UUID
+    envelope: dict[str, Any] = Field(default_factory=dict)
+
+
+class ScheduleDiffRequest(BaseModel):
+    """Body for ``POST /schedules/{id}/diff``.
+
+    The *base* side is required: either a captured baseline (``base_baseline_id``)
+    or an envelope posted inline (``base_envelope``). The *target* side defaults
+    to the live schedule, or another baseline via ``target_baseline_id``.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    base_baseline_id: UUID | None = None
+    base_envelope: dict[str, Any] | None = None
+    target_baseline_id: UUID | None = None
+
+
+class DiffActivityChangeSchema(BaseModel):
+    """One activity added, removed or modified between the two snapshots."""
+
+    key: str
+    change_type: str
+    categories: list[str] = Field(default_factory=list)
+    fields: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    finish_movement_days: int = 0
+    critical_path: bool = False
+    name: str | None = None
+    wbs_code: str | None = None
+
+
+class DiffRelationshipChangeSchema(BaseModel):
+    """One dependency link added, removed, retyped or re-lagged."""
+
+    key: list[str] = Field(default_factory=list)
+    change_type: str
+    categories: list[str] = Field(default_factory=list)
+    fields: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+
+class DiffCalendarChangeSchema(BaseModel):
+    """One calendar added, removed or whose definition changed."""
+
+    key: str
+    change_type: str
+    categories: list[str] = Field(default_factory=list)
+
+
+class DiffSummarySchema(BaseModel):
+    """Roll-up metrics across the whole diff."""
+
+    net_finish_movement_days: int = 0
+    count_by_category: dict[str, int] = Field(default_factory=dict)
+    activities_added: int = 0
+    activities_removed: int = 0
+    activities_changed: int = 0
+    relationships_added: int = 0
+    relationships_removed: int = 0
+    relationships_retyped: int = 0
+    relationships_relagged: int = 0
+    critical_path_in: int = 0
+    critical_path_out: int = 0
+    cost_planned_delta: str = "0"
+    cost_actual_delta: str = "0"
+    largest_slips: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ScheduleDiffResponse(BaseModel):
+    """Response for ``POST /schedules/{id}/diff`` - the categorized diff."""
+
+    schedule_id: UUID
+    base_label: str = ""
+    target_label: str = ""
+    activities: list[DiffActivityChangeSchema] = Field(default_factory=list)
+    relationships: list[DiffRelationshipChangeSchema] = Field(default_factory=list)
+    calendars: list[DiffCalendarChangeSchema] = Field(default_factory=list)
+    summary: DiffSummarySchema = Field(default_factory=DiffSummarySchema)
