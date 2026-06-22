@@ -19,7 +19,7 @@
 //   7 Review         inspect candidates per group, adjust, confirm
 //   8 Apply & done   dry-run BOQ rollup → write → summary
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -51,6 +51,7 @@ import {
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useToastStore } from '@/stores/useToastStore';
 import { projectsApi, type Project } from '@/features/projects/api';
+import { convertToBase } from '@/features/boq/boqHelpers';
 import { aiApi } from '@/features/ai/api';
 import { hasLlmKey } from '@/features/ai-estimator/useAiReadiness';
 import { Button } from '@/shared/ui/Button';
@@ -371,6 +372,13 @@ export function MatchWizardFlow() {
   const [matchStatus, setMatchStatus] = useState<MatchProgressStatus>('running');
   const [matchError, setMatchError] = useState<string | null>(null);
   const [matchStarted, setMatchStarted] = useState(false);
+  // Feeds the in-flight run-match POST so the progress card's Cancel
+  // button (and the unmount cleanup) can abort a wedged backend instead
+  // of leaving the user staring at a spinner forever. ``cancelledRef``
+  // flags a *deliberate* abort so the resulting fetch rejection is not
+  // mis-reported as a match error.
+  const runAbortRef = useRef<AbortController | null>(null);
+  const cancelledRef = useRef(false);
   const [detailGroup, setDetailGroup] = useState<GroupSummary | null>(null);
   // dead_button fix: the tenant-scoped template library (TemplatesPanel)
   // had no in-app trigger — this state opens it from the "Setup & tools"
@@ -467,6 +475,78 @@ export function MatchWizardFlow() {
     setDisplayCurrency(project.currency);
   }, [displayCurrency, project?.currency]);
 
+  // ── Display-currency conversion ──────────────────────────────────────
+  // The match runs against the catalogue's native currency; the rollup
+  // totals come back in that currency too. The "Display currency"
+  // selector lets the estimator read those totals in another currency
+  // using the project's own FX rate table (same source + convention as
+  // the BOQ editor): rates are stored rate-to-base, so
+  // ``native → base`` is ``convertToBase`` and ``base → display`` is a
+  // divide by the display rate. Before this, the selector was inert —
+  // changing it did nothing because the totals were always formatted in
+  // the native currency.
+  const fxRates = useMemo(
+    () =>
+      (project?.fx_rates ?? [])
+        .map((fx) => ({ currency: fx.code, rate: Number(fx.rate) }))
+        .filter((fx) => fx.currency && Number.isFinite(fx.rate) && fx.rate > 0),
+    [project?.fx_rates],
+  );
+  const baseCurrency = project?.currency ?? null;
+  // Resolve the FX row backing the chosen display currency. ``null`` when
+  // the display currency is the base (no conversion needed) or when no
+  // usable rate exists (we then fall back to the native amount).
+  const displayFx = useMemo(() => {
+    if (!displayCurrency || !baseCurrency) return null;
+    if (displayCurrency === baseCurrency) return { currency: baseCurrency, rate: 1 };
+    const hit = fxRates.find((f) => f.currency === displayCurrency);
+    return hit ?? null;
+  }, [displayCurrency, baseCurrency, fxRates]);
+
+  // Format a native-currency amount in the chosen display currency.
+  // Path: native → base (convertToBase) → display (divide by display
+  // rate). Falls back to the native amount + currency when we can't
+  // convert (missing rate / unknown base), so totals are never wrong,
+  // just unconverted. ``canConvert`` reflects whether the displayed
+  // figure is actually in the display currency.
+  const convertToDisplay = useCallback(
+    (
+      value: number | null | undefined,
+      nativeCurrency: string | null | undefined,
+    ): { value: number; currency: string | null; converted: boolean } => {
+      const v = typeof value === 'number' ? value : Number(value ?? 0);
+      const native = nativeCurrency ?? baseCurrency ?? null;
+      if (!Number.isFinite(v)) {
+        return { value: 0, currency: native, converted: false };
+      }
+      // No display target, or it equals the native currency already.
+      if (!displayCurrency || displayCurrency === native) {
+        return { value: v, currency: native, converted: false };
+      }
+      // Need a base + a usable display rate to bridge native → display.
+      if (!baseCurrency || !displayFx) {
+        return { value: v, currency: native, converted: false };
+      }
+      const inBase = convertToBase(v, native, baseCurrency, fxRates);
+      const inDisplay = inBase / displayFx.rate;
+      if (!Number.isFinite(inDisplay)) {
+        return { value: v, currency: native, converted: false };
+      }
+      return { value: inDisplay, currency: displayCurrency, converted: true };
+    },
+    [displayCurrency, baseCurrency, displayFx, fxRates],
+  );
+
+  // Convenience: convert + format a native amount for display. Used by
+  // the Apply-stage rollup so the selector actually re-renders totals.
+  const fmtDisplayMoney = useCallback(
+    (value: number | null | undefined, nativeCurrency: string | null | undefined) => {
+      const r = convertToDisplay(value, nativeCurrency);
+      return fmtMoney(r.value, r.currency);
+    },
+    [convertToDisplay],
+  );
+
 
   const groupsQ = useQuery({
     enabled: !!sessionId && (stage === 'grouping' || stage === 'review'),
@@ -517,19 +597,24 @@ export function MatchWizardFlow() {
   const aiConnected = hasLlmKey(aiSettingsQ.data);
 
   const runMatchM = useMutation({
-    mutationFn: () =>
-      matchElementsApi.runMatch(sessionId!, {
-        // Use the AI re-rank only when the user asked for it AND has a key
-        // connected; otherwise the deterministic vector ranking. The
-        // backend scopes the re-rank to this user's own provider key.
-        method: useAiRerank && aiConnected ? 'llm' : 'vector',
-        max_groups: 200,
-        top_k: 10,
-      }),
-    onError: (e: Error) => {
-      setMatchStatus('error');
-      setMatchError(e.message);
-    },
+    mutationFn: (signal?: AbortSignal) =>
+      matchElementsApi.runMatch(
+        sessionId!,
+        {
+          // Use the AI re-rank only when the user asked for it AND has a
+          // key connected; otherwise the deterministic vector ranking.
+          // The backend scopes the re-rank to this user's own provider
+          // key.
+          method: useAiRerank && aiConnected ? 'llm' : 'vector',
+          max_groups: 200,
+          top_k: 10,
+        },
+        { signal },
+      ),
+    // Terminal status handling lives in ``startMatch`` (it owns the
+    // empty-vs-done branch and the deliberate-cancel guard); the mutation
+    // stays a thin transport so a cancel-induced rejection isn't
+    // surfaced as a red "match failed".
   });
 
   const bulkConfirmM = useMutation({
@@ -665,16 +750,72 @@ export function MatchWizardFlow() {
 
   const startMatch = useCallback(async () => {
     if (!sessionId) return;
+    // Fresh AbortController per run; abort any prior in-flight one first
+    // so a quick retry never leaves two POSTs racing.
+    runAbortRef.current?.abort();
+    const ac = new AbortController();
+    runAbortRef.current = ac;
+    cancelledRef.current = false;
     setMatchStarted(true);
     setMatchStatus('running');
     setMatchError(null);
     try {
-      await runMatchM.mutateAsync();
-      setMatchStatus('done');
-    } catch {
-      /* handled in onError */
+      const result = await runMatchM.mutateAsync(ac.signal);
+      // An empty result is NOT a success: the run completed but every
+      // group came back without a catalogue candidate (no catalogue
+      // installed, an empty collection, or nothing close enough). A
+      // group has a real candidate when the backend stamped a
+      // ``suggested_code`` (this is what increments its
+      // ``groups_with_candidates`` counter). Surfacing this as a green
+      // "Match complete" was the misleading-success bug; flip to the
+      // dedicated ``empty`` state instead so the user gets an honest
+      // explanation and a recovery path.
+      const hasAnyCandidate = result.some((g) => !!g.suggested_code);
+      setMatchStatus(hasAnyCandidate ? 'done' : 'empty');
+    } catch (e) {
+      // A deliberate Cancel aborts the fetch; that rejection must not be
+      // painted red. ``cancelledRef`` is set by ``handleCancelMatch``
+      // right before it aborts.
+      if (cancelledRef.current) return;
+      setMatchStatus('error');
+      setMatchError(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (runAbortRef.current === ac) runAbortRef.current = null;
     }
   }, [sessionId, runMatchM]);
+
+  // User-initiated cancel of an in-flight match. Aborts the POST, returns
+  // the wizard to the ready Grouping stage (no stuck spinner), and lets
+  // the user re-enter Run to retry. Flagging ``cancelledRef`` first keeps
+  // ``startMatch``'s catch from mis-reporting the abort as an error.
+  const handleCancelMatch = useCallback(() => {
+    cancelledRef.current = true;
+    runAbortRef.current?.abort();
+    runAbortRef.current = null;
+    setMatchStarted(false);
+    setMatchStatus('running');
+    setMatchError(null);
+    addToast({
+      type: 'info',
+      title: t('match.wizard.matchCancelled', {
+        defaultValue: 'Match cancelled',
+      }),
+      message: t('match.wizard.matchCancelledBody', {
+        defaultValue:
+          'The run was stopped. Adjust your scope or catalogue and run it again when ready.',
+      }),
+    });
+    setStage('grouping');
+  }, [addToast, t]);
+
+  // Abort any in-flight run-match POST if the wizard unmounts mid-run so
+  // we don't leak the request across navigations.
+  useEffect(() => {
+    return () => {
+      cancelledRef.current = true;
+      runAbortRef.current?.abort();
+    };
+  }, []);
 
   // Auto-kick the match when the user lands on the Run stage.
   useEffect(() => {
@@ -1146,11 +1287,31 @@ export function MatchWizardFlow() {
                           ));
                         })()}
                       </select>
-                      <p className="mt-1 text-xs text-content-tertiary">
-                        {t('match.wizard.displayCurrencyHelp', {
-                          defaultValue:
-                            'Rollup totals are shown in this currency. The match itself runs against the catalogue native currency.',
-                        })}
+                      <p
+                        className={clsx(
+                          'mt-1 text-xs',
+                          displayCurrency &&
+                            baseCurrency &&
+                            displayCurrency !== baseCurrency &&
+                            !displayFx
+                            ? 'text-amber-600 dark:text-amber-400'
+                            : 'text-content-tertiary',
+                        )}
+                      >
+                        {displayCurrency &&
+                        baseCurrency &&
+                        displayCurrency !== baseCurrency &&
+                        !displayFx
+                          ? t('match.wizard.displayCurrencyNoRate', {
+                              defaultValue:
+                                'No FX rate from {{base}} to {{disp}} is set on this project, so totals stay in their native currency. Add a rate in the project FX settings to convert.',
+                              base: baseCurrency,
+                              disp: displayCurrency,
+                            })
+                          : t('match.wizard.displayCurrencyHelp', {
+                              defaultValue:
+                                'Rollup totals are converted into this currency using the project FX rates. The match itself runs against the catalogue native currency.',
+                            })}
                       </p>
                     </div>
                   </div>
@@ -1401,6 +1562,8 @@ export function MatchWizardFlow() {
                         setMatchStarted(false);
                         void startMatch();
                       }}
+                      onAdjust={() => setStage('catalogue')}
+                      onCancel={handleCancelMatch}
                     />
                   )}
                 </div>
@@ -1574,7 +1737,7 @@ export function MatchWizardFlow() {
                           label={t('match.wizard.grandTotal', {
                             defaultValue: 'Grand total',
                           })}
-                          value={fmtMoney(applyResult.total, applyResult.currency)}
+                          value={fmtDisplayMoney(applyResult.total, applyResult.currency)}
                         />
                         <StatTile
                           label={t('match.wizard.mode', { defaultValue: 'Mode' })}
@@ -1686,10 +1849,10 @@ export function MatchWizardFlow() {
                                           ? t('match.wizard.noRate', {
                                               defaultValue: 'no rate',
                                             })
-                                          : fmtMoney(Number(p.unit_rate), p.currency)}
+                                          : fmtDisplayMoney(Number(p.unit_rate), p.currency)}
                                       </td>
                                       <td className="px-3 py-2 text-right tabular-nums font-medium text-content-primary">
-                                        {fmtMoney(Number(p.line_total), p.currency)}
+                                        {fmtDisplayMoney(Number(p.line_total), p.currency)}
                                       </td>
                                     </tr>
                                   );

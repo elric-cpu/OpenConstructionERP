@@ -35,9 +35,11 @@ import {
   Database,
   Layers,
   Loader2,
+  PackageOpen,
   RefreshCw,
   Save,
   Search,
+  SlidersHorizontal,
   Sparkles,
   TriangleAlert,
   X,
@@ -47,23 +49,41 @@ import clsx from 'clsx';
 import { matchElementsApi } from './api';
 import type { MatchProgress } from './api';
 
-export type MatchProgressStatus = 'running' | 'done' | 'error';
+/**
+ * ``empty`` is a distinct terminal state from ``done``: the match POST
+ * resolved successfully, but every group came back with zero catalogue
+ * candidates (no catalogue installed for the region, an empty Qdrant
+ * collection, or simply nothing close enough). Painting that green as a
+ * "Match complete" was misleading — the user has nothing to confirm or
+ * apply. ``empty`` renders an amber explainer + the actionable recovery
+ * paths instead.
+ */
+export type MatchProgressStatus = 'running' | 'done' | 'empty' | 'error';
 
 interface Props {
   /** Driven by the parent mutation. ``running`` is the default while the
    *  POST is in flight; flip to ``done`` to finalise the timeline + bar
-   *  and trigger ``onDone`` after a brief satisfaction frame, or to
-   *  ``error`` to expose the retry button. */
+   *  and trigger ``onDone`` after a brief satisfaction frame, to
+   *  ``empty`` when the match resolved but found no catalogue candidates
+   *  (amber explainer, no auto-advance), or to ``error`` to expose the
+   *  retry button. */
   status: MatchProgressStatus;
   /** Surfaced on the active stage row when ``status === 'error'``. */
   errorMessage?: string | null;
   /** Called ~800ms after the parent flips to ``status='done'`` — gives
    *  the user a moment to see "all green, bar 100%" before the results
-   *  pane swaps in. */
+   *  pane swaps in. NOT called for the ``empty`` state (there is nothing
+   *  to review, so the card stays put and offers recovery instead). */
   onDone: () => void;
-  /** Called when the user clicks "Try again" in the error footer. The
-   *  parent is expected to return to Step 4 of the wizard. */
+  /** Called when the user clicks "Try again" in the error footer, or
+   *  "Match again" in the empty footer. The parent is expected to
+   *  re-run the match. */
   onRetry?: () => void;
+  /** Called when the user clicks "Change catalogue" in the empty-state
+   *  footer — the most common fix for a zero-candidate run is picking /
+   *  installing a catalogue for the region. The parent routes back to
+   *  the catalogue step. Optional: when absent the button is hidden. */
+  onAdjust?: () => void;
   /** When supplied, the card polls
    *  ``/api/v1/match_elements/sessions/{id}/progress`` every 800ms while
    *  ``status === 'running'`` so the timeline reflects what the
@@ -115,6 +135,7 @@ export function MatchProgressCard({
   errorMessage,
   onDone,
   onRetry,
+  onAdjust,
   sessionId,
   onCancel,
 }: Props) {
@@ -249,7 +270,9 @@ export function MatchProgressCard({
   // ``ranking`` / ``save`` align 1-to-1; ``done`` flips every row
   // green. Unknown / idle stages collapse onto the wall-clock pass.
   const activeIdx = useMemo(() => {
-    if (status === 'done') return stages.length;
+    // ``empty`` is terminal like ``done`` — every stage ran, the result
+    // was just barren — so the timeline shows all rows complete.
+    if (status === 'done' || status === 'empty') return stages.length;
     if (useRealProgress && progress) {
       const idx = stages.findIndex((s) => s.id === progress.stage);
       if (idx >= 0) return idx;
@@ -267,7 +290,7 @@ export function MatchProgressCard({
   // actual work done. Outside the ranking stage we fall back to the
   // wall-clock ramp.
   const overallPct = useMemo(() => {
-    if (status === 'done') return 100;
+    if (status === 'done' || status === 'empty') return 100;
     if (useRealProgress && progress) {
       // Stage weight: init=5, elements=10, ranking=70, save=10, done=5
       const stageWeights: Record<StageId, [number, number]> = {
@@ -294,6 +317,7 @@ export function MatchProgressCard({
 
   const isRunning = status === 'running';
   const isDone = status === 'done';
+  const isEmpty = status === 'empty';
   const isError = status === 'error';
 
   const rankingCounter = useMemo(() => {
@@ -307,6 +331,11 @@ export function MatchProgressCard({
     if (isError) {
       return t('match_progress.headline_error', {
         defaultValue: 'Something went wrong',
+      });
+    }
+    if (isEmpty) {
+      return t('match_progress.headline_empty', {
+        defaultValue: 'No catalogue matches found',
       });
     }
     if (isDone) {
@@ -325,7 +354,7 @@ export function MatchProgressCard({
       });
     }
     return stageLabel;
-  }, [isError, isDone, elapsedSec, stages, activeIdx, t, rankingCounter]);
+  }, [isError, isEmpty, isDone, elapsedSec, stages, activeIdx, t, rankingCounter]);
 
   const handleCancel = useCallback(() => {
     onCancel?.();
@@ -335,7 +364,11 @@ export function MatchProgressCard({
     <div
       className={clsx(
         'rounded-2xl border bg-surface-primary shadow-sm p-5 sm:p-7 max-w-3xl mx-auto mt-4 transition-opacity duration-500',
-        isError ? 'border-rose-200 dark:border-rose-800/60' : 'border-border',
+        isError
+          ? 'border-rose-200 dark:border-rose-800/60'
+          : isEmpty
+            ? 'border-amber-200 dark:border-amber-800/60'
+            : 'border-border',
       )}
       data-testid="match-progress-card"
       data-status={status}
@@ -351,6 +384,15 @@ export function MatchProgressCard({
                 <TriangleAlert className="w-5 h-5 text-rose-600" />
                 {t('match_progress.title_error', {
                   defaultValue: 'Match failed',
+                })}
+              </>
+            ) : isEmpty ? (
+              <>
+                <span className="w-6 h-6 rounded-full bg-amber-500 text-white inline-flex items-center justify-center shadow-sm shadow-amber-500/40">
+                  <PackageOpen className="w-4 h-4" strokeWidth={2.5} />
+                </span>
+                {t('match_progress.title_empty', {
+                  defaultValue: 'No matches found',
                 })}
               </>
             ) : isDone ? (
@@ -377,6 +419,11 @@ export function MatchProgressCard({
                 t('match_progress.subtitle_error', {
                   defaultValue:
                     'The matcher couldn’t finish - try again or pick a different catalogue.',
+                })
+              : isEmpty
+              ? t('match_progress.subtitle_empty', {
+                  defaultValue:
+                    'The run finished but no catalogue rows matched. There is nothing to review or apply yet.',
                 })
               : isDone
               ? t('match_progress.subtitle_done', {
@@ -405,7 +452,11 @@ export function MatchProgressCard({
       <div
         className={clsx(
           'h-1.5 rounded-full mb-5 overflow-hidden',
-          isError ? 'bg-rose-100 dark:bg-rose-950/40' : 'bg-surface-secondary',
+          isError
+            ? 'bg-rose-100 dark:bg-rose-950/40'
+            : isEmpty
+              ? 'bg-amber-100 dark:bg-amber-950/40'
+              : 'bg-surface-secondary',
         )}
       >
         <div
@@ -413,6 +464,8 @@ export function MatchProgressCard({
             'h-full rounded-full transition-all duration-700 ease-out',
             isError
               ? 'bg-rose-500'
+              : isEmpty
+              ? 'bg-amber-500'
               : isDone
               ? 'bg-emerald-500'
               : 'bg-gradient-to-r from-indigo-500 to-indigo-700',
@@ -435,6 +488,8 @@ export function MatchProgressCard({
           'text-sm font-semibold mb-5 transition-colors',
           isError
             ? 'text-rose-700 dark:text-rose-300'
+            : isEmpty
+            ? 'text-amber-700 dark:text-amber-300'
             : isDone
             ? 'text-emerald-700 dark:text-emerald-300'
             : 'text-content-primary',
@@ -450,7 +505,7 @@ export function MatchProgressCard({
       <ol className="space-y-3">
         {stages.map((s, i) => {
           const isPast = !isError && i < activeIdx;
-          const isCurrent = !isError && !isDone && i === activeIdx;
+          const isCurrent = !isError && !isDone && !isEmpty && i === activeIdx;
           const isFinalGreen = isDone;
           const isErrorRow = isError && i === activeIdx;
 
@@ -459,6 +514,15 @@ export function MatchProgressCard({
               return (
                 <span className="w-7 h-7 rounded-full bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 inline-flex items-center justify-center ring-2 ring-rose-200 dark:ring-rose-800/40">
                   <X className="w-4 h-4" strokeWidth={3} />
+                </span>
+              );
+            }
+            if (isEmpty) {
+              // Every stage ran — show an amber check, not the emerald
+              // "success" tick, because the outcome was barren.
+              return (
+                <span className="w-7 h-7 rounded-full bg-amber-500 text-white inline-flex items-center justify-center shadow-sm shadow-amber-500/40">
+                  <Check className="w-4 h-4" strokeWidth={3} />
                 </span>
               );
             }
@@ -547,6 +611,64 @@ export function MatchProgressCard({
               {t('match_progress.retry', { defaultValue: 'Try again' })}
             </button>
           )}
+        </div>
+      )}
+
+      {/* Empty footer — the run completed but every group came back with
+          zero catalogue candidates. This is NOT a success: there is
+          nothing to confirm or apply. Explain the likely causes and give
+          the two recovery paths (pick/install a catalogue, or re-run).
+          Mounted only on the empty state. */}
+      {isEmpty && (
+        <div
+          data-testid="match-progress-empty"
+          className="mt-6 rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/60 dark:bg-amber-950/20 p-4"
+        >
+          <div className="text-xs font-semibold text-amber-900 dark:text-amber-100 mb-1">
+            {t('match_progress.empty_label', {
+              defaultValue: 'Why am I seeing this?',
+            })}
+          </div>
+          <ul className="text-xs text-amber-800 dark:text-amber-200 list-disc pl-4 space-y-0.5">
+            <li>
+              {t('match_progress.empty_reason_catalogue', {
+                defaultValue:
+                  'No cost catalogue is installed for this region, so there were no rates to match against.',
+              })}
+            </li>
+            <li>
+              {t('match_progress.empty_reason_collection', {
+                defaultValue:
+                  'The selected catalogue is empty, or nothing in it was close enough to your elements.',
+              })}
+            </li>
+          </ul>
+          <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-2">
+            {onAdjust && (
+              <button
+                type="button"
+                data-testid="match-progress-empty-adjust"
+                onClick={onAdjust}
+                className="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-sm shadow-amber-500/30 hover:shadow-md hover:shadow-amber-500/40 hover:-translate-y-px transition-all"
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+                {t('match_progress.empty_adjust', {
+                  defaultValue: 'Change catalogue',
+                })}
+              </button>
+            )}
+            {onRetry && (
+              <button
+                type="button"
+                data-testid="match-progress-empty-retry"
+                onClick={onRetry}
+                className="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold border border-amber-300 dark:border-amber-700 bg-surface-primary text-amber-900 dark:text-amber-100 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-colors"
+              >
+                <RefreshCw className="w-4 h-4" />
+                {t('match_progress.empty_retry', { defaultValue: 'Match again' })}
+              </button>
+            )}
+          </div>
         </div>
       )}
 

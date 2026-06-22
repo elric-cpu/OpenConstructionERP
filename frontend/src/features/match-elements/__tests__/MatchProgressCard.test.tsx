@@ -30,6 +30,7 @@ import {
   screen,
   cleanup,
   act,
+  fireEvent,
 } from '@testing-library/react';
 
 // Stub the api module BEFORE importing the card so its getProgress
@@ -186,6 +187,23 @@ describe('MatchProgressCard - v3.0.6 hang regression', () => {
     expect(screen.queryByTestId('match-progress-cancel')).toBeNull();
   });
 
+  it('fires onCancel when the Cancel button is clicked', async () => {
+    const onCancel = vi.fn();
+    render(
+      <MatchProgressCard
+        status="running"
+        onCancel={onCancel}
+        onDone={() => {}}
+      />,
+    );
+    await act(async () => {
+      vi.advanceTimersByTime(21_000);
+    });
+    const cancelBtn = screen.getByTestId('match-progress-cancel');
+    fireEvent.click(cancelBtn);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
   it('falls back to the heuristic timeline after three failed polls', async () => {
     getProgressSpy.mockRejectedValue(new Error('network down'));
     render(
@@ -243,5 +261,48 @@ describe('MatchProgressCard - v3.0.6 hang regression', () => {
     // on the ranking stage row. ``getAllByText`` covers both without
     // assuming a single mount point.
     expect(screen.getAllByText('7 / 12').length).toBeGreaterThan(0);
+  });
+});
+
+describe('MatchProgressCard - empty (no-candidate) terminal state', () => {
+  it('renders the empty explainer instead of a green "Match complete"', () => {
+    render(
+      <MatchProgressCard status="empty" onDone={() => {}} />,
+    );
+    // The dedicated empty footer is present...
+    expect(screen.getByTestId('match-progress-empty')).not.toBeNull();
+    // ...and the success copy is NOT — an empty run is not a success.
+    expect(screen.queryByText(/Match complete/i)).toBeNull();
+    // The card stamps its status so downstream / e2e can assert it.
+    expect(
+      screen.getByTestId('match-progress-card').getAttribute('data-status'),
+    ).toBe('empty');
+  });
+
+  it('does NOT call onDone for the empty state (nothing to hand over)', async () => {
+    const onDone = vi.fn();
+    render(<MatchProgressCard status="empty" onDone={onDone} />);
+    // onDone fires ~800ms after a *done* flip; empty must never advance.
+    await act(async () => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it('fires onAdjust and onRetry from the empty footer buttons', () => {
+    const onAdjust = vi.fn();
+    const onRetry = vi.fn();
+    render(
+      <MatchProgressCard
+        status="empty"
+        onDone={() => {}}
+        onAdjust={onAdjust}
+        onRetry={onRetry}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('match-progress-empty-adjust'));
+    expect(onAdjust).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByTestId('match-progress-empty-retry'));
+    expect(onRetry).toHaveBeenCalledTimes(1);
   });
 });
