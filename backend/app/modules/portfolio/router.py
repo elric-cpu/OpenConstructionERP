@@ -1,0 +1,124 @@
+# DDC-CWICR-OE: DataDrivenConstruction - OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
+"""Portfolio tree API (T3.3).
+
+Mounted by the module loader at ``/api/v1/portfolio``. The tree read is pruned
+to the caller's accessible projects; project attach/detach run
+``verify_project_access`` on the specific project. RBAC gates: ``portfolio.read``
+for reads, ``portfolio.manage`` for writes.
+"""
+
+from __future__ import annotations
+
+import uuid
+
+from fastapi import APIRouter, Depends, Response, status
+
+from app.dependencies import CurrentUserId, RequirePermission, SessionDep
+from app.modules.portfolio.schemas import (
+    AttachProjectRequest,
+    NodeCreate,
+    NodePatch,
+    NodeResponse,
+    TreeNode,
+)
+from app.modules.portfolio.service import PortfolioService
+
+router = APIRouter(tags=["portfolio"])
+
+
+def _get_service(session: SessionDep) -> PortfolioService:
+    return PortfolioService(session)
+
+
+@router.get(
+    "/tree/",
+    response_model=list[TreeNode],
+    summary="Access-pruned portfolio / programme tree",
+    dependencies=[Depends(RequirePermission("portfolio.read"))],
+)
+async def get_tree(
+    user_id: CurrentUserId,
+    service: PortfolioService = Depends(_get_service),
+) -> list[TreeNode]:
+    tree = await service.get_tree(user_id)
+    return [TreeNode.model_validate(node) for node in tree]
+
+
+@router.post(
+    "/nodes/",
+    response_model=NodeResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a portfolio / programme node",
+    dependencies=[Depends(RequirePermission("portfolio.manage"))],
+)
+async def create_node(
+    body: NodeCreate,
+    user_id: CurrentUserId,
+    service: PortfolioService = Depends(_get_service),
+) -> NodeResponse:
+    node = await service.create_node(body, user_id)
+    return NodeResponse.model_validate(node)
+
+
+@router.patch(
+    "/nodes/{node_id}/",
+    response_model=NodeResponse,
+    summary="Rename / reparent / reorder a node",
+    dependencies=[Depends(RequirePermission("portfolio.manage"))],
+)
+async def patch_node(
+    node_id: uuid.UUID,
+    body: NodePatch,
+    user_id: CurrentUserId,
+    service: PortfolioService = Depends(_get_service),
+) -> NodeResponse:
+    node = await service.patch_node(node_id, body, user_id)
+    return NodeResponse.model_validate(node)
+
+
+@router.delete(
+    "/nodes/{node_id}/",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a node (memberships cascade; projects untouched)",
+    dependencies=[Depends(RequirePermission("portfolio.manage"))],
+)
+async def delete_node(
+    node_id: uuid.UUID,
+    user_id: CurrentUserId,
+    service: PortfolioService = Depends(_get_service),
+) -> Response:
+    await service.delete_node(node_id, user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/nodes/{node_id}/projects/",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="File a project under a node (must be accessible to the caller)",
+    dependencies=[Depends(RequirePermission("portfolio.manage"))],
+)
+async def attach_project(
+    node_id: uuid.UUID,
+    body: AttachProjectRequest,
+    user_id: CurrentUserId,
+    service: PortfolioService = Depends(_get_service),
+) -> Response:
+    await service.attach_project(node_id, body.project_id, user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/nodes/{node_id}/projects/{project_id}/",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove a project from a node (non-destructive)",
+    dependencies=[Depends(RequirePermission("portfolio.manage"))],
+)
+async def detach_project(
+    node_id: uuid.UUID,
+    project_id: uuid.UUID,
+    user_id: CurrentUserId,
+    service: PortfolioService = Depends(_get_service),
+) -> Response:
+    await service.detach_project(node_id, project_id, user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
