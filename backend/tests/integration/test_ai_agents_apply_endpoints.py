@@ -69,13 +69,19 @@ async def app_and_user(session):
     return app, user_id
 
 
-async def _seed_run_with_proposals(session, user_id: uuid.UUID) -> uuid.UUID:
+async def _seed_run_with_proposals(
+    session,
+    user_id: uuid.UUID,
+    *,
+    project_id: uuid.UUID | None = None,
+) -> uuid.UUID:
     from app.modules.ai_agents.models import AgentRun, AgentStep
     from app.modules.ai_agents.proposals import PROPOSAL_KIND
 
     run = AgentRun(
         agent_name="boq_drafter",
         user_id=user_id,
+        project_id=project_id,
         status="completed",
         user_input="draft a slab",
         final_output="Drafted 2 positions.",
@@ -238,3 +244,111 @@ async def test_apply_endpoint_forbidden_project_403(app_and_user, session):
             json={"boq_id": str(boq.id)},
         )
     assert res.status_code == 403, res.text
+
+
+# ── Project-binding security: apply targets the RUN's project, never the
+#    caller's active/chosen project ─────────────────────────────────────────
+
+
+async def _seed_owned_project_boq(session, owner_id: uuid.UUID, *, currency: str = "EUR"):
+    """Create a Project owned by ``owner_id`` plus an empty BOQ in it."""
+    from app.modules.boq.schemas import BOQCreate
+    from app.modules.boq.service import BOQService
+    from app.modules.projects.models import Project
+
+    project = Project(name=f"P {uuid.uuid4().hex[:6]}", currency=currency, owner_id=owner_id)
+    session.add(project)
+    await session.flush()
+    boq = await BOQService(session).create_boq(BOQCreate(project_id=project.id, name="Draft", currency=currency))
+    await session.flush()
+    return project, boq
+
+
+@pytest.mark.asyncio
+async def test_apply_targets_run_project_when_boq_matches(app_and_user, session):
+    """A run bound to project P applies into a BOQ that lives in P (the run's
+    own project is the target - the lines really land there)."""
+    app, user_id = app_and_user
+
+    from app.modules.boq.service import BOQService
+
+    project, boq = await _seed_owned_project_boq(session, user_id)
+    # The run is explicitly bound to this same project.
+    run_id = await _seed_run_with_proposals(session, user_id, project_id=project.id)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        res = await ac.post(
+            f"/api/v1/ai-agents/runs/{run_id}/apply",
+            json={"boq_id": str(boq.id)},
+        )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["created"] == 2
+    assert body["skipped"] == 0
+
+    # The positions really landed in the run's project BOQ.
+    refreshed = await BOQService(session).get_boq_with_positions(boq.id)
+    assert refreshed.position_count == 2
+
+
+@pytest.mark.asyncio
+async def test_apply_run_inaccessible_project_rejected(app_and_user, session):
+    """A run bound to a project the caller cannot access is rejected, even if
+    the caller owns the run (the run's project gates the apply)."""
+    app, user_id = app_and_user
+
+    from app.modules.boq.service import BOQService
+
+    # Project owned by SOMEONE ELSE; the acting user is neither owner nor member.
+    foreign_project, foreign_boq = await _seed_owned_project_boq(session, uuid.uuid4())
+    # The user's own run is bound to that foreign project (e.g. a stale/forged id).
+    run_id = await _seed_run_with_proposals(session, user_id, project_id=foreign_project.id)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        res = await ac.post(
+            f"/api/v1/ai-agents/runs/{run_id}/apply",
+            json={"boq_id": str(foreign_boq.id)},
+        )
+    # IDOR-safe rejection (404 per verify_project_access policy; 403 also acceptable).
+    assert res.status_code in (403, 404), res.text
+
+    # Nothing was written into the foreign BOQ.
+    refreshed = await BOQService(session).get_boq_with_positions(foreign_boq.id)
+    assert refreshed.position_count == 0
+
+
+@pytest.mark.asyncio
+async def test_apply_client_boq_in_other_project_does_not_override_run(app_and_user, session):
+    """A client-passed BOQ in a DIFFERENT project than the run's is refused -
+    the caller's active project can never redirect a run's output.
+
+    The run belongs to project A; the caller also owns project B and passes B's
+    BOQ. Even though the caller can access B, the apply targets the run's own
+    project, so the mismatch is rejected and B's BOQ is left untouched.
+    """
+    app, user_id = app_and_user
+
+    from app.modules.boq.service import BOQService
+
+    # Both projects are owned by the caller, so access is NOT the blocker here -
+    # the only thing that should reject the apply is the project mismatch.
+    project_a, _boq_a = await _seed_owned_project_boq(session, user_id)
+    _project_b, boq_b = await _seed_owned_project_boq(session, user_id)
+
+    # The run is bound to project A, but the request points at project B's BOQ.
+    run_id = await _seed_run_with_proposals(session, user_id, project_id=project_a.id)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        res = await ac.post(
+            f"/api/v1/ai-agents/runs/{run_id}/apply",
+            json={"boq_id": str(boq_b.id)},
+        )
+    # Refused (not silently honoured); IDOR-safe 404 (403 also acceptable).
+    assert res.status_code in (403, 404), res.text
+
+    # Project B's BOQ - the caller's "active" project - received nothing.
+    refreshed_b = await BOQService(session).get_boq_with_positions(boq_b.id)
+    assert refreshed_b.position_count == 0

@@ -857,11 +857,14 @@ class AgentService:
         line back to the run. Currencies are never blended - an off-currency or
         un-priced line is skipped with a reason.
 
-        Returns ``None`` when the run is not found / not owned by the caller.
-        Raises :class:`ValueError` when the run has no proposals to apply (the
-        router maps that to 422). The caller (router) is responsible for
-        verifying the user's access to the target BOQ's project and for the
-        commit.
+        Returns ``None`` when the run is not found / not owned by the caller,
+        or when the target BOQ belongs to a project other than the run's own
+        (the run's ``project_id`` is the sole authority for the target - the
+        caller's active project must never override it; the router maps the
+        ``None`` to 404). Raises :class:`ValueError` when the run has no
+        proposals to apply (the router maps that to 422). The caller (router)
+        is responsible for verifying the user's access to the project and for
+        the commit.
         """
         from app.modules.ai_agents.proposals import (
             apply_proposals_to_boq,
@@ -873,13 +876,24 @@ class AgentService:
         if run is None or str(run.user_id) != str(user_id):
             return None
 
+        boq_service = BOQService(self.session)
+
+        # Project binding (defence in depth - the router enforces this too):
+        # a run bound to a project may only be applied into a BOQ that lives in
+        # that SAME project. Anything else (e.g. a BOQ in the caller's active
+        # project) is refused so a run's output can never land in a foreign
+        # project. ``None`` here maps to 404 at the router.
+        if run.project_id is not None:
+            target_boq = await boq_service.boq_repo.get_by_id(boq_id)
+            if target_boq is None or str(target_boq.project_id) != str(run.project_id):
+                return None
+
         steps = await self.step_repo.list_for_run(run_id)
         proposals = extract_proposals(steps, run.final_output)
         if not proposals:
             msg = "This run produced no BOQ position proposals to apply."
             raise ValueError(msg)
 
-        boq_service = BOQService(self.session)
         project_currency = (await boq_service._resolve_project_currency(boq_id)) or ""  # noqa: SLF001
 
         outcome = await apply_proposals_to_boq(

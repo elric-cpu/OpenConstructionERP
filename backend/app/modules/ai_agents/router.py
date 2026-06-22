@@ -892,10 +892,25 @@ async def apply_run_proposals(
     as a manual add) and tag each line back to the run. Currencies are never
     blended - off-currency or un-priced lines are skipped with a reason.
 
-    403 unless the caller can access the BOQ's project; 404 when the run or BOQ
-    does not exist; 422 when the run produced no proposals.
+    The target project is taken from the RUN's own ``project_id`` - never from
+    the caller's active project. The requested BOQ must live in that same
+    project, otherwise the apply is rejected with 404 (an IDOR-safe response
+    that does not reveal whether the BOQ exists). This prevents a caller from
+    writing a run's output into a different project they happen to also have
+    open / can access.
+
+    404 when the run or BOQ does not exist, when the caller does not own the
+    run, when the BOQ belongs to a project other than the run's, or when the
+    caller cannot access the run's project; 422 when the run produced no
+    proposals.
     """
     uid = uuid.UUID(user_id)
+
+    # Resolve the run FIRST: it is the sole authority for the target project.
+    # 404 (not 403) on missing/foreign run keeps run existence non-discoverable.
+    run = await service.get_run(run_id)
+    if run is None or str(run.user_id) != str(uid):
+        raise HTTPException(status_code=404, detail="Run not found")
 
     # Resolve the BOQ and verify project access BEFORE doing any work, so a
     # caller can never apply proposals into a project they cannot see.
@@ -908,7 +923,18 @@ async def apply_run_proposals(
         raise
     if boq is None:
         raise HTTPException(status_code=404, detail="BOQ not found")
-    await verify_project_access(boq.project_id, user_id, session)
+
+    # The run's project is authoritative. If the run is bound to a project, the
+    # target BOQ MUST belong to that same project, and the caller must be able
+    # to access it - a client-supplied BOQ in any other project is rejected
+    # (404) rather than silently honoured. A run with no project binding
+    # (advisory/global) falls back to verifying the chosen BOQ's project.
+    if run.project_id is not None:
+        await verify_project_access(run.project_id, user_id, session)
+        if str(boq.project_id) != str(run.project_id):
+            raise HTTPException(status_code=404, detail="BOQ not found")
+    else:
+        await verify_project_access(boq.project_id, user_id, session)
 
     try:
         result = await service.apply_run_proposals(
