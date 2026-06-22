@@ -27,6 +27,13 @@ from uuid import uuid4
 logger = logging.getLogger(__name__)
 
 
+# Strong references to detached tasks launched via :func:`_log_failures`.
+# asyncio only weak-references the task ``create_task`` returns, so without our
+# own reference a still-pending task can be garbage-collected mid-await (seen as
+# "coroutine ignored GeneratorExit" / "Task was destroyed but it is pending").
+_DETACHED_TASKS: set[asyncio.Task[Any]] = set()
+
+
 def _log_failures(
     coro: Coroutine[Any, Any, Any],
     *,
@@ -51,8 +58,10 @@ def _log_failures(
         The created task (callers may ignore it).
     """
     task = asyncio.create_task(coro)
+    _DETACHED_TASKS.add(task)
 
     def _done(t: asyncio.Task[Any]) -> None:
+        _DETACHED_TASKS.discard(t)
         try:
             exc = t.exception()
         except asyncio.CancelledError:
@@ -112,6 +121,12 @@ class EventBus:
     def __init__(self) -> None:
         self._handlers: dict[str, list[EventHandler]] = defaultdict(list)
         self._wildcard_handlers: list[EventHandler] = []
+        # Strong references to in-flight detached tasks. asyncio only keeps a
+        # weak reference to the task returned by ``create_task``; without our
+        # own reference the loop may garbage-collect a still-pending task
+        # mid-await, which surfaces as "coroutine ignored GeneratorExit" /
+        # "Task was destroyed but it is pending" (and intermittently reddens CI).
+        self._background_tasks: set[asyncio.Task[EventResult]] = set()
 
     def on(self, event_name: str) -> Callable:
         """Decorator to register an event handler.
@@ -164,7 +179,12 @@ class EventBus:
         code should fire-and-forget. Errors inside the detached task are
         logged by :meth:`publish` itself.
         """
-        return asyncio.create_task(self.publish(event_name, data, source_module=source_module))
+        task = asyncio.create_task(self.publish(event_name, data, source_module=source_module))
+        # Keep a strong reference until the task finishes so it is never
+        # collected while still suspended at an ``await``.
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+        return task
 
     async def publish(
         self,
