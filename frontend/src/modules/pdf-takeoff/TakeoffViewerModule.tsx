@@ -55,6 +55,7 @@ import {
   Check,
   AlertTriangle,
   Search,
+  Boxes,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useToastStore } from '../../stores/useToastStore';
@@ -1758,6 +1759,14 @@ export default function TakeoffViewerModule({
   // Ref to allow touch handler to call the latest click handler without circular deps
   const handleCanvasClickRef = useRef<((e: React.MouseEvent<HTMLCanvasElement>) => void) | null>(null);
 
+  // Count-by-example ("Count similar") seed plumbing. The arm latch and the
+  // async seed handler are read through refs inside handleCanvasClick so the
+  // big click handler never needs them in its dependency array (mirrors
+  // handleCanvasClickRef). armCountSimilarRef is the one-shot "the next click
+  // picks the seed symbol" latch; a state mirror drives the button styling.
+  const armCountSimilarRef = useRef(false);
+  const handleCountByExampleSeedRef = useRef<((seed: Point) => void) | null>(null);
+
   const handleCanvasClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       // A pan gesture that ended on this element must not also place a point.
@@ -1805,6 +1814,16 @@ export default function TakeoffViewerModule({
             setShowScaleDialog(true);
           }
         }
+        return;
+      }
+
+      // Count by example: once "Count similar" is armed, the next click picks
+      // the seed symbol and the server returns every near-identical one. This
+      // takes precedence over the active drawing tool, and runs through refs so
+      // the click handler stays out of the async flow's dependency list.
+      if (armCountSimilarRef.current) {
+        armCountSimilarRef.current = false;
+        handleCountByExampleSeedRef.current?.(point);
         return;
       }
 
@@ -3211,6 +3230,12 @@ export default function TakeoffViewerModule({
   /* ── Recognize: offline AI vector detection (issue #194) ───────────── */
 
   const [recognizeBusy, setRecognizeBusy] = useState(false);
+  // "Count similar" (seeded count-by-example) state. `armCountSimilar` is the
+  // UI pressed/cursor state; `countSimilarBusy` disables the button and spins
+  // while the server matches symbols. The click latch lives in
+  // armCountSimilarRef (declared up by handleCanvasClick) to avoid stale reads.
+  const [armCountSimilar, setArmCountSimilar] = useState(false);
+  const [countSimilarBusy, setCountSimilarBusy] = useState(false);
 
   /** Number of unconfirmed AI suggestions currently on the canvas. */
   const suggestionCount = useMemo(
@@ -3290,6 +3315,136 @@ export default function TakeoffViewerModule({
       setRecognizeBusy(false);
     }
   }, [recognizeBusy, initialPdfUrl, currentPage, scale, activeGroup, nextAnnotation, addToast, t]);
+
+  /* ── Count similar: seeded "count by example" (issue #194) ──────────────
+   * The user arms the tool and clicks one symbol (a door, socket, column).
+   * The server scans this page's vector layer for every near-identical symbol
+   * and returns their centroids; we drop ONE suggested `count` measurement at
+   * those points. Like Recognize it is a suggestion - nothing is persisted
+   * until the user accepts it. Coordinates are PDF points, the same space the
+   * canvas and stored measurements use, so the hit centroids map straight
+   * through (identical to how handleRecognize consumes its candidate points). */
+  const handleCountByExampleSeed = useCallback(
+    async (seed: Point) => {
+      const docId = initialPdfUrl?.match(/\/documents\/([^/?#]+)\/(?:download|recognize)/)?.[1];
+      if (!docId) {
+        addToast({
+          type: 'info',
+          title: t('takeoff_viewer.count_similar.needs_upload_title', {
+            defaultValue: 'Count similar needs an uploaded drawing',
+          }),
+          message: t('takeoff_viewer.count_similar.needs_upload_msg', {
+            defaultValue:
+              'Upload this PDF to the project first, then open it from the documents list to count symbols.',
+          }),
+        });
+        return;
+      }
+      setCountSimilarBusy(true);
+      try {
+        const result = await takeoffApi.similarSymbols(docId, currentPage, seed.x, seed.y);
+        const hits = result.hits ?? [];
+        if (hits.length === 0) {
+          addToast({
+            type: 'info',
+            title: t('takeoff_viewer.count_similar.none_title', { defaultValue: 'No matching symbols' }),
+            message:
+              result.note === 'no_vector_layer'
+                ? t('takeoff_viewer.count_similar.no_vectors', {
+                    defaultValue:
+                      'This page has no vector layer (it may be scanned), so symbols cannot be matched.',
+                  })
+                : result.seed_found
+                  ? t('takeoff_viewer.count_similar.none_msg', {
+                      defaultValue: 'No other symbol on this page looks like the one you clicked.',
+                    })
+                  : t('takeoff_viewer.count_similar.no_seed', {
+                      defaultValue:
+                        'No symbol was found under that click. Click directly on a symbol to count it.',
+                    }),
+          });
+          return;
+        }
+        const points = hits.map((h) => ({ x: h.x, y: h.y }));
+        const avgConfidence = hits.reduce((s, h) => s + (h.confidence ?? 0), 0) / hits.length;
+        const suggestion: Measurement = {
+          id: `sug_${Date.now()}_cnt`,
+          type: 'count',
+          points,
+          value: points.length,
+          unit: 'pcs',
+          label: String(points.length),
+          annotation: nextAnnotation('count'),
+          page: currentPage,
+          group: activeGroup,
+          suggested: true,
+          confidence: Math.round(avgConfidence * 100) / 100,
+        };
+        setMeasurements((prev) => [...prev, suggestion]);
+        addToast({
+          type: 'success',
+          title: t('takeoff_viewer.count_similar.added_title', {
+            defaultValue: '{{n}} matching symbols counted',
+            n: points.length,
+          }),
+          message: t('takeoff_viewer.count_similar.added_msg', {
+            defaultValue:
+              'Review the highlighted symbols on the drawing, then accept or dismiss the count.',
+          }),
+        });
+      } catch (err) {
+        addToast({
+          type: 'error',
+          title: t('takeoff_viewer.count_similar.failed', { defaultValue: 'Count similar failed' }),
+          message: err instanceof Error ? err.message : '',
+        });
+      } finally {
+        setCountSimilarBusy(false);
+        setArmCountSimilar(false);
+        armCountSimilarRef.current = false;
+      }
+    },
+    [initialPdfUrl, currentPage, activeGroup, nextAnnotation, addToast, t],
+  );
+  // Keep the ref handleCanvasClick reads in sync with the latest closure.
+  handleCountByExampleSeedRef.current = handleCountByExampleSeed;
+
+  /** Toggle the "Count similar" arm. Arming switches to the select tool (so a
+   *  half-drawn shape never swallows the seed click) and prompts the user to
+   *  click a symbol; clicking the button again cancels. */
+  const toggleCountSimilar = useCallback(() => {
+    const docId = initialPdfUrl?.match(/\/documents\/([^/?#]+)\/(?:download|recognize)/)?.[1];
+    if (!docId) {
+      addToast({
+        type: 'info',
+        title: t('takeoff_viewer.count_similar.needs_upload_title', {
+          defaultValue: 'Count similar needs an uploaded drawing',
+        }),
+        message: t('takeoff_viewer.count_similar.needs_upload_msg', {
+          defaultValue:
+            'Upload this PDF to the project first, then open it from the documents list to count symbols.',
+        }),
+      });
+      return;
+    }
+    setArmCountSimilar((on) => {
+      const next = !on;
+      armCountSimilarRef.current = next;
+      if (next) {
+        setActiveTool('select');
+        setActivePoints([]);
+        addToast({
+          type: 'info',
+          title: t('takeoff_viewer.count_similar.armed_title', { defaultValue: 'Click a symbol to count' }),
+          message: t('takeoff_viewer.count_similar.armed_msg', {
+            defaultValue:
+              'Click one symbol on the drawing and every matching symbol on this page is counted.',
+          }),
+        });
+      }
+      return next;
+    });
+  }, [initialPdfUrl, addToast, t]);
 
   /* ── Read plan with AI: vision-LLM plan reading (issue #194) ────────────
    * The opt-in, bring-your-own-key, cost-capped complement to the offline
@@ -5259,6 +5414,30 @@ export default function TakeoffViewerModule({
               >
                 {recognizeBusy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                 <span className="hidden sm:inline">{t('takeoff_viewer.recognize', { defaultValue: 'Recognize' })}</span>
+              </button>
+
+              {/* Count similar - seeded count-by-example. Click one symbol and
+                  the server counts every matching symbol on the page (#194). */}
+              <button
+                onClick={toggleCountSimilar}
+                disabled={countSimilarBusy}
+                aria-pressed={armCountSimilar}
+                className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold shadow-xs transition-all disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50 ${
+                  armCountSimilar
+                    ? 'bg-emerald-600 text-white ring-2 ring-emerald-300'
+                    : 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600 hover:shadow-sm'
+                }`}
+                title={t('takeoff_viewer.count_similar.hint', {
+                  defaultValue:
+                    'Click one symbol and count every matching symbol on this page (AI proposes, you confirm)',
+                })}
+                aria-label={t('takeoff_viewer.count_similar.action', { defaultValue: 'Count similar' })}
+                data-testid="count-similar-button"
+              >
+                {countSimilarBusy ? <Loader2 size={14} className="animate-spin" /> : <Boxes size={14} />}
+                <span className="hidden sm:inline">
+                  {t('takeoff_viewer.count_similar.action', { defaultValue: 'Count similar' })}
+                </span>
               </button>
 
               {planReadVision?.available && (
