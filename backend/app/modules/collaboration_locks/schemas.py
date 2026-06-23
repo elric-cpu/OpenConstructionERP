@@ -24,6 +24,7 @@ ALLOWED_LOCK_ENTITY_TYPES: frozenset[str] = frozenset(
         "document",
         "task",
         "schedule_activity",
+        "schedule",
         "bim_model",
         "bim_element",
         "requirement",

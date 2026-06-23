@@ -253,6 +253,15 @@ async def _resolve_lock_entity_project_id(
                     .where(Activity.id == entity_id)
                 )
             ).scalar_one_or_none()
+        if entity_type == "schedule":
+            # The schedule-level presence room (T3.4): co-editors of a whole
+            # schedule share one room keyed on the schedule id. project_id lives
+            # directly on the schedule, so this is a single-table lookup.
+            from app.modules.schedule.models import Schedule
+
+            return (
+                await session.execute(select(Schedule.project_id).where(Schedule.id == entity_id))
+            ).scalar_one_or_none()
         if entity_type == "requirement":
             from app.modules.requirements.models import Requirement, RequirementSet
 

@@ -243,6 +243,24 @@ class FieldInspectionCreate(FieldCapture):
     checklist_data: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class FieldScheduleProgressCreate(FieldCapture):
+    """A field-captured progress update against one schedule activity (T3.4).
+
+    Routes into the progress-rigor engine (T3.2) so a phone-captured percent /
+    remaining / installed-units update is resolved exactly like a desktop one.
+    ``installed_units`` is a QUANTITY (units installed), not money. ``activity_id``
+    is validated against the field session's pinned project server-side; a
+    cross-project id resolves to 404.
+    """
+
+    activity_id: uuid.UUID
+    percent_complete: float | None = Field(default=None, ge=0, le=100)
+    remaining_duration: int | None = Field(default=None, ge=0)
+    installed_units: Decimal | None = Field(default=None, ge=0)
+    actual_start: str | None = Field(default=None, max_length=40)
+    actual_finish: str | None = Field(default=None, max_length=40)
+
+
 class FieldCaptureResponse(BaseModel):
     """Per-op outcome returned to the client (and stored in the ledger).
 
@@ -263,9 +281,10 @@ class FieldSyncOpItem(FieldCapture):
     routed ``target_kind`` so the server can dispatch it.
     """
 
-    target_kind: Literal["punch_item", "inspection"]
-    # The op-specific payload (a FieldPunchCreate / FieldInspectionCreate body
-    # minus the capture envelope, which is carried on this item directly).
+    target_kind: Literal["punch_item", "inspection", "schedule_progress"]
+    # The op-specific payload (a FieldPunchCreate / FieldInspectionCreate /
+    # FieldScheduleProgressCreate body minus the capture envelope, which is
+    # carried on this item directly).
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -317,6 +336,7 @@ __all__ = [
     "FieldCapture",
     "FieldPunchCreate",
     "FieldInspectionCreate",
+    "FieldScheduleProgressCreate",
     "FieldCaptureResponse",
     "FieldSyncOpItem",
     "FieldSyncBatch",

@@ -57,6 +57,7 @@ from app.modules.field_diary.schemas import (
     FieldModuleGrantCreate,
     FieldModuleGrantResponse,
     FieldPunchCreate,
+    FieldScheduleProgressCreate,
     FieldSessionResponse,
     FieldSyncBatch,
     FieldSyncOpResponse,
@@ -568,6 +569,70 @@ async def capture_inspection(
     return await svc.capture_inspection(field_session, payload)
 
 
+@router.get("/schedule/activities/")
+async def list_schedule_activities(
+    session: SessionDep,
+    field_session=Depends(_require_field_module_grant),
+    date_from: str | None = Query(default=None, max_length=40),
+    date_to: str | None = Query(default=None, max_length=40),
+    limit: int = Query(default=200, ge=1, le=1000),
+) -> list[dict]:
+    """List the session-project's schedule activities for field progress capture.
+
+    The project is read from the live field session (NOT a URL param), so a
+    worker only ever sees activities of the project their session is pinned to.
+    ``date_from`` / ``date_to`` filter on the activity start date (inclusive
+    string compare on the ISO ``YYYY-MM-DD`` head, which sorts lexically).
+    """
+    from sqlalchemy import select
+
+    from app.modules.schedule.models import Activity, Schedule
+
+    stmt = (
+        select(Activity)
+        .join(Schedule, Activity.schedule_id == Schedule.id)
+        .where(Schedule.project_id == field_session.project_id)
+    )
+    if date_from:
+        stmt = stmt.where(Activity.start_date >= date_from)
+    if date_to:
+        stmt = stmt.where(Activity.start_date <= date_to)
+    stmt = stmt.order_by(Activity.start_date, Activity.sort_order).limit(limit)
+
+    rows = (await session.execute(stmt)).scalars().all()
+    return [
+        {
+            "id": str(a.id),
+            "schedule_id": str(a.schedule_id),
+            "name": a.name,
+            "wbs_code": a.wbs_code,
+            "status": a.status,
+            "progress_pct": a.progress_pct,
+            "percent_complete_type": a.percent_complete_type,
+            "start_date": a.start_date,
+            "end_date": a.end_date,
+            "remaining_duration": a.remaining_duration,
+        }
+        for a in rows
+    ]
+
+
+@router.post("/capture/schedule-progress/", response_model=FieldCaptureResponse, status_code=201)
+async def capture_schedule_progress(
+    payload: FieldScheduleProgressCreate,
+    session: SessionDep,
+    field_session=Depends(_require_field_module_grant),
+) -> FieldCaptureResponse:
+    """Apply a field-captured progress update to a schedule activity (T3.4).
+
+    Routes through the progress-rigor engine, scoped to the session project (a
+    cross-project ``activity_id`` resolves to 404). Idempotent on
+    ``client_op_id``: a replayed op returns the original activity id (HTTP 200).
+    """
+    svc = FieldSyncService(session)
+    return await svc.capture_schedule_progress(field_session, payload)
+
+
 @router.post("/capture/photo/", response_model=FieldCaptureResponse, status_code=201)
 async def capture_photo(
     session: SessionDep,
@@ -737,6 +802,17 @@ async def sync_batch(
                 **extra,
             )
             results.append(await svc.capture_inspection(field_session, body))
+        elif op.target_kind == "schedule_progress":
+            body = FieldScheduleProgressCreate(
+                client_op_id=op.client_op_id,
+                captured_at=op.captured_at,
+                lat=op.lat,
+                lon=op.lon,
+                accuracy_m=op.accuracy_m,
+                device_hint=op.device_hint,
+                **extra,
+            )
+            results.append(await svc.capture_schedule_progress(field_session, body))
     return results
 
 

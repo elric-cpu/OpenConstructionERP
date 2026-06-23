@@ -21,9 +21,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
+from app.core.json_merge import merge_metadata
 from app.modules.field_diary.models import (
     DiaryActivity,
     DiaryAttachment,
@@ -52,6 +54,7 @@ from app.modules.field_diary.schemas import (
     FieldInspectionCreate,
     FieldModuleGrantCreate,
     FieldPunchCreate,
+    FieldScheduleProgressCreate,
 )
 
 logger = logging.getLogger(__name__)
@@ -922,6 +925,135 @@ class FieldSyncService:
             target_module="inspections",
             target_kind="inspection",
             result_id=inspection.id,
+            http_status=201,
+        )
+
+    async def capture_schedule_progress(
+        self,
+        field_session: FieldSession,
+        data: FieldScheduleProgressCreate,
+    ) -> FieldCaptureResponse:
+        """Apply a field-captured progress update to a schedule activity (T3.4).
+
+        Routes the capture through the progress-rigor engine (T3.2) so a phone
+        update is resolved exactly like a desktop one (per-type percent /
+        remaining / installed-units, with the same completion guard). Idempotent
+        on ``client_op_id``: a replay returns the original activity id and does
+        not re-apply.
+        """
+        # Schedule imports are function-local: the schedule service imports
+        # app.database at module load, so importing it here (matching the
+        # punch/inspection capture paths above) keeps field_diary import-safe.
+        from app.modules.schedule import realtime_math
+        from app.modules.schedule.models import Activity, Schedule
+        from app.modules.schedule.progress_schemas import TypedProgressRequest
+        from app.modules.schedule.progress_service import ScheduleProgressService
+        from app.modules.schedule.service import ScheduleService
+
+        # 1. Idempotent replay short-circuit (returns the prior activity id).
+        prior = await self._seen_result(data.client_op_id, "schedule_activity_progress")
+        if prior is not None:
+            return FieldCaptureResponse(
+                client_op_id=data.client_op_id,
+                status="applied",
+                target_module="schedule",
+                target_kind="schedule_progress",
+                result_id=prior,
+                http_status=200,
+            )
+
+        # 2. IDOR guard (critical). Resolve activity -> schedule -> project_id
+        #    and require it to equal the session's pinned project. A cross-project
+        #    (or unknown) activity id resolves to 404 - existence-oracle safe, the
+        #    same guard the punch-photo capture path applies. NEVER trust an
+        #    activity id that is not in the field session's project.
+        project_id = (
+            await self.session.execute(
+                select(Schedule.project_id)
+                .join(Activity, Activity.schedule_id == Schedule.id)
+                .where(Activity.id == data.activity_id)
+            )
+        ).scalar_one_or_none()
+        if project_id is None or project_id != field_session.project_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Activity not found",
+            )
+
+        # 3. Validate + normalise via the pure engine (clamp percent, floor
+        #    remaining, finish-implies-complete, require a mutating field).
+        submission = realtime_math.FieldProgressSubmission(
+            activity_id=str(data.activity_id),
+            client_op_id=data.client_op_id,
+            percent_complete=data.percent_complete,
+            remaining_duration=data.remaining_duration,
+            installed_units=(str(data.installed_units) if data.installed_units is not None else None),
+            actual_start_iso=data.actual_start,
+            actual_finish_iso=data.actual_finish,
+            captured_at_iso=data.captured_at,
+        )
+        validation = realtime_math.validate_field_submission(submission)
+        if not validation.ok or validation.normalized is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"errors": list(validation.errors)},
+            )
+        norm = validation.normalized
+
+        # 4. Route to T3.2. Map the captured date onto the engine's data_date;
+        #    leave percent_complete_type unset so the activity's current type is
+        #    honoured. installed_units stays a Decimal quantity.
+        data_date = data.captured_at[:10] if data.captured_at else None
+        progress_svc = ScheduleProgressService(self.session)
+        await progress_svc.set_typed_progress(
+            data.activity_id,
+            TypedProgressRequest(
+                percent=norm.percent_complete,
+                remaining_duration=norm.remaining_duration,
+                installed_units=data.installed_units,
+                data_date=data_date,
+            ),
+        )
+
+        # 5. Persist the captured actual_start / actual_finish. The Activity
+        #    table has no dedicated actual-date columns (those live on the
+        #    separate oe_schedule_progress record table), and adding a column
+        #    would fork the single migration head, so the field-captured actuals
+        #    are recorded under a ``field_actuals`` block in the activity's
+        #    metadata. The percent/status side of an actual_finish was already
+        #    applied by set_typed_progress (finish implies 100% complete). We
+        #    merge so a prior field_actuals block and all sibling metadata keys
+        #    survive (json_overwrite-on-PATCH guard).
+        actuals: dict[str, str] = {}
+        if data.actual_start is not None:
+            actuals["actual_start"] = data.actual_start
+        if data.actual_finish is not None:
+            actuals["actual_finish"] = data.actual_finish
+        if actuals:
+            sched_svc = ScheduleService(self.session)
+            current = await sched_svc.get_activity(data.activity_id)
+            existing_meta = dict(current.metadata_ or {})
+            existing_actuals = dict(existing_meta.get("field_actuals") or {})
+            existing_actuals.update(actuals)
+            merged = merge_metadata(existing_meta, {"field_actuals": existing_actuals})
+            await sched_svc.activity_repo.update_fields(data.activity_id, metadata_=merged)
+
+        # 6. Record the applied op in the shared ledger (tolerates a racing drain
+        #    via the same IntegrityError swallow as the punch/inspection paths).
+        await self.field_svc._record_op(
+            data.client_op_id,
+            project_id=project_id,
+            user_id=field_session.user_id,
+            op_kind="field.capture.schedule_progress",
+            result_type="schedule_activity_progress",
+            result_id=data.activity_id,
+        )
+        return FieldCaptureResponse(
+            client_op_id=data.client_op_id,
+            status="applied",
+            target_module="schedule",
+            target_kind="schedule_progress",
+            result_id=data.activity_id,
             http_status=201,
         )
 

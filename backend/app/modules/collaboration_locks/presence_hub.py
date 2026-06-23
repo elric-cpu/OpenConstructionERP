@@ -168,6 +168,19 @@ class PresenceHub:
         state = self._keys.get(key)
         return 0 if state is None else len(state.sockets)
 
+    def roster(self, key: PresenceKey) -> list[dict[str, str]]:
+        """Read-only snapshot of the users connected to ``key``.
+
+        Returns the same ``[{"user_id", "user_name"}]`` shape :meth:`join`
+        hands back. A plain dict read (no lock) so a REST presence endpoint can
+        report who is in a room without altering the hub's locking model; an
+        in-flight join/leave just lands on the next call.
+        """
+        state = self._keys.get(key)
+        if state is None:
+            return []
+        return [{"user_id": str(uid), "user_name": name} for uid, name in state.users.items()]
+
     def reset(self) -> None:
         """Drop every subscriber.  Used by test teardown."""
         self._keys.clear()

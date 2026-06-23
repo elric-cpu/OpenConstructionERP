@@ -2535,6 +2535,13 @@ from app.modules.schedule.progress_router import progress_router as _progress_ro
 
 router.include_router(_progress_router)
 
+# Real-time collaboration (T3.4): presence snapshot, optimistic-concurrency
+# guarded activity update, and the revision-token read. Same /api/v1/schedule
+# prefix. The live presence channel rides the collaboration-locks WebSocket.
+from app.modules.schedule.realtime_router import realtime_router as _realtime_router  # noqa: E402
+
+router.include_router(_realtime_router)
+
 # Lossless schedule interchange (T1.1): neutral export / import document plus a
 # normalise-on-import cleaner (DCMA-style hygiene). Same /api/v1/schedule prefix.
 from app.modules.schedule.interchange_router import interchange_router as _interchange_router  # noqa: E402
