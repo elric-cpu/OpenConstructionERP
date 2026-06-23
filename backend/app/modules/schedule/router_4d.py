@@ -139,6 +139,13 @@ class SnapshotResponse(BaseModel):
 class DashboardResponse(BaseModel):
     """Planned-vs-actual (EVM) dashboard for a schedule on ``as_of_date``.
 
+    The money inside ``s_curve_data`` (each point's ``planned_value`` /
+    ``earned_value`` / ``actual_cost``) and ``by_wbs`` (each bucket's
+    ``planned_value`` / ``earned_value`` / ``actual_cost``) is emitted as the
+    platform Decimal-as-string wire contract; those fields live in ``Any``-typed
+    containers so the strings pass through pydantic unchanged (nothing here
+    re-coerces money back to float). ``overall_progress_percent`` and the
+    ``spi`` / ``cpi`` indices stay numbers (percent / dimensionless ratios);
     ``spi`` / ``cpi`` are ``None`` when the schedule carries no cost data
     (division by zero is undefined, not zero). Mirrors
     :meth:`ScheduleDashboardService.dashboard` -> ``DashboardResult.to_json``.

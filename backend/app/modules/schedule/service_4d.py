@@ -499,24 +499,32 @@ class ScheduleProgressService:
 
 @dataclass
 class SCurvePoint:
-    """One point on the planned-vs-earned-vs-actual S-curve."""
+    """One point on the planned-vs-earned-vs-actual S-curve.
+
+    Money fields are :class:`~decimal.Decimal` (accumulated in Decimal, never
+    float); the dashboard serialises them as Decimal-as-string on the wire.
+    """
 
     date: str
-    planned_value: float
-    earned_value: float
-    actual_cost: float
+    planned_value: Decimal
+    earned_value: Decimal
+    actual_cost: Decimal
 
 
 @dataclass
 class WBSBucket:
-    """Aggregate progress + cost per WBS top-level bucket."""
+    """Aggregate progress + cost per WBS top-level bucket.
+
+    Money fields are :class:`~decimal.Decimal`; ``progress_percent`` is a plain
+    float (a ratio/percent, not money).
+    """
 
     wbs_code: str
     activity_count: int = 0
     progress_percent: float = 0.0
-    planned_value: float = 0.0
-    earned_value: float = 0.0
-    actual_cost: float = 0.0
+    planned_value: Decimal = field(default_factory=lambda: Decimal("0"))
+    earned_value: Decimal = field(default_factory=lambda: Decimal("0"))
+    actual_cost: Decimal = field(default_factory=lambda: Decimal("0"))
 
 
 @dataclass
@@ -550,11 +558,25 @@ class DashboardResult:
 # ── EVM summary (scalar earned-value rollup) ─────────────────────────────
 # The pure math lives in ``evm_math`` (no ORM / DB imports) so it can be unit
 # tested in isolation. Re-exported here for the existing call sites / router.
+# The Decimal proration / progress helpers are reused here so the dashboard's
+# S-curve and WBS money stay Decimal end to end (no float contamination).
 from app.modules.schedule.evm_math import (  # noqa: E402
     EvmCostRow,
     EvmSummary,
+    coerce_progress_decimal,
     compute_evm_summary,
+    planned_value_decimal,
 )
+
+# Money is quantized to 4 decimal places before it goes on the wire (matches
+# ``evm_math._MONEY_Q``). ``_HUNDRED_D`` is the percent divisor in Decimal.
+_MONEY_Q = Decimal("0.0001")
+_HUNDRED_D = Decimal("100")
+
+
+def _q_money(value: Decimal) -> Decimal:
+    """Quantize a money Decimal to 4 decimal places."""
+    return value.quantize(_MONEY_Q)
 
 
 class ScheduleDashboardService:
@@ -600,26 +622,27 @@ class ScheduleDashboardService:
         # way the S-curve does: an activity past its planned end contributes its
         # full cost_planned, one in progress contributes a linear proration over
         # [start, end], and one not yet started contributes nothing.
-        total_pv = 0.0
-        total_ev = 0.0
-        total_ac = 0.0
+        total_pv = Decimal("0")
+        total_ev = Decimal("0")
+        total_ac = Decimal("0")
         any_cost = False
         for a in activities:
-            bac = _decimal_to_float(a.cost_planned)
-            ac = _decimal_to_float(a.cost_actual)
+            bac = a.cost_planned if a.cost_planned is not None else Decimal("0")
+            ac = a.cost_actual if a.cost_actual is not None else Decimal("0")
             if a.cost_planned is not None or a.cost_actual is not None:
                 any_cost = True
-            pv = _planned_value_to_date(a, bac, as_of_date)
-            ev = bac * (_coerce_progress(a) / 100.0) if bac else 0.0
+            pv = planned_value_decimal(a.start_date, a.end_date, bac, as_of_date)
+            ev = bac * (coerce_progress_decimal(a.progress_pct) / _HUNDRED_D) if bac else Decimal("0")
             total_pv += pv
             total_ev += ev
             total_ac += ac
 
+        # SPI / CPI are dimensionless ratios -> float (None when denominator 0).
         spi: float | None = None
         cpi: float | None = None
         if any_cost:
-            spi = (total_ev / total_pv) if total_pv > 0 else None
-            cpi = (total_ev / total_ac) if total_ac > 0 else None
+            spi = float(total_ev / total_pv) if total_pv > 0 else None
+            cpi = float(total_ev / total_ac) if total_ac > 0 else None
 
         # ── S-curve (daily samples between project start and as_of) ───
         s_curve = self._build_s_curve(activities, as_of_date)
@@ -630,9 +653,11 @@ class ScheduleDashboardService:
             bucket_key = (a.wbs_code or "").split(".")[0] or "_root"
             bucket = by_wbs.setdefault(bucket_key, WBSBucket(wbs_code=bucket_key))
             bucket.activity_count += 1
-            bucket.planned_value += _decimal_to_float(a.cost_planned)
-            bucket.actual_cost += _decimal_to_float(a.cost_actual)
-            bucket.earned_value += _decimal_to_float(a.cost_planned) * (_coerce_progress(a) / 100.0)
+            a_planned = a.cost_planned if a.cost_planned is not None else Decimal("0")
+            a_actual = a.cost_actual if a.cost_actual is not None else Decimal("0")
+            bucket.planned_value += a_planned
+            bucket.actual_cost += a_actual
+            bucket.earned_value += a_planned * (coerce_progress_decimal(a.progress_pct) / _HUNDRED_D)
 
         # Roll up progress per WBS as duration-weighted mean.
         wbs_weights: dict[str, float] = {}
@@ -649,14 +674,16 @@ class ScheduleDashboardService:
             w = wbs_weights.get(key, 0.0)
             bucket.progress_percent = wbs_weighted_progress.get(key, 0.0) / w if w else 0.0
 
+        # Money goes on the wire as Decimal-as-string; progress_percent stays
+        # a number (it is a percent ratio, not money).
         by_wbs_json = {
             k: {
                 "wbs_code": v.wbs_code,
                 "activity_count": v.activity_count,
                 "progress_percent": v.progress_percent,
-                "planned_value": v.planned_value,
-                "earned_value": v.earned_value,
-                "actual_cost": v.actual_cost,
+                "planned_value": str(_q_money(v.planned_value)),
+                "earned_value": str(_q_money(v.earned_value)),
+                "actual_cost": str(_q_money(v.actual_cost)),
             }
             for k, v in by_wbs.items()
         }
@@ -670,9 +697,9 @@ class ScheduleDashboardService:
             s_curve_data=[
                 {
                     "date": p.date,
-                    "planned_value": p.planned_value,
-                    "earned_value": p.earned_value,
-                    "actual_cost": p.actual_cost,
+                    "planned_value": str(p.planned_value),
+                    "earned_value": str(p.earned_value),
+                    "actual_cost": str(p.actual_cost),
                 }
                 for p in s_curve
             ],
@@ -718,75 +745,45 @@ class ScheduleDashboardService:
         points: list[SCurvePoint] = []
         cursor = project_start
         while cursor <= end_for_curve:
-            pv = 0.0
-            ev = 0.0
-            ac = 0.0
+            # Accumulate money in Decimal; the date-span ratios are Decimal too
+            # so no binary float ever multiplies a money amount.
+            pv = Decimal("0")
+            ev = Decimal("0")
+            ac = Decimal("0")
             for a in activities:
                 a_start = _parse_iso(a.start_date)
                 a_end = _parse_iso(a.end_date)
-                a_pv = _decimal_to_float(a.cost_planned)
-                a_ac = _decimal_to_float(a.cost_actual)
-                a_progress = _coerce_progress(a) / 100.0
-                if a_start is None or a_end is None or a_pv == 0.0:
+                a_pv = a.cost_planned if a.cost_planned is not None else Decimal("0")
+                a_ac = a.cost_actual if a.cost_actual is not None else Decimal("0")
+                a_progress = coerce_progress_decimal(a.progress_pct) / _HUNDRED_D
+                if a_start is None or a_end is None or a_pv == 0:
                     continue
                 if cursor >= a_end:
                     pv += a_pv
                 elif cursor >= a_start:
                     duration = max((a_end - a_start).days, 1)
                     elapsed = (cursor - a_start).days
-                    pv += a_pv * (elapsed / duration)
+                    pv += a_pv * (Decimal(elapsed) / Decimal(duration))
                 # EV / AC reflect the current progress reading prorated by
                 # how far through the activity the cursor is. This is a
                 # straight-line approximation (good enough for the MVP).
                 if cursor >= a_start:
                     duration = max((a_end - a_start).days, 1)
                     elapsed = min((cursor - a_start).days, duration)
-                    fraction = elapsed / duration
+                    fraction = Decimal(elapsed) / Decimal(duration)
                     ev_now = a_pv * a_progress
                     ev += ev_now * fraction
                     ac += a_ac * fraction
             points.append(
                 SCurvePoint(
                     date=cursor.isoformat(),
-                    planned_value=round(pv, 4),
-                    earned_value=round(ev, 4),
-                    actual_cost=round(ac, 4),
+                    planned_value=_q_money(pv),
+                    earned_value=_q_money(ev),
+                    actual_cost=_q_money(ac),
                 )
             )
             cursor += timedelta(days=step_days)
         return points
-
-
-def _decimal_to_float(value: Decimal | None) -> float:
-    if value is None:
-        return 0.0
-    try:
-        return float(value)
-    except (TypeError, ValueError):  # pragma: no cover - defensive
-        return 0.0
-
-
-def _planned_value_to_date(activity: Activity, bac: float, as_of_date: date) -> float:
-    """Return the budgeted cost of work scheduled to be complete by ``as_of_date``.
-
-    Mirrors the proration used by ``_build_s_curve``: an activity whose planned
-    end_date is on or before the data date contributes its full budget; one in
-    progress contributes a linear proration over its planned [start, end] span;
-    one not yet started (or without parseable dates) contributes nothing.
-    """
-    if not bac:
-        return 0.0
-    start = _parse_iso(activity.start_date)
-    end = _parse_iso(activity.end_date)
-    if start is None or end is None:
-        return 0.0
-    if as_of_date >= end:
-        return bac
-    if as_of_date < start:
-        return 0.0
-    duration = max((end - start).days, 1)
-    elapsed = (as_of_date - start).days
-    return bac * (elapsed / duration)
 
 
 # ── CSV importer (FR-6.1 minimal slice) ─────────────────────────────────

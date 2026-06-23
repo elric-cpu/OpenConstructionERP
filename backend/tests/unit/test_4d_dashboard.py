@@ -147,12 +147,14 @@ async def test_s_curve_emits_points_across_days(session: AsyncSession):
 
     # 10-day span, daily granularity → 11 inclusive points (Jan 1 .. Jan 11).
     assert len(out.s_curve_data) == 11
+    # Money is emitted as Decimal-as-string; decode to Decimal to compare.
     # First point: PV / EV / AC are 0 at project start.
-    assert out.s_curve_data[0]["planned_value"] == pytest.approx(0.0)
+    assert isinstance(out.s_curve_data[0]["planned_value"], str)
+    assert Decimal(out.s_curve_data[0]["planned_value"]) == Decimal("0")
     # Last point: PV must be the full planned value.
-    assert out.s_curve_data[-1]["planned_value"] == pytest.approx(1000.0, rel=1e-3)
+    assert float(out.s_curve_data[-1]["planned_value"]) == pytest.approx(1000.0, rel=1e-3)
     # PV must be monotonic non-decreasing across the span.
-    pvs = [p["planned_value"] for p in out.s_curve_data]
+    pvs = [Decimal(p["planned_value"]) for p in out.s_curve_data]
     assert pvs == sorted(pvs)
 
 
@@ -212,8 +214,10 @@ async def test_by_wbs_breakdown_groups_by_top_level_prefix(session: AsyncSession
     assert bucket1["progress_percent"] == pytest.approx(50.0, rel=1e-3)
     # Bucket 2 has a single 100% activity.
     assert bucket2["progress_percent"] == pytest.approx(100.0, rel=1e-3)
-    assert bucket1["planned_value"] == pytest.approx(1000.0)
-    assert bucket2["planned_value"] == pytest.approx(200.0)
+    # Money is Decimal-as-string; decode to compare. progress_percent stays a number.
+    assert isinstance(bucket1["planned_value"], str)
+    assert Decimal(bucket1["planned_value"]) == Decimal("1000")
+    assert Decimal(bucket2["planned_value"]) == Decimal("200")
 
 
 @pytest.mark.asyncio

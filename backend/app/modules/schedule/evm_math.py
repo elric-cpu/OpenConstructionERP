@@ -31,6 +31,17 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
+# Money is quantized to 4 decimal places (the platform Decimal-as-string wire
+# contract preserves full precision on the way out; rounding here only trims
+# the long tails a Decimal division can produce).
+_MONEY_Q = Decimal("0.0001")
+_HUNDRED = Decimal("100")
+
+
+def _q(value: Decimal) -> Decimal:
+    """Quantize a money Decimal to 4 decimal places (banker's default)."""
+    return value.quantize(_MONEY_Q)
+
 
 @dataclass(frozen=True)
 class EvmCostRow:
@@ -52,38 +63,51 @@ class EvmCostRow:
 class EvmSummary:
     """Scalar earned-value metrics for a schedule at a data date.
 
-    All money fields are plain floats (the router serialises them as strings
-    to honour the Decimal-as-string wire contract). Ratio fields (``spi`` /
-    ``cpi``) and the derived ``eac`` / ``etc`` / ``vac`` are ``None`` when the
-    schedule carries no cost data or the denominator is zero.
+    All nine money fields are :class:`~decimal.Decimal` (computed and
+    accumulated in Decimal, never float) to honour the house "money is
+    Decimal" rule; :meth:`to_json` serialises them as strings for the
+    Decimal-as-string wire contract. Ratio fields (``spi`` / ``cpi``) stay
+    plain ``float | None`` because they are dimensionless ratios, not money.
+    The forecast block (``eac`` / ``etc`` / ``vac``) is ``None`` when the
+    schedule carries no cost data or a denominator is zero.
     """
 
-    planned_value: float  # PV / BCWS, time-phased to the data date
-    earned_value: float  # EV / BCWP
-    actual_cost: float  # AC / ACWP
-    budget_at_completion: float  # BAC = Σ cost_planned
-    schedule_variance: float  # SV = EV - PV
-    cost_variance: float  # CV = EV - AC
-    spi: float | None  # SPI = EV / PV
-    cpi: float | None  # CPI = EV / AC
-    estimate_at_completion: float | None  # EAC = BAC / CPI
-    estimate_to_complete: float | None  # ETC = EAC - AC
-    variance_at_completion: float | None  # VAC = BAC - EAC
+    planned_value: Decimal  # PV / BCWS, time-phased to the data date
+    earned_value: Decimal  # EV / BCWP
+    actual_cost: Decimal  # AC / ACWP
+    budget_at_completion: Decimal  # BAC = Σ cost_planned
+    schedule_variance: Decimal  # SV = EV - PV
+    cost_variance: Decimal  # CV = EV - AC
+    spi: float | None  # SPI = EV / PV (dimensionless ratio)
+    cpi: float | None  # CPI = EV / AC (dimensionless ratio)
+    estimate_at_completion: Decimal | None  # EAC = BAC / CPI
+    estimate_to_complete: Decimal | None  # ETC = EAC - AC
+    variance_at_completion: Decimal | None  # VAC = BAC - EAC
     has_cost_data: bool
 
     def to_json(self) -> dict[str, Any]:
+        """Serialise to the wire contract.
+
+        Money fields become strings (``str(Decimal)``) or JSON ``null``; the
+        ``spi`` / ``cpi`` ratios stay numbers (float) or null; ``has_cost_data``
+        stays a bool.
+        """
         return {
-            "planned_value": self.planned_value,
-            "earned_value": self.earned_value,
-            "actual_cost": self.actual_cost,
-            "budget_at_completion": self.budget_at_completion,
-            "schedule_variance": self.schedule_variance,
-            "cost_variance": self.cost_variance,
+            "planned_value": str(self.planned_value),
+            "earned_value": str(self.earned_value),
+            "actual_cost": str(self.actual_cost),
+            "budget_at_completion": str(self.budget_at_completion),
+            "schedule_variance": str(self.schedule_variance),
+            "cost_variance": str(self.cost_variance),
             "spi": self.spi,
             "cpi": self.cpi,
-            "estimate_at_completion": self.estimate_at_completion,
-            "estimate_to_complete": self.estimate_to_complete,
-            "variance_at_completion": self.variance_at_completion,
+            "estimate_at_completion": (
+                str(self.estimate_at_completion) if self.estimate_at_completion is not None else None
+            ),
+            "estimate_to_complete": (str(self.estimate_to_complete) if self.estimate_to_complete is not None else None),
+            "variance_at_completion": (
+                str(self.variance_at_completion) if self.variance_at_completion is not None else None
+            ),
             "has_cost_data": self.has_cost_data,
         }
 
@@ -98,15 +122,6 @@ def _parse_iso(value: str | None) -> date | None:
         return None
 
 
-def _decimal_to_float(value: Decimal | None) -> float:
-    if value is None:
-        return 0.0
-    try:
-        return float(value)
-    except (TypeError, ValueError):  # pragma: no cover - defensive
-        return 0.0
-
-
 def coerce_progress_value(raw: str | None) -> float:
     """Coerce a stored ``progress_pct`` string to a 0..100 float (clamped)."""
     try:
@@ -117,6 +132,27 @@ def coerce_progress_value(raw: str | None) -> float:
         return 0.0
     if value > 100.0:
         return 100.0
+    return value
+
+
+def coerce_progress_decimal(raw: str | None) -> Decimal:
+    """Coerce a stored ``progress_pct`` string to a 0..100 ``Decimal`` (clamped).
+
+    Decimal sibling of :func:`coerce_progress_value` so progress never has to be
+    routed through ``float`` before it multiplies a money amount.
+    """
+    if raw is None:
+        return Decimal("0")
+    try:
+        value = Decimal(str(raw))
+    except (ArithmeticError, TypeError, ValueError):
+        return Decimal("0")
+    if not value.is_finite():
+        return Decimal("0")
+    if value < Decimal("0"):
+        return Decimal("0")
+    if value > _HUNDRED:
+        return _HUNDRED
     return value
 
 
@@ -133,6 +169,9 @@ def planned_value_for_dates(
     planned ``[start, end]`` span; one not yet started (or with unparseable
     dates) contributes nothing. This mirrors the S-curve PV proration so the
     scalar PV and the final S-curve point agree.
+
+    Kept as a ``float`` helper for the public unit surface; the scalar EVM
+    rollup uses :func:`planned_value_decimal` so money stays Decimal.
     """
     if not bac:
         return 0.0
@@ -149,54 +188,89 @@ def planned_value_for_dates(
     return bac * (elapsed / duration)
 
 
+def planned_value_decimal(
+    start_date: str | None,
+    end_date: str | None,
+    bac: Decimal,
+    as_of_date: date,
+) -> Decimal:
+    """Decimal time-phased planned value for one activity (no float math).
+
+    Same proration rule as :func:`planned_value_for_dates` but the elapsed /
+    duration ratio is computed in Decimal so the money amount is never tainted
+    by a binary float.
+    """
+    if not bac:
+        return Decimal("0")
+    start = _parse_iso(start_date)
+    end = _parse_iso(end_date)
+    if start is None or end is None:
+        return Decimal("0")
+    if as_of_date >= end:
+        return bac
+    if as_of_date < start:
+        return Decimal("0")
+    duration = max((end - start).days, 1)
+    elapsed = (as_of_date - start).days
+    return bac * (Decimal(elapsed) / Decimal(duration))
+
+
 def compute_evm_summary(rows: list[EvmCostRow], as_of_date: date) -> EvmSummary:
     """Roll a schedule's cost-loaded activities up to scalar EVM metrics.
 
-    Pure function (no DB / no I/O). PV is time-phased to ``as_of_date`` exactly
-    as the 4D dashboard's S-curve does. EV is BAC * progress%. AC is the
-    captured ``cost_actual``. The forecast block uses the CPI-based identities
-    (EAC = BAC / CPI). All ratio / forecast fields are ``None`` when their
-    denominator is zero so a caller never has to special-case divide-by-zero.
+    Pure function (no DB / no I/O). Money is accumulated and computed entirely
+    in :class:`~decimal.Decimal` (progress and the PV proration are coerced to
+    Decimal too) so no binary float ever touches a money amount. PV is
+    time-phased to ``as_of_date`` exactly as the 4D dashboard's S-curve does.
+    EV is BAC * progress%. AC is the captured ``cost_actual``. The forecast
+    block uses the CPI-based identities (EAC = BAC / CPI). The ``spi`` / ``cpi``
+    ratios are plain floats (EV/PV, EV/AC); all ratio / forecast fields are
+    ``None`` when their denominator is zero so a caller never has to
+    special-case divide-by-zero.
     """
-    total_pv = 0.0
-    total_ev = 0.0
-    total_ac = 0.0
-    total_bac = 0.0
+    total_pv = Decimal("0")
+    total_ev = Decimal("0")
+    total_ac = Decimal("0")
+    total_bac = Decimal("0")
     any_cost = False
 
     for row in rows:
-        bac = _decimal_to_float(row.cost_planned)
-        ac = _decimal_to_float(row.cost_actual)
+        bac = row.cost_planned if row.cost_planned is not None else Decimal("0")
+        ac = row.cost_actual if row.cost_actual is not None else Decimal("0")
         if row.cost_planned is not None or row.cost_actual is not None:
             any_cost = True
-        progress = coerce_progress_value(row.progress_pct)
-        pv = planned_value_for_dates(row.start_date, row.end_date, bac, as_of_date)
-        ev = bac * (progress / 100.0) if bac else 0.0
+        progress = coerce_progress_decimal(row.progress_pct)
+        pv = planned_value_decimal(row.start_date, row.end_date, bac, as_of_date)
+        ev = bac * (progress / _HUNDRED) if bac else Decimal("0")
         total_pv += pv
         total_ev += ev
         total_ac += ac
         total_bac += bac
 
-    spi: float | None = (total_ev / total_pv) if (any_cost and total_pv > 0) else None
-    cpi: float | None = (total_ev / total_ac) if (any_cost and total_ac > 0) else None
+    # SPI / CPI are dimensionless ratios -> plain float. Undefined (None) when
+    # their denominator is zero. Float division of two Decimals is the standard
+    # EV/PV, EV/AC; we convert to float explicitly to keep the wire type stable.
+    spi: float | None = float(total_ev / total_pv) if (any_cost and total_pv > 0) else None
+    cpi: float | None = float(total_ev / total_ac) if (any_cost and total_ac > 0) else None
 
-    # EAC via the CPI method: BAC / CPI. Undefined when CPI is unknown.
-    eac: float | None = (total_bac / cpi) if (cpi is not None and cpi > 0) else None
-    etc: float | None = (eac - total_ac) if eac is not None else None
-    vac: float | None = (total_bac - eac) if eac is not None else None
+    # EAC via the CPI method: BAC / CPI. Undefined when CPI is unknown / zero.
+    # Money stays Decimal; CPI is a float so we lift it back to Decimal first.
+    eac: Decimal | None = (total_bac / Decimal(str(cpi))) if (cpi is not None and cpi > 0) else None
+    etc: Decimal | None = (eac - total_ac) if eac is not None else None
+    vac: Decimal | None = (total_bac - eac) if eac is not None else None
 
     return EvmSummary(
-        planned_value=round(total_pv, 4),
-        earned_value=round(total_ev, 4),
-        actual_cost=round(total_ac, 4),
-        budget_at_completion=round(total_bac, 4),
-        schedule_variance=round(total_ev - total_pv, 4),
-        cost_variance=round(total_ev - total_ac, 4),
+        planned_value=_q(total_pv),
+        earned_value=_q(total_ev),
+        actual_cost=_q(total_ac),
+        budget_at_completion=_q(total_bac),
+        schedule_variance=_q(total_ev - total_pv),
+        cost_variance=_q(total_ev - total_ac),
         spi=round(spi, 4) if spi is not None else None,
         cpi=round(cpi, 4) if cpi is not None else None,
-        estimate_at_completion=round(eac, 4) if eac is not None else None,
-        estimate_to_complete=round(etc, 4) if etc is not None else None,
-        variance_at_completion=round(vac, 4) if vac is not None else None,
+        estimate_at_completion=_q(eac) if eac is not None else None,
+        estimate_to_complete=_q(etc) if etc is not None else None,
+        variance_at_completion=_q(vac) if vac is not None else None,
         has_cost_data=any_cost,
     )
 
@@ -204,7 +278,9 @@ def compute_evm_summary(rows: list[EvmCostRow], as_of_date: date) -> EvmSummary:
 __all__ = [
     "EvmCostRow",
     "EvmSummary",
+    "coerce_progress_decimal",
     "coerce_progress_value",
     "compute_evm_summary",
+    "planned_value_decimal",
     "planned_value_for_dates",
 ]
