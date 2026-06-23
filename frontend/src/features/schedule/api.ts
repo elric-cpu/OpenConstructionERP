@@ -423,6 +423,203 @@ export interface TypedProgressBody {
   data_date?: string;
 }
 
+/* ── T2.3 codes / UDFs / layouts ────────────────────────────────────────────
+ *
+ * Activity code dictionaries (hierarchical values), user-defined fields (UDFs)
+ * and saved grid layouts, plus the server-side grouped / filtered / paged
+ * activity grid. Mirrors backend codes_schemas.py. A layout group-by/column key
+ * is a small namespaced grammar: a bare static column name, ``code:<uuid>`` or
+ * ``udf:<uuid>``; in this UI we only build ``code:<uuid>`` group-by keys (always
+ * valid), since static columns are whitelist-gated server-side.
+ *
+ * Band/path semantics (from codes_bandtree.py): an unassigned activity falls
+ * into a ``(none)`` band whose key is the sentinel ``__none__``. Each band
+ * carries a ``path`` (its keys from the root down); each row carries a
+ * ``group_path`` of the same level keys. A row sits under a band when the band's
+ * ``path`` is a prefix of the row's ``group_path``. The expand/collapse
+ * identifier we track is that ``path`` joined by NUL.
+ */
+
+/** Sentinel key the backend uses for an unassigned ``(none)`` band/path level. */
+export const GROUP_NONE_KEY = '__none__';
+
+export interface CodeDictionary {
+  id: string;
+  project_id: string | null;
+  is_library: boolean;
+  name: string;
+  description: string;
+  color_band: boolean;
+  sort_order: number;
+}
+
+export interface CodeDictionaryCreateBody {
+  name: string;
+  description?: string;
+  color_band?: boolean;
+  sort_order?: number;
+}
+
+export interface CodeValue {
+  id: string;
+  dictionary_id: string;
+  parent_id: string | null;
+  code: string;
+  label: string;
+  color: string;
+  depth: number;
+  sort_order: number;
+}
+
+export interface CodeValueCreateBody {
+  code: string;
+  label?: string;
+  color?: string;
+  parent_id?: string | null;
+  sort_order?: number;
+}
+
+export type UdfValueType = 'text' | 'number' | 'date' | 'bool' | 'enum';
+
+export interface ScheduleUdf {
+  id: string;
+  project_id: string;
+  key: string;
+  label: string;
+  value_type: UdfValueType;
+  enum_values: string[];
+  sort_order: number;
+}
+
+export interface UdfCreateBody {
+  key: string;
+  label?: string;
+  value_type?: UdfValueType;
+  enum_values?: string[];
+  sort_order?: number;
+}
+
+/** A code chip on a grouped row (dictionary value resolved to code + label). */
+export interface CodeAssignment {
+  dictionary_id: string;
+  value_id: string;
+  code: string;
+  label: string;
+}
+
+/** A UDF value on a grouped row. ``value`` is typed per the UDF's value_type. */
+export interface UdfValueRead {
+  udf_id: string;
+  value_type: UdfValueType;
+  value: unknown;
+}
+
+/** One group-by level in a layout spec. ``key`` is ``code:<dictionary_id>``. */
+export interface LayoutGroupBy {
+  key: string;
+  color_band: boolean;
+}
+
+/**
+ * The saved-layout spec. ``extra='forbid'`` server-side, so only the documented
+ * fields may be sent. v1 of this UI drives ``group_by`` + ``timescale`` and
+ * leaves the richer fields at their server defaults (sent as empty / defaults).
+ */
+export interface LayoutSpec {
+  columns: Array<{ key: string; width?: number | null }>;
+  group_by: LayoutGroupBy[];
+  sort: Array<{ field: string; direction?: 'asc' | 'desc' }>;
+  filter: Record<string, unknown>;
+  code_filter: Array<{ dictionary_id: string; value_ids: string[] }>;
+  udf_filter: Array<{ udf_id: string; op?: string; value?: unknown }>;
+  timescale: 'day' | 'week' | 'month' | 'quarter' | 'year';
+  bar_style: { by?: string; show_critical?: boolean; show_baseline?: boolean };
+}
+
+export type LayoutShareScope = 'private' | 'project' | 'workspace';
+
+export interface ScheduleLayout {
+  id: string;
+  owner_id: string;
+  schedule_id: string;
+  project_id: string | null;
+  name: string;
+  share_scope: LayoutShareScope;
+  is_default: boolean;
+  spec: Record<string, unknown>;
+}
+
+export interface LayoutCreateBody {
+  name: string;
+  share_scope?: LayoutShareScope;
+  is_default?: boolean;
+  spec?: Partial<LayoutSpec>;
+}
+
+/** A banded group header in the grouped grid (depth-first, counts sum to total). */
+export interface GroupBand {
+  key: string;
+  label: string;
+  color: string;
+  depth: number;
+  count: number;
+  path: string[];
+}
+
+/** A leaf activity row in the grouped grid. */
+export interface GroupedRow {
+  id: string;
+  name: string;
+  wbs_code: string;
+  start_date: string | null;
+  end_date: string | null;
+  duration_days: number;
+  progress_pct: number;
+  status: string;
+  total_float: number | null;
+  is_critical: boolean;
+  group_path: string[];
+  codes: CodeAssignment[];
+  udf_values: UdfValueRead[];
+}
+
+export interface GroupedResponse {
+  groups: GroupBand[];
+  rows: GroupedRow[];
+  page: number;
+  page_size: number;
+  total_estimate: number;
+}
+
+export interface GroupedRequestBody {
+  spec?: Partial<LayoutSpec>;
+  layout_id?: string;
+  page?: number;
+  page_size?: number;
+  expanded_groups?: string[];
+}
+
+/**
+ * Build a full LayoutSpec from the (sparse) builder state, filling every field
+ * the server's ``extra='forbid'`` spec expects with its documented default.
+ * Only ``code:<uuid>`` group-by keys are produced here.
+ */
+export function buildLayoutSpec(
+  groupBy: LayoutGroupBy[],
+  timescale: LayoutSpec['timescale'] = 'week',
+): LayoutSpec {
+  return {
+    columns: [],
+    group_by: groupBy,
+    sort: [],
+    filter: {},
+    code_filter: [],
+    udf_filter: [],
+    timescale,
+    bar_style: { by: 'status', show_critical: true, show_baseline: false },
+  };
+}
+
 /** Defensive unwrap: handle both plain array and paginated {items, total} responses. */
 function unwrapList<T>(res: T[] | { items: T[] }): T[] {
   return Array.isArray(res) ? res : res.items ?? [];
@@ -604,5 +801,80 @@ export const scheduleApi = {
     apiPut<DataDateAdvanceResponse, { data_date: string }>(
       `/v1/schedule/schedules/${encodeURIComponent(scheduleId)}/data-date/`,
       { data_date: dataDate },
+    ),
+
+  /* ── T2.3 codes / UDFs / layouts ────────────────────────────────────── */
+
+  // Code dictionaries
+  /** List the project's code dictionaries. */
+  listCodeDictionaries: (projectId: string) =>
+    apiGet<CodeDictionary[]>(`/v1/schedule/projects/${encodeURIComponent(projectId)}/code-dictionaries/`),
+  /** Create a code dictionary in the project. */
+  createCodeDictionary: (projectId: string, body: CodeDictionaryCreateBody) =>
+    apiPost<CodeDictionary, CodeDictionaryCreateBody>(
+      `/v1/schedule/projects/${encodeURIComponent(projectId)}/code-dictionaries/`,
+      body,
+    ),
+  /** Delete a (project) code dictionary. */
+  deleteCodeDictionary: (dictId: string) =>
+    apiDelete(`/v1/schedule/code-dictionaries/${encodeURIComponent(dictId)}`),
+  /** List the workspace library dictionary templates available to import. */
+  listLibraryDictionaries: () =>
+    apiGet<CodeDictionary[]>(`/v1/schedule/code-dictionaries/library/`),
+  /** Import a library dictionary template into the project. */
+  importLibraryDictionary: (projectId: string, libraryDictionaryId: string) =>
+    apiPost<CodeDictionary, { library_dictionary_id: string }>(
+      `/v1/schedule/projects/${encodeURIComponent(projectId)}/code-dictionaries/import-library`,
+      { library_dictionary_id: libraryDictionaryId },
+    ),
+
+  // Code values
+  /** List a dictionary's values (hierarchical; each carries its ``depth``). */
+  listCodeValues: (dictId: string) =>
+    apiGet<CodeValue[]>(`/v1/schedule/code-dictionaries/${encodeURIComponent(dictId)}/values/`),
+  /** Add a value to a dictionary (optionally under a parent value). */
+  createCodeValue: (dictId: string, body: CodeValueCreateBody) =>
+    apiPost<CodeValue, CodeValueCreateBody>(
+      `/v1/schedule/code-dictionaries/${encodeURIComponent(dictId)}/values/`,
+      body,
+    ),
+  /** Delete a code value. */
+  deleteCodeValue: (valueId: string) =>
+    apiDelete(`/v1/schedule/code-values/${encodeURIComponent(valueId)}`),
+
+  // User-defined fields (UDFs)
+  /** List the project's user-defined fields. */
+  listUdfs: (projectId: string) =>
+    apiGet<ScheduleUdf[]>(`/v1/schedule/projects/${encodeURIComponent(projectId)}/udfs/`),
+  /** Create a user-defined field in the project. */
+  createUdf: (projectId: string, body: UdfCreateBody) =>
+    apiPost<ScheduleUdf, UdfCreateBody>(
+      `/v1/schedule/projects/${encodeURIComponent(projectId)}/udfs/`,
+      body,
+    ),
+  /** Delete a user-defined field. */
+  deleteUdf: (udfId: string) =>
+    apiDelete(`/v1/schedule/udfs/${encodeURIComponent(udfId)}`),
+
+  // Saved layouts
+  /** List saved layouts visible to the caller for this schedule. */
+  listLayouts: (scheduleId: string) =>
+    apiGet<ScheduleLayout[]>(`/v1/schedule/schedules/${encodeURIComponent(scheduleId)}/layouts/`),
+  /** Create (save) a layout for this schedule. */
+  createLayout: (scheduleId: string, body: LayoutCreateBody) =>
+    apiPost<ScheduleLayout, LayoutCreateBody>(
+      `/v1/schedule/schedules/${encodeURIComponent(scheduleId)}/layouts/`,
+      body,
+    ),
+  /** Delete a saved layout (owner only). */
+  deleteLayout: (layoutId: string) =>
+    apiDelete(`/v1/schedule/layouts/${encodeURIComponent(layoutId)}`),
+
+  // Grouped grid
+  /** Resolve a layout into a grouped, filtered, paged activity grid. */
+  groupedActivities: (scheduleId: string, body: GroupedRequestBody) =>
+    apiPost<GroupedResponse, GroupedRequestBody>(
+      `/v1/schedule/schedules/${encodeURIComponent(scheduleId)}/activities/grouped/`,
+      body,
     ),
 };

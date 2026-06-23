@@ -44,6 +44,7 @@ import { ScheduleComparePanel } from './ScheduleComparePanel';
 import { ScheduleInterchangePanel } from './ScheduleInterchangePanel';
 import { ProgressRigorPanel } from './ProgressRigorPanel';
 import { ScheduleDelayPanel } from './ScheduleDelayPanel';
+import { ScheduleCodesPanel } from './ScheduleCodesPanel';
 import { scheduleGuide } from './scheduleGuide';
 import { fetchBIMModels } from '@/features/bim/api';
 import type {
@@ -1089,7 +1090,7 @@ function ScheduleDetail({
   const { confirm, ...confirmProps } = useConfirm();
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>('week');
   const [viewMode, setViewMode] = useState<
-    'table' | 'gantt' | 'evm' | '4d' | 'quality' | 'risk' | 'compare' | 'progress' | 'interchange' | 'delay'
+    'table' | 'gantt' | 'evm' | '4d' | 'quality' | 'risk' | 'compare' | 'progress' | 'delay' | 'codes' | 'interchange'
   >('gantt');
   const [showAddActivity, setShowAddActivity] = useState(false);
   const [showGenerateBOQ, setShowGenerateBOQ] = useState(false);
@@ -1447,6 +1448,7 @@ function ScheduleDetail({
                   { key: 'compare' as const, label: t('schedule.view_compare', { defaultValue: 'Compare' }) },
                   { key: 'progress' as const, label: t('schedule.view_progress', { defaultValue: 'Progress' }) },
                   { key: 'delay' as const, label: t('schedule.view_delay', { defaultValue: 'Delay' }) },
+                  { key: 'codes' as const, label: t('schedule.view_codes', { defaultValue: 'Codes' }) },
                   { key: 'interchange' as const, label: t('schedule.view_interchange', { defaultValue: 'Interchange' }) },
                 ]).map((v) => (
                   <button
@@ -1720,6 +1722,8 @@ function ScheduleDetail({
                 projectId={projectId}
                 activitiesById={activitiesById}
               />
+            ) : viewMode === 'codes' ? (
+              <ScheduleCodesPanel scheduleId={schedule.id} projectId={projectId} />
             ) : isLoading ? (
               <SkeletonTable rows={4} columns={4} />
             ) : ganttData ? (
