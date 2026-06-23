@@ -43,6 +43,7 @@ canonical reference implementation used by the new persisted
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date, timedelta
 from typing import Any, Literal
 
 # Dependency type codes - all four PDM link types are honoured in both
@@ -1328,3 +1329,163 @@ def float_explanation(
         f"(free float {r.free_float} day(s)) from its early start (day {r.es}) "
         f"before affecting the project finish; late finish is day {r.lf}."
     )
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Working-day (calendar-aware) offset arithmetic - additive helper
+# ────────────────────────────────────────────────────────────────────────────
+# The CPM passes above run entirely in plain calendar-day offsets: a duration of
+# ``d`` always advances an offset by exactly ``d`` (``ef = es + dur``). That is
+# correct when every day is a working day, but a follow-up was noted to let the
+# engine honour per-activity working calendars (skip weekends / holidays).
+#
+# Retrofitting that into ``compute_cpm`` is NOT a small change: the forward pass,
+# backward pass, ``_forward_bound``, the free-float math, all three
+# out-of-sequence forward passes and every claims-grade post-processor that
+# reconstructs dates rely on the exact ``ef == es + dur`` / ``es == ef - dur``
+# identity (and on ``+ lag - dur`` / ``- lag + dur`` link conversions). Honouring
+# calendars means replacing every one of those with a calendar-aware inverse,
+# which would destabilise the green claims-grade engine and its tests.
+#
+# So the calendar support starts here as a small, fully-tested, behaviour-neutral
+# PRIMITIVE keyed by the same integer day-offsets the engine speaks. Nothing
+# above calls it yet; a future integration can adopt it to translate a
+# working-day ``duration`` into an elapsed-day finish offset and back. With the
+# trivial seven-working-day calendar it reproduces plain offset arithmetic
+# exactly, so adopting it is a no-op for projects without a real calendar.
+#
+# The inclusivity convention is identical to ``app/core/cpm.py`` and
+# ``app/modules/schedule/progress_math.py`` so all three agree:
+# ``working_days_between`` counts working days strictly AFTER ``start`` up to and
+# INCLUDING ``end`` (exclusive start, inclusive end).
+# ════════════════════════════════════════════════════════════════════════════
+
+
+#: Weekday indices that are working days under the default calendar (Mon-Fri).
+#: ``0 == Monday`` .. ``6 == Sunday`` (matches :meth:`datetime.date.weekday`).
+DEFAULT_WORK_WEEKDAYS: frozenset[int] = frozenset({0, 1, 2, 3, 4})
+
+
+@dataclass(frozen=True)
+class OffsetCalendar:
+    """A pure working-day calendar that speaks the engine's integer day offsets.
+
+    The claims-grade CPM passes carry every date as an integer offset (in
+    elapsed days) from a single project epoch. This helper maps a working-day
+    *duration* onto those offsets so non-working days (weekends + holidays) are
+    skipped, without changing how the passes store or compare offsets.
+
+    It is intentionally NOT the ISO-string ``WorkCalendar`` in
+    ``app/modules/schedule/progress_math.py``: that one is keyed by
+    ``YYYY-MM-DD`` strings, whereas the CPM engine never materialises calendar
+    dates - it works in offsets relative to ``epoch``. The two share the same
+    inclusivity convention so a value computed by one can be reasoned about with
+    the other once an epoch is fixed.
+
+    Attributes:
+        epoch: The calendar date that offset ``0`` maps to. Offsets are elapsed
+            days from this date; ``epoch`` itself need not be a working day.
+        work_weekdays: Weekday indices (``0=Mon`` .. ``6=Sun``) that are working
+            days. Defaults to Monday-Friday.
+        holidays: ``YYYY-MM-DD`` strings that are NOT working days even when they
+            fall on a working weekday.
+
+    A calendar whose ``work_weekdays`` covers all seven days and that has no
+    holidays makes every method reduce to plain integer arithmetic
+    (``working_finish_offset(es, d) == es + d`` and so on), so an adopter can
+    opt out of calendar effects simply by handing it such a calendar - the
+    engine's current behaviour is recovered byte for byte. :data:`ALL_DAYS_CALENDAR`
+    is exactly that calendar, pre-built.
+    """
+
+    epoch: date = date(2000, 1, 3)  # a Monday, so default offset 0 is a working day
+    work_weekdays: frozenset[int] = DEFAULT_WORK_WEEKDAYS
+    holidays: frozenset[str] = frozenset()
+
+    def _date_at(self, offset: int) -> date:
+        """Calendar date for an integer day ``offset`` from :attr:`epoch`."""
+        return self.epoch + timedelta(days=int(offset))
+
+    def _is_working_date(self, d: date) -> bool:
+        return d.weekday() in self.work_weekdays and d.isoformat() not in self.holidays
+
+    def is_working_offset(self, offset: int) -> bool:
+        """Return ``True`` when the day at ``offset`` is a working day."""
+        return self._is_working_date(self._date_at(offset))
+
+    def working_finish_offset(self, start_offset: int, duration: int) -> int:
+        """Finish offset that is ``duration`` working days after ``start_offset``.
+
+        The calendar-aware replacement for ``start_offset + duration`` (the
+        ``EF = ES + dur`` identity the plain passes use). Counting begins the day
+        AFTER ``start_offset`` - consistent with the exclusive-start convention -
+        so a ``duration`` of ``0`` returns ``start_offset`` unchanged (a
+        milestone keeps its offset). For ``duration > 0`` the returned offset is
+        always a working day. ``duration`` is clamped to ``max(0, int(...))`` so
+        a negative duration behaves like a milestone, matching the engine's
+        ``max(0, int(a.duration))`` clamp.
+        """
+        dur = max(0, int(duration))
+        if dur == 0:
+            return int(start_offset)
+        current = int(start_offset)
+        added = 0
+        while added < dur:
+            current += 1
+            if self.is_working_offset(current):
+                added += 1
+        return current
+
+    def working_start_offset(self, finish_offset: int, duration: int) -> int:
+        """Start offset that is ``duration`` working days before ``finish_offset``.
+
+        The calendar-aware replacement for ``finish_offset - duration`` (the
+        ``LS = LF - dur`` identity the backward pass uses) and the exact inverse
+        of :meth:`working_finish_offset`: for any working ``finish_offset``,
+        ``working_finish_offset(working_start_offset(f, d), d) == f``. Counting
+        steps backward from the day BEFORE ``finish_offset``; ``duration <= 0``
+        returns ``finish_offset`` unchanged.
+        """
+        dur = max(0, int(duration))
+        if dur == 0:
+            return int(finish_offset)
+        current = int(finish_offset)
+        removed = 0
+        while removed < dur:
+            current -= 1
+            if self.is_working_offset(current):
+                removed += 1
+        return current
+
+    def working_days_between(self, start_offset: int, end_offset: int) -> int:
+        """Count working days in ``(start_offset, end_offset]``.
+
+        Exclusive of ``start_offset``, inclusive of ``end_offset`` - the same
+        convention as ``app/core/cpm.py`` and ``progress_math.WorkCalendar``.
+        Returns ``0`` when ``end_offset <= start_offset`` (an empty or inverted
+        span contributes nothing). This is the working-day analogue of the raw
+        offset gap ``end_offset - start_offset`` and round-trips a finish offset:
+        ``working_finish_offset(s, working_days_between(s, f)) == f`` whenever
+        ``f`` is a working offset on or after ``s``.
+        """
+        start = int(start_offset)
+        end = int(end_offset)
+        if end <= start:
+            return 0
+        count = 0
+        current = start
+        while current < end:
+            current += 1
+            if self.is_working_offset(current):
+                count += 1
+        return count
+
+
+#: A calendar where every day is a working day and there are no holidays. Every
+#: :class:`OffsetCalendar` method on it equals the plain offset arithmetic the
+#: CPM passes already use, so it is the explicit "no calendar effects" calendar
+#: an adopter can pass to recover today's behaviour exactly.
+ALL_DAYS_CALENDAR = OffsetCalendar(work_weekdays=frozenset(range(7)))
+
+#: Default working-day calendar: Monday-Friday, no holidays, offset 0 on a Monday.
+DEFAULT_OFFSET_CALENDAR = OffsetCalendar()
