@@ -867,6 +867,7 @@ function CanProceedModal({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  const addToast = useToastStore((s) => s.addToast);
   const [kind, setKind] = useState<GateAttachedKind>('activity');
   const [entityId, setEntityId] = useState('');
   const [result, setResult] = useState<GateProceedResponse | null>(null);
@@ -876,6 +877,12 @@ function CanProceedModal({
     mutationFn: ({ k, id }: { k: GateAttachedKind; id: string }) =>
       gateCanProceed(projectId, k, id),
     onSuccess: (res) => setResult(res),
+    onError: (e: unknown) =>
+      addToast({
+        type: 'error',
+        title: t('common.error', { defaultValue: 'Something went wrong' }),
+        message: (e as Error).message,
+      }),
   });
 
   const handleCheck = () => {

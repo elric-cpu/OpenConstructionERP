@@ -192,12 +192,12 @@ export function ProgressRigorPanel({ scheduleId, activities, currency, dataDate 
         <div className="grid grid-cols-2 gap-px border-t border-border-light bg-border-light sm:grid-cols-3">
           <PvStat
             label={t('schedule.pv', { defaultValue: 'Planned value' })}
-            value={pv.data ? formatCurrency(toNum(pv.data.planned_value), currency || undefined) : '—'}
+            value={pv.data ? formatCurrency(toNum(pv.data.planned_value), currency || undefined) : '-'}
             loading={pv.isLoading}
           />
           <PvStat
             label={t('schedule.bac', { defaultValue: 'Budget at completion' })}
-            value={pv.data ? formatCurrency(toNum(pv.data.budget_at_completion), currency || undefined) : '—'}
+            value={pv.data ? formatCurrency(toNum(pv.data.budget_at_completion), currency || undefined) : '-'}
             loading={pv.isLoading}
           />
           <PvStat
@@ -353,7 +353,7 @@ function ActivityProgressEditor({ scheduleId, activityId }: { scheduleId: string
           {suspended && view.suspended_at && (
             <span className="text-xs text-amber-700">
               {t('schedule.suspended_since', { defaultValue: 'Suspended since {{date}}', date: view.suspended_at })}
-              {view.suspend_reason ? ` — ${view.suspend_reason}` : ''}
+              {view.suspend_reason ? ` - ${view.suspend_reason}` : ''}
             </span>
           )}
           {view.forecast_finish && (

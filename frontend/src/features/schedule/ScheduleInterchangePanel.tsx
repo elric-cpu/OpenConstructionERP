@@ -276,7 +276,7 @@ export function ScheduleInterchangePanel({
         <p className="mb-3 text-xs text-content-secondary">
           {t('schedule.interchange.export_desc', {
             defaultValue:
-              'Download this schedule as an open, lossless interchange document (JSON) — the full activity set, logic and calendars. Use it to archive a snapshot or move the plan between projects.',
+              'Download this schedule as an open, lossless interchange document (JSON) - the full activity set, logic and calendars. Use it to archive a snapshot or move the plan between projects.',
           })}
         </p>
         <Button
@@ -337,7 +337,7 @@ export function ScheduleInterchangePanel({
             <ActionsList
               actions={preview.actions}
               emptyLabel={t('schedule.interchange.health_clean', {
-                defaultValue: 'No repairs needed — this schedule is already clean.',
+                defaultValue: 'No repairs needed - this schedule is already clean.',
               })}
               title={t('schedule.interchange.would_apply', {
                 defaultValue: 'Repairs that would apply',

@@ -43,11 +43,11 @@ export function rollupSteps(steps: StepLike[]): number {
   return Math.min(100, Math.max(0, rolled));
 }
 
-/** PV as a percent of BAC, or '—' when BAC is zero/unknown. */
+/** PV as a percent of BAC, or '-' when BAC is zero/unknown. */
 export function pvPercentOfBac(pv: string | number | null | undefined, bac: string | number | null | undefined): string {
   const p = toNum(pv);
   const b = toNum(bac);
-  if (!b) return '—';
+  if (!b) return '-';
   return `${((p / b) * 100).toFixed(1)}%`;
 }
 

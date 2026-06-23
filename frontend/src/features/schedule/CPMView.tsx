@@ -257,12 +257,12 @@ export function CPMView({ scheduleId }: CPMViewProps) {
                   <td className="px-3 py-2 font-mono text-xs">{a.wbs_code}</td>
                   <td className="px-3 py-2">{a.name}</td>
                   <td className="px-3 py-2 text-right">{a.duration_days}</td>
-                  <td className="px-3 py-2 text-right">{a.early_start ?? '—'}</td>
-                  <td className="px-3 py-2 text-right">{a.early_finish ?? '—'}</td>
-                  <td className="px-3 py-2 text-right">{a.late_start ?? '—'}</td>
-                  <td className="px-3 py-2 text-right">{a.late_finish ?? '—'}</td>
+                  <td className="px-3 py-2 text-right">{a.early_start ?? '-'}</td>
+                  <td className="px-3 py-2 text-right">{a.early_finish ?? '-'}</td>
+                  <td className="px-3 py-2 text-right">{a.late_start ?? '-'}</td>
+                  <td className="px-3 py-2 text-right">{a.late_finish ?? '-'}</td>
                   <td className="px-3 py-2 text-right">
-                    {a.total_float ?? '—'}
+                    {a.total_float ?? '-'}
                   </td>
                   <td className="px-3 py-2">
                     {a.is_critical ? (

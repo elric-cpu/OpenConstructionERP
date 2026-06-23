@@ -2498,7 +2498,7 @@ export function SchedulePage() {
                   )}
                 </div>
                 <Badge variant="blue" size="sm">
-                  {project.classification_standard === 'din276' ? 'DIN 276' : project.classification_standard?.toUpperCase() || '—'}
+                  {project.classification_standard === 'din276' ? 'DIN 276' : project.classification_standard?.toUpperCase() || '-'}
                 </Badge>
                 <ChevronRight size={16} className="shrink-0 text-content-tertiary" />
               </div>

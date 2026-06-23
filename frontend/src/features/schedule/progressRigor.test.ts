@@ -74,9 +74,9 @@ describe('pvPercentOfBac', () => {
     expect(pvPercentOfBac(250, 1000)).toBe('25.0%');
   });
   it('returns a dash when BAC is zero or missing', () => {
-    expect(pvPercentOfBac('500', '0')).toBe('—');
-    expect(pvPercentOfBac('500', null)).toBe('—');
-    expect(pvPercentOfBac(null, null)).toBe('—');
+    expect(pvPercentOfBac('500', '0')).toBe('-');
+    expect(pvPercentOfBac('500', null)).toBe('-');
+    expect(pvPercentOfBac(null, null)).toBe('-');
   });
 });
 
