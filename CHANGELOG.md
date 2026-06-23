@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [8.9.1] - 2026-06-23
+
+A correctness and hardening release.
+
+### Fixed
+
+- The 4D schedule earned-value dashboard now carries every money value (planned value, earned value, actual cost, budget at completion and the variances) as an exact decimal string on the wire, matching the rest of the platform and removing binary-float rounding drift. Ratios (SPI, CPI) and percentages remain numbers.
+
+### Changed
+
+- Creating a cross-project schedule link now rejects, with a clear error, an activity that does not belong to the schedule it is filed under, instead of accepting it and then silently dropping the link during portfolio critical-path analysis.
+
 ## [8.9.0] - 2026-06-23
 
 A major release for construction quality assurance and advanced scheduling.
