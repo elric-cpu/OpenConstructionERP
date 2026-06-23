@@ -203,6 +203,13 @@ class Activity(Base):
     resumed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     suspend_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # ── Real-time concurrency (T3.4) ──────────────────────────────────────
+    # Monotonic optimistic-concurrency token, bumped on every guarded write. A
+    # guarded update supplies the base revision it last read; a stale base is
+    # rejected (409 with the current state) instead of silently clobbering a
+    # concurrent edit. See ``schedule.realtime_math`` / ``realtime_service``.
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
     # Relationships
     schedule: Mapped[Schedule] = relationship(back_populates="activities")
     children: Mapped[list["Activity"]] = relationship(
