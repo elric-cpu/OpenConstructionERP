@@ -1204,8 +1204,9 @@ async def run_cpm(
     """‌⁠‍Run a CPM forward+backward pass on a supplied activity list.
 
     Stateless - no DB I/O. Useful for what-if scheduling experiments,
-    importing schedules from P6/MS Project, and powering the EoT/TIA
-    analytic in :mod:`app.modules.variations`.
+    importing schedules from external interchange formats (XER, P6 XML,
+    .mpp), and powering the EoT/TIA analytic in
+    :mod:`app.modules.variations`.
     """
     acts = [a.model_dump() for a in data.activities]
     deps = [d.model_dump() for d in data.dependencies] if data.dependencies else None

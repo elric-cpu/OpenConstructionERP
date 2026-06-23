@@ -1585,9 +1585,16 @@ class ScheduleService:
         if "boq_position_id" in fields and fields["boq_position_id"] is not None:
             fields["boq_position_id"] = fields["boq_position_id"]
 
-        # Map 'metadata' key to the model's 'metadata_' column
+        # Map 'metadata' key to the model's 'metadata_' column. Merge the
+        # incoming dict over the stored value so a partial PATCH never drops
+        # keys the caller did not resend (json_overwrite data-loss guard).
         if "metadata" in fields:
-            fields["metadata_"] = fields.pop("metadata")
+            _incoming = fields.pop("metadata")
+            fields["metadata_"] = (
+                merge_metadata(getattr(work_order, "metadata_", None), _incoming)
+                if isinstance(_incoming, dict)
+                else _incoming
+            )
 
         if fields:
             # Snapshot published attributes before update_fields expires the instance
