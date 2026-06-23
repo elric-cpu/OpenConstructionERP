@@ -2547,3 +2547,9 @@ router.include_router(_realtime_router)
 from app.modules.schedule.interchange_router import interchange_router as _interchange_router  # noqa: E402
 
 router.include_router(_interchange_router)
+
+# Persisted EVM snapshots: a read-only trend of PV / EV / BAC / SPI captured as
+# the schedule data date advances. Same /api/v1/schedule prefix.
+from app.modules.schedule.evm_snapshot_router import evm_snapshot_router as _evm_snapshot_router  # noqa: E402
+
+router.include_router(_evm_snapshot_router)
