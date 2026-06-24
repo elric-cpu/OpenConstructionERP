@@ -52,6 +52,10 @@ class AgentRun(Base):
     total_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     started_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     finished_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Trust envelope (confidence + rationale + sources) parsed off the final
+    # answer when a trust-enabled agent emitted one. JSON so it can be surfaced
+    # in the run view and later scored against actuals.
+    trust: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # type: ignore[assignment]
 
     def __repr__(self) -> str:
         return f"<AgentRun {self.id} agent={self.agent_name} status={self.status}>"

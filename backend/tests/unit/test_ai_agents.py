@@ -295,3 +295,56 @@ async def test_happy_path_returns_expected_structure():
     assert result.iterations == 1
     assert result.total_tokens == 42
     assert any(s.role == "answer" for s in result.steps)
+
+
+@pytest.mark.asyncio
+async def test_trust_enabled_agent_parses_and_strips_envelope():
+    """A trust-enabled agent's final answer splits into clean text + envelope."""
+    from app.modules.ai_agents.trust import TRUST_ENABLED_AGENTS
+
+    name = sorted(TRUST_ENABLED_AGENTS)[0]
+    answer = "Here is my analysis of the estimate."
+    envelope = (
+        "```json\n"
+        '{"confidence": 0.8, "rationale": "based on three priced BOQs", '
+        '"sources": [{"kind": "boq", "ref": "boq-123"}], '
+        '"what_would_increase_confidence": "a second quote"}\n'
+        "```"
+    )
+    llm = ScriptedLLM(
+        script=[{"type": "final", "text": answer + "\n\n" + envelope}],
+        tokens_per_call=10,
+    )
+    agent = Agent(name=name, max_iterations=4)
+
+    result = await AgentRunner(llm).run(agent, "go", tool_registry=ToolRegistry())
+
+    assert result.status == "completed"
+    # The envelope block is stripped from the user-facing answer ...
+    assert result.final_output == answer
+    assert "```json" not in (result.final_output or "")
+    # ... and surfaced as a structured trust envelope.
+    assert result.trust is not None
+    assert result.trust["confidence"] == 0.8
+    assert result.trust["sources"] == [{"kind": "boq", "ref": "boq-123"}]
+
+
+@pytest.mark.asyncio
+async def test_non_trust_agent_leaves_text_untouched():
+    """A non-trust agent never has its text parsed or stripped (trust stays None).
+
+    Crucially, a trailing JSON-looking block in its answer is preserved verbatim
+    rather than being mistaken for a trust envelope.
+    """
+    answer = 'Result:\n```json\n{"value": 42}\n```'
+    llm = ScriptedLLM(
+        script=[{"type": "final", "text": answer}],
+        tokens_per_call=5,
+    )
+    agent = Agent(name="finalbot", max_iterations=4)
+
+    result = await AgentRunner(llm).run(agent, "go", tool_registry=ToolRegistry())
+
+    assert result.status == "completed"
+    assert result.trust is None
+    assert result.final_output == answer

@@ -86,6 +86,9 @@ class AgentRunResponse(BaseModel):
     failure_reason: str | None = None
     user_input: str
     final_output: str | None = None
+    # Structured trust envelope parsed off the final answer (confidence,
+    # rationale, cited sources), or null when the agent emitted none.
+    trust: dict[str, Any] | None = None
     iterations: int = 0
     total_tokens: int = 0
     started_at: str | None = None

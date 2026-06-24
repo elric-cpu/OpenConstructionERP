@@ -295,6 +295,9 @@ class AgentResult:
     total_tokens: int
     steps: list[StepRecord] = field(default_factory=list)
     failure_reason: str | None = None
+    # Structured trust envelope (confidence + rationale + sources) parsed off a
+    # trust-enabled agent's final answer; None when the agent emitted none.
+    trust: dict[str, Any] | None = None
 
 
 # ── Runner ──────────────────────────────────────────────────────────────────
@@ -355,6 +358,21 @@ class AgentRunner:
         allowed = set(agent.allowed_tools)
         available_tools: list[Tool] = [t for t in registry.all() if not allowed or t.name in allowed]
 
+        # Trust envelope: analytical agents are asked to append a structured
+        # confidence/sources block to their final answer, which we parse back
+        # off the reply. Mechanical agents are left untouched so their output
+        # (which may legitimately end in JSON) is never altered.
+        from app.modules.ai_agents.trust import (
+            TRUST_ENABLED_AGENTS,
+            envelope_instructions,
+            parse_envelope_from_text,
+        )
+
+        wants_trust = agent.name in TRUST_ENABLED_AGENTS
+        effective_system_prompt = (
+            f"{agent.system_prompt}\n\n{envelope_instructions()}" if wants_trust else agent.system_prompt
+        )
+
         messages: list[dict[str, Any]] = []
         if context:
             ctx_lines = "\n".join(f"{k}={v}" for k, v in context.items())
@@ -411,7 +429,7 @@ class AgentRunner:
                 if step_timeout > 0:
                     item, tokens = await asyncio.wait_for(
                         self.llm.next_step(
-                            system_prompt=agent.system_prompt,
+                            system_prompt=effective_system_prompt,
                             messages=messages,
                             tools=available_tools,
                         ),
@@ -419,7 +437,7 @@ class AgentRunner:
                     )
                 else:
                     item, tokens = await self.llm.next_step(
-                        system_prompt=agent.system_prompt,
+                        system_prompt=effective_system_prompt,
                         messages=messages,
                         tools=available_tools,
                     )
@@ -483,7 +501,21 @@ class AgentRunner:
 
             item_type = item.get("type")
             if item_type == "final":
-                text = str(item.get("text", "")).strip()
+                raw = str(item.get("text", "")).strip()
+                if wants_trust:
+                    text, envelope = parse_envelope_from_text(raw)
+                    trust_dict = (
+                        envelope.to_dict()
+                        if (
+                            envelope.confidence is not None
+                            or envelope.rationale
+                            or envelope.sources
+                            or envelope.what_would_increase_confidence
+                        )
+                        else None
+                    )
+                else:
+                    text, trust_dict = raw, None
                 ans_step = StepRecord(role="answer", content={"text": text}, token_count=tokens)
                 steps.append(ans_step)
                 await self._emit(ans_step)
@@ -494,6 +526,7 @@ class AgentRunner:
                     iterations=iterations,
                     total_tokens=total_tokens,
                     steps=steps,
+                    trust=trust_dict,
                 )
 
             if item_type == "tool_call":

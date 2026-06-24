@@ -692,6 +692,7 @@ class AgentService:
             status=result.status,
             failure_reason=result.failure_reason,
             final_output=result.final_output,
+            trust=result.trust,
             iterations=result.iterations,
             total_tokens=result.total_tokens,
             finished_at=_iso_now(),
