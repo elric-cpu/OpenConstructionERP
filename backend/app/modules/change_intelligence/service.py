@@ -19,12 +19,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.change_intelligence.clarifier import ClarifiedRequest, analyze_change_note
+from app.modules.change_intelligence.coordination import (
+    ActionItem,
+    CoordinationPlan,
+    build_plan,
+)
 from app.modules.change_intelligence.cycle_time import (
     KIND_CHANGE_ORDER,
     KIND_MOC_ENTRY,
     KIND_VARIATION_NOTICE,
     KIND_VARIATION_ORDER,
     KIND_VARIATION_REQUEST,
+    UNASSIGNED,
     ChangeItem,
     CycleTimeBoard,
     build_board,
@@ -41,7 +47,15 @@ from app.modules.change_intelligence.impact_projection import (
     ImpactProjection,
     project_impacts,
 )
+from app.modules.change_intelligence.thread_digest import (
+    DIRECTION_INBOUND,
+    DIRECTION_OUTBOUND,
+    CommsDigest,
+    Message,
+    build_digest,
+)
 from app.modules.changeorders.models import ChangeOrder
+from app.modules.correspondence.models import Correspondence
 from app.modules.moc.models import MoCEntry
 from app.modules.variations.models import Notice, VariationOrder, VariationRequest
 
@@ -178,3 +192,86 @@ async def build_impact_projection(session: AsyncSession, project_id: uuid.UUID) 
 def clarify_change_note(note: str, contract_standard: str = "") -> ClarifiedRequest:
     """Turn a rough change note into a structured, well-formed request draft."""
     return analyze_change_note(note, contract_standard=contract_standard)
+
+
+# --- Action coordination co-pilot ------------------------------------------
+
+
+async def build_coordination_plan(
+    session: AsyncSession,
+    project_id: uuid.UUID,
+    *,
+    now: datetime | None = None,
+) -> CoordinationPlan:
+    """Rank a project's open change-family items into a "what to act on first" plan.
+
+    Reuses :func:`gather_change_items`, keeps only the open ones, and feeds them
+    to the pure :mod:`coordination` engine, which buckets each by urgency
+    (overdue / due soon / upcoming / no date) against *now* and pairs it with a
+    recommended action.
+    """
+    moment = now or datetime.now(UTC)
+    items = await gather_change_items(session, project_id)
+    actions = [
+        ActionItem(
+            ref_id=item.id,
+            kind=item.kind,
+            title=item.title,
+            ball_in_court=(item.ball_in_court or "").strip() or UNASSIGNED,
+            status=item.status,
+            due_date=item.response_due_date,
+        )
+        for item in items
+        if item.is_open
+    ]
+    return build_plan(actions, moment)
+
+
+# --- Correspondence consolidator co-pilot ----------------------------------
+
+
+async def build_comms_digest_for_project(
+    session: AsyncSession,
+    project_id: uuid.UUID,
+    *,
+    now: datetime | None = None,
+) -> CommsDigest:
+    """Group a project's correspondence into threads and flag who owes a reply.
+
+    The correspondence module records direction as incoming / outgoing; that
+    maps to the engine's inbound / outbound. A thread is keyed by a linked RFI
+    when one is set so an RFI conversation folds together, otherwise by the
+    normalized subject. Whether a message still expects a reply is read from its
+    metadata (defaulting to true) so an informational item can be flagged as
+    closing the loop.
+    """
+    moment = now or datetime.now(UTC)
+    stmt = select(
+        Correspondence.id,
+        Correspondence.subject,
+        Correspondence.direction,
+        Correspondence.from_contact_id,
+        Correspondence.date_sent,
+        Correspondence.date_received,
+        Correspondence.linked_rfi_id,
+        Correspondence.metadata_.label("meta"),
+    ).where(Correspondence.project_id == project_id)
+
+    messages: list[Message] = []
+    for row in (await session.execute(stmt)).all():
+        is_incoming = (row.direction or "").strip().lower().startswith("in")
+        direction = DIRECTION_INBOUND if is_incoming else DIRECTION_OUTBOUND
+        meta = row.meta or {}
+        requires_reply = bool(meta.get("requires_reply", True))
+        messages.append(
+            Message(
+                ref_id=str(row.id),
+                subject=row.subject or "",
+                sender=row.from_contact_id or "",
+                sent_at=row.date_sent or row.date_received,
+                direction=direction,
+                requires_reply=requires_reply,
+                thread_key=row.linked_rfi_id or "",
+            )
+        )
+    return build_digest(messages, moment)

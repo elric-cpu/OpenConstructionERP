@@ -129,3 +129,64 @@ class ClarifiedRequestOut(BaseModel):
     clause_suggestions: list[ClauseSuggestionOut]
     suggested_route: str
     completeness: float
+
+
+# --- Action coordination co-pilot ------------------------------------------
+
+
+class CoordinationStepOut(BaseModel):
+    """One ranked open item with its urgency and recommended next action."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    ref_id: str
+    kind: str
+    title: str
+    ball_in_court: str
+    urgency: str
+    days_to_due: int | None
+    recommended_action: str
+    reason: str
+    rank_score: int
+
+
+class CoordinationPlanOut(BaseModel):
+    """The "what to act on first" plan over a project's open change items."""
+
+    project_id: str
+    generated_at: str
+    total: int
+    overdue_count: int
+    due_soon_count: int
+    steps: list[CoordinationStepOut]
+
+
+# --- Correspondence consolidator co-pilot ----------------------------------
+
+
+class ThreadDigestOut(BaseModel):
+    """Consolidated state of one correspondence thread."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    thread_key: str
+    subject: str
+    message_count: int
+    participants: list[str]
+    first_at: str | None
+    last_at: str | None
+    last_direction: str
+    last_sender: str
+    awaiting: str
+    is_open: bool
+
+
+class CommsDigestOut(BaseModel):
+    """Project-wide roll-up of correspondence threads and who owes a reply."""
+
+    project_id: str
+    generated_at: str
+    thread_count: int
+    open_count: int
+    awaiting_us_count: int
+    threads: list[ThreadDigestOut]

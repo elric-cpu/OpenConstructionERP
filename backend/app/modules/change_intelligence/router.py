@@ -18,14 +18,20 @@ from app.dependencies import CurrentUserId, SessionDep, verify_project_access
 from app.modules.change_intelligence.schemas import (
     ClarifiedRequestOut,
     ClarifyIn,
+    CommsDigestOut,
+    CoordinationPlanOut,
+    CoordinationStepOut,
     CurrencyImpactOut,
     CycleTimeBoardOut,
     ImpactProjectionOut,
     ItemAgingOut,
     KindImpactOut,
     PartyLoadOut,
+    ThreadDigestOut,
 )
 from app.modules.change_intelligence.service import (
+    build_comms_digest_for_project,
+    build_coordination_plan,
     build_impact_projection,
     build_project_board,
     clarify_change_note,
@@ -99,3 +105,43 @@ async def clarify_change_request(
     """
     clarified = clarify_change_note(payload.note, payload.contract_standard)
     return ClarifiedRequestOut.model_validate(clarified)
+
+
+@router.get("/projects/{project_id}/coordination", response_model=CoordinationPlanOut)
+async def get_coordination_plan(
+    project_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+) -> CoordinationPlanOut:
+    """Ranked "what to act on first" plan over the project's open change items."""
+    await verify_project_access(project_id, user_id or "", session)
+
+    plan = await build_coordination_plan(session, project_id)
+    return CoordinationPlanOut(
+        project_id=str(project_id),
+        generated_at=plan.generated_at,
+        total=plan.total,
+        overdue_count=plan.overdue_count,
+        due_soon_count=plan.due_soon_count,
+        steps=[CoordinationStepOut.model_validate(s) for s in plan.steps],
+    )
+
+
+@router.get("/projects/{project_id}/comms-digest", response_model=CommsDigestOut)
+async def get_comms_digest(
+    project_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+) -> CommsDigestOut:
+    """Open correspondence threads for the project and who owes the next reply."""
+    await verify_project_access(project_id, user_id or "", session)
+
+    digest = await build_comms_digest_for_project(session, project_id)
+    return CommsDigestOut(
+        project_id=str(project_id),
+        generated_at=digest.generated_at,
+        thread_count=digest.thread_count,
+        open_count=digest.open_count,
+        awaiting_us_count=digest.awaiting_us_count,
+        threads=[ThreadDigestOut.model_validate(t) for t in digest.threads],
+    )
