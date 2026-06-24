@@ -23,6 +23,13 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, 
 
 from app.database import async_session_factory
 from app.dependencies import CurrentUserId, CurrentUserPayload, RequirePermission, SessionDep, verify_project_access
+from app.modules.ai_agents.accuracy_schemas import (
+    AccuracyScoreboardOut,
+    AccuracyScoreOut,
+    OutcomeRecordedOut,
+    RecordOutcomeIn,
+)
+from app.modules.ai_agents.accuracy_service import build_scoreboard, record_run_outcome
 from app.modules.ai_agents.schemas import (
     CUSTOM_AGENT_CATEGORIES,
     AgentDescriptor,
@@ -563,6 +570,72 @@ async def agents_health(
         provider=provider,
         model=model,
     )
+
+
+# ── Accuracy scoreboard ──────────────────────────────────────────────────
+
+
+@router.post(
+    "/runs/{run_id}/outcome",
+    response_model=OutcomeRecordedOut,
+    dependencies=[Depends(RequirePermission("ai_agents.run"))],
+)
+async def record_agent_run_outcome(
+    run_id: uuid.UUID,
+    payload: RecordOutcomeIn,
+    user_id: CurrentUserId,
+    session: SessionDep,
+) -> OutcomeRecordedOut:
+    """Record whether an agent run's answer turned out correct.
+
+    Scoped to the caller's own runs (a run the caller does not own returns
+    404). The outcome is stored on the run's trust envelope so a later accuracy
+    review can score the stated confidence against what actually happened.
+    """
+    run = await record_run_outcome(
+        session,
+        run_id,
+        correct=payload.correct,
+        recorded_by=uuid.UUID(user_id),
+        note=payload.note,
+    )
+    if run is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent run not found",
+        )
+    await session.commit()
+    return OutcomeRecordedOut(
+        run_id=str(run.id),
+        agent_name=run.agent_name,
+        actual_outcome=bool(payload.correct),
+    )
+
+
+@router.get(
+    "/accuracy/",
+    response_model=AccuracyScoreboardOut,
+    dependencies=[Depends(RequirePermission("ai_agents.read"))],
+)
+async def get_accuracy_scoreboard(
+    user_id: CurrentUserId,
+    session: SessionDep,
+    project_id: uuid.UUID | None = Query(default=None),
+    agent_name: str | None = Query(default=None),
+) -> AccuracyScoreboardOut:
+    """Calibration scoreboard over the caller's own scored agent runs.
+
+    Each agent with at least one run carrying both a stated confidence and a
+    recorded outcome gets a Brier score, mean confidence, observed accuracy and
+    calibration bins. Optionally filtered to one project or one agent.
+    """
+    scores = await build_scoreboard(
+        session,
+        user_id=uuid.UUID(user_id),
+        project_id=project_id,
+        agent_name=agent_name,
+    )
+    return AccuracyScoreboardOut(scores=[AccuracyScoreOut.model_validate(s) for s in scores])
 
 
 # ── Run lifecycle ────────────────────────────────────────────────────────
