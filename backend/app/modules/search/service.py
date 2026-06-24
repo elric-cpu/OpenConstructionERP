@@ -38,17 +38,20 @@ from app.core.vector_index import (
     ALL_COLLECTIONS,
     COLLECTION_BIM_ELEMENTS,
     COLLECTION_BOQ,
+    COLLECTION_CHANGE_ORDERS,
     COLLECTION_CHAT,
     COLLECTION_CORRESPONDENCE,
     COLLECTION_COSTS,
     COLLECTION_DOCUMENTS,
     COLLECTION_LABELS,
+    COLLECTION_MOC,
     COLLECTION_REQUIREMENTS,
     COLLECTION_RFI,
     COLLECTION_RISKS,
     COLLECTION_SUBMITTALS,
     COLLECTION_TASKS,
     COLLECTION_VALIDATION,
+    COLLECTION_VARIATIONS,
     VectorHit,
     all_collection_status,
     reciprocal_rank_fusion,
@@ -91,6 +94,14 @@ _SHORT_NAME_ALIASES: dict[str, str] = {
     "submittals_submittals": "oe_submittals_submittals",
     "correspondence": "oe_correspondence_correspondence",
     "correspondence_correspondence": "oe_correspondence_correspondence",
+    # Change-management collections.
+    "change_orders": "oe_change_orders",
+    "change_order": "oe_change_orders",
+    "changeorders": "oe_change_orders",
+    "variations": "oe_variations",
+    "variation": "oe_variations",
+    "moc": "oe_moc",
+    "management_of_change": "oe_moc",
     "validation": "oe_validation",
     "chat": "oe_chat",
 }
@@ -557,6 +568,200 @@ async def _sql_search_collection(
             )
             for item in items
         ]
+
+    if collection == COLLECTION_CHANGE_ORDERS:
+        from app.modules.changeorders.models import ChangeOrder
+
+        stmt = (
+            select(ChangeOrder)
+            .where(
+                or_(
+                    ChangeOrder.title.ilike(pattern),
+                    ChangeOrder.description.ilike(pattern),
+                    ChangeOrder.code.ilike(pattern),
+                )
+            )
+            .order_by(ChangeOrder.created_at.desc())
+            .limit(limit)
+        )
+        stmt = _scope(stmt, ChangeOrder.project_id)
+        orders = (await session.execute(stmt)).scalars().all()
+        return [
+            _hit_from_row(
+                row_id=co.id,
+                title=(co.title or co.code or "")[:160],
+                snippet=(co.description or co.title or "")[:220],
+                collection=collection,
+                project_id=str(co.project_id) if co.project_id else "",
+                payload={
+                    "title": (co.title or co.code or "")[:160],
+                    "code": co.code or "",
+                    "status": co.status or "",
+                    "ball_in_court": co.ball_in_court or "",
+                },
+            )
+            for co in orders
+        ]
+
+    if collection == COLLECTION_MOC:
+        from app.modules.moc.models import MoCEntry
+
+        stmt = (
+            select(MoCEntry)
+            .where(
+                or_(
+                    MoCEntry.title.ilike(pattern),
+                    MoCEntry.description.ilike(pattern),
+                    MoCEntry.code.ilike(pattern),
+                )
+            )
+            .order_by(MoCEntry.created_at.desc())
+            .limit(limit)
+        )
+        stmt = _scope(stmt, MoCEntry.project_id)
+        entries = (await session.execute(stmt)).scalars().all()
+        return [
+            _hit_from_row(
+                row_id=m.id,
+                title=(m.title or m.code or "")[:160],
+                snippet=(m.description or m.title or "")[:220],
+                collection=collection,
+                project_id=str(m.project_id) if m.project_id else "",
+                payload={
+                    "title": (m.title or m.code or "")[:160],
+                    "code": m.code or "",
+                    "status": m.status or "",
+                    "risk_level": m.risk_level or "",
+                    "ball_in_court": m.ball_in_court or "",
+                },
+            )
+            for m in entries
+        ]
+
+    if collection == COLLECTION_VARIATIONS:
+        # One "Variations" surface spanning the three variation entities -
+        # early-warning notice, variation request and variation order - each
+        # tagged in the payload by ``kind`` so the UI can distinguish them.
+        from app.modules.variations.models import Notice, VariationOrder, VariationRequest
+
+        collected: list[tuple[Any, VectorHit]] = []
+
+        notices = (
+            await session.execute(
+                _scope(
+                    select(Notice)
+                    .where(
+                        or_(
+                            Notice.title.ilike(pattern),
+                            Notice.description.ilike(pattern),
+                            Notice.code.ilike(pattern),
+                        )
+                    )
+                    .order_by(Notice.created_at.desc())
+                    .limit(limit),
+                    Notice.project_id,
+                )
+            )
+        ).scalars().all()
+        collected += [
+            (
+                n.created_at,
+                _hit_from_row(
+                    row_id=n.id,
+                    title=(n.title or n.code or "")[:160],
+                    snippet=(n.description or n.title or "")[:220],
+                    collection=collection,
+                    project_id=str(n.project_id) if n.project_id else "",
+                    payload={
+                        "title": (n.title or n.code or "")[:160],
+                        "code": n.code or "",
+                        "kind": "notice",
+                        "status": n.status or "",
+                        "ball_in_court": n.ball_in_court or "",
+                    },
+                ),
+            )
+            for n in notices
+        ]
+
+        requests = (
+            await session.execute(
+                _scope(
+                    select(VariationRequest)
+                    .where(
+                        or_(
+                            VariationRequest.title.ilike(pattern),
+                            VariationRequest.description.ilike(pattern),
+                            VariationRequest.code.ilike(pattern),
+                        )
+                    )
+                    .order_by(VariationRequest.created_at.desc())
+                    .limit(limit),
+                    VariationRequest.project_id,
+                )
+            )
+        ).scalars().all()
+        collected += [
+            (
+                vr.created_at,
+                _hit_from_row(
+                    row_id=vr.id,
+                    title=(vr.title or vr.code or "")[:160],
+                    snippet=(vr.description or vr.title or "")[:220],
+                    collection=collection,
+                    project_id=str(vr.project_id) if vr.project_id else "",
+                    payload={
+                        "title": (vr.title or vr.code or "")[:160],
+                        "code": vr.code or "",
+                        "kind": "request",
+                        "status": vr.status or "",
+                        "ball_in_court": vr.ball_in_court or "",
+                    },
+                ),
+            )
+            for vr in requests
+        ]
+
+        orders = (
+            await session.execute(
+                _scope(
+                    select(VariationOrder)
+                    .where(
+                        or_(
+                            VariationOrder.title.ilike(pattern),
+                            VariationOrder.code.ilike(pattern),
+                        )
+                    )
+                    .order_by(VariationOrder.created_at.desc())
+                    .limit(limit),
+                    VariationOrder.project_id,
+                )
+            )
+        ).scalars().all()
+        collected += [
+            (
+                vo.created_at,
+                _hit_from_row(
+                    row_id=vo.id,
+                    title=(vo.title or vo.code or "")[:160],
+                    snippet=(vo.title or vo.code or "")[:220],
+                    collection=collection,
+                    project_id=str(vo.project_id) if vo.project_id else "",
+                    payload={
+                        "title": (vo.title or vo.code or "")[:160],
+                        "code": vo.code or "",
+                        "kind": "order",
+                        "status": vo.status or "",
+                        "ball_in_court": vo.ball_in_court or "",
+                    },
+                ),
+            )
+            for vo in orders
+        ]
+
+        # Newest first across all three variation entities, capped at limit.
+        collected.sort(key=lambda pair: pair[0], reverse=True)
+        return [hit for _, hit in collected[:limit]]
 
     # Collections without a SQL fallback (chat, validation, bim_elements
     # via DDC canonical store, …) fall through to the empty list. The

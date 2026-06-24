@@ -97,6 +97,13 @@ COLLECTION_COSTS = "oe_cost_items"
 COLLECTION_RFI = "oe_rfi_rfis"
 COLLECTION_SUBMITTALS = "oe_submittals_submittals"
 COLLECTION_CORRESPONDENCE = "oe_correspondence_correspondence"
+# Change-management collections (change intelligence - make every change
+# record findable from the global search). Thin wrappers over the existing
+# module tables; the SQL fallback in ``search.service`` covers the no-vector
+# deploy path. ``oe_variations`` spans the notice / request / order entities.
+COLLECTION_CHANGE_ORDERS = "oe_change_orders"
+COLLECTION_VARIATIONS = "oe_variations"
+COLLECTION_MOC = "oe_moc"
 
 #: Ordered tuple used by :func:`unified_search` to fan out to every
 #: registered collection when the caller doesn't specify ``types``.
@@ -110,6 +117,9 @@ ALL_COLLECTIONS: tuple[str, ...] = (
     COLLECTION_RFI,
     COLLECTION_SUBMITTALS,
     COLLECTION_CORRESPONDENCE,
+    COLLECTION_CHANGE_ORDERS,
+    COLLECTION_VARIATIONS,
+    COLLECTION_MOC,
     COLLECTION_VALIDATION,
     COLLECTION_CHAT,
     COLLECTION_COSTS,
@@ -127,6 +137,9 @@ COLLECTION_LABELS: dict[str, str] = {
     COLLECTION_RFI: "RFI",
     COLLECTION_SUBMITTALS: "Submittals",
     COLLECTION_CORRESPONDENCE: "Correspondence",
+    COLLECTION_CHANGE_ORDERS: "Change Orders",
+    COLLECTION_VARIATIONS: "Variations",
+    COLLECTION_MOC: "Management of Change",
     COLLECTION_VALIDATION: "Validation",
     COLLECTION_CHAT: "Chat",
     COLLECTION_COSTS: "Cost Catalog",
