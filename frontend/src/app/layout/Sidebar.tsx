@@ -356,6 +356,7 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.supplier_catalogs', to: '/supplier-catalogs', icon: ShoppingCart },
       { labelKey: 'procurement.title', to: '/procurement', icon: Package, advancedOnly: true },
       { labelKey: 'nav.change_orders', to: '/changeorders', icon: FileEdit, advancedOnly: true },
+      { labelKey: 'nav.change_intelligence', to: '/change-intelligence', icon: BrainCircuit, advancedOnly: true },
     ],
   },
   // ── 11. FIELD OPERATIONS ───────────────────────────────────────────

@@ -404,6 +404,9 @@ const BIDashboardsPage = lazy(() =>
 const ProjectControlsPage = lazy(() =>
   import('@/features/project-controls').then((m) => ({ default: m.ProjectControlsPage }))
 );
+const ChangeIntelligencePage = lazy(() =>
+  import('@/features/change-intelligence').then((m) => ({ default: m.ChangeIntelligencePage }))
+);
 // v4.1 — three additional P1 Slice-1 features land behind dedicated routes
 // (Assembly Library was already eagerly imported by the assemblies feature
 // index in its Slice-1 PR). Pages are net-new so they pile on the end of
@@ -1158,6 +1161,8 @@ export default function App() {
             day-works, instructions, time-impact analysis. */}
         <Route path="/variations" element={<P title="Variations"><VariationsPage /></P>} />
         <Route path="/projects/:projectId/variations" element={<P title="Variations"><VariationsPage /></P>} />
+        <Route path="/change-intelligence" element={<P title="Change Intelligence"><ChangeIntelligencePage /></P>} />
+        <Route path="/projects/:projectId/change-intelligence" element={<P title="Change Intelligence"><ChangeIntelligencePage /></P>} />
         <Route path="/estimates" element={<Navigate to="/boq" replace />} />
         <Route path="/profile" element={<Navigate to="/settings" replace />} />
         <Route path="/notifications" element={<P title="Notifications"><NotificationsPage /></P>} />

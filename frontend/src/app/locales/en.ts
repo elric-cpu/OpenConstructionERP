@@ -4242,6 +4242,7 @@ const resource = {
     "nav.project_intelligence": "Project Intelligence",
     "nav.estimation_dashboard": "Estimation Dashboard",
     "nav.change_orders": "Change Orders",
+    "nav.change_intelligence": "Change Intelligence",
     "nav.risk_register": "Risk Register",
     "nav.documents": "Documents",
     "nav.photos": "Project Photos",
