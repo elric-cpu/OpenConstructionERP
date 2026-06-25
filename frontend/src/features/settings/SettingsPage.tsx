@@ -29,6 +29,7 @@ import {
   Sparkles,
   Plug,
   ShieldAlert,
+  ShieldCheck,
   SlidersHorizontal,
   Layers,
   LogOut,
@@ -52,6 +53,7 @@ import { useToastStore } from '@/stores/useToastStore';
 import { useViewModeStore } from '@/stores/useViewModeStore';
 import { aiApi, type AIProvider, type AIConnectionStatus, type AISettings } from '@/features/ai/api';
 import { BIMConverterStatusBanner } from '@/features/bim/BIMConverterStatusBanner';
+import { DataSecurityPanel } from '@/features/data-security';
 import { DeleteAccountDialog } from './DeleteAccountDialog';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -1093,7 +1095,7 @@ function ProfileCard({ profile, loading, editing, setEditing, formName, setFormN
 
 // ── Tab definitions ──────────────────────────────────────────────────────────
 
-type SettingsTab = 'general' | 'dashboard' | 'team' | 'account' | 'regional' | 'converters' | 'ai' | 'integrations' | 'advanced';
+type SettingsTab = 'general' | 'dashboard' | 'team' | 'account' | 'regional' | 'converters' | 'ai' | 'security' | 'integrations' | 'advanced';
 
 interface TabDef {
   id: SettingsTab;
@@ -1121,6 +1123,7 @@ const TABS: readonly TabDef[] = [
   { id: 'regional',     labelKey: 'settings.tab_regional',     defaultLabel: 'Regional',     icon: Globe,    descKey: 'settings.tab_regional_desc',     descDefault: 'Language, timezone, and formats' },
   { id: 'converters',   labelKey: 'settings.tab_converters',   defaultLabel: 'Converters',  icon: Layers,   descKey: 'settings.tab_converters_desc',   descDefault: 'DDC converters - installed versions and GitHub sources' },
   { id: 'ai',           labelKey: 'settings.tab_ai',           defaultLabel: 'AI',           icon: Sparkles, descKey: 'settings.tab_ai_desc',           descDefault: 'AI provider and semantic search' },
+  { id: 'security',     labelKey: 'settings.tab_security',     defaultLabel: 'Data & Security', icon: ShieldCheck, descKey: 'settings.tab_security_desc', descDefault: 'Where your data lives and what leaves this instance' },
   { id: 'integrations', labelKey: 'settings.tab_integrations', defaultLabel: 'Integrations', icon: Plug,     descKey: 'settings.tab_integrations_desc', descDefault: 'Slack, Teams, Telegram, webhooks' },
   { id: 'advanced',     labelKey: 'settings.tab_advanced',     defaultLabel: 'Advanced',     icon: Wrench,   descKey: 'settings.tab_advanced_desc',     descDefault: 'Backup, databases, setup wizard' },
 ];
@@ -1734,6 +1737,13 @@ export function SettingsPage() {
                 <VectorStatusCard />
               </div>
             </>
+          )}
+
+          {/* ── DATA & SECURITY ──────────────────────────────────── */}
+          {activeTab === 'security' && (
+            <div className="lg:col-span-2">
+              <DataSecurityPanel />
+            </div>
           )}
 
           {/* ── INTEGRATIONS ─────────────────────────────────────── */}
