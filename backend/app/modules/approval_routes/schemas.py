@@ -260,3 +260,26 @@ class DelegationResponse(BaseModel):
     created_by: UUID | None
     created_at: datetime
     updated_at: datetime
+
+
+class EscalationOut(BaseModel):
+    """Escalation standing of one pending instance's current step (#17).
+
+    ``has_sla`` is ``False`` when the instance is not pending or its current
+    step has no SLA clock; ``severity`` is one of on_time / late / breached /
+    critical, ``next_target`` is the approver id to escalate to now (or null),
+    and ``level`` is the 1-based escalation level (0 when none is due).
+    """
+
+    instance_id: str
+    target_kind: str
+    current_step_ordinal: int
+    has_sla: bool
+    severity: str
+    hours_overdue: float
+    should_escalate: bool
+    next_target: str | None
+    level: int
+    reason: str
+    chain_length: int
+    current_holder: str | None

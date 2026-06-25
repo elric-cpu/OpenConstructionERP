@@ -141,3 +141,24 @@ export interface ApprovalRoutesMeta {
   step_modes: RouteStepMode[];
   instance_statuses: InstanceStatus[];
 }
+
+/** Escalation standing of one instance's current step (#17). Mirrors the
+ *  backend EscalationOut. ``has_sla`` is false when there is no live SLA
+ *  clock; ``severity`` is the overrun band, ``next_target`` the approver to
+ *  escalate to now (or null), and ``level`` the 1-based escalation level. */
+export type EscalationSeverity = 'on_time' | 'late' | 'breached' | 'critical';
+
+export interface Escalation {
+  instance_id: string;
+  target_kind: string;
+  current_step_ordinal: number;
+  has_sla: boolean;
+  severity: EscalationSeverity;
+  hours_overdue: number;
+  should_escalate: boolean;
+  next_target: string | null;
+  level: number;
+  reason: string;
+  chain_length: number;
+  current_holder: string | null;
+}

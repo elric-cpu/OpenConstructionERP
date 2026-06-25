@@ -35,6 +35,7 @@ from app.dependencies import (
     SessionDep,
     verify_project_access,
 )
+from app.modules.approval_routes.escalation_service import evaluate_escalation
 from app.modules.approval_routes.models import (
     INSTANCE_STATUSES,
     STEP_MODES,
@@ -45,6 +46,7 @@ from app.modules.approval_routes.schemas import (
     DecisionSubmit,
     DelegationCreate,
     DelegationResponse,
+    EscalationOut,
     InstanceCreate,
     InstanceResponse,
     ReassignInstance,
@@ -457,6 +459,46 @@ async def reassign_instance(
         reason=payload.reason,
     )
     return await _instance_to_response(updated, service)
+
+
+@router.get(
+    "/instances/{instance_id}/escalation",
+    response_model=EscalationOut,
+    dependencies=[Depends(RequirePermission("approval_routes.read"))],
+)
+async def get_instance_escalation(
+    instance_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    service: ApprovalRouteService = Depends(_get_service),
+) -> EscalationOut:
+    """Escalation standing of one instance's current step.
+
+    Returns whether the breached step is past its grace window and, if so, the
+    next authority on the route to escalate to and the 1-based level. A
+    non-pending instance or a step with no SLA returns an idle standing
+    (``has_sla`` false). Read-only; the background monitor performs the actual
+    escalation hand-off.
+    """
+    instance = await service.get_instance(instance_id)
+    route = await service.get_route(instance.route_id)
+    if route.project_id is not None:
+        await verify_project_access(route.project_id, user_id, session)
+    view = await evaluate_escalation(session, instance, route)
+    return EscalationOut(
+        instance_id=view.instance_id,
+        target_kind=view.target_kind,
+        current_step_ordinal=view.current_step_ordinal,
+        has_sla=view.has_sla,
+        severity=view.severity,
+        hours_overdue=view.hours_overdue,
+        should_escalate=view.should_escalate,
+        next_target=view.next_target,
+        level=view.level,
+        reason=view.reason,
+        chain_length=view.chain_length,
+        current_holder=view.current_holder,
+    )
 
 
 # ── Delegations (out-of-office) ──────────────────────────────────────

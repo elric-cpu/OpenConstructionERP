@@ -52,6 +52,7 @@ import {
   listRoutes,
   startInstance,
 } from './api';
+import { EscalationNotice } from './EscalationNotice';
 import type {
   ApprovalInstance,
   ApprovalRoute,
@@ -422,6 +423,8 @@ export function ApprovalInstanceCard({
         </button>
       </div>
 
+      <EscalationNotice instanceId={activeInstance.id} />
+
       {expanded && (
         <div className="mt-3 space-y-2">
           {routeQuery.isLoading ? (
@@ -596,7 +599,7 @@ export function StepRow({
             <span
               title={t('approvalRoutes.sla_informational_hint', {
                 defaultValue:
-                  'Target turnaround only. Not enforced - no automatic escalation or overdue blocking.',
+                  'Target turnaround. Once overdue past a grace window the approval escalates to the next approver in the route.',
               })}
             >
               {t('approvalRoutes.sla_target_value', {

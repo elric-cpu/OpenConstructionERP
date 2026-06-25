@@ -37,7 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
 from app.database import async_session_factory
-from app.modules.approval_routes import delegation_engine, sla_engine
+from app.modules.approval_routes import delegation_engine, escalation_service, sla_engine
 from app.modules.approval_routes.delegation_engine import DelegationView
 from app.modules.approval_routes.models import Delegation, Instance, Route, Step, StepState
 from app.modules.approval_routes.service import delegation_views_from_rows
@@ -180,6 +180,67 @@ async def _raise_breach(
     )
 
 
+async def _maybe_escalate(
+    session: AsyncSession,
+    instance: Instance,
+    route: Route,
+    now: datetime,
+) -> None:
+    """Escalate a breached step to the next authority once past its grace window.
+
+    Delegates the decision to :func:`escalation_service.evaluate_escalation`,
+    which derives the chain from the route's later approvers and reads the
+    already-escalated set from the notification store. When an escalation is due
+    the next target is notified and an ``approval.escalated`` event is published;
+    the notification doubles as the de-dup record so each target is escalated to
+    at most once per step.
+    """
+    view = await escalation_service.evaluate_escalation(session, instance, route, now=now)
+    if not (view.should_escalate and view.next_target):
+        return
+    try:
+        recipient = uuid.UUID(view.next_target)
+    except (ValueError, TypeError):
+        return
+
+    await NotificationService(session).create(
+        user_id=recipient,
+        notification_type=escalation_service.ESCALATED_TYPE,
+        title_key="notifications.approval.escalated.title",
+        entity_type=ENTITY_TYPE,
+        entity_id=str(instance.id),
+        body_key="notifications.approval.escalated.body",
+        body_context={
+            "target_kind": instance.target_kind,
+            "step_ordinal": view.current_step_ordinal,
+            "level": view.level,
+        },
+        action_url=f"/approvals/{instance.id}",
+        metadata={
+            "step_ordinal": view.current_step_ordinal,
+            "escalated_to": view.next_target,
+            "level": view.level,
+            "severity": view.severity,
+        },
+    )
+
+    project_id = route.project_id
+    event_bus.publish_detached(
+        "approval.escalated",
+        {
+            "id": str(instance.id),
+            "project_id": str(project_id) if project_id else None,
+            "target_kind": instance.target_kind,
+            "target_id": str(instance.target_id),
+            "step_ordinal": view.current_step_ordinal,
+            "escalated_to": view.next_target,
+            "level": view.level,
+            "severity": view.severity,
+        },
+        source_module="approval_routes",
+    )
+
+
 async def check_sla_breaches(session: AsyncSession, *, now: datetime | None = None) -> int:
     """Scan pending instances and nudge any whose current step has breached.
 
@@ -214,10 +275,12 @@ async def check_sla_breaches(session: AsyncSession, *, now: datetime | None = No
             status = sla_engine.breach_status(baseline, step.sla_hours, now)
             if not status.is_breached:
                 continue
-            if await _already_notified(session, instance.id, instance.current_step_ordinal, now):
-                continue
-            await _raise_breach(session, instance, step, route, status, now, delegations)
-            actioned += 1
+            if not await _already_notified(session, instance.id, instance.current_step_ordinal, now):
+                await _raise_breach(session, instance, step, route, status, now, delegations)
+                actioned += 1
+            # Escalation depth: once the breach has sat past its grace window,
+            # walk the approval chain to the next authority (once per target).
+            await _maybe_escalate(session, instance, route, now)
         except Exception:
             logger.exception("SLA check failed for approval instance %s", getattr(instance, "id", "?"))
 

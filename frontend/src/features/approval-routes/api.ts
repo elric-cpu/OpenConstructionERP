@@ -27,6 +27,7 @@ import type {
   ApprovalRouteCreatePayload,
   ApprovalRoutesMeta,
   ApprovalRouteUpdatePayload,
+  Escalation,
   InstanceCancelPayload,
   InstanceCreatePayload,
   InstanceDecidePayload,
@@ -123,6 +124,15 @@ export async function getInstance(
   return apiGet<ApprovalInstance>(`${BASE}/instances/${instanceId}`);
 }
 
+/** Escalation standing of an instance's current step (#17). Surfaces how
+ *  overdue the live step is and whether the breach has aged past its grace
+ *  window into an escalation up the route's approver chain. */
+export async function getInstanceEscalation(
+  instanceId: string,
+): Promise<Escalation> {
+  return apiGet<Escalation>(`${BASE}/instances/${instanceId}/escalation`);
+}
+
 export async function startInstance(
   payload: InstanceCreatePayload,
 ): Promise<ApprovalInstance> {
@@ -179,4 +189,7 @@ export const approvalRoutesKeys = {
     ] as const,
   /** Single running instance. */
   instance: (id: string) => ['approval-routes', 'instance', id] as const,
+  /** Escalation standing of a single running instance's current step. */
+  escalation: (id: string) =>
+    ['approval-routes', 'escalation', id] as const,
 };
