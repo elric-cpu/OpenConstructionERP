@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [8.11.0] - 2026-06-25
+
+A change intelligence and value release. It builds the layer introduced in 8.10.0 into a full set of tools that make change accountable, prove the value of acting early, and bring scattered project records into one searchable place. It also makes the AI trust signals visible everywhere the assistant speaks.
+
+### Added
+
+- The AI trust envelope is now shown wherever the assistant gives an answer: a calibrated confidence level, the real sources it cited, and what would raise that confidence. Marking an answer correct or incorrect, with an optional correction, feeds an accuracy scoreboard that scores stated confidence against the recorded outcome, so the assistant's track record is shown rather than asserted. A new Data and Security panel in Settings makes data residency and self-hosting legible.
+- A Value Realized dashboard that turns change-and-AI activity into a value case built on your own ledger: time saved, a recovery performance index, an adoption-versus-non-adoption comparison, regional overrun and recovery benchmarks, and a guided checklist that walks a project to its first value with a one-click value report.
+- Deeper change accountability across the change family: an ownership hand-off log that records who held each change and for how long, a provability score that grades how reconstructable a change is, a dispute exposure radar, a decision-time impact preview, a change watch for stalled or incomplete items, pre-construction scope-ambiguity grading over the bill of quantities, and predictive delay and overrun risk.
+- A claims and dispute workflow that reconstructs a single change as a scoped, exportable evidence pack, and cost recovery that apportions a back-charge across several responsible parties by share.
+- Approval escalation that moves a breached approval up the route chain instead of leaving it to age, and inbound capture that records reply-to email and chat with construction delay detection and cross-channel reconciliation.
+- A Phone Log that captures calls and verbal instructions as a first-class project record, with the parties, direction, duration and any instructions pulled out of the note.
+- Document Connectors that bring files from a watched server folder onto the project record as searchable documents, skipping anything already imported and detecting duplicate content so nothing is brought in twice.
+- Find Records, one faceted and ranked search across documents, correspondence and change orders, where every result carries its source, record and date so a claim or a dispute can be reconstructed from the evidence.
+- A seeded AI sandbox on the demo so you can see the assistant working against sample data, with its confidence and accuracy already populated.
+
+### Fixed
+
+- Takeoff now honours the Imperial measurement preference in both the on-screen display and the export, instead of always showing metric.
+- A shared, non-admin project member can now open the project's BIM models instead of being refused access.
+
 ## [8.10.0] - 2026-06-24
 
 A change intelligence release. It turns the change-adjacent modules - change orders, variations, management of change, correspondence and approvals - into one place that answers what to act on first, who owes the next action and by when, and what the approved changes have committed in cost and schedule.
