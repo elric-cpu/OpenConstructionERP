@@ -1,12 +1,23 @@
 # DDC-CWICR-OE: DataDrivenConstruction - OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Unit tests for the Data & Security posture builder (#4, pure, py3.11-safe).
+"""Tests for the Data & Security posture builder (#4, pure, py3.11-safe).
 
 The builder backs the in-product trust panel. These tests pin the contract the
 frontend renders: AI status is derived from the configured provider names, the
 database managed flag tracks whether an external database was configured, the
 data always reports as staying on the operator's own infrastructure, and the
 payload carries no secret-bearing field.
+
+Placement note: these are pure tests (no database, no I/O, no await), but they
+live here under ``tests/integration/core`` rather than ``tests/unit`` on
+purpose. The unit suite is fanned across six shards by pytest-split with no
+committed durations file, so the partition is decided by collected-test order.
+Adding a brand new file to ``tests/unit`` shifts every later test's shard and
+can re-expose pre-existing order-dependent flakes in the shared-event-loop PG
+fixtures. Keeping these here runs them in the single, non-sharded
+``pytest tests/integration tests/modules`` job without perturbing that
+partition. Do not move them back into ``tests/unit`` without first giving the
+unit suite a stable, duration-based split.
 """
 
 from __future__ import annotations
