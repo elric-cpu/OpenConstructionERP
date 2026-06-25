@@ -11,6 +11,7 @@ vi.mock('../api', async (importOriginal) => {
   return {
     ...actual,
     reconstructChange: vi.fn(),
+    exportReconstructedPack: vi.fn(),
   };
 });
 
@@ -21,7 +22,7 @@ vi.mock('@/shared/lib/api', () => ({
   getErrorMessage: (e: unknown) => String(e),
 }));
 
-import { reconstructChange, reconstructTypeForKind } from '../api';
+import { exportReconstructedPack, reconstructChange, reconstructTypeForKind } from '../api';
 import { EvidenceThreadPanel } from '../EvidenceThreadPanel';
 import type { EvidencePack } from '../types';
 
@@ -86,6 +87,7 @@ function renderPanel() {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(reconstructChange).mockResolvedValue(PACK);
+  vi.mocked(exportReconstructedPack).mockResolvedValue(PACK);
 });
 
 describe('reconstructTypeForKind', () => {
@@ -125,6 +127,20 @@ describe('EvidenceThreadPanel', () => {
     expect(screen.getByText(/2 linked record/i)).toBeInTheDocument();
     // The content digest is shown (truncated), proving the pack is reproducible.
     expect(screen.getByText(/abcdef012345/i)).toBeInTheDocument();
+  });
+
+  it('records the assembly when the reconstructed pack is exported', async () => {
+    renderPanel();
+    fireEvent.click(screen.getByText(/Reconstruct evidence thread/i));
+    await waitFor(() => {
+      expect(screen.getByText('Relocate the site access gate')).toBeInTheDocument();
+    });
+    // The Export button appears once a non-empty pack is loaded; clicking it
+    // records the deliberate "assemble an evidence pack" action.
+    fireEvent.click(screen.getByRole('button', { name: /Export/i }));
+    await waitFor(() => {
+      expect(exportReconstructedPack).toHaveBeenCalledWith('p-1', 'change_order', 'co-1');
+    });
   });
 
   it('shows an empty state when nothing is linked yet', async () => {

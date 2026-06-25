@@ -6,7 +6,7 @@
 // returns the 0-100 score, its band and the per-signal breakdown plus the cure
 // list. Read-only; nothing is persisted server-side.
 
-import { apiGet } from '@/shared/lib/api';
+import { apiGet, apiPost } from '@/shared/lib/api';
 import type { EvidencePack, ProvabilityScore } from './types';
 
 const BASE = '/v1/claims-evidence';
@@ -77,5 +77,25 @@ export function reconstructChange(
     `${BASE}/projects/${encodeURIComponent(projectId)}/reconstruct/${encodeURIComponent(
       subjectType,
     )}/${encodeURIComponent(subjectId)}`,
+  );
+}
+
+/**
+ * Export a reconstructed evidence pack: the deliberate "assemble an evidence
+ * pack" action. Returns the same deterministic pack the reconstruct GET produces,
+ * and (when the pack is non-empty) records one activity-log row so the export
+ * lands in the audit trail and counts toward guided adoption. Unlike the GET it
+ * is only called on an explicit export, never on a browse.
+ */
+export function exportReconstructedPack(
+  projectId: string,
+  subjectType: ReconstructSubjectType,
+  subjectId: string,
+): Promise<EvidencePack> {
+  return apiPost<EvidencePack, Record<string, never>>(
+    `${BASE}/projects/${encodeURIComponent(projectId)}/reconstruct/${encodeURIComponent(
+      subjectType,
+    )}/${encodeURIComponent(subjectId)}/export`,
+    {},
   );
 }

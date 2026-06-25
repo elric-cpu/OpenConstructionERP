@@ -16,10 +16,11 @@ vocabulary is heterogeneous across modules and several first-value milestones
 leave no single canonical row, so existence is both clearer and more robust than
 event-name matching. The two milestones with no table of their own - assembling
 an evidence pack and generating a value report, both composed on the fly - are
-read from the activity-log rows those actions land (``claims_evidence`` /
-``evidence_pack_assembled`` and ``value`` / ``report_generated``, the latter
-written by the value router's POST ``.../report``), scoped to the project exactly
-like the timeline and the hours-saved signal.
+read from the activity-log rows those deliberate actions land
+(``claims_evidence`` / ``evidence_pack_assembled``, written when a reconstructed
+pack is exported, and ``value`` / ``report_generated``, written by the value
+router's POST ``.../report``), scoped to the project exactly like the timeline
+and the hours-saved signal.
 
 The engine stays pure: this module decides the observed-key SET, the engine
 decides done-ness and the score. Every read is project-scoped and read-only; the

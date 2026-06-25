@@ -21,7 +21,7 @@ import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Download, FileStack, Layers } from 'lucide-react';
 import { Card, Badge, EmptyState, SkeletonTable } from '@/shared/ui';
 import { getErrorMessage } from '@/shared/lib/api';
-import { reconstructChange, type ReconstructSubjectType } from './api';
+import { exportReconstructedPack, reconstructChange, type ReconstructSubjectType } from './api';
 import type { EvidencePack } from './types';
 
 /** Best-effort title-case of a token like "variation_order". */
@@ -105,7 +105,14 @@ export function EvidenceThreadPanel({ projectId, subjectType, subjectId, classNa
         {pack && pack.entry_count > 0 ? (
           <button
             type="button"
-            onClick={() => downloadPack(pack, subjectType, subjectId)}
+            onClick={() => {
+              // Recording the export is the "assemble an evidence pack" adoption
+              // action and lands it in the audit trail. It is best-effort and must
+              // never block taking the pack off-platform, so fire it and download
+              // the already-loaded (deterministic) pack regardless of the result.
+              void exportReconstructedPack(projectId, subjectType, subjectId).catch(() => {});
+              downloadPack(pack, subjectType, subjectId);
+            }}
             className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border-light px-2.5 py-1.5 text-xs font-medium text-content-secondary hover:bg-surface-secondary"
           >
             <Download className="h-3.5 w-3.5" />

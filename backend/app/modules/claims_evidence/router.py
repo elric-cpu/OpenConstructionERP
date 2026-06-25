@@ -13,6 +13,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, Query, status
 
+from app.core.audit_log import log_activity
 from app.dependencies import CurrentUserId, SessionDep, verify_project_access
 from app.modules.claims_evidence.provability_service import (
     SubjectNotFound,
@@ -108,6 +109,60 @@ async def reconstruct_change(
         subject_id=subject_id,
         basis=basis,
     )
+    return EvidencePackOut.model_validate(pack)
+
+
+@router.post(
+    "/projects/{project_id}/reconstruct/{subject_type}/{subject_id}/export",
+    response_model=EvidencePackOut,
+)
+async def export_reconstructed_pack(
+    project_id: uuid.UUID,
+    subject_type: str,
+    subject_id: uuid.UUID,
+    session: SessionDep,
+    basis: str = Query(default="dispute", description="The basis the pack is assembled under."),
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+) -> EvidencePackOut:
+    """Assemble a subject's evidence pack and record that it was exported.
+
+    Returns the same deterministic, SHA-256-digested pack as the reconstruct GET,
+    but as a deliberate user action: when the assembled pack has at least one
+    record it writes a single ``claims_evidence`` / ``evidence_pack_assembled``
+    activity-log row (project scoped) so taking the pack off-platform lands in the
+    audit trail and counts toward guided adoption. Assembly is NOT recorded on the
+    GET, which a UI may call repeatedly while a user browses, so the signal
+    reflects real exports rather than views. An empty pack records nothing - there
+    is no evidence to have assembled. Access is gated exactly like the reconstruct
+    GET (404 on missing or denied; an unknown subject type is a 422).
+    """
+    await verify_project_access(project_id, user_id or "", session)
+
+    if subject_type not in _RECONSTRUCT_KINDS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unknown subject type '{subject_type}'. Expected one of: {', '.join(_RECONSTRUCT_KINDS)}.",
+        )
+
+    pack = await reconstruct_subject(
+        session,
+        project_id=project_id,
+        subject_type=subject_type,
+        subject_id=subject_id,
+        basis=basis,
+    )
+    if pack.entry_count > 0:
+        await log_activity(
+            session,
+            actor_id=user_id or None,
+            entity_type="claims_evidence.pack",
+            entity_id=f"{subject_type}:{subject_id}",
+            action="evidence_pack_assembled",
+            module="claims_evidence",
+            parent_entity_type="project",
+            parent_entity_id=str(project_id),
+            metadata={"entry_count": pack.entry_count, "content_digest": pack.content_digest},
+        )
     return EvidencePackOut.model_validate(pack)
 
 
