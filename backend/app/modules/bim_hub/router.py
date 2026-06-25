@@ -238,9 +238,18 @@ def _get_service(session: SessionDep) -> BIMHubService:
 #
 # This closes the IDOR from the v1.3.13 audit: previously any authenticated
 # user could read/modify/delete models belonging to projects they do not own
-# simply by guessing UUIDs. We now resolve the underlying project, verify
-# ownership (or admin bypass) and return a 404 - not a 403 - so we also don't
-# leak the existence of UUIDs the caller is not allowed to see.
+# simply by guessing UUIDs. We resolve the underlying project, verify access
+# (owner, admin, or team-member of a shared project) and return a 404 - not a
+# 403 - so we also don't leak the existence of UUIDs the caller cannot see.
+#
+# Access policy is kept identical to the central ``verify_project_access`` in
+# ``app.dependencies`` (owner OR admin OR team-member). Sharing a project with
+# a non-admin user - via ``add_project_member`` - therefore grants the same
+# read/write reach to its BIM models as it already grants to the project's
+# documents, BOQ, schedule, etc. An earlier copy here checked only owner/admin,
+# which wrongly denied legitimately-shared non-admin members the model-view
+# endpoint (issue #271: file visible in documents, but "model not found" in
+# the viewer until the member was made an admin).
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
@@ -249,13 +258,16 @@ async def _verify_project_access(
     project_id: uuid.UUID,
     user_id: str,
 ) -> None:
-    """‌⁠‍Raise 404 if the user is not the owner or an admin of the project.
+    """‌⁠‍Raise 404 unless the user owns, administers, or is a member of the project.
 
-    Mirrors the central helper in ``erp_chat.tools._require_project_access``
-    but returns an HTTPException suitable for router use. Emits 404 (not 403)
-    on both "project missing" and "access denied" to avoid UUID enumeration.
+    Applies the same rule as the central ``app.dependencies.verify_project_access``
+    helper - owner OR admin OR a ``TeamMembership`` on the project (shared
+    access via ``add_project_member``) - so BIM access stays consistent with the
+    documents / BOQ / schedule read paths. Emits 404 (not 403) on both "project
+    missing" and "access denied" to avoid UUID enumeration.
     """
     from app.modules.projects.repository import ProjectRepository
+    from app.modules.teams.access import is_project_member
     from app.modules.users.repository import UserRepository
 
     proj_repo = ProjectRepository(session)
@@ -277,11 +289,25 @@ async def _verify_project_access(
         # never silently bypass authorization.
         logger.exception("Admin-role lookup failed during BIM access check")
 
-    if str(project.owner_id) != str(user_id):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=translate("errors.project_not_found", locale=get_locale()),
-        )
+    # Owner has full access.
+    if str(project.owner_id) == str(user_id):
+        return
+
+    # Team-member check - any TeamMembership row for this project grants the
+    # same access as ownership (shared, non-admin project members). This is the
+    # branch that was missing before issue #271.
+    try:
+        if await is_project_member(session, project_id, uuid.UUID(str(user_id))):
+            return
+    except (ValueError, TypeError):
+        pass  # malformed user_id - fall through to 404
+    except Exception:
+        logger.exception("Team-membership lookup failed during BIM access check")
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=translate("errors.project_not_found", locale=get_locale()),
+    )
 
 
 async def _verify_model_access(
@@ -289,10 +315,12 @@ async def _verify_model_access(
     model_id: uuid.UUID,
     user_id: str,
 ) -> Any:
-    """‌⁠‍Load a BIM model and verify the caller owns its project.
+    """‌⁠‍Load a BIM model and verify the caller may access its project.
 
-    Returns the model object so callers can reuse it without a second query.
-    Raises 404 if the model is missing or the user has no access.
+    Access is owner, admin, or team-member of the model's project (see
+    :func:`_verify_project_access`). Returns the model object so callers can
+    reuse it without a second query. Raises 404 if the model is missing or the
+    user has no access.
     """
     model = await service.get_model(model_id)
     if model is None:
@@ -2669,7 +2697,8 @@ async def get_model_geometry(
             headers={"X-Request-Id": request_id},
         )
 
-    # IDOR guard: verify the caller owns the project this model belongs to.
+    # IDOR guard: verify the caller may access the project this model belongs to
+    # (owner, admin, or shared team-member).
     token_user_id = str(payload.get("sub") or "")
     await _verify_project_access(service.session, model.project_id, token_user_id)
 
