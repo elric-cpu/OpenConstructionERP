@@ -12,7 +12,7 @@
 //   4. Empty state when no runs have been scored.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 
 import type { AccuracyScore } from '../api';
 
@@ -97,5 +97,30 @@ describe('AccuracyScoreboard', () => {
   it('renders an empty state when nothing has been scored', () => {
     render(<AccuracyScoreboard scores={[]} agents={[]} loading={false} />);
     expect(screen.getByText('No scored runs yet')).toBeInTheDocument();
+    // The sample-seed action is hidden unless the demo affordance is enabled.
+    expect(screen.queryByRole('button', { name: /See AI in practice/i })).not.toBeInTheDocument();
+  });
+
+  it('offers the sample-seed action in the empty state on the demo and fires it', () => {
+    const onSeedSample = vi.fn();
+    render(
+      <AccuracyScoreboard
+        scores={[]}
+        agents={[]}
+        loading={false}
+        canSeedSample
+        onSeedSample={onSeedSample}
+      />,
+    );
+    const btn = screen.getByRole('button', { name: /See AI in practice/i });
+    fireEvent.click(btn);
+    expect(onSeedSample).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not offer the sample-seed action once runs are scored', () => {
+    render(
+      <AccuracyScoreboard scores={[baseScore]} agents={[]} loading={false} canSeedSample onSeedSample={vi.fn()} />,
+    );
+    expect(screen.queryByRole('button', { name: /See AI in practice/i })).not.toBeInTheDocument();
   });
 });

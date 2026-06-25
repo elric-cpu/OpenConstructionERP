@@ -14,6 +14,7 @@ Endpoints (mounted at ``/api/v1/ai-agents/`` by the module loader):
 from __future__ import annotations
 
 import logging
+import os
 import time
 import uuid
 from collections import OrderedDict
@@ -28,8 +29,10 @@ from app.modules.ai_agents.accuracy_schemas import (
     AccuracyScoreOut,
     OutcomeRecordedOut,
     RecordOutcomeIn,
+    SandboxSeedOut,
 )
 from app.modules.ai_agents.accuracy_service import build_scoreboard, record_run_outcome
+from app.modules.ai_agents.sandbox import seed_sandbox_runs
 from app.modules.ai_agents.schemas import (
     CUSTOM_AGENT_CATEGORIES,
     AgentDescriptor,
@@ -636,6 +639,49 @@ async def get_accuracy_scoreboard(
         agent_name=agent_name,
     )
     return AccuracyScoreboardOut(scores=[AccuracyScoreOut.model_validate(s) for s in scores])
+
+
+# ── Sample sandbox (hosted demo only) ─────────────────────────────────────
+
+
+def _demo_mode_enabled() -> bool:
+    """Whether this deployment is the public hosted demo (OE_DEMO_MODE set).
+
+    Mirrors the check behind ``GET /api/system/status``. Seeding sample data is
+    only meaningful on the demo, where a prospect has no runs and no LLM; real
+    installs are kept clean.
+    """
+    return os.environ.get("OE_DEMO_MODE", "").lower() in ("1", "true", "yes")
+
+
+@router.post(
+    "/sandbox/",
+    response_model=SandboxSeedOut,
+    dependencies=[Depends(RequirePermission("ai_agents.run"))],
+)
+async def seed_sandbox(
+    user_id: CurrentUserId,
+    session: SessionDep,
+) -> SandboxSeedOut:
+    """Seed a few clearly-labeled, pre-scored sample runs for the caller.
+
+    Lets a prospect on the hosted demo "see AI in practice": the seeded runs
+    carry a full trust envelope and a recorded outcome, so the trust panels and
+    the accuracy scoreboard render populated instead of empty. The runs are
+    tagged ``trigger_source="sample"`` and flagged in their trust JSON so they
+    are identifiable and removable.
+
+    Demo-only (403 off-demo) so real installs are never polluted with sample
+    rows. Idempotent: a repeat call creates nothing (``created`` is 0).
+    """
+    if not _demo_mode_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Sample runs are only available on the hosted demo.",
+        )
+    result = await seed_sandbox_runs(session, user_id=uuid.UUID(user_id))
+    await session.commit()
+    return SandboxSeedOut(**result)
 
 
 # ── Run lifecycle ────────────────────────────────────────────────────────

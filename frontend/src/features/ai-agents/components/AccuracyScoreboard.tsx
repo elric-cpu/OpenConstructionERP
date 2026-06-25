@@ -9,7 +9,7 @@
 // proof, not the promise - built entirely from first-party outcomes, never a
 // vendor benchmark.
 import { useTranslation } from 'react-i18next';
-import { Target, Info } from 'lucide-react';
+import { Target, Info, Sparkles, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 
 import { agentDisplayName } from './agentMeta';
@@ -19,6 +19,12 @@ interface AccuracyScoreboardProps {
   scores: AccuracyScore[];
   agents: AgentDescriptor[];
   loading: boolean;
+  // Hosted-demo affordance: when true, the empty state offers a one-tap "see
+  // AI in practice" action that seeds a few pre-scored sample runs so the
+  // scoreboard renders populated. Hidden on real installs.
+  canSeedSample?: boolean;
+  seeding?: boolean;
+  onSeedSample?: () => void;
 }
 
 /** Compare stated confidence to observed accuracy -> a calibration verdict. */
@@ -129,7 +135,14 @@ function ScoreCard({
   );
 }
 
-export function AccuracyScoreboard({ scores, agents, loading }: AccuracyScoreboardProps): JSX.Element {
+export function AccuracyScoreboard({
+  scores,
+  agents,
+  loading,
+  canSeedSample = false,
+  seeding = false,
+  onSeedSample,
+}: AccuracyScoreboardProps): JSX.Element {
   const { t } = useTranslation();
 
   return (
@@ -163,6 +176,21 @@ export function AccuracyScoreboard({ scores, agents, loading }: AccuracyScoreboa
                 'Open a finished run and mark it correct or incorrect. Once an answer has a stated confidence and a recorded outcome, it appears here.',
             })}
           </p>
+          {canSeedSample && onSeedSample && (
+            <button
+              type="button"
+              onClick={onSeedSample}
+              disabled={seeding}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-oe-blue px-3 py-1.5 text-xs font-semibold text-content-inverse transition-colors hover:bg-oe-blue-hover disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {seeding ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+              )}
+              {t('agents.accuracy.see_in_practice', { defaultValue: 'See AI in practice' })}
+            </button>
+          )}
         </div>
       )}
 

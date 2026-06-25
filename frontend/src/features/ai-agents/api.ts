@@ -291,6 +291,14 @@ export interface AccuracyScoreboard {
   scores: AccuracyScore[];
 }
 
+/** Result of seeding the demo sandbox with sample scored runs (idempotent). */
+export interface SandboxSeedResult {
+  // How many runs this call created (0 when they already existed).
+  created: number;
+  total: number;
+  agents: string[];
+}
+
 export const aiAgentsApi = {
   listAgents: () => apiGet<AgentDescriptor[]>('/v1/ai-agents/agents/'),
   listRuns: (projectId?: string) =>
@@ -356,4 +364,9 @@ export const aiAgentsApi = {
     const qs = q.toString();
     return apiGet<AccuracyScoreboard>(`/v1/ai-agents/accuracy/${qs ? `?${qs}` : ''}`);
   },
+  // Seed a few clearly-labeled sample runs so the trust + accuracy surfaces
+  // have something to show on the hosted demo (403 off-demo). Idempotent -
+  // `created` is 0 once the samples already exist for the caller.
+  seedSandboxRuns: () =>
+    apiPost<SandboxSeedResult, Record<string, never>>('/v1/ai-agents/sandbox/', {}),
 };

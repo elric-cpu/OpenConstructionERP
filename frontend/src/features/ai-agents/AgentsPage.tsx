@@ -212,6 +212,40 @@ export function AgentsPage(): JSX.Element {
     staleTime: 30_000,
   });
 
+  // Demo-only "see AI in practice": on the hosted demo a prospect has no runs
+  // and no LLM, so the trust + accuracy surfaces sit empty. Reuse the shared
+  // ['system-status'] query (DemoBanner / DashboardPage) so this costs no extra
+  // request, and only offer the sample-seed action when demo_mode is on.
+  const systemStatusQuery = useQuery<{ demo_mode?: boolean }>({
+    queryKey: ['system-status'],
+    queryFn: () => fetch('/api/system/status').then((r) => r.json()),
+    retry: false,
+    staleTime: Infinity,
+  });
+  const demoMode = systemStatusQuery.data?.demo_mode === true;
+
+  const seedSampleMutation = useMutation({
+    mutationFn: () => aiAgentsApi.seedSandboxRuns(),
+    onSuccess: () => {
+      // Surface the freshly seeded runs + their scores everywhere at once.
+      queryClient.invalidateQueries({ queryKey: ['ai-agents', 'runs'] });
+      queryClient.invalidateQueries({ queryKey: ['ai-agents', 'accuracy'] });
+      addToast({
+        type: 'success',
+        title: t('agents.sandbox.loaded_toast', { defaultValue: 'Sample runs loaded' }),
+        message: t('agents.sandbox.loaded_message', {
+          defaultValue: 'Scored example runs are now on the scoreboard and in your history.',
+        }),
+      });
+    },
+    onError: () => {
+      addToast({
+        type: 'error',
+        title: t('agents.sandbox.error_toast', { defaultValue: 'Could not load the sample runs' }),
+      });
+    },
+  });
+
   const healthQuery = useQuery({
     queryKey: ['ai-agents', 'health'],
     queryFn: () => aiAgentsApi.health(),
@@ -692,6 +726,9 @@ export function AgentsPage(): JSX.Element {
             scores={scoreboardQuery.data?.scores ?? []}
             agents={agents}
             loading={scoreboardQuery.isLoading}
+            canSeedSample={demoMode}
+            seeding={seedSampleMutation.isPending}
+            onSeedSample={() => seedSampleMutation.mutate()}
           />
         </aside>
       </div>

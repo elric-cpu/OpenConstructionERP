@@ -52,3 +52,13 @@ class AccuracyScoreboardOut(BaseModel):
     """The accuracy scoreboard: one score per agent the caller has run."""
 
     scores: list[AccuracyScoreOut]
+
+
+class SandboxSeedOut(BaseModel):
+    """Result of seeding the demo sandbox with sample scored agent runs."""
+
+    # How many runs this call created (0 when they already existed - the seed
+    # is idempotent), the total sample-run count, and the distinct agent names.
+    created: int
+    total: int
+    agents: list[str]
