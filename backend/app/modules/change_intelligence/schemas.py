@@ -465,3 +465,36 @@ class DelayRiskBoardOut(BaseModel):
     item_count: int
     band_counts: dict[str, int]
     items: list[DelayRiskItemOut]
+
+
+# --- Pre-construction scope ambiguity (#24) --------------------------------
+
+
+class ScopeAmbiguityLineOut(BaseModel):
+    """One BOQ line graded for how vague its scope is, and why."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    line_id: str
+    score: int
+    band: str
+    reasons: list[str]
+    labels: list[str]
+
+
+class ScopeAmbiguityReportOut(BaseModel):
+    """Project-wide scope-ambiguity report over a set of BOQ lines.
+
+    ``ambiguity_index`` is the mean line score on the same 0-100 scale (0 for an
+    empty bill), ``counts_by_band`` always carries all three bands, and
+    ``top_reasons`` ranks the dominant drivers across the lines. ``lines`` is
+    worst-first so the soft spots surface while they are still cheap to fix.
+    """
+
+    project_id: str
+    boq_id: str | None = None
+    line_count: int
+    ambiguity_index: float
+    counts_by_band: dict[str, int]
+    top_reasons: list[str]
+    lines: list[ScopeAmbiguityLineOut]

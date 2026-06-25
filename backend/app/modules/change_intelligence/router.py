@@ -48,9 +48,12 @@ from app.modules.change_intelligence.schemas import (
     PartyDwellOut,
     PartyLoadOut,
     RiskFactorOut,
+    ScopeAmbiguityLineOut,
+    ScopeAmbiguityReportOut,
     ThreadDigestOut,
     WatchResultOut,
 )
+from app.modules.change_intelligence.scope_service import assess_project_scope
 from app.modules.change_intelligence.service import (
     build_change_watch,
     build_comms_digest_for_project,
@@ -498,4 +501,36 @@ async def get_delay_risk_board(
         item_count=len(items),
         band_counts=band_counts,
         items=items,
+    )
+
+
+@router.get("/projects/{project_id}/scope-ambiguity", response_model=ScopeAmbiguityReportOut)
+async def get_scope_ambiguity(
+    project_id: uuid.UUID,
+    session: SessionDep,
+    boq_id: uuid.UUID | None = None,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+) -> ScopeAmbiguityReportOut:
+    """Grade how vague each BOQ line's scope is, worst-first, before it is priced.
+
+    Reads the project's bill-of-quantities lines (optionally a single bill via
+    ``boq_id``) and scores each for the tell-tale signals of a downstream
+    variation - a provisional sum or allowance, vague placeholder wording, a
+    missing quantity or unit, an under-specified description - returning the
+    ranked lines, a per-band count, the project ambiguity index and the dominant
+    reasons. A section heading (a line that is a parent of other lines) is exempt
+    from the quantity / unit / under-specification signals. Read-only; a
+    ``boq_id`` from another project resolves to no rows rather than leaking it.
+    """
+    await verify_project_access(project_id, user_id or "", session)
+
+    report = await assess_project_scope(session, project_id=project_id, boq_id=boq_id)
+    return ScopeAmbiguityReportOut(
+        project_id=str(project_id),
+        boq_id=str(boq_id) if boq_id is not None else None,
+        line_count=len(report.lines),
+        ambiguity_index=report.ambiguity_index,
+        counts_by_band=report.counts_by_band,
+        top_reasons=list(report.top_reasons),
+        lines=[ScopeAmbiguityLineOut.model_validate(line) for line in report.lines],
     )
