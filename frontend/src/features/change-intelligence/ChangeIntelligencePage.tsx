@@ -25,6 +25,10 @@ import {
   ArrowRight,
   Users,
   Inbox,
+  Scale,
+  GitCompareArrows,
+  Radar,
+  ShieldAlert,
 } from 'lucide-react';
 import { Card, Badge, EmptyState, SkeletonTable, DismissibleInfo, TabBar, tabIds } from '@/shared/ui';
 import { MoneyDisplay } from '@/shared/ui/MoneyDisplay';
@@ -38,9 +42,14 @@ import {
   getRecoveryLedger,
   listBackCharges,
   clarifyChangeNote,
+  getDisputeRiskBoard,
+  getDecisionImpact,
+  getChangeWatch,
   type Urgency,
   type Awaiting,
   type ClarifiedRequest,
+  type ExposureBand,
+  type WatchClass,
 } from './api';
 
 type BadgeVariant = 'neutral' | 'blue' | 'success' | 'warning' | 'error';
@@ -50,7 +59,16 @@ interface ProjectLite {
   name?: string;
 }
 
-type Tab = 'coordination' | 'cycle' | 'comms' | 'impact' | 'recovery' | 'clarifier';
+type Tab =
+  | 'coordination'
+  | 'cycle'
+  | 'comms'
+  | 'impact'
+  | 'recovery'
+  | 'dispute'
+  | 'decision'
+  | 'watch'
+  | 'clarifier';
 
 const URGENCY_VARIANT: Record<Urgency, BadgeVariant> = {
   overdue: 'error',
@@ -64,6 +82,30 @@ const AWAITING_VARIANT: Record<Awaiting, BadgeVariant> = {
   them: 'blue',
   none: 'neutral',
 };
+
+const EXPOSURE_VARIANT: Record<ExposureBand, BadgeVariant> = {
+  high: 'error',
+  elevated: 'warning',
+  low: 'neutral',
+};
+
+const WATCH_VARIANT: Record<WatchClass, BadgeVariant> = {
+  lost: 'error',
+  stalled: 'warning',
+  incomplete: 'blue',
+  ok: 'success',
+};
+
+/**
+ * Badge variant for a clarification-gap severity. The engine emits
+ * 'required' / 'recommended' (not 'high' / 'medium'); map them to the
+ * error / warning traffic-light, everything else neutral.
+ */
+function severityVariant(severity: string): BadgeVariant {
+  if (severity === 'required') return 'error';
+  if (severity === 'recommended') return 'warning';
+  return 'neutral';
+}
 
 /** Best-effort title-case of an engine token like "due_soon" or "change_order". */
 function humanize(token: string): string {
@@ -426,6 +468,227 @@ function RecoveryTab({ projectId }: { projectId: string }) {
   );
 }
 
+// --- Tab: dispute risk (the dispute radar) ---------------------------------
+
+function DisputeRiskTab({ projectId }: { projectId: string }) {
+  const q = useQuery({
+    queryKey: ['change-intelligence', 'dispute-risk', projectId],
+    queryFn: () => getDisputeRiskBoard(projectId),
+    enabled: !!projectId,
+    retry: false,
+    staleTime: 30_000,
+  });
+  const board = q.data;
+  const bands = board?.summary.band_counts ?? {};
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatTile label="Open changes" value={board?.summary.item_count ?? 0} />
+        <StatTile label="High" value={bands.high ?? 0} tone="error" />
+        <StatTile label="Elevated" value={bands.elevated ?? 0} tone="warning" />
+        <StatTile label="Low" value={bands.low ?? 0} />
+      </div>
+      <PanelState
+        loading={q.isLoading}
+        error={q.isError ? q.error : null}
+        empty={!board || board.items.length === 0}
+        emptyIcon={<Radar className="h-6 w-6" />}
+        emptyTitle="No open changes"
+        emptyDescription="There are no open changes to assess for dispute exposure right now."
+      >
+        <div className="space-y-2">
+          {board?.items.map((it) => (
+            <Card key={it.change_id} className="p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={EXPOSURE_VARIANT[it.band]}>{humanize(it.band)}</Badge>
+                <span className="text-sm font-semibold text-content-primary">{it.exposure_score}</span>
+                <span className="text-xs text-content-tertiary">{humanize(it.kind)}</span>
+                <span className="font-medium text-content-primary">
+                  {it.change_ref ? `${it.change_ref}: ` : ''}
+                  {it.title || '(untitled)'}
+                </span>
+                <span className="ml-auto inline-flex items-center gap-1 text-xs text-content-tertiary">
+                  <ShieldAlert className="h-3.5 w-3.5" />
+                  {humanize(it.dominant_driver)}
+                </span>
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-content-secondary">
+                {it.currency ? (
+                  <span>
+                    At risk: <MoneyDisplay amount={it.money_basis} currency={it.currency} showCode />
+                  </span>
+                ) : null}
+                <span className="text-content-tertiary">{it.recommended_cure}</span>
+              </div>
+            </Card>
+          ))}
+        </div>
+      </PanelState>
+    </div>
+  );
+}
+
+// --- Tab: decision impact ("what does approving this add?") ----------------
+
+function DecisionImpactTab({ projectId }: { projectId: string }) {
+  const [candidateId, setCandidateId] = useState('');
+  const [submitted, setSubmitted] = useState('');
+  const q = useQuery({
+    queryKey: ['change-intelligence', 'decision-impact', projectId, submitted],
+    queryFn: () => getDecisionImpact(projectId, submitted),
+    enabled: !!projectId && !!submitted,
+    retry: false,
+    staleTime: 30_000,
+  });
+  const impact = q.data;
+  return (
+    <div className="space-y-4">
+      <Card className="space-y-3 p-4">
+        <label className="block text-sm font-medium text-content-secondary" htmlFor="ci-candidate">
+          Candidate change id
+        </label>
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            id="ci-candidate"
+            value={candidateId}
+            onChange={(e) => setCandidateId(e.target.value)}
+            placeholder="Paste the id of the change order, variation or MoC under decision"
+            className="min-w-0 flex-1 rounded-md border border-border-light bg-surface-primary p-2 text-sm focus:border-oe-blue focus:outline-none focus:ring-2 focus:ring-oe-blue/30"
+          />
+          <button
+            type="button"
+            disabled={!candidateId.trim()}
+            onClick={() => setSubmitted(candidateId.trim())}
+            className="inline-flex items-center gap-1.5 rounded-md bg-oe-blue px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+          >
+            <GitCompareArrows className="h-4 w-4" />
+            Preview impact
+          </button>
+        </div>
+        <p className="text-xs text-content-tertiary">
+          Previews what approving this change adds on top of everything already committed, per currency. Nothing is changed.
+        </p>
+      </Card>
+      {submitted ? (
+        <PanelState
+          loading={q.isLoading}
+          error={q.isError ? q.error : null}
+          empty={!impact || impact.totals_by_currency.length === 0}
+          emptyIcon={<GitCompareArrows className="h-6 w-6" />}
+          emptyTitle="No impact to show"
+          emptyDescription="This candidate carries no cost or schedule against the committed baseline."
+        >
+          <Card className="overflow-hidden p-0">
+            <table className="w-full text-sm">
+              <thead className="bg-surface-secondary text-left text-xs uppercase tracking-wide text-content-tertiary">
+                <tr>
+                  <th className="px-3 py-2">By kind</th>
+                  <th className="px-3 py-2 text-right">Committed</th>
+                  <th className="px-3 py-2 text-right">This change</th>
+                  <th className="px-3 py-2 text-right">Resulting</th>
+                  <th className="px-3 py-2 text-right">Days</th>
+                </tr>
+              </thead>
+              <tbody>
+                {impact?.rows.map((r) => (
+                  <tr key={`${r.kind}-${r.currency}`} className="border-t border-border-light">
+                    <td className="px-3 py-2 font-medium text-content-primary">
+                      {humanize(r.kind)} <span className="text-content-tertiary">{r.currency}</span>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <MoneyDisplay amount={r.current_committed_cost} currency={r.currency} showCode />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <MoneyDisplay amount={r.candidate_cost_delta} currency={r.currency} showCode colorize />
+                    </td>
+                    <td className="px-3 py-2 text-right font-medium">
+                      <MoneyDisplay amount={r.resulting_cost} currency={r.currency} showCode />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {r.current_committed_days} &rarr; {r.resulting_days}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+          {impact && impact.totals_by_currency.length > 1 && (
+            <p className="text-xs text-content-tertiary">
+              This decision spans {impact.totals_by_currency.length} currencies; totals are kept separate and never blended.
+            </p>
+          )}
+        </PanelState>
+      ) : (
+        <EmptyState
+          icon={<GitCompareArrows className="h-6 w-6" />}
+          title="Preview a decision"
+          description="Enter the id of a change under decision to see what approving it adds to the committed position."
+        />
+      )}
+    </div>
+  );
+}
+
+// --- Tab: watch ("which open changes are quietly going wrong") -------------
+
+function WatchTab({ projectId }: { projectId: string }) {
+  const q = useQuery({
+    queryKey: ['change-intelligence', 'change-watch', projectId],
+    queryFn: () => getChangeWatch(projectId),
+    enabled: !!projectId,
+    retry: false,
+    staleTime: 30_000,
+  });
+  const watch = q.data;
+  const counts = watch?.counts ?? {};
+  // Only the flagged items are worth listing; an "ok" change is not drifting.
+  const flagged = (watch?.items ?? []).filter((r) => r.classification !== 'ok');
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatTile label="Lost" value={counts.lost ?? 0} tone="error" />
+        <StatTile label="Stalled" value={counts.stalled ?? 0} tone="warning" />
+        <StatTile label="Incomplete" value={counts.incomplete ?? 0} />
+        <StatTile label="On track" value={counts.ok ?? 0} tone="success" />
+      </div>
+      <PanelState
+        loading={q.isLoading}
+        error={q.isError ? q.error : null}
+        empty={flagged.length === 0}
+        emptyIcon={<ShieldAlert className="h-6 w-6" />}
+        emptyTitle="Nothing drifting"
+        emptyDescription="No open change is stalled, lost or incomplete right now."
+      >
+        <div className="space-y-2">
+          {flagged.map((r) => (
+            <Card key={r.change_id} className="p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={WATCH_VARIANT[r.classification]}>{humanize(r.classification)}</Badge>
+                <span className="text-xs text-content-tertiary">{humanize(r.kind)}</span>
+                <span className="ml-auto flex flex-wrap items-center gap-x-3 text-sm text-content-secondary">
+                  <span>{`${r.idle_days.toFixed(0)}d idle`}</span>
+                  {r.overdue_days > 0 && (
+                    <span className="text-semantic-error">{`${r.overdue_days.toFixed(0)}d overdue`}</span>
+                  )}
+                </span>
+              </div>
+              {r.reasons.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {r.reasons.map((reason) => (
+                    <span key={reason} className="text-xs text-content-tertiary">
+                      {humanize(reason)}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </Card>
+          ))}
+        </div>
+      </PanelState>
+    </div>
+  );
+}
+
 // --- Tab: clarifier co-pilot -----------------------------------------------
 
 const CONTRACT_STANDARDS = ['', 'FIDIC', 'NEC4', 'JCT'];
@@ -512,9 +775,7 @@ function ClarifierTab() {
                 <ul className="mt-1 space-y-1 text-sm">
                   {result.missing.map((g) => (
                     <li key={g.field} className="flex items-start gap-2">
-                      <Badge variant={g.severity === 'high' ? 'error' : g.severity === 'medium' ? 'warning' : 'neutral'}>
-                        {g.severity}
-                      </Badge>
+                      <Badge variant={severityVariant(g.severity)}>{g.severity}</Badge>
                       <span className="text-content-secondary">{g.question}</span>
                     </li>
                   ))}
@@ -605,6 +866,9 @@ export function ChangeIntelligencePage() {
               { id: 'comms', label: 'Correspondence', icon: <Mail className="h-4 w-4" /> },
               { id: 'impact', label: 'Impact', icon: <TrendingUp className="h-4 w-4" /> },
               { id: 'recovery', label: 'Cost recovery', icon: <Wallet className="h-4 w-4" /> },
+              { id: 'dispute', label: 'Dispute risk', icon: <Radar className="h-4 w-4" /> },
+              { id: 'decision', label: 'Decision impact', icon: <Scale className="h-4 w-4" /> },
+              { id: 'watch', label: 'Watch', icon: <ShieldAlert className="h-4 w-4" /> },
               { id: 'clarifier', label: 'Clarifier', icon: <Sparkles className="h-4 w-4" /> },
             ]}
           />
@@ -614,6 +878,9 @@ export function ChangeIntelligencePage() {
             {tab === 'comms' && <CommsTab projectId={projectId} />}
             {tab === 'impact' && <ImpactTab projectId={projectId} />}
             {tab === 'recovery' && <RecoveryTab projectId={projectId} />}
+            {tab === 'dispute' && <DisputeRiskTab projectId={projectId} />}
+            {tab === 'decision' && <DecisionImpactTab projectId={projectId} />}
+            {tab === 'watch' && <WatchTab projectId={projectId} />}
             {tab === 'clarifier' && <ClarifierTab />}
           </div>
         </>

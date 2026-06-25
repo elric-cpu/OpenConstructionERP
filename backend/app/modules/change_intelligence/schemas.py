@@ -232,3 +232,129 @@ class OwnershipChainOut(BaseModel):
     ambiguity_reasons: list[str]
     segments: list[OwnershipSegmentOut]
     dwell_by_party: list[PartyDwellOut]
+
+
+# --- Dispute-exposure radar (#7) -------------------------------------------
+# Money is carried as a string (the Decimal rendered losslessly) per the
+# platform money-as-string convention, so these rows are built explicitly in
+# the router rather than validated straight off the engine dataclasses.
+
+
+class RiskFactorOut(BaseModel):
+    """One weighted risk factor's contribution to a change's dispute exposure."""
+
+    name: str
+    weight: int
+    fraction: float
+    weighted: float
+    is_driver: bool
+
+
+class DisputeRiskItemOut(BaseModel):
+    """The graded dispute exposure of one open change."""
+
+    change_id: str
+    change_ref: str
+    kind: str
+    title: str
+    exposure_score: int
+    band: str
+    dominant_driver: str
+    recommended_cure: str
+    intrinsic_exposure: float
+    money_multiplier: float
+    money_basis: str
+    currency: str
+    factors: list[RiskFactorOut]
+
+
+class CurrencyExposureOut(BaseModel):
+    """Exposure-weighted money at risk for a single currency (never blended)."""
+
+    currency: str
+    item_count: int
+    money_basis_total: str
+    exposure_weighted_amount: str
+
+
+class DisputeExposureSummaryOut(BaseModel):
+    """Portfolio roll-up over a project's ranked dispute-risk items."""
+
+    item_count: int
+    band_counts: dict[str, int]
+    by_currency: list[CurrencyExposureOut]
+    top_driver_counts: dict[str, int]
+
+
+class DisputeRiskBoardOut(BaseModel):
+    """Ranked dispute-exposure board for a project's open changes."""
+
+    project_id: str
+    generated_at: str
+    items: list[DisputeRiskItemOut]
+    summary: DisputeExposureSummaryOut
+
+
+# --- Decision-time impact preview (#13) ------------------------------------
+# Every money / day figure is serialized as a string so the signed Decimal
+# round-trips losslessly and currencies are never blended on the wire.
+
+
+class DecisionImpactRowOut(BaseModel):
+    """Before / after position for one (kind, currency) at the decision point."""
+
+    kind: str
+    currency: str
+    current_committed_cost: str
+    candidate_cost_delta: str
+    resulting_cost: str
+    current_committed_days: str
+    candidate_days_delta: str
+    resulting_days: str
+
+
+class CurrencyTotalOut(BaseModel):
+    """All-kinds rollup of the decision preview for a single currency."""
+
+    currency: str
+    current_committed_cost: str
+    candidate_cost_delta: str
+    resulting_cost: str
+    current_committed_days: str
+    candidate_days_delta: str
+    resulting_days: str
+
+
+class DecisionImpactOut(BaseModel):
+    """Decision-time preview: what approving the candidate adds to the baseline."""
+
+    project_id: str
+    candidate_change_id: str
+    candidate_kind: str
+    candidate_currency: str
+    rows: list[DecisionImpactRowOut]
+    totals_by_currency: list[CurrencyTotalOut]
+
+
+# --- Proactive change watch (#18) ------------------------------------------
+
+
+class WatchResultOut(BaseModel):
+    """The watch classification of one change."""
+
+    change_id: str
+    kind: str
+    classification: str
+    reasons: list[str]
+    idle_days: float
+    overdue_days: float
+
+
+class ChangeWatchOut(BaseModel):
+    """Project-wide watch roll-up: which open changes are drifting and why."""
+
+    project_id: str
+    generated_at: str
+    item_count: int
+    counts: dict[str, int]
+    items: list[WatchResultOut]

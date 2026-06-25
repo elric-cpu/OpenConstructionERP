@@ -35,6 +35,19 @@ from app.modules.change_intelligence.cycle_time import (
     CycleTimeBoard,
     build_board,
     is_open_status,
+    parse_due,
+)
+from app.modules.change_intelligence.decision_impact import (
+    ChangeImpact,
+    DecisionImpact,
+    project_with_pending,
+)
+from app.modules.change_intelligence.dispute_risk import (
+    DisputeExposureSummary,
+    DisputeRiskInput,
+    DisputeRiskItem,
+    rank_dispute_exposure,
+    summarize_dispute_exposure,
 )
 from app.modules.change_intelligence.impact_projection import (
     KIND_CHANGE_ORDER as IMPACT_KIND_CHANGE_ORDER,
@@ -59,8 +72,20 @@ from app.modules.change_intelligence.thread_digest import (
     Message,
     build_digest,
 )
+from app.modules.change_intelligence.watch import (
+    WatchItem,
+    WatchSummary,
+    build_watch,
+)
 from app.modules.changeorders.models import ChangeOrder
+from app.modules.claims_evidence.provability import (
+    ProvabilitySignals,
+    band_for,
+    compute_provability,
+)
 from app.modules.correspondence.models import Correspondence
+from app.modules.cost_recovery.back_charge import BackChargeItem
+from app.modules.cost_recovery.models import BackCharge
 from app.modules.moc.models import MoCEntry
 from app.modules.variations.models import Notice, VariationOrder, VariationRequest
 
@@ -404,3 +429,285 @@ async def build_ownership_chain_for(
         status_transition_times=status_transition_times or None,
     )
     return chain, project_id
+
+
+# --- Dispute-exposure radar (#7) -------------------------------------------
+#
+# Composes five sibling signals into the pure :mod:`dispute_risk` engine for
+# every open change: provability (from :mod:`claims_evidence.provability`),
+# overdue age (from the cycle-time aging math), an approval-SLA breach flag,
+# ownership ambiguity (from the ownership-chain engine), and the money at risk
+# (from the cost-recovery back-charge ledger). The engine's defaults are
+# deliberately conservative, so a signal that is not cheaply available per
+# change is passed at its safe (high-risk) default rather than fabricated:
+#
+# * notice / acknowledgement / linked-instruction / dated-record provability
+#   signals are left at their conservative defaults - they need a per-change
+#   evidence-pack join that this read does not perform - so a change with a
+#   clean custody chain still scores in the weak band unless its evidence is
+#   wired elsewhere. This is the documented "score an unwired change as if it
+#   were weak" behaviour, not an error.
+# * the approval-SLA breach flag is passed False: an approval instance is not
+#   cheaply linkable to an arbitrary change-family record here. The overdue-age
+#   factor still captures lateness from the response-due date the board uses.
+#
+# Money is taken from back-charges whose ``source_ref`` is the change id (the
+# free reference the cost-recovery module stores), summed per change as the
+# outstanding and committed-at-risk basis.
+
+
+async def _back_charges_by_source(session: AsyncSession, project_id: uuid.UUID) -> dict[str, list[BackCharge]]:
+    """Index a project's back-charges by their ``source_ref`` (the change id)."""
+    rows = (await session.execute(select(BackCharge).where(BackCharge.project_id == project_id))).scalars().all()
+    by_source: dict[str, list[BackCharge]] = {}
+    for bc in rows:
+        key = (bc.source_ref or "").strip()
+        if not key:
+            continue
+        by_source.setdefault(key, []).append(bc)
+    return by_source
+
+
+def _overdue_days_for(response_due_date: str | None, now: datetime) -> float:
+    """Days a change is past its response-due date; 0 when not overdue / no date.
+
+    Mirrors the cycle-time board's overdue math (it parses the same stored
+    string with :func:`parse_due` and measures against the same ``now``).
+    """
+    due = parse_due(response_due_date)
+    if due is None:
+        return 0.0
+    seconds = (now - due).total_seconds()
+    if seconds <= 0:
+        return 0.0
+    return round(seconds / 86400.0, 2)
+
+
+async def build_dispute_risk_board(
+    session: AsyncSession,
+    project_id: uuid.UUID,
+    *,
+    now: datetime | None = None,
+) -> tuple[list[DisputeRiskItem], DisputeExposureSummary]:
+    """Rank a project's open changes by dispute exposure and summarise them.
+
+    Enumerates the same change set the cycle-time board uses
+    (:func:`gather_change_items`), keeps the open ones, and for each composes a
+    :class:`DisputeRiskInput` from the provability, overdue-age, SLA, ownership
+    and cost-recovery signals, then feeds them through the pure engine's
+    :func:`rank_dispute_exposure` + :func:`summarize_dispute_exposure`.
+    """
+    moment = now or datetime.now(UTC)
+    items = await gather_change_items(session, project_id)
+    by_source = await _back_charges_by_source(session, project_id)
+
+    inputs: list[DisputeRiskInput] = []
+    for item in items:
+        if not item.is_open:
+            continue
+
+        # Ownership ambiguity + chain-present / inconsistent flags from the
+        # sibling engine (one read per open change, mirroring the single-change
+        # ownership endpoint).
+        ownership_ambiguous = False
+        chain_present = False
+        chain_inconsistent = False
+        try:
+            chain, _pid = await build_ownership_chain_for(session, item.kind, uuid.UUID(item.id), now=moment)
+        except (KeyError, LookupError, ValueError):
+            chain = None
+        if chain is not None:
+            ownership_ambiguous = chain.ownership_ambiguous
+            chain_present = chain.total_handoffs > 0
+            chain_inconsistent = chain.chain_inconsistent
+
+        # Provability: wire the ownership signals; leave the notice / ack /
+        # instruction / dated-record signals at their conservative defaults
+        # (not cheaply available per change without an evidence-pack join).
+        provability = compute_provability(
+            ProvabilitySignals(
+                ownership_chain_present=chain_present,
+                ownership_ambiguous=ownership_ambiguous,
+                ownership_chain_inconsistent=chain_inconsistent,
+            )
+        )
+
+        days_overdue = _overdue_days_for(item.response_due_date, moment)
+
+        # Money at risk: sum the outstanding and committed-at-risk basis across
+        # this change's back-charges (matched by source_ref == change id). All
+        # amounts share the engine's currency, so the first non-empty currency
+        # wins; the engine never blends currencies in its summary anyway.
+        outstanding = Decimal("0")
+        committed_at_risk = Decimal("0")
+        currency = ""
+        for bc in by_source.get(item.id, ()):  # type: ignore[arg-type]
+            bc_item = BackChargeItem(
+                ref_id=str(bc.id),
+                responsible_party=bc.responsible_party or "",
+                description=bc.description or "",
+                basis=bc.basis or "",
+                gross_amount=bc.gross_amount if bc.gross_amount is not None else Decimal("0"),
+                chargeable_pct=bc.chargeable_pct if bc.chargeable_pct is not None else Decimal("0"),
+                currency=bc.currency or "",
+                status=bc.status or "",
+                recovered_amount=bc.recovered_amount if bc.recovered_amount is not None else Decimal("0"),
+            )
+            outstanding += bc_item.outstanding
+            committed_at_risk += bc_item.chargeable_amount
+            if not currency and bc.currency:
+                currency = bc.currency
+
+        inputs.append(
+            DisputeRiskInput(
+                change_id=item.id,
+                change_ref=item.code,
+                kind=item.kind,
+                title=item.title,
+                provability_score=provability.score,
+                provability_band=band_for(provability.score),
+                days_overdue=days_overdue,
+                sla_breached=False,
+                ownership_ambiguous=ownership_ambiguous,
+                outstanding_amount=outstanding,
+                currency=currency,
+                committed_cost_at_risk=committed_at_risk if committed_at_risk > Decimal("0") else None,
+            )
+        )
+
+    ranked = rank_dispute_exposure(inputs)
+    summary = summarize_dispute_exposure(ranked)
+    return ranked, summary
+
+
+# --- Decision-time impact preview (#13) ------------------------------------
+#
+# Gathers the committed CO / VO cost+schedule impacts for a project as the
+# baseline and the one candidate change under decision, and feeds them to the
+# pure :mod:`decision_impact` engine. Only approved / executed changes count
+# toward the baseline (COMMITTED_STATUSES); the candidate is always applied as
+# a signed delta regardless of its own status.
+
+#: Each change-family kind mapped to the (cost, days, currency, status) column
+#: names this preview reads off its row. Mirrors the per-module money columns.
+_IMPACT_COLUMNS: dict[str, tuple[str, str, str, str]] = {
+    KIND_CHANGE_ORDER: ("cost_impact", "schedule_impact_days", "currency", "status"),
+    KIND_VARIATION_REQUEST: ("estimated_cost_impact", "estimated_schedule_days", "currency", "status"),
+    KIND_VARIATION_ORDER: ("final_cost_impact", "final_schedule_days", "currency", "status"),
+    KIND_MOC_ENTRY: ("cost_impact", "schedule_delta_days", "currency", "status"),
+}
+
+
+def _change_impact_from_row(model: type, kind: str, row) -> ChangeImpact:  # noqa: ANN001 - SQLAlchemy Row
+    """Project one change-family row onto a :class:`ChangeImpact`."""
+    cost_col, days_col, _cur_col, _status_col = _IMPACT_COLUMNS[kind]
+    cost = getattr(row, cost_col, None)
+    days = getattr(row, days_col, None)
+    return ChangeImpact(
+        kind=kind,
+        currency=getattr(row, "currency", "") or "",
+        cost_impact=cost if cost is not None else Decimal("0"),
+        schedule_impact_days=Decimal(str(days)) if days is not None else Decimal("0"),
+        status=getattr(row, "status", "") or "",
+    )
+
+
+async def build_decision_impact(
+    session: AsyncSession,
+    project_id: uuid.UUID,
+    candidate_change_id: uuid.UUID,
+) -> tuple[DecisionImpact, ChangeImpact]:
+    """Preview what approving *candidate_change_id* adds to the committed baseline.
+
+    Reads the committed CO / VO impacts for the project as the baseline and
+    resolves the candidate from any change-family table by id, then calls the
+    pure engine's :func:`project_with_pending`. Returns the projection together
+    with the resolved candidate :class:`ChangeImpact` (so the router can echo
+    the candidate's kind and currency). Raises :class:`LookupError` when the
+    candidate id is not found in any change-family table.
+    """
+    # Committed baseline: only the kinds that carry committed cost (CO + VO),
+    # filtered to COMMITTED_STATUSES by the engine via each row's status.
+    committed: list[ChangeImpact] = []
+    for kind in (KIND_CHANGE_ORDER, KIND_VARIATION_ORDER):
+        model = _KIND_TO_MODEL[kind]
+        cost_col, days_col, _cur, _st = _IMPACT_COLUMNS[kind]
+        stmt = select(
+            getattr(model, cost_col),
+            getattr(model, days_col),
+            model.currency,
+            model.status,
+        ).where(model.project_id == project_id)
+        for row in (await session.execute(stmt)).all():
+            committed.append(_change_impact_from_row(model, kind, row))
+
+    # Resolve the candidate from whichever change-family table holds it.
+    candidate: ChangeImpact | None = None
+    for kind, model in _KIND_TO_MODEL.items():
+        if kind not in _IMPACT_COLUMNS:
+            continue
+        cost_col, days_col, _cur, _st = _IMPACT_COLUMNS[kind]
+        stmt = (
+            select(
+                getattr(model, cost_col),
+                getattr(model, days_col),
+                model.currency,
+                model.status,
+            )
+            .where(model.project_id == project_id)
+            .where(model.id == candidate_change_id)
+        )
+        row = (await session.execute(stmt)).one_or_none()
+        if row is not None:
+            candidate = _change_impact_from_row(model, kind, row)
+            break
+
+    if candidate is None:
+        raise LookupError(str(candidate_change_id))
+
+    return project_with_pending(committed, candidate), candidate
+
+
+# --- Proactive change watch (#18) ------------------------------------------
+#
+# Classifies every change against the watch failure modes (stalled / incomplete
+# / lost). Each :class:`WatchItem` is built from present state: status drives
+# the closed check, ``created_at`` is the opened baseline, ``updated_at`` the
+# last movement, the response-due string the due instant, and the ball-in-court
+# the owner flag. Completeness is not cheaply available per stored change here
+# (the clarifier reads free text, not a persisted score), so it is passed at
+# the engine's "complete" sentinel (1.0) - the incomplete rule is therefore not
+# triggered by this read; the stalled / lost rules carry the watch.
+
+
+async def build_change_watch(
+    session: AsyncSession,
+    project_id: uuid.UUID,
+    *,
+    now: datetime | None = None,
+) -> WatchSummary:
+    """Classify a project's changes into the proactive watch summary.
+
+    Reuses :func:`gather_change_items` for the same change set the other boards
+    read, projects each onto a :class:`WatchItem`, and feeds them to the pure
+    :func:`build_watch`.
+    """
+    moment = now or datetime.now(UTC)
+    items = await gather_change_items(session, project_id)
+    watch_items = [
+        WatchItem(
+            change_id=item.id,
+            kind=item.kind,
+            status=item.status,
+            opened_at=item.opened_at,
+            last_movement_at=item.last_activity_at,
+            due_at=parse_due(item.response_due_date),
+            # Completeness is not persisted per change here; pass the engine's
+            # "complete enough" sentinel so the incomplete rule does not fire on
+            # a stored change. Stalled / lost still classify from age + owner.
+            completeness_score=1.0,
+            has_owner=bool((item.ball_in_court or "").strip()),
+        )
+        for item in items
+    ]
+    return build_watch(watch_items, now=moment)

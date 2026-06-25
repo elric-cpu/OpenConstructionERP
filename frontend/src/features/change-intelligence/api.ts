@@ -232,3 +232,130 @@ export function getRecoveryLedger(projectId: string): Promise<RecoveryLedger> {
 export function listBackCharges(projectId: string): Promise<BackCharge[]> {
   return apiGet<BackCharge[]>(`${CR_BASE}/projects/${projectId}/back-charges`);
 }
+
+// --- Dispute-exposure radar ("which open change goes to a dispute first") ---
+// A composition over provability, overdue age, SLA, ownership and money at
+// risk. Money is carried on the wire as a string and handed to MoneyDisplay
+// untouched; the exposure score is a pure 0-100 with no currency.
+
+export type ExposureBand = 'low' | 'elevated' | 'high';
+
+export interface RiskFactor {
+  name: string;
+  weight: number;
+  fraction: number;
+  weighted: number;
+  is_driver: boolean;
+}
+
+export interface DisputeRiskItem {
+  change_id: string;
+  change_ref: string;
+  kind: string;
+  title: string;
+  exposure_score: number;
+  band: ExposureBand;
+  dominant_driver: string;
+  recommended_cure: string;
+  intrinsic_exposure: number;
+  money_multiplier: number;
+  money_basis: string;
+  currency: string;
+  factors: RiskFactor[];
+}
+
+export interface CurrencyExposure {
+  currency: string;
+  item_count: number;
+  money_basis_total: string;
+  exposure_weighted_amount: string;
+}
+
+export interface DisputeExposureSummary {
+  item_count: number;
+  band_counts: Record<string, number>;
+  by_currency: CurrencyExposure[];
+  top_driver_counts: Record<string, number>;
+}
+
+export interface DisputeRiskBoard {
+  project_id: string;
+  generated_at: string;
+  items: DisputeRiskItem[];
+  summary: DisputeExposureSummary;
+}
+
+export function getDisputeRiskBoard(projectId: string): Promise<DisputeRiskBoard> {
+  return apiGet<DisputeRiskBoard>(`${CI_BASE}/projects/${projectId}/dispute-risk`);
+}
+
+// --- Decision-time impact preview ------------------------------------------
+// What approving one candidate change adds on top of the committed baseline.
+// Every money / day figure is a string so the signed Decimal round-trips and
+// currencies are never blended.
+
+export interface DecisionImpactRow {
+  kind: string;
+  currency: string;
+  current_committed_cost: string;
+  candidate_cost_delta: string;
+  resulting_cost: string;
+  current_committed_days: string;
+  candidate_days_delta: string;
+  resulting_days: string;
+}
+
+export interface CurrencyTotal {
+  currency: string;
+  current_committed_cost: string;
+  candidate_cost_delta: string;
+  resulting_cost: string;
+  current_committed_days: string;
+  candidate_days_delta: string;
+  resulting_days: string;
+}
+
+export interface DecisionImpact {
+  project_id: string;
+  candidate_change_id: string;
+  candidate_kind: string;
+  candidate_currency: string;
+  rows: DecisionImpactRow[];
+  totals_by_currency: CurrencyTotal[];
+}
+
+export function getDecisionImpact(
+  projectId: string,
+  candidateChangeId: string,
+): Promise<DecisionImpact> {
+  return apiGet<DecisionImpact>(
+    `${CI_BASE}/decision-impact?project_id=${encodeURIComponent(projectId)}&candidate_change_id=${encodeURIComponent(candidateChangeId)}`,
+  );
+}
+
+// --- Proactive change watch ------------------------------------------------
+// Which open changes are quietly drifting toward trouble (stalled / incomplete
+// / lost), worst-first, with a per-class count.
+
+export type WatchClass = 'lost' | 'stalled' | 'incomplete' | 'ok';
+
+export interface WatchResult {
+  change_id: string;
+  kind: string;
+  classification: WatchClass;
+  reasons: string[];
+  idle_days: number;
+  overdue_days: number;
+}
+
+export interface ChangeWatch {
+  project_id: string;
+  generated_at: string;
+  item_count: number;
+  counts: Record<string, number>;
+  items: WatchResult[];
+}
+
+export function getChangeWatch(projectId: string): Promise<ChangeWatch> {
+  return apiGet<ChangeWatch>(`${CI_BASE}/projects/${projectId}/change-watch`);
+}
