@@ -230,7 +230,11 @@ IGNORE_QUALIFIED_MONEY: set[str] = {
 def _is_money_named(field_name: str) -> bool:
     if field_name in RATIO_OR_NON_MONEY:
         return False
-    if field_name.endswith(("_pct", "_percentage", "_count", "_mb")):
+    # ``_percentile`` is a statistical rank in [0, 100] (or [0, 1]), never a
+    # currency amount - the same categorical non-money suffix as ``_pct`` /
+    # ``_percentage``. A field like ``cost_position_percentile`` carries the
+    # ``cost`` money word but reports where a figure ranks among peers, not money.
+    if field_name.endswith(("_pct", "_percentage", "_percentile", "_count", "_mb")):
         return False
     # ``pct_of_budget`` and friends are ratios even though a money word
     # appears later in the name.
@@ -272,6 +276,11 @@ def _is_money_named(field_name: str) -> bool:
 #     plotted (finish, cost) chart coordinate exempted by qualified name; and
 #     ``prob_on_budget`` (a 0..1 probability whose name trips the "budget"
 #     regex) was taught to the ratio filter. The cap stays 1.
+#   * Value-realized wave: ``value.ValueSummaryOut.cost_position_percentile``
+#     is a percentile rank (where a project's cost sits among peers), not a
+#     currency amount. ``_percentile`` was added to the categorical non-money
+#     suffix filter alongside ``_pct`` / ``_percentage`` (a percentile is never
+#     money); all real money on the value API is Decimal-as-string. Cap stays 1.
 # Sibling agents that fix further money fields should *lower* this
 # constant to lock in their progress. New money-as-float fields ADDED
 # to a schema will push the count over the cap and fail CI.
