@@ -21,6 +21,7 @@ import {
   Settings,
   Info,
   TrendingUp,
+  Phone,
   ChevronDown,
   ChevronRight,
   Ruler,
@@ -358,6 +359,7 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.change_orders', to: '/changeorders', icon: FileEdit, advancedOnly: true },
       { labelKey: 'nav.change_intelligence', to: '/change-intelligence', icon: BrainCircuit, advancedOnly: true },
       { labelKey: 'nav.value', to: '/value', icon: TrendingUp, advancedOnly: true },
+      { labelKey: 'nav.phone_log', to: '/phone-log', icon: Phone, advancedOnly: true },
     ],
   },
   // ── 11. FIELD OPERATIONS ───────────────────────────────────────────
