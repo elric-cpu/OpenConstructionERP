@@ -39,6 +39,7 @@ import {
 import { RunTimeline } from './components/RunTimeline';
 import { RecentRunsList } from './components/RecentRunsList';
 import { AutomatedRunsPanel } from './components/AutomatedRunsPanel';
+import { AccuracyScoreboard } from './components/AccuracyScoreboard';
 import { aiAgentsGuide } from './aiAgentsGuide';
 import {
   agentDisplayName,
@@ -200,6 +201,15 @@ export function AgentsPage(): JSX.Element {
     // Keep the history fresh while a run is in flight so a just-finished
     // run flips to its terminal status without a manual refresh.
     refetchInterval: 5000,
+  });
+
+  // Accuracy scoreboard: how each agent's stated confidence has held up against
+  // the user's recorded outcomes. Scoped to the active project when one is set.
+  // Invalidated by the per-run verdict so a fresh outcome shows up immediately.
+  const scoreboardQuery = useQuery({
+    queryKey: ['ai-agents', 'accuracy', projectId ?? null],
+    queryFn: () => aiAgentsApi.getAccuracyScoreboard({ projectId: projectId ?? undefined }),
+    staleTime: 30_000,
   });
 
   const healthQuery = useQuery({
@@ -674,6 +684,14 @@ export function AgentsPage(): JSX.Element {
             loading={automatedRunsQuery.isLoading}
             activeRunId={activeRunId}
             onSelect={(id) => setActiveRunId(id)}
+          />
+
+          {/* Accuracy scoreboard — the trust moat made visible: each agent's
+              stated confidence scored against the outcomes the user recorded. */}
+          <AccuracyScoreboard
+            scores={scoreboardQuery.data?.scores ?? []}
+            agents={agents}
+            loading={scoreboardQuery.isLoading}
           />
         </aside>
       </div>

@@ -71,6 +71,39 @@ export interface AgentStep {
   created_at: string;
 }
 
+// ── Trust envelope (per-run) ──────────────────────────────────────────────────
+
+/** One citation backing an agent's answer - a real id / path, never invented. */
+export interface TrustSource {
+  // What is cited: 'document' | 'boq' | 'schedule' | 'cost_item' | 'rfi' | …
+  kind: string;
+  // The real identifier or path the user can open.
+  ref: string;
+  label?: string | null;
+  // Optional relevance / match score on the producer's own scale.
+  score?: number | null;
+}
+
+/**
+ * The structured "trust wrapper" an analytical agent attaches to its answer:
+ * a calibrated confidence, why, the sources it cited, and what would make it
+ * more sure. Every field is optional - an empty envelope asserts nothing. Once
+ * the user records a verdict the same object also carries that outcome, so the
+ * stated confidence can later be scored against what actually happened.
+ */
+export interface TrustEnvelope {
+  // Calibrated confidence in [0, 1], or null when the agent declined to commit.
+  confidence: number | null;
+  rationale: string | null;
+  sources: TrustSource[];
+  what_would_increase_confidence: string | null;
+  model: string | null;
+  // Recorded verdict (present once the user marks the run correct / incorrect).
+  actual_outcome?: boolean | null;
+  outcome_recorded_at?: string | null;
+  outcome_note?: string | null;
+}
+
 export interface AgentRun {
   id: string;
   agent_name: string;
@@ -82,6 +115,9 @@ export interface AgentRun {
   failure_reason: string | null;
   user_input: string;
   final_output: string | null;
+  // The structured trust envelope the agent attached to its answer (analytical
+  // agents only). Null / empty for mechanical drafters and classifiers.
+  trust?: TrustEnvelope | null;
   iterations: number;
   total_tokens: number;
   started_at: string | null;
@@ -211,6 +247,50 @@ export interface BoqOption {
   name: string;
 }
 
+// ── Trust verdict + accuracy scoreboard ──────────────────────────────────────
+
+/** Record whether a run's answer turned out correct, with an optional note. */
+export interface RecordOutcomeRequest {
+  correct: boolean;
+  // A short correction / context note (e.g. what the right answer was).
+  note?: string | null;
+}
+
+/** Acknowledgement that a verdict was recorded on a run. */
+export interface OutcomeRecorded {
+  run_id: string;
+  agent_name: string;
+  actual_outcome: boolean;
+}
+
+/** One reliability bucket: how confident the agent was vs how often it was right. */
+export interface AccuracyCalibrationBin {
+  lower: number;
+  upper: number;
+  count: number;
+  mean_confidence: number;
+  observed_rate: number;
+}
+
+/** Aggregate calibration for one agent over the caller's own scored runs. */
+export interface AccuracyScore {
+  agent_name: string;
+  count: number;
+  // Mean squared error of confidence vs outcome (lower is better; 0 perfect).
+  brier_score: number;
+  mean_confidence: number;
+  // Fraction of scored runs that turned out correct.
+  observed_rate: number;
+  // Expected calibration error: gap between stated confidence and reality.
+  calibration_error: number;
+  bins: AccuracyCalibrationBin[];
+}
+
+/** The accuracy scoreboard: one score per agent the caller has scored runs for. */
+export interface AccuracyScoreboard {
+  scores: AccuracyScore[];
+}
+
 export const aiAgentsApi = {
   listAgents: () => apiGet<AgentDescriptor[]>('/v1/ai-agents/agents/'),
   listRuns: (projectId?: string) =>
@@ -260,4 +340,20 @@ export const aiAgentsApi = {
   // BOQs the proposals can be applied to (the cross-module target list).
   listProjectBoqs: (projectId: string) =>
     apiGet<BoqOption[]>(`/v1/boq/?project_id=${projectId}`),
+
+  // Trust verdict + accuracy: record a run's actual outcome (which feeds the
+  // calibration record) and read the scoreboard that scores each agent's stated
+  // confidence against how often it was actually right.
+  recordRunOutcome: (runId: string, body: RecordOutcomeRequest) =>
+    apiPost<OutcomeRecorded, RecordOutcomeRequest>(
+      `/v1/ai-agents/runs/${runId}/outcome`,
+      body,
+    ),
+  getAccuracyScoreboard: (params?: { projectId?: string; agentName?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.projectId) q.set('project_id', params.projectId);
+    if (params?.agentName) q.set('agent_name', params.agentName);
+    const qs = q.toString();
+    return apiGet<AccuracyScoreboard>(`/v1/ai-agents/accuracy/${qs ? `?${qs}` : ''}`);
+  },
 };

@@ -21,6 +21,7 @@ import {
 import type { AgentRun, AgentStep, AgentStepRole } from '../api';
 import { toolLabel } from './agentMeta';
 import { ApplyActionButton } from './ApplyActionButton';
+import { TrustEnvelopeCard } from './TrustEnvelopeCard';
 import {
   renderMarkdown,
   SANITIZE_CONFIG,
@@ -404,6 +405,13 @@ export function RunTimeline({ run }: { run: AgentRun }): JSX.Element {
 
       {/* Final output */}
       {run.final_output && <FinalOutput text={run.final_output} />}
+
+      {/* Trust & verification — surfaces the agent's structured trust envelope
+          (calibrated confidence, rationale, cited sources, what would increase
+          confidence) and lets the user record whether the answer turned out
+          correct. That verdict feeds the accuracy scoreboard. Renders nothing
+          for mechanical agents that carry no envelope. */}
+      {run.status === 'completed' && <TrustEnvelopeCard run={run} />}
 
       {/* Apply affordances — surfaced when the run produced structured BOQ
           position proposals (recovered from its steps by the backend). Never
