@@ -154,6 +154,23 @@ function renderPage() {
   );
 }
 
+/** Open the "New constraint" modal reliably. The modal only renders when BOTH
+ *  createOpen and lookAheadId are set (ScheduleAdvancedPage: the constraint
+ *  form is mounted under `createOpen && lookAheadId`). The toolbar button is
+ *  disabled until the look-ahead auto-selects, but the empty-state CTA is
+ *  always enabled - clicking it before the look-ahead is selected flips
+ *  createOpen yet renders no modal, which is the CI flake. The toolbar button
+ *  is always present, so waiting until every "New constraint" action is enabled
+ *  guarantees lookAheadId is set before we click. */
+async function openNewConstraintModal() {
+  await waitFor(() => {
+    const btns = screen.getAllByRole('button', { name: /new constraint/i });
+    expect(btns.length).toBeGreaterThan(0);
+    btns.forEach((b) => expect(b).toBeEnabled());
+  });
+  fireEvent.click(screen.getAllByRole('button', { name: /new constraint/i })[0]);
+}
+
 describe('Last Planner task pickers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -222,7 +239,7 @@ describe('Last Planner task pickers', () => {
       screen.queryByText(/look-ahead detail view/i),
     ).not.toBeInTheDocument();
 
-    fireEvent.click(newBtns[0]);
+    await openNewConstraintModal();
 
     // Modal opens with the task picker.
     expect(
@@ -234,8 +251,7 @@ describe('Last Planner task pickers', () => {
     (createConstraint as any).mockResolvedValue({ id: 'cn1' });
     renderPage();
     fireEvent.click(await screen.findByRole('tab', { name: /constraints/i }));
-    const newBtns = await screen.findAllByRole('button', { name: /new constraint/i });
-    fireEvent.click(newBtns[0]);
+    await openNewConstraintModal();
 
     const picker = await screen.findByPlaceholderText(/search project tasks/i);
     fireEvent.focus(picker);
