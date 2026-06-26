@@ -1,7 +1,7 @@
 """‌⁠‍Security response headers middleware.
 
 Adds the standard set of defensive HTTP response headers:
-  - X-Frame-Options: DENY            (clickjacking)
+  - X-Frame-Options: SAMEORIGIN      (clickjacking; allows same-origin PDF preview)
   - X-Content-Type-Options: nosniff  (MIME sniffing)
   - Referrer-Policy: same-origin     (referrer leakage)
   - Strict-Transport-Security        (HSTS - production only)
