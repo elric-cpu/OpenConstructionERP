@@ -2,7 +2,7 @@
  * API helpers for User Management.
  */
 
-import { apiGet, apiPatch, apiPost } from '@/shared/lib/api';
+import { apiGet, apiPatch, apiPost, apiDelete } from '@/shared/lib/api';
 
 export type UserRole = 'admin' | 'manager' | 'editor' | 'viewer';
 export type ModuleAccessLevel = 'none' | 'view' | 'edit' | 'full';
@@ -59,6 +59,17 @@ export async function fetchUsers(params?: {
 
 export async function updateUser(id: string, data: UserAdminUpdate): Promise<User> {
   return apiPatch<User>(`/v1/users/${id}`, data);
+}
+
+/**
+ * Admin-only: permanently delete (erase) a user account. The server anonymises
+ * the row in place so the user's projects and history keep resolving, but every
+ * personal field is stripped and the account can no longer log in. The last
+ * active admin cannot be deleted (409), and an admin cannot delete their own
+ * account through this route (400) - that goes through account settings.
+ */
+export async function deleteUser(id: string): Promise<void> {
+  await apiDelete(`/v1/users/${id}`);
 }
 
 export async function inviteUser(data: InviteUserPayload): Promise<User> {

@@ -1146,6 +1146,40 @@ async def update_user(
     return UserResponse.model_validate(user)
 
 
+@router.delete(
+    "/{user_id}/",
+    status_code=204,
+    dependencies=[Depends(RequirePermission("users.delete"))],
+)
+@router.delete(
+    "/{user_id}",
+    status_code=204,
+    include_in_schema=False,
+    dependencies=[Depends(RequirePermission("users.delete"))],
+)
+async def admin_delete_user(
+    user_id: uuid.UUID,
+    actor_id: CurrentUserId,
+    service: UserService = Depends(_get_service),
+) -> None:
+    """Admin-only: delete (erase) another user's account.
+
+    Until now an administrator could only deactivate an account (``PATCH`` with
+    ``is_active=false``); the row and its email stayed on the books. This erases
+    the account the same way the self-service path does: the row is anonymised
+    in place so the user's projects and history keep resolving, but every
+    personal field is stripped, the password is invalidated, all API keys are
+    revoked and the account can no longer log in (issue #272).
+
+    Self-targeting is refused with 400 so an admin deletes their own account
+    through ``DELETE /users/me`` (which keeps its password confirmation), and the
+    last active admin of a workspace cannot be erased (409) so it is never left
+    without an administrator. Declared after the ``/me`` routes so that literal
+    path still resolves to self-deletion.
+    """
+    await service.admin_erase_account(uuid.UUID(actor_id), user_id)
+
+
 class ModuleAccessLevel(BaseModel):
     """Per-module access level for a user."""
 

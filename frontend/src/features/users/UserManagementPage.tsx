@@ -34,6 +34,7 @@ import {
   Lock,
   Unlock,
   Save,
+  Trash2,
 } from 'lucide-react';
 import { Card, Badge, Button, WideModal, Breadcrumb, ConfirmDialog, DismissibleInfo, IntroRichText, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
@@ -45,6 +46,7 @@ import { apiGet } from '@/shared/lib/api';
 import {
   fetchUsers,
   updateUser,
+  deleteUser,
   inviteUser,
   getUserModuleAccess,
   setUserModuleAccess,
@@ -811,6 +813,21 @@ export function UserManagementPage() {
     },
   });
 
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => deleteUser(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      addToast({ type: 'success', title: t('users.deleted', { defaultValue: 'User deleted' }) });
+    },
+    onError: (e: Error) => {
+      addToast({
+        type: 'error',
+        title: t('common.error', { defaultValue: 'Error' }),
+        message: e.message,
+      });
+    },
+  });
+
   const handleRoleChange = useCallback(
     async (userId: string, role: UserRole) => {
       // Never let the signed-in user change their own role from this list.
@@ -858,6 +875,28 @@ export function UserManagementPage() {
       updateMut.mutate({ id: user.id, data: { is_active: !user.is_active } });
     },
     [updateMut, currentUserId, confirm, t],
+  );
+
+  const handleDelete = useCallback(
+    async (user: User) => {
+      // Self-deletion is intentionally not offered here - it must go through
+      // account settings, which requires a password confirmation. The server
+      // rejects a self-target on this route anyway.
+      if (user.id === currentUserId) return;
+      const ok = await confirm({
+        title: t('users.confirm_delete_title', { defaultValue: 'Delete this user?' }),
+        message: t('users.confirm_delete', {
+          defaultValue:
+            'Permanently delete {{name}}? Their personal data is erased and the account can no longer sign in. Projects and history they created stay intact. This cannot be undone.',
+          name: user.full_name || user.email,
+        }),
+        variant: 'danger',
+        confirmLabel: t('users.delete', { defaultValue: 'Delete' }),
+      });
+      if (!ok) return;
+      deleteMut.mutate(user.id);
+    },
+    [deleteMut, currentUserId, confirm, t],
   );
 
   const filtered = useMemo(() => {
@@ -1111,6 +1150,26 @@ export function UserManagementPage() {
                           {user.is_active
                             ? t('users.deactivate', { defaultValue: 'Deactivate' })
                             : t('users.activate', { defaultValue: 'Activate' })}
+                        </button>
+                        <button
+                          onClick={() => handleDelete(user)}
+                          disabled={isSelf}
+                          title={
+                            isSelf
+                              ? t('users.cannot_delete_self', {
+                                  defaultValue: 'Delete your own account from account settings.',
+                                })
+                              : t('users.delete', { defaultValue: 'Delete' })
+                          }
+                          className={clsx(
+                            'flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors',
+                            isSelf
+                              ? 'text-content-quaternary cursor-not-allowed opacity-60'
+                              : 'text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30',
+                          )}
+                        >
+                          <Trash2 size={13} />
+                          {t('users.delete', { defaultValue: 'Delete' })}
                         </button>
                       </div>
                     </td>

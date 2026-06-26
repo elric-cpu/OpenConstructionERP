@@ -1056,36 +1056,10 @@ class UserService:
                     ),
                 )
 
-        # Eagerly read the fields we still need before update_fields expires
-        # the instance (avoids MissingGreenlet on async re-access).
+        # Eagerly read the id we still need before the row is anonymised
+        # (avoids MissingGreenlet on async re-access after update_fields).
         user_uuid = user.id
-
-        # ── Anonymise in place ──────────────────────────────────────────
-        placeholder_email = f"deleted+{uuid.uuid4().hex}@deleted.invalid"
-        now = datetime.now(UTC)
-        await self.user_repo.update_fields(
-            user_id,
-            email=placeholder_email,
-            full_name="",
-            # A bcrypt hash of a fresh random secret nobody holds: the column is
-            # NOT NULL, and ``_is_usable_password_hash`` still reads it as a hash
-            # so a re-erasure won't fall through to the SSO branch. The user can
-            # never authenticate with it because the plaintext is discarded.
-            hashed_password=hash_password(secrets.token_urlsafe(32)),
-            # Bump password_changed_at so any access/refresh token issued before
-            # now is rejected by get_current_user_payload - the user is logged
-            # out everywhere immediately.
-            password_changed_at=now,
-            is_active=False,
-            deleted_at=now,
-            # Drop all profile PII held in the JSON column (company, job title,
-            # registration ip / user-agent / referrer, avatar, phone, etc.).
-            metadata_={"erased": True},
-            locale="en",
-        )
-
-        # Revoke every API key the user owns so no programmatic session survives.
-        await self.api_key_repo.deactivate_all_for_user(user_uuid)
+        await self._anonymise_user_in_place(user_id, user_uuid)
 
         # ── Audit trail (no PII in the record) ──────────────────────────
         try:
@@ -1113,6 +1087,122 @@ class UserService:
         )
 
         logger.info("Account erased (self-service GDPR Art. 17): user=%s", user_uuid)
+
+    async def _anonymise_user_in_place(self, user_id: uuid.UUID, user_uuid: uuid.UUID) -> None:
+        """Strip every PII field from a user row, invalidate its password and
+        sessions, and revoke its API keys.
+
+        Shared core of both the self-service erasure (:py:meth:`erase_account`)
+        and the admin-initiated deletion (:py:meth:`admin_erase_account`).
+
+        Anonymise in place rather than hard delete: the row is referenced by
+        projects (``owner_id``) and activity / audit rows (``actor_id``), and the
+        projects FK is ON DELETE CASCADE, so a hard delete would drag the user's
+        projects and their BOQs, costs and documents down with it. Instead every
+        personal field is nulled, the email is replaced with a non-reversible
+        placeholder, the password hash is invalidated and ``is_active`` is
+        flipped False - the row survives but holds no personal data and can no
+        longer authenticate.
+        """
+        placeholder_email = f"deleted+{uuid.uuid4().hex}@deleted.invalid"
+        now = datetime.now(UTC)
+        await self.user_repo.update_fields(
+            user_id,
+            email=placeholder_email,
+            full_name="",
+            # A bcrypt hash of a fresh random secret nobody holds: the column is
+            # NOT NULL, and ``_is_usable_password_hash`` still reads it as a hash
+            # so a re-erasure won't fall through to the SSO branch. The user can
+            # never authenticate with it because the plaintext is discarded.
+            hashed_password=hash_password(secrets.token_urlsafe(32)),
+            # Bump password_changed_at so any access/refresh token issued before
+            # now is rejected by get_current_user_payload - the user is logged
+            # out everywhere immediately.
+            password_changed_at=now,
+            is_active=False,
+            deleted_at=now,
+            # Drop all profile PII held in the JSON column (company, job title,
+            # registration ip / user-agent / referrer, avatar, phone, etc.).
+            metadata_={"erased": True},
+            locale="en",
+        )
+        # Revoke every API key the user owns so no programmatic session survives.
+        await self.api_key_repo.deactivate_all_for_user(user_uuid)
+
+    async def admin_erase_account(self, actor_id: uuid.UUID, user_id: uuid.UUID) -> None:
+        """Admin-only: erase (anonymise in place) another user's account.
+
+        Until now an administrator could only deactivate an account
+        (``is_active=False``); the row, and its email, stayed on the books. This
+        gives the admin the same erasure the account owner already has, so a
+        workspace can actually remove a member rather than only suspend them
+        (issue #272).
+
+        Same anonymise-in-place model as :py:meth:`erase_account`, but authorised
+        by an administrator instead of the account owner, so it carries no
+        password / confirm guard - the caller has already passed the
+        ``users.delete`` permission check.
+
+        Guards:
+          - 400 if an admin targets their own id: self-deletion must go through
+            ``DELETE /users/me`` so it keeps its password confirmation.
+          - 404 if the target does not exist or is already erased.
+          - 409 if the target is the last active admin, so the workspace is never
+            left without an administrator.
+        """
+        if actor_id == user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=("Use the account settings to delete your own account so it keeps its password confirmation."),
+            )
+
+        user = await self.get_user(user_id)
+        if user.deleted_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+
+        # Never orphan the workspace by removing its last administrator.
+        if user.role == "admin":
+            other_admins = await self.user_repo.count_active_admins(exclude_id=user_id)
+            if other_admins == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "This is the last active administrator. Promote another "
+                        "user to admin before deleting this account so the "
+                        "workspace is not left without an administrator."
+                    ),
+                )
+
+        user_uuid = user.id
+        await self._anonymise_user_in_place(user_id, user_uuid)
+
+        # Audit trail - records WHO erased the account (the admin) and the
+        # target, with no PII in the record.
+        try:
+            from app.core.audit_log import log_activity as _log_activity
+
+            await _log_activity(
+                self.session,
+                actor_id=str(actor_id),
+                entity_type="user",
+                entity_id=str(user_uuid),
+                action="account_erasure_by_admin",
+                module="users",
+                after_state={"erased": True},
+            )
+        except Exception:  # noqa: BLE001
+            logger.debug("audit log skipped for account_erasure_by_admin (non-fatal)")
+
+        await _safe_publish(
+            "users.user.erased",
+            {"user_id": str(user_uuid), "by_admin": str(actor_id)},
+            source_module="oe_users",
+        )
+
+        logger.info("Account erased by admin: target=%s actor=%s", user_uuid, actor_id)
 
     # ── API Keys ───────────────────────────────────────────────────────
 
