@@ -14978,8 +14978,12 @@
     [data-theme="dark"] .ma .lab-hi { fill: var(--accent-2); }
 
     /* motion vocabulary - mirrors #dataflow's dfPulse flowing-path idea */
-    .ma .flow { fill: none; stroke-width: 2.6; stroke-linecap: round; stroke-dasharray: 7 230; animation: maFlow 3.4s linear infinite; }
-    @keyframes maFlow { 0% { stroke-dashoffset: 230; } 100% { stroke-dashoffset: -230; } }
+    /* connector: a faint always-on base wire so the link always reads, with a
+       bright dash stream flowing along it to show direction (data moving A->B) */
+    .ma .wire { fill: none; stroke: color-mix(in oklab, var(--ink-3) 40%, transparent); stroke-width: 1.6; stroke-linecap: round; }
+    .ma .flow { fill: none; stroke: var(--accent-2); stroke-width: 2.4; stroke-linecap: round; stroke-dasharray: 8 12; animation: maFlow 0.9s linear infinite; }
+    @keyframes maFlow { to { stroke-dashoffset: -20; } }
+    .ma .arrow { fill: var(--accent-2); stroke: none; }
     .ma .draw { stroke-dasharray: var(--len, 200); stroke-dashoffset: var(--len, 200); animation: maDraw 3.6s ease-in-out infinite; }
     @keyframes maDraw { 0% { stroke-dashoffset: var(--len,200); } 45%,70% { stroke-dashoffset: 0; } 92%,100% { stroke-dashoffset: var(--len,200); } }
     .ma .pop { opacity: 0; transform-box: fill-box; transform-origin: left center; animation: maPop 3.6s ease-in-out infinite; }
@@ -14997,6 +15001,7 @@
     @media (prefers-reduced-motion: reduce) {
       .ma .flow, .ma .draw, .ma .pop, .ma .land, .ma .scan, .ma .ping { animation: none; }
       .ma .draw { stroke-dashoffset: 0; }
+      .ma .flow { stroke-dasharray: none; }
       .ma .pop, .ma .land { opacity: 1; transform: none; }
       .ma .ping { display: none; }
     }
@@ -15037,17 +15042,22 @@
       <div class="mod-anim-card">
         <div class="ma" role="img" aria-label="Takeoff - trace a wall on the drawing and the measured length drops into a position">
           <svg viewBox="0 0 320 180" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-            <rect class="paper" x="24" y="22" width="200" height="136" rx="10"/>
-            <path class="faint" d="M44 132 L44 52 L120 52 L120 92 L188 92 L188 132 Z"/>
-            <path class="faint" d="M120 52 L120 40 M150 92 L150 80"/>
-            <path class="st st-3 draw" style="--len:300" d="M44 132 L44 52 L120 52 L120 92 L188 92"/>
-            <circle class="fl" cx="44" cy="132" r="3"/><circle class="fl" cx="44" cy="52" r="3"/><circle class="fl" cx="120" cy="52" r="3"/><circle class="fl" cx="120" cy="92" r="3"/>
-            <g class="land"><rect class="fl" x="92" y="58" width="58" height="15" rx="4"/><text class="lab-sm lab-hi" x="99" y="69">42.6 m</text></g>
-            <path class="st st-2 flow f3" d="M226 90 L252 90"/>
-            <rect class="paper" x="252" y="64" width="44" height="52" rx="8"/>
-            <line class="faint" x1="260" y1="82" x2="288" y2="82"/>
-            <g class="land f3"><rect class="fl-2" x="258" y="88" width="34" height="12" rx="3"/></g>
-            <text class="lab-sm" x="260" y="76">BOQ</text>
+            <!-- drawing sheet: an L-shaped wall is traced on it -->
+            <rect class="paper" x="18" y="22" width="178" height="136" rx="10"/>
+            <path class="faint" d="M42 134 L42 54 L118 54 L118 96 L174 96"/>
+            <path class="st st-3 draw" style="--len:300" d="M42 134 L42 54 L118 54 L118 96 L174 96"/>
+            <circle class="fl" cx="42" cy="134" r="3.2"/><circle class="fl" cx="42" cy="54" r="3.2"/><circle class="fl" cx="118" cy="54" r="3.2"/><circle class="fl" cx="118" cy="96" r="3.2"/><circle class="fl" cx="174" cy="96" r="3.2"/>
+            <!-- the measured length lands as a dimension on the traced wall -->
+            <g class="land"><rect class="fl" x="52" y="38" width="58" height="18" rx="5"/><text class="lab-sm lab-hi" x="60" y="51">42.6 m</text></g>
+            <!-- it drops straight into a BOQ position -->
+            <path class="wire" d="M196 96 L236 96"/>
+            <path class="flow f3" d="M196 96 L231 96"/>
+            <path class="arrow f3" d="M230 92 L238 96 L230 100 Z"/>
+            <rect class="paper" x="240" y="54" width="64" height="76" rx="9"/>
+            <text class="lab-sm" x="250" y="72">BOQ</text>
+            <line class="faint" x1="250" y1="80" x2="294" y2="80"/>
+            <g class="pop d5"><text class="lab-sm" x="250" y="100">Wall</text><text class="lab-sm lab-hi" x="276" y="100">42.6</text></g>
+            <g class="pop d6"><rect class="fl-2" x="250" y="110" width="44" height="9" rx="3"/></g>
           </svg>
         </div>
         <div class="mod-anim-cap"><h3 data-i18n="modideas.takeoff_title">PDF / CAD takeoff</h3><p data-i18n="modideas.takeoff_desc">Trace a wall on the drawing, the measured length drops into a position.</p></div>
@@ -15056,20 +15066,24 @@
       <div class="mod-anim-card">
         <div class="ma" role="img" aria-label="BIM to BOQ - select model elements and their quantities flow into priced lines">
           <svg viewBox="0 0 320 180" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-            <g transform="translate(40 30)">
-              <path class="fl" d="M0 44 L40 22 L80 44 L40 66 Z"/>
-              <path class="st" d="M0 44 L40 22 L80 44 L40 66 Z M0 44 L0 78 L40 100 L40 66 M80 44 L80 78 L40 100"/>
-              <path class="st st-3" d="M40 22 L80 44 L80 78 L40 100 L40 66 Z"/>
-              <circle class="st st-3 ping" cx="62" cy="58" r="6"/>
+            <!-- BIM model; the selected element pulses -->
+            <g transform="translate(36 40)">
+              <path class="fl" d="M0 40 L40 18 L80 40 L40 62 Z"/>
+              <path class="st" d="M0 40 L40 18 L80 40 L40 62 Z M0 40 L0 76 L40 98 L40 62 M80 40 L80 76 L40 98"/>
+              <path class="st st-3" d="M40 18 L80 40 L80 76 L40 98 L40 62 Z"/>
+              <circle class="fl-2 ping" cx="56" cy="56" r="9"/>
+              <text class="lab-sm" x="24" y="116">model</text>
             </g>
-            <path class="st st-2 flow" d="M150 86 L196 86"/>
-            <path class="st st-2 flow f3" d="M150 86 L196 110"/>
-            <rect class="paper" x="200" y="44" width="96" height="96" rx="10"/>
-            <line class="faint" x1="200" y1="68" x2="296" y2="68"/>
-            <text class="lab-sm" x="212" y="61">ELEMENT -&gt; POSITION</text>
-            <g class="pop d2"><rect class="fl" x="210" y="78" width="62" height="9" rx="3"/><text class="lab-sm lab-hi" x="278" y="86">42</text></g>
-            <g class="pop d4"><rect class="fl" x="210" y="96" width="76" height="9" rx="3"/><text class="lab-sm lab-hi" x="278" y="104">18</text></g>
-            <g class="pop d6"><rect class="fl" x="210" y="114" width="50" height="9" rx="3"/><text class="lab-sm lab-hi" x="278" y="122">7</text></g>
+            <!-- selected quantities flow straight into priced positions -->
+            <path class="wire" d="M120 92 L196 92"/>
+            <path class="flow" d="M120 92 L191 92"/>
+            <path class="arrow" d="M190 88 L198 92 L190 96 Z"/>
+            <rect class="paper" x="200" y="44" width="100" height="96" rx="10"/>
+            <line class="faint" x1="200" y1="70" x2="300" y2="70"/>
+            <text class="lab-sm" x="210" y="63">ELEMENT</text><text class="lab-sm" x="268" y="63">QTY</text>
+            <g class="pop d2"><rect class="fl" x="210" y="80" width="60" height="9" rx="3"/><text class="lab-sm lab-hi" x="282" y="88">42</text></g>
+            <g class="pop d4"><rect class="fl" x="210" y="98" width="74" height="9" rx="3"/><text class="lab-sm lab-hi" x="282" y="106">18</text></g>
+            <g class="pop d6"><rect class="fl" x="210" y="116" width="48" height="9" rx="3"/><text class="lab-sm lab-hi" x="282" y="124">7</text></g>
           </svg>
         </div>
         <div class="mod-anim-cap"><h3 data-i18n="modideas.bim_title">BIM to BOQ</h3><p data-i18n="modideas.bim_desc">Select model elements, their quantities flow straight into priced lines.</p></div>
@@ -15178,10 +15192,10 @@
             <line class="faint" x1="36" y1="98" x2="68" y2="98"/>
             <g class="land"><rect class="fl-2" x="36" y="112" width="34" height="10" rx="3"/><text class="lab-sm lab-hi" x="40" y="120">Rev C</text></g>
             <text class="lab-sm" x="30" y="46">TRANSMITTAL</text>
-            <!-- routed out to three recipients -->
-            <path class="st st-2 flow" d="M92 78 L150 60"/>
-            <path class="st st-2 flow f3" d="M92 91 L150 100"/>
-            <path class="st st-2 flow d4" d="M92 104 L150 140"/>
+            <!-- routed out to each recipient, anchored on the document edge -->
+            <path class="wire" d="M90 86 L152 59"/><path class="flow" d="M90 86 L150 59"/>
+            <path class="wire" d="M90 91 L152 93"/><path class="flow f3" d="M90 91 L150 93"/>
+            <path class="wire" d="M90 96 L152 127"/><path class="flow d4" d="M90 96 L150 127"/>
             <g transform="translate(154 46)">
               <g class="pop d2"><rect class="paper" x="0" y="0" width="120" height="26" rx="7"/><circle class="st" cx="15" cy="13" r="7"/><line class="faint" x1="30" y1="13" x2="86" y2="13"/><circle class="fl" cx="106" cy="13" r="6"/><path class="st st-3" d="M102 13 l3 3 l5 -6"/></g>
               <g class="pop d4"><rect class="paper" x="0" y="34" width="120" height="26" rx="7"/><circle class="st" cx="15" cy="47" r="7"/><line class="faint" x1="30" y1="47" x2="86" y2="47"/><circle class="fl" cx="106" cy="47" r="6"/><path class="st st-3" d="M102 47 l3 3 l5 -6"/></g>
@@ -15233,12 +15247,19 @@
             <g class="pop d5"><rect class="st" x="34" y="108" width="10" height="10" rx="2"/><path class="st st-2" d="M36 113 l3 3 l5 -6"/><line class="faint" x1="52" y1="113" x2="120" y2="113"/></g>
             <g class="land"><rect class="fl" x="34" y="126" width="58" height="14" rx="4"/><text class="lab-sm lab-hi" x="40" y="137">cleared</text></g>
             <!-- to the site plan, observation pinned -->
-            <path class="st st-2 flow f3" d="M148 90 L176 90"/>
+            <path class="wire" d="M148 90 L176 90"/>
+            <path class="flow f3" d="M148 90 L171 90"/>
+            <path class="arrow f3" d="M170 86 L178 90 L170 94 Z"/>
             <rect class="paper" x="180" y="40" width="116" height="100" rx="9"/>
-            <path class="faint" d="M196 116 L226 78 L252 104 L268 88 L284 110"/>
-            <path class="faint" d="M188 124 L288 124"/>
-            <g class="land f3"><path class="st st-3 fl" d="M244 74 c-9 0 -14 7 -14 14 c0 10 14 22 14 22 c0 0 14 -12 14 -22 c0 -7 -5 -14 -14 -14 Z"/><circle class="paper" cx="244" cy="88" r="4.5"/></g>
             <text class="lab-sm" x="190" y="56">SITE</text>
+            <!-- plan view: plot boundary, building footprints, site access -->
+            <rect class="faint" x="192" y="64" width="92" height="64" rx="3"/>
+            <rect class="fl" x="202" y="76" width="44" height="30" rx="2"/>
+            <rect class="faint" x="250" y="98" width="26" height="22" rx="2"/>
+            <path class="faint" d="M284 109 L276 109"/>
+            <!-- observation pin dropped on the footprint, with a ping -->
+            <circle class="st st-2 ping f3" cx="222" cy="88" r="8"/>
+            <g class="land f3"><path class="st st-2" d="M222 74 c-8 0 -13 6 -13 13 c0 9 13 21 13 21 c0 0 13 -12 13 -21 c0 -7 -5 -13 -13 -13 Z"/><circle class="fl-2" cx="222" cy="86" r="3.2"/></g>
           </svg>
         </div>
         <div class="mod-anim-cap"><h3 data-i18n="modideas.safety_title">Safety</h3><p data-i18n="modideas.safety_desc">Clear the permit-to-work checklist, then pin an observation on the site plan.</p></div>
@@ -15257,9 +15278,10 @@
               <g class="pop d3"><circle class="st" cx="20" cy="78" r="6"/><path class="st" d="M10 92 a10 8 0 0 1 20 0"/><text class="lab-sm" x="40" y="84">crew 18</text></g>
               <g class="pop d5"><rect class="faint" x="12" y="100" width="62" height="9" rx="3"/><rect class="fl" x="12" y="100" width="40" height="9" rx="3"/><text class="lab-sm lab-hi" x="58" y="108">62%</text></g>
             </g>
-            <!-- sync to the central record -->
-            <path class="st st-2 flow f3" d="M124 90 L188 90"/>
-            <circle class="st st-2 ping" cx="156" cy="90" r="6"/>
+            <!-- everything captured syncs into the central record -->
+            <path class="wire" d="M122 90 L190 90"/>
+            <path class="flow f3" d="M122 90 L185 90"/>
+            <path class="arrow f3" d="M184 86 L192 90 L184 94 Z"/>
             <rect class="paper" x="192" y="46" width="104" height="88" rx="10"/>
             <text class="lab-sm" x="202" y="64">PROJECT LOG</text>
             <line class="faint" x1="202" y1="74" x2="286" y2="74"/>
@@ -15275,25 +15297,27 @@
       <div class="mod-anim-card">
         <div class="ma" role="img" aria-label="Point cloud to BIM - a scan sweep of points resolves into clean model surfaces">
           <svg viewBox="0 0 320 180" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-            <!-- dotted point cloud of a structure -->
-            <g class="faint" fill="color-mix(in oklab, var(--ink-3) 60%, transparent)" stroke="none">
-              <circle cx="70" cy="64" r="2"/><circle cx="92" cy="56" r="2"/><circle cx="114" cy="62" r="2"/><circle cx="138" cy="56" r="2"/>
-              <circle cx="66" cy="92" r="2"/><circle cx="90" cy="86" r="2"/><circle cx="116" cy="90" r="2"/><circle cx="140" cy="86" r="2"/>
-              <circle cx="64" cy="120" r="2"/><circle cx="88" cy="116" r="2"/><circle cx="116" cy="120" r="2"/><circle cx="142" cy="116" r="2"/>
-              <circle cx="78" cy="78" r="2"/><circle cx="128" cy="78" r="2"/><circle cx="78" cy="106" r="2"/><circle cx="128" cy="104" r="2"/>
+            <!-- raw scanned points (noisy) -->
+            <g fill="color-mix(in oklab, var(--ink-3) 60%, transparent)" stroke="none">
+              <circle cx="56" cy="58" r="2"/><circle cx="78" cy="50" r="2"/><circle cx="100" cy="56" r="2"/><circle cx="122" cy="50" r="2"/><circle cx="144" cy="58" r="2"/>
+              <circle cx="54" cy="86" r="2"/><circle cx="76" cy="80" r="2"/><circle cx="100" cy="84" r="2"/><circle cx="124" cy="80" r="2"/><circle cx="146" cy="86" r="2"/>
+              <circle cx="56" cy="114" r="2"/><circle cx="78" cy="110" r="2"/><circle cx="100" cy="114" r="2"/><circle cx="122" cy="110" r="2"/><circle cx="144" cy="114" r="2"/>
+              <circle cx="66" cy="72" r="1.6"/><circle cx="134" cy="72" r="1.6"/><circle cx="66" cy="100" r="1.6"/><circle cx="134" cy="100" r="1.6"/><circle cx="100" cy="100" r="1.6"/>
             </g>
-            <!-- scanning beam sweeping across the cloud -->
-            <g class="scan" style="--sx:96px">
-              <line class="st st-2" x1="58" y1="44" x2="58" y2="136" opacity="0.85"/>
-              <circle class="st st-2 fl-2" cx="58" cy="44" r="4"/>
+            <!-- the scan beam sweeps across the cloud -->
+            <g class="scan" style="--sx:104px">
+              <line class="st st-2" x1="50" y1="42" x2="50" y2="132" opacity="0.85"/>
+              <circle class="fl-2" cx="50" cy="42" r="3.5"/>
             </g>
-            <!-- resolved model surfaces -->
-            <path class="st st-3 flow f3" d="M152 92 L182 92"/>
-            <g transform="translate(196 44)">
-              <path class="st draw d3" style="--len:260" d="M8 28 L48 8 L96 28 L96 84 L48 104 L8 84 Z"/>
-              <path class="st st-3 draw d5" style="--len:160" d="M48 8 L48 104 M8 28 L96 28"/>
-              <g class="land f3"><path class="fl" d="M8 28 L48 8 L96 28 L48 48 Z"/></g>
-              <text class="lab-sm lab-hi" x="30" y="100">BIM</text>
+            <!-- points resolve into a clean model -->
+            <path class="wire" d="M158 88 L190 88"/>
+            <path class="flow f3" d="M158 88 L185 88"/>
+            <path class="arrow f3" d="M184 84 L192 88 L184 92 Z"/>
+            <g transform="translate(198 40)">
+              <path class="fl land f3" d="M8 30 L52 8 L96 30 L52 52 Z"/>
+              <path class="st draw d3" style="--len:300" d="M8 30 L52 8 L96 30 L96 84 L52 106 L8 84 Z"/>
+              <path class="st st-3 draw d5" style="--len:150" d="M52 8 L52 52 M8 30 L52 52 L96 30"/>
+              <text class="lab-sm lab-hi" x="36" y="102">BIM</text>
             </g>
           </svg>
         </div>
