@@ -83,6 +83,7 @@ import {
   type Urgency,
   type Awaiting,
   type BackCharge,
+  type BackChargeApportionment,
   type ClarifiedRequest,
   type ExposureBand,
   type WatchClass,
