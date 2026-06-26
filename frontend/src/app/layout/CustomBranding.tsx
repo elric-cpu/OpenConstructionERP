@@ -19,9 +19,10 @@
 //
 // The editor is a lightweight inline form (not WideModal) so the
 // sidebar can keep working on narrow viewports. The logo upload
-// reads the file as a base64 data URL so we do not need a backend
-// endpoint — branding lives entirely in localStorage and survives
-// reload without server state.
+// reads the file as a base64 data URL. Branding paints instantly from
+// localStorage, and an admin's changes are also persisted to the server
+// so the brand follows the workspace to other browsers and to invited
+// users (issue #272).
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import clsx from 'clsx';
@@ -30,6 +31,7 @@ import { useTranslation } from 'react-i18next';
 
 import { Logo } from '@/shared/ui';
 import { useToastStore } from '@/stores/useToastStore';
+import { useAuthStore } from '@/stores/useAuthStore';
 import {
   useBrandingStore,
   BRANDING_MAX_LOGO_BYTES,
@@ -73,6 +75,9 @@ async function fileToDataUrl(file: File): Promise<string> {
 export function CustomBranding({ iconified }: CustomBrandingProps) {
   const { t } = useTranslation();
   const { mode, logoDataUrl, companyName } = useBrandingStore();
+  // Only an admin can change the workspace-wide brand on the server; everyone
+  // else still gets the local editor (their change just stays on their device).
+  const isAdmin = useAuthStore((s) => s.userRole) === 'admin';
   const [editing, setEditing] = useState(false);
 
   // Iconified sidebar — render only the brand glyph (user logo if set,
@@ -218,7 +223,9 @@ export function CustomBranding({ iconified }: CustomBrandingProps) {
         </button>
       </div>
 
-      {editing && <BrandingEditorModal onClose={() => setEditing(false)} />}
+      {editing && (
+        <BrandingEditorModal onClose={() => setEditing(false)} canPersist={isAdmin} />
+      )}
     </>
   );
 }
@@ -230,11 +237,32 @@ export function CustomBranding({ iconified }: CustomBrandingProps) {
  * pre-auth login screen so "customise logo" behaves identically in both
  * places (single source of truth — no duplicated upload/validation).
  */
-export function BrandingEditorModal({ onClose }: { onClose: () => void }) {
+export function BrandingEditorModal({
+  onClose,
+  canPersist = false,
+}: {
+  onClose: () => void;
+  /**
+   * When true (admin, in-app), changes are also pushed to the server so they
+   * persist workspace-wide. When false (non-admin, or the pre-auth login
+   * screen) the change stays in this browser only, exactly as before.
+   */
+  canPersist?: boolean;
+}) {
   const { t } = useTranslation();
-  const { mode, logoDataUrl, companyName, setLogo, setCompanyName, reset } =
+  const { mode, logoDataUrl, companyName, setLogo, setCompanyName, reset, persistToServer } =
     useBrandingStore();
   const { addToast } = useToastStore();
+
+  // Best-effort workspace-wide save after a local change. Returns the extra
+  // toast line to show when it actually persisted server-side.
+  const syncWorkspace = async (): Promise<string | undefined> => {
+    if (!canPersist) return undefined;
+    const ok = await persistToServer();
+    return ok
+      ? t('branding.saved_workspace', { defaultValue: 'Applied across this workspace.' })
+      : undefined;
+  };
 
   return (
     <BrandingEditor
@@ -246,9 +274,11 @@ export function BrandingEditorModal({ onClose }: { onClose: () => void }) {
         try {
           const url = await fileToDataUrl(file);
           setLogo(url);
+          const message = await syncWorkspace();
           addToast({
             type: 'success',
             title: t('branding.logo_saved', { defaultValue: 'Logo updated' }),
+            message,
           });
           onClose();
         } catch (e) {
@@ -259,19 +289,23 @@ export function BrandingEditorModal({ onClose }: { onClose: () => void }) {
           });
         }
       }}
-      onApplyName={(name) => {
+      onApplyName={async (name) => {
         setCompanyName(name);
+        const message = await syncWorkspace();
         addToast({
           type: 'success',
           title: t('branding.name_saved', { defaultValue: 'Company name updated' }),
+          message,
         });
         onClose();
       }}
-      onReset={() => {
+      onReset={async () => {
         reset();
+        const message = await syncWorkspace();
         addToast({
           type: 'info',
           title: t('branding.reset', { defaultValue: 'Restored default branding' }),
+          message,
         });
         onClose();
       }}

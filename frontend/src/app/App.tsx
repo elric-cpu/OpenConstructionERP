@@ -26,6 +26,7 @@ import { useGlobalSearchStore } from '@/stores/useGlobalSearchStore';
 import { FloatingQueuePanel } from './layout/FloatingQueuePanel';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useThemeStore } from '@/stores/useThemeStore';
+import { useBrandingStore } from '@/stores/useBrandingStore';
 import { ddcVerifyIntegrity, ddcInjectMeta, DDC_ORIGIN } from '@/shared/lib/ddc-integrity';
 import { NavigationProgress } from '@/shared/lib/navigationProgress';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
@@ -751,6 +752,15 @@ export default function App() {
   useEffect(() => {
     if (!isAuthenticated) return;
     void syncCustomUnitsFromServer();
+  }, [isAuthenticated]);
+
+  // Pull the workspace white-label brand from the server so it follows the user
+  // to any browser, not just the one an admin set it on (issue #272). Public
+  // endpoint, best-effort: the sidebar paints instantly from localStorage and
+  // this reconciles. Re-run after auth changes so a freshly signed-in user
+  // immediately sees their workspace brand.
+  useEffect(() => {
+    void useBrandingStore.getState().hydrateFromServer();
   }, [isAuthenticated]);
 
   // Onboarding-tour migration (one-shot). The app used to mount two

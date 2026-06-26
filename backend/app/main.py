@@ -1331,6 +1331,13 @@ def create_app() -> FastAPI:
 
     app.include_router(desktop_auth_router, prefix="/api/v1/auth")
 
+    # Workspace white-label branding. GET is public (the login page reads it
+    # before sign-in so invited users see the workspace brand); PUT/DELETE are
+    # admin-only. Persisted to a JSON file in the data dir, so no migration.
+    from app.core.branding_router import router as branding_router
+
+    app.include_router(branding_router, prefix="/api/v1")
+
     # Module management API (list / enable / disable)
     from app.core.module_router import router as module_mgmt_router
 

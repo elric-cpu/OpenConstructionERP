@@ -9,11 +9,16 @@
  * AGPL-3.0 with attribution requirements) but no longer the main
  * brand on the page.
  *
- * Persisted to localStorage so the customisation survives reload
- * without a backend round-trip. The logo is stored as a base64 data
- * URL (size-capped at 2 MB to keep localStorage healthy).
+ * Persistence has two layers:
+ *   - localStorage, for an instant first paint and offline / desktop use;
+ *   - the server (GET/PUT/DELETE /api/v1/branding/), which is the source of
+ *     truth so the brand follows the workspace to other browsers and to
+ *     invited users who have not signed in yet (issue #272).
+ * The logo is stored as a base64 data URL (size-capped at 2 MB to keep
+ * localStorage healthy).
  */
 import { create } from 'zustand';
+import { apiGet, apiPut, apiDelete } from '@/shared/lib/api';
 
 const STORAGE_KEY = 'oe_custom_branding_v1';
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB cap on base64 payload
@@ -38,6 +43,40 @@ export interface BrandingState {
   setCompanyName: (name: string) => void;
   /** Clear all customisation and return to the OpenConstructionERP brand. */
   reset: () => void;
+  /**
+   * Pull the workspace branding from the server and apply it (the server is the
+   * source of truth, so it overrides the local cache). Best-effort: on any
+   * failure the local cache is kept, so the desktop build and offline use keep
+   * working. The endpoint is public, so this is safe to call before sign-in -
+   * the login page does, so invited users see the workspace brand.
+   */
+  hydrateFromServer: () => Promise<void>;
+  /**
+   * Persist the current branding to the server so it follows the workspace to
+   * every browser and to invited users. Admin only: a non-admin (or a pre-auth
+   * caller) gets 403/401 which is swallowed, leaving the local change in place.
+   * Returns true when the server accepted the change.
+   */
+  persistToServer: () => Promise<boolean>;
+}
+
+/** Server branding payload (snake_case mirrors the backend schema). */
+interface ServerBranding {
+  mode?: string;
+  logo_data_url?: string | null;
+  company_name?: string;
+}
+
+/** Coerce a server payload into a safe {@link Persisted} value. */
+function fromServer(r: ServerBranding): Persisted {
+  return {
+    mode: r.mode === 'logo' || r.mode === 'text' ? r.mode : 'default',
+    logoDataUrl:
+      typeof r.logo_data_url === 'string' && r.logo_data_url.startsWith('data:image/')
+        ? r.logo_data_url
+        : null,
+    companyName: typeof r.company_name === 'string' ? r.company_name.slice(0, 60) : '',
+  };
 }
 
 interface Persisted {
@@ -140,6 +179,43 @@ export const useBrandingStore = create<BrandingState>((set, get) => {
       const next: Persisted = { mode: 'default', logoDataUrl: null, companyName: '' };
       save(next);
       set(next);
+    },
+    hydrateFromServer: async () => {
+      try {
+        const r = await apiGet<ServerBranding>('/v1/branding/');
+        const next = fromServer(r);
+        const current = get();
+        if (
+          next.mode === current.mode &&
+          next.logoDataUrl === current.logoDataUrl &&
+          next.companyName === current.companyName
+        ) {
+          return;
+        }
+        save(next);
+        set(next);
+      } catch {
+        /* offline / desktop without a reachable server - keep the local cache */
+      }
+    },
+    persistToServer: async () => {
+      const s = get();
+      try {
+        if (s.mode === 'default') {
+          await apiDelete('/v1/branding/');
+        } else {
+          await apiPut('/v1/branding/', {
+            mode: s.mode,
+            logo_data_url: s.logoDataUrl,
+            company_name: s.companyName,
+          });
+        }
+        return true;
+      } catch {
+        // Non-admin (403), pre-auth (401) or offline: the local change still
+        // applies, we just could not make it workspace-wide.
+        return false;
+      }
     },
   };
 });

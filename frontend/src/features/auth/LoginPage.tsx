@@ -77,6 +77,13 @@ export function LoginPage() {
   const { mode: brandMode, logoDataUrl: brandLogo, companyName: brandName } =
     useBrandingStore();
   const brandCustomised = brandMode === 'logo' || brandMode === 'text';
+  // Pull the workspace brand from the server so an invited user sees it on this
+  // very first (pre-auth) screen, not just the browser that set it (issue #272).
+  // Public endpoint, best-effort: the card paints instantly from localStorage
+  // and this reconciles to whatever the workspace admin saved.
+  useEffect(() => {
+    void useBrandingStore.getState().hydrateFromServer();
+  }, []);
   // `?next=/path` lets guarded routes send the user back to where they wanted
   // to go after login. Falls back to `/` for direct visits.
   const nextPath = (() => {
