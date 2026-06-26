@@ -166,3 +166,66 @@ async def test_feedback_requires_run_permission(session):
             json={"surface": "ai_estimator", "correct": True},
         )
     assert res.status_code == 403, res.text
+
+
+# --- (c) Read side: the summary rolls up the caller's own verdicts -----------
+
+
+def _add_feedback(session, *, user_id: uuid.UUID, surface: str, correct: bool) -> None:
+    """Insert one AIFeedback row directly (the write path is covered above)."""
+    from app.modules.ai_agents.models import AIFeedback
+
+    session.add(AIFeedback(user_id=user_id, surface=surface, correct=correct, project_id=None, ref=None, note=None))
+
+
+@pytest.mark.asyncio
+async def test_feedback_summary_rolls_up_callers_verdicts(session):
+    """GET /feedback/summary aggregates the caller's verdicts overall and per surface."""
+    user_id = uuid.uuid4()
+    _add_feedback(session, user_id=user_id, surface="ai_estimator", correct=True)
+    _add_feedback(session, user_id=user_id, surface="ai_estimator", correct=True)
+    _add_feedback(session, user_id=user_id, surface="ai_estimator", correct=False)
+    _add_feedback(session, user_id=user_id, surface="match_elements", correct=False)
+    await session.flush()
+
+    app = _build_app(session, user_id=user_id, role="editor", permissions=["ai_agents.read"])
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        res = await ac.get("/api/v1/ai-agents/feedback/summary")
+    assert res.status_code == 200, res.text
+
+    body = res.json()
+    assert body["total"] == 4
+    assert body["correct"] == 2
+    assert body["incorrect"] == 2
+    assert body["correct_rate"] == 0.5
+    by_surface = {row["surface"]: row for row in body["by_surface"]}
+    assert by_surface["ai_estimator"]["total"] == 3
+    assert by_surface["ai_estimator"]["correct"] == 2
+    assert by_surface["match_elements"]["correct_rate"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_feedback_summary_excludes_other_users(session):
+    """The summary never counts another user's verdicts (the caller-scoped read).
+
+    The read is fenced to the caller's own ``user_id``, which is the security
+    boundary, so a second user's verdicts on the same surface stay invisible.
+    """
+    user_id = uuid.uuid4()
+    other_id = uuid.uuid4()
+    _add_feedback(session, user_id=user_id, surface="advisor", correct=True)
+    _add_feedback(session, user_id=other_id, surface="advisor", correct=False)
+    _add_feedback(session, user_id=other_id, surface="advisor", correct=False)
+    await session.flush()
+
+    app = _build_app(session, user_id=user_id, role="editor", permissions=["ai_agents.read"])
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        res = await ac.get("/api/v1/ai-agents/feedback/summary")
+    assert res.status_code == 200, res.text
+
+    body = res.json()
+    assert body["total"] == 1
+    assert body["correct"] == 1
+    assert body["correct_rate"] == 1.0

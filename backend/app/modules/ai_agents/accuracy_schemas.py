@@ -37,6 +37,30 @@ class AIFeedbackOut(BaseModel):
     correct: bool
 
 
+class SurfaceFeedbackOut(BaseModel):
+    """Verdict rollup for one AI surface (correct_rate is null when no verdicts)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    surface: str
+    total: int
+    correct: int
+    incorrect: int
+    correct_rate: float | None
+
+
+class AIFeedbackSummaryOut(BaseModel):
+    """The caller's AI feedback verdicts rolled up overall and per surface."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    total: int
+    correct: int
+    incorrect: int
+    correct_rate: float | None
+    by_surface: list[SurfaceFeedbackOut]
+
+
 class RecordOutcomeIn(BaseModel):
     """Request body recording whether an agent run turned out correct."""
 

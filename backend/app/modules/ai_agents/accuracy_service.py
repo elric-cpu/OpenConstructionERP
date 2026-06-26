@@ -29,6 +29,11 @@ from app.modules.ai_agents.accuracy import (
     clamp01,
     score_by_agent,
 )
+from app.modules.ai_agents.feedback_summary import (
+    FeedbackItem,
+    FeedbackSummary,
+    summarize_feedback,
+)
 from app.modules.ai_agents.models import AgentRun, AIFeedback
 
 #: Keys written into the run's trust JSON when an outcome is recorded.
@@ -183,3 +188,31 @@ async def build_scoreboard(
 
     scored = score_by_agent(predictions)
     return [scored[name] for name in sorted(scored)]
+
+
+async def build_feedback_summary(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    project_id: uuid.UUID | None = None,
+    surface: str | None = None,
+) -> FeedbackSummary:
+    """Roll up the caller's AI feedback verdicts overall and per surface.
+
+    Turns the write-only ``oe_ai_feedback`` sink into a readable signal: how the
+    AI Estimator, match suggestions and advisor answers are actually landing for
+    this user. Scoped to the caller's own verdicts (mirrors :func:`build_scoreboard`
+    privacy, so it never exposes another user's feedback), optionally narrowed to
+    one project or one surface. The ``user_id`` filter is the security boundary,
+    so no project-access check is needed: a caller only ever sees rows they wrote.
+    """
+    stmt = select(AIFeedback.surface, AIFeedback.correct).where(AIFeedback.user_id == user_id)
+    if project_id is not None:
+        stmt = stmt.where(AIFeedback.project_id == project_id)
+    if surface:
+        stmt = stmt.where(AIFeedback.surface == surface.strip()[:40])
+
+    items = [
+        FeedbackItem(surface=row.surface, correct=bool(row.correct)) for row in (await session.execute(stmt)).all()
+    ]
+    return summarize_feedback(items)

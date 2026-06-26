@@ -29,11 +29,13 @@ from app.modules.ai_agents.accuracy_schemas import (
     AccuracyScoreOut,
     AIFeedbackIn,
     AIFeedbackOut,
+    AIFeedbackSummaryOut,
     OutcomeRecordedOut,
     RecordOutcomeIn,
     SandboxSeedOut,
 )
 from app.modules.ai_agents.accuracy_service import (
+    build_feedback_summary,
     build_scoreboard,
     record_ai_feedback,
     record_run_outcome,
@@ -681,6 +683,34 @@ async def get_accuracy_scoreboard(
         agent_name=agent_name,
     )
     return AccuracyScoreboardOut(scores=[AccuracyScoreOut.model_validate(s) for s in scores])
+
+
+@router.get(
+    "/feedback/summary",
+    response_model=AIFeedbackSummaryOut,
+    dependencies=[Depends(RequirePermission("ai_agents.read"))],
+)
+async def get_feedback_summary(
+    user_id: CurrentUserId,
+    session: SessionDep,
+    project_id: uuid.UUID | None = Query(default=None),
+    surface: str | None = Query(default=None),
+) -> AIFeedbackSummaryOut:
+    """Roll up the caller's AI feedback verdicts overall and per surface.
+
+    The read side of the generic trust loop: every thumbs up / down recorded on
+    a non-run AI surface (the AI Estimator result, a match suggestion, an advisor
+    answer) rolled into a correct rate, so a user can see how the AI is landing
+    for them. Scoped to the caller's own verdicts; optionally narrowed to one
+    project or one surface.
+    """
+    summary = await build_feedback_summary(
+        session,
+        user_id=uuid.UUID(user_id),
+        project_id=project_id,
+        surface=surface,
+    )
+    return AIFeedbackSummaryOut.model_validate(summary)
 
 
 # ── Sample sandbox (hosted demo only) ─────────────────────────────────────
