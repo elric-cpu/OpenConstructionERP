@@ -146,11 +146,29 @@ class ScheduleRealtimeService:
             return activity, check
 
         # APPLY: persist the whitelisted fields AND the bumped revision in one
-        # update so the new revision is exactly ``base + 1`` (the lost-update
-        # guard). ``update_fields`` flushes; the middleware commits.
+        # atomic compare-and-swap so the new revision is exactly ``base + 1``
+        # (the lost-update guard). The ``WHERE revision = base`` clause means a
+        # concurrent writer that already bumped the row matches zero rows, so we
+        # never silently clobber it. ``update_fields_if_revision`` flushes; the
+        # middleware commits.
         write: dict[str, object] = {name: _coerce_value(name, value) for name, value in fields.items()}
         write["revision"] = check.next_revision
-        await self.base.activity_repo.update_fields(activity_id, **write)
+        swapped = await self.base.activity_repo.update_fields_if_revision(
+            activity_id, expected_revision=activity.revision, **write
+        )
+        if not swapped:
+            # A concurrent writer bumped the revision between our read and our
+            # conditional write. Re-read and re-evaluate against the new server
+            # revision: the client base is now behind, so this yields a STALE
+            # verdict (no write) and the router returns the current state as a
+            # 409 - no lost update.
+            refreshed_stale = await self.base.get_activity(activity_id)
+            stale = realtime_math.check_revision(
+                client_base_revision=client_base_revision,
+                server_revision=refreshed_stale.revision,
+                has_changes=has_changes,
+            )
+            return refreshed_stale, stale
 
         await _safe_publish(
             "schedule.activity.updated",

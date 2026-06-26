@@ -505,9 +505,14 @@ class BudgetResponse(BaseModel):
     def model_post_init(self, __context: Any) -> None:
         """Compute variance, consumed_pct, and warning_level after deserialization."""
         try:
-            revised = float(self.revised_budget)
-            actual = float(self.actual)
-            self.variance = str(revised - actual)
+            # variance is money: subtract as Decimal so the result is exact
+            # rather than carrying binary-float drift in the tail. consumed_pct
+            # is a ratio, so float is fine there.
+            revised_money = Decimal(str(self.revised_budget))
+            actual_money = Decimal(str(self.actual))
+            self.variance = format(revised_money - actual_money, "f")
+            revised = float(revised_money)
+            actual = float(actual_money)
             if revised > 0:
                 self.consumed_pct = round(actual / revised * 100, 1)
             else:

@@ -145,6 +145,14 @@ def scan_watched_folder(root_path: str) -> list[dict]:
         if not root.is_dir():
             return []
         root = root.resolve()
+        # Re-assert containment at scan time, not only at create time: a root
+        # that was inside the base dir when the source was registered could
+        # later resolve outside it (a directory swapped for a symlink, or the
+        # base dir narrowed). Fail-closed - sync nothing rather than walk an
+        # escaped path.
+        if not is_within_base(_connectors_base_dir(), root):
+            logger.warning("connectors: scan root %s is outside the base dir; skipping", root)
+            return []
     except OSError:
         return []
 

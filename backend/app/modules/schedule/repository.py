@@ -125,6 +125,25 @@ class ActivityRepository:
         # Expire cached ORM instances so the next get_by_id re-reads from DB
         self.session.expire_all()
 
+    async def update_fields_if_revision(self, activity_id: uuid.UUID, expected_revision: int, **fields: object) -> bool:
+        """Compare-and-swap update for the optimistic-concurrency guard.
+
+        Sets ``fields`` only if the row's ``revision`` still equals
+        ``expected_revision``, in a single atomic ``UPDATE ... WHERE id AND
+        revision`` so two concurrent writers on the same base cannot both
+        succeed. Returns ``True`` when a row was updated, ``False`` when it was
+        changed concurrently (rowcount 0) so the caller can surface a 409
+        instead of silently overwriting the other write (lost update).
+        """
+        stmt = (
+            update(Activity).where(Activity.id == activity_id, Activity.revision == expected_revision).values(**fields)
+        )
+        result = await self.session.execute(stmt)
+        await self.session.flush()
+        # Expire cached ORM instances so the next get_by_id re-reads from DB
+        self.session.expire_all()
+        return bool(result.rowcount and result.rowcount > 0)
+
     async def bulk_update_fields(self, updates: list[dict[str, object]]) -> None:
         """Update many activities in a single round trip.
 
