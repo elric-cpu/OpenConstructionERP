@@ -36,7 +36,7 @@ from app.modules.field_diary import models as fd_models  # noqa: E402,F401
 from app.modules.field_diary.router import router as fd_router  # noqa: E402
 from app.modules.field_diary.service import FieldDiaryService, clear_sms_log  # noqa: E402
 from app.modules.projects.models import Project  # noqa: E402
-from app.modules.schedule.models import Activity, Schedule  # noqa: E402
+from app.modules.schedule.models import Activity, Schedule, ScheduleProgressEntry  # noqa: E402
 from app.modules.users.models import User  # noqa: E402
 from tests._pg import isolated_engine  # noqa: E402
 
@@ -230,6 +230,57 @@ async def test_field_progress_finish_completes_activity(app_and_client) -> None:
     assert act.status == "completed"
     # The captured actual_finish is recorded in metadata (no Activity column).
     assert act.metadata_["field_actuals"]["actual_finish"] == "2026-06-11"
+
+
+async def _progress_entries(SessionFactory, activity_id: uuid.UUID) -> list[ScheduleProgressEntry]:  # noqa: N803
+    async with SessionFactory() as s:
+        rows = (
+            (await s.execute(select(ScheduleProgressEntry).where(ScheduleProgressEntry.task_id == activity_id)))
+            .scalars()
+            .all()
+        )
+        return list(rows)
+
+
+@pytest.mark.asyncio
+async def test_field_progress_records_actuals_on_progress_entry(app_and_client) -> None:
+    """A field capture appends a ScheduleProgressEntry carrying the actual dates.
+
+    This is the table EVM / 4D dashboards and the S-curve actual series read, so
+    without the entry a phone-captured actual_start / actual_finish never reached
+    earned-value reporting (the activity row has no actual-date columns).
+    """
+    _app, client, SessionFactory = app_and_client
+    project_id = await _seed_project(SessionFactory)
+    activity_id = await _seed_activity(SessionFactory, project_id)
+    headers = await _session_for(client, SessionFactory, project_id, "+491700000105")
+
+    op_id = str(uuid.uuid4())
+    payload = {
+        "client_op_id": op_id,
+        "captured_at": "2026-06-07T08:00:00",
+        "activity_id": str(activity_id),
+        "percent_complete": 60,
+        "actual_start": "2026-06-03",
+        "lat": 52.5,
+        "lon": 13.4,
+    }
+    r = await client.post("/v1/field-diary/capture/schedule-progress/", json=payload, headers=headers)
+    assert r.status_code == 201, r.text
+
+    entries = await _progress_entries(SessionFactory, activity_id)
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.actual_start_date == "2026-06-03"
+    assert entry.actual_finish_date is None
+    assert entry.device == "field"
+    assert entry.recorded_by_user_id is not None
+    assert entry.geolocation == {"lat": 52.5, "lon": 13.4}
+
+    # A replay (same client_op_id) does not create a second entry.
+    r2 = await client.post("/v1/field-diary/capture/schedule-progress/", json=payload, headers=headers)
+    assert r2.status_code == 201, r2.text
+    assert len(await _progress_entries(SessionFactory, activity_id)) == 1
 
 
 @pytest.mark.asyncio

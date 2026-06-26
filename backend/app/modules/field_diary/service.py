@@ -944,8 +944,10 @@ class FieldSyncService:
         # Schedule imports are function-local: the schedule service imports
         # app.database at module load, so importing it here (matching the
         # punch/inspection capture paths above) keeps field_diary import-safe.
+        from decimal import Decimal
+
         from app.modules.schedule import realtime_math
-        from app.modules.schedule.models import Activity, Schedule
+        from app.modules.schedule.models import Activity, Schedule, ScheduleProgressEntry
         from app.modules.schedule.progress_schemas import TypedProgressRequest
         from app.modules.schedule.progress_service import ScheduleProgressService
         from app.modules.schedule.service import ScheduleService
@@ -1005,7 +1007,7 @@ class FieldSyncService:
         #    honoured. installed_units stays a Decimal quantity.
         data_date = data.captured_at[:10] if data.captured_at else None
         progress_svc = ScheduleProgressService(self.session)
-        await progress_svc.set_typed_progress(
+        outcome = await progress_svc.set_typed_progress(
             data.activity_id,
             TypedProgressRequest(
                 percent=norm.percent_complete,
@@ -1015,15 +1017,36 @@ class FieldSyncService:
             ),
         )
 
-        # 5. Persist the captured actual_start / actual_finish. The Activity
-        #    table has no dedicated actual-date columns (those live on the
-        #    separate oe_schedule_progress record table), and adding a column
-        #    would fork the single migration head, so the field-captured actuals
-        #    are recorded under a ``field_actuals`` block in the activity's
-        #    metadata. The percent/status side of an actual_finish was already
-        #    applied by set_typed_progress (finish implies 100% complete). We
-        #    merge so a prior field_actuals block and all sibling metadata keys
-        #    survive (json_overwrite-on-PATCH guard).
+        # 5. Append a progress-history entry on the dedicated progress table so
+        #    the field reading reaches every consumer that reads that table -
+        #    the EVM / 4D dashboards and the S-curve actual series - not just the
+        #    activity row. This row is where the captured actual_start /
+        #    actual_finish dates live: the Activity table has no actual-date
+        #    columns, so without this entry a phone-captured actual date never
+        #    reached EVM. progress_percent mirrors the engine-resolved value from
+        #    step 4 (which honours the activity's percent-complete type), NOT the
+        #    raw input, so the entry and the activity never disagree. The
+        #    roll-forward onto the activity was already applied by
+        #    set_typed_progress, so here we only append the entry.
+        geolocation = {"lat": data.lat, "lon": data.lon} if data.lat is not None and data.lon is not None else None
+        self.session.add(
+            ScheduleProgressEntry(
+                task_id=data.activity_id,
+                progress_percent=Decimal(str(outcome.result.percent_complete)),
+                geolocation=geolocation,
+                device="field",
+                recorded_by_user_id=field_session.user_id,
+                actual_start_date=data.actual_start,
+                actual_finish_date=data.actual_finish,
+            )
+        )
+        await self.session.flush()
+
+        # 6. Also mirror the captured actual_start / actual_finish onto the
+        #    activity metadata as a denormalised convenience read (the canonical
+        #    home is the progress entry recorded in step 5). We merge so a prior
+        #    field_actuals block and all sibling metadata keys survive
+        #    (json_overwrite-on-PATCH guard).
         actuals: dict[str, str] = {}
         if data.actual_start is not None:
             actuals["actual_start"] = data.actual_start
@@ -1038,7 +1061,7 @@ class FieldSyncService:
             merged = merge_metadata(existing_meta, {"field_actuals": existing_actuals})
             await sched_svc.activity_repo.update_fields(data.activity_id, metadata_=merged)
 
-        # 6. Record the applied op in the shared ledger (tolerates a racing drain
+        # 7. Record the applied op in the shared ledger (tolerates a racing drain
         #    via the same IntegrityError swallow as the punch/inspection paths).
         await self.field_svc._record_op(
             data.client_op_id,
