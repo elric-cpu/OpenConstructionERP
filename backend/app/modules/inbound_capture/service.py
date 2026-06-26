@@ -244,6 +244,51 @@ async def _create_with_retry(
 # --- Read projection ---------------------------------------------------------
 
 
+def _is_captured(row: Correspondence) -> bool:
+    """Whether a correspondence row was captured through this gateway.
+
+    The discriminator is the inbound envelope under ``metadata_[META_KEY]`` that
+    :func:`capture_message` always writes - present only on rows this module
+    created, so a hand-entered incoming letter is never mistaken for a captured
+    message.
+    """
+    return bool(_envelope_of(row))
+
+
+async def list_captured(
+    session: AsyncSession,
+    project_id: uuid.UUID,
+    *,
+    offset: int = 0,
+    limit: int = 50,
+) -> tuple[list[Correspondence], int]:
+    """List a project's captured inbound messages (newest first) + the total.
+
+    Returns only rows this gateway created (those carrying the inbound envelope),
+    not every incoming correspondence, so the admin view shows exactly what came
+    through the capture endpoints. SQL JSON containment is not portable across the
+    dialects the platform runs on, so - as the idempotency lookup does - the
+    project's incoming rows are fetched and the envelope filter is applied in
+    Python; the total reflects the captured count, and the page is sliced after
+    the filter so ``limit`` counts captured rows. ``limit`` is clamped to a sane
+    ceiling so a caller cannot ask for an unbounded scan.
+    """
+    capped = max(1, min(int(limit), 200))
+    start = max(0, int(offset))
+    stmt = (
+        select(Correspondence)
+        .where(
+            Correspondence.project_id == project_id,
+            Correspondence.direction == "incoming",
+        )
+        .order_by(Correspondence.created_at.desc())
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+    captured = [r for r in rows if _is_captured(r)]
+    total = len(captured)
+    return captured[start : start + capped], total
+
+
 def to_message_out_fields(row: Correspondence) -> dict[str, object]:
     """Project a captured correspondence row back to the inbound read shape.
 

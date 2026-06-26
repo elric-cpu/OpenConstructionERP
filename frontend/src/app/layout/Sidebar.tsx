@@ -61,6 +61,7 @@ import {
   Check,
   Github,
   HardDrive,
+  Mailbox,
   Link2,
   // 18-Modules Wave icons
   Wrench,
@@ -362,6 +363,13 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.value', to: '/value', icon: TrendingUp, advancedOnly: true },
       { labelKey: 'nav.phone_log', to: '/phone-log', icon: Phone, advancedOnly: true },
       { labelKey: 'nav.connectors', to: '/connectors', icon: HardDrive, advancedOnly: true },
+      {
+        labelKey: 'nav.inbound_capture',
+        to: '/inbound',
+        icon: Mailbox,
+        advancedOnly: true,
+        adminOnly: true,
+      },
       { labelKey: 'nav.find_records', to: '/find', icon: FileSearch, advancedOnly: true },
     ],
   },

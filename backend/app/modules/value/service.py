@@ -40,6 +40,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Mapping
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -183,22 +184,31 @@ def _recovery_inputs(performance: RecoveryPerformance) -> list[RecoveryInput]:
     ]
 
 
-def _hours_input(events: list[ActivityEvent]) -> HoursSavedInput:
+def _hours_input(
+    events: list[ActivityEvent],
+    factors: Mapping[tuple[str, str], Decimal] = DEFAULT_FACTORS,
+) -> HoursSavedInput:
     """Total the hours saved across activity events + count saving-bearing rows.
 
-    The figure is the engine's :func:`total_hours` over the default minute
-    factors. The sample backing its confidence is the number of rows that
-    actually map to a non-zero saving (an action the platform genuinely performs
-    in place of a person), so an honest denominator drives the confidence rather
-    than the raw row count.
+    The figure is the engine's :func:`total_hours` over the effective minute
+    factors (the tenant's admin overrides layered on the seed defaults). The
+    sample backing its confidence is the number of rows that actually map to a
+    non-zero saving (an action the platform genuinely performs in place of a
+    person), so an honest denominator drives the confidence rather than the raw
+    row count.
     """
     saving_rows = sum(
-        1 for ev in events if estimate_saved_minutes(ev.action, ev.module, ev.units, DEFAULT_FACTORS) > Decimal("0")
+        1 for ev in events if estimate_saved_minutes(ev.action, ev.module, ev.units, factors) > Decimal("0")
     )
-    return HoursSavedInput(hours=total_hours(events, DEFAULT_FACTORS), sample=saving_rows)
+    return HoursSavedInput(hours=total_hours(events, factors), sample=saving_rows)
 
 
-async def build_value_summary(session: AsyncSession, project_id: uuid.UUID) -> ValueSummary:
+async def build_value_summary(
+    session: AsyncSession,
+    project_id: uuid.UUID,
+    *,
+    factors: Mapping[tuple[str, str], Decimal] | None = None,
+) -> ValueSummary:
     """Compose one project's value-realized summary from already-computed inputs.
 
     Gathers approved-change impacts, the recovery ledger per currency, the admin
@@ -207,7 +217,13 @@ async def build_value_summary(session: AsyncSession, project_id: uuid.UUID) -> V
     ``None`` (a single project's percentile vs its own portfolio is not cheaply
     available without recomputing BOQ rollups), so the dispute-risk proxy here
     rests on the recovery rate alone - the engine handles that honestly.
+
+    ``factors`` is the effective minute-factor map (admin overrides over the seed
+    defaults) used for the hours-saved figure; when ``None`` the documented
+    :data:`DEFAULT_FACTORS` are used, so a caller that has not resolved the
+    tenant's overrides still gets the honest default behaviour.
     """
+    effective = DEFAULT_FACTORS if factors is None else factors
     approved_changes = await gather_approved_changes(session, project_id)
     impacts = _impact_inputs(approved_changes)
 
@@ -215,7 +231,7 @@ async def build_value_summary(session: AsyncSession, project_id: uuid.UUID) -> V
     recoveries = _recovery_inputs(performance)
 
     events = await _gather_activity_events(session, project_id)
-    hours = _hours_input(events)
+    hours = _hours_input(events, effective)
     activity = ActivityInput(count=len(events))
 
     benchmark = BenchmarkInput(percentile=None)
@@ -235,17 +251,22 @@ async def build_hours_saved(
     *,
     by: str,
     period: str | None = None,
+    factors: Mapping[tuple[str, str], Decimal] | None = None,
 ) -> tuple[tuple[SavedBucket, ...], Decimal, int]:
     """Aggregate a project's hours saved on one axis + the total and row count.
 
     Returns ``(buckets, total_hours, event_count)``: the per-bucket breakdown
     from :func:`aggregate_hours`, the single headline total (which reconciles
     with the sum of the per-bucket minutes), and how many activity rows the
-    figure rests on. Read-only; the caller has already authorised the project.
+    figure rests on. ``factors`` is the effective minute-factor map (admin
+    overrides over the seed defaults); ``None`` falls back to
+    :data:`DEFAULT_FACTORS`. Read-only; the caller has already authorised the
+    project.
     """
+    effective = DEFAULT_FACTORS if factors is None else factors
     events = await _gather_activity_events(session, project_id)
-    buckets = aggregate_hours(events, by=by, factors=DEFAULT_FACTORS, period=period)
-    return buckets, total_hours(events, DEFAULT_FACTORS), len(events)
+    buckets = aggregate_hours(events, by=by, factors=effective, period=period)
+    return buckets, total_hours(events, effective), len(events)
 
 
 # --- Portfolio + adoption benchmark ----------------------------------------
@@ -254,18 +275,22 @@ async def build_hours_saved(
 async def build_portfolio_summary(
     session: AsyncSession,
     project_ids: list[uuid.UUID],
+    *,
+    factors: Mapping[tuple[str, str], Decimal] | None = None,
 ) -> ValueSummary:
     """Roll several projects' value summaries up into one portfolio summary.
 
     Builds a per-project :class:`ValueSummary` for each id (already filtered by
     the caller to the projects they may access) and aggregates with the pure
     :func:`compose_portfolio_summary`, which sums money per currency (never
-    blending currency codes) and takes the more cautious confidence. Empty input
-    yields an empty summary.
+    blending currency codes) and takes the more cautious confidence. ``factors``
+    is the effective minute-factor map applied to every project's hours figure;
+    ``None`` falls back to :data:`DEFAULT_FACTORS`. Empty input yields an empty
+    summary.
     """
     summaries: list[ValueSummary] = []
     for pid in project_ids:
-        summaries.append(await build_value_summary(session, pid))
+        summaries.append(await build_value_summary(session, pid, factors=factors))
     return compose_portfolio_summary(summaries)
 
 

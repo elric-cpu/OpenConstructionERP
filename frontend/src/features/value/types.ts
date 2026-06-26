@@ -117,3 +117,25 @@ export interface RegionalBenchmark {
   percentile_vs_own: number | null;
   explanation: string;
 }
+
+// One editable hours-saved minute factor (admin only). `minutes` and
+// `default_minutes` are minutes of saved effort carried as strings (lossless
+// Decimal), never money. `is_override` is true when the tenant has tuned the
+// pair away from the seed default.
+export interface TimeFactor {
+  module: string;
+  action: string;
+  minutes: string;
+  default_minutes: string | null;
+  is_override: boolean;
+}
+
+export interface TimeFactors {
+  factors: TimeFactor[];
+}
+
+export interface TimeFactorUpdate {
+  module: string;
+  action: string;
+  minutes: string;
+}

@@ -155,3 +155,47 @@ class AdoptionChecklistOut(BaseModel):
     adoption_score: int
     steps: list[AdoptionStepOut]
     next_actions: list[AdoptionStepOut]
+
+
+class TimeFactorOut(BaseModel):
+    """One editable hours-saved minute factor and its provenance.
+
+    ``minutes`` is the value currently in force (the admin override when set,
+    else the seed default), as a string so the Decimal is carried losslessly -
+    these are minutes of saved effort, never money. ``default_minutes`` is the
+    seed default for the pair (null for a tenant-only pair the seed map does not
+    define). ``is_override`` is true when the tenant has tuned the pair away from
+    the default.
+    """
+
+    module: str
+    action: str
+    minutes: str
+    default_minutes: str | None
+    is_override: bool
+
+
+class TimeFactorsOut(BaseModel):
+    """The full editable surface of a tenant's hours-saved minute factors."""
+
+    factors: list[TimeFactorOut]
+
+
+class TimeFactorUpdate(BaseModel):
+    """One requested factor override: the pair and its new minute value.
+
+    ``minutes`` is accepted as a string (the lossless money/Decimal convention,
+    applied here to minutes) and validated server-side as a finite, non-negative,
+    capped value. Setting it equal to the seed default clears the override so the
+    pair reverts to inheriting the default.
+    """
+
+    module: str
+    action: str
+    minutes: str
+
+
+class TimeFactorsUpdate(BaseModel):
+    """A batch of factor overrides to apply for the caller's tenant."""
+
+    factors: list[TimeFactorUpdate]

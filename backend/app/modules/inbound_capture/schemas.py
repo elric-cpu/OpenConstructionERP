@@ -88,3 +88,16 @@ class InboundMessageOut(BaseModel):
     attachments: list[InboundAttachmentOut]
     raw_refs: list[str]
     deduplicated: bool
+
+
+class InboundCapturedList(BaseModel):
+    """A page of a project's captured inbound messages, newest first.
+
+    ``items`` are the captured rows projected to the read shape (each carries
+    ``deduplicated = false`` here - the flag is only meaningful at capture time,
+    not when listing what is already stored). ``total`` is the count of captured
+    messages for the project, so the UI can page without re-counting.
+    """
+
+    items: list[InboundMessageOut]
+    total: int

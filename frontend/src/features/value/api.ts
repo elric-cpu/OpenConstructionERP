@@ -8,13 +8,15 @@
 // benchmark on the firm's own projects. Money and rates are carried on the wire
 // as strings and passed straight to MoneyDisplay, never coerced here.
 
-import { apiGet, apiPost } from '@/shared/lib/api';
+import { apiGet, apiPost, apiPut } from '@/shared/lib/api';
 import type {
   AdoptionBenchmark,
   AdoptionChecklist,
   HoursSaved,
   RegionalBenchmark,
   RegionalMetric,
+  TimeFactors,
+  TimeFactorUpdate,
   ValueSummary,
 } from './types';
 
@@ -47,6 +49,20 @@ export function getAdoptionChecklist(projectId: string, role = 'manager'): Promi
   return apiGet<AdoptionChecklist>(
     `${BASE}/projects/${projectId}/adoption-checklist?role=${encodeURIComponent(role)}`,
   );
+}
+
+// Admin-only: the tenant's editable hours-saved minute factors. The GET returns
+// every seed-default pair plus any tenant overrides; the PUT applies a batch of
+// overrides (a value equal to the default clears the override). Minutes are
+// carried as strings - they are durations of saved effort, never money.
+export function getTimeFactors(): Promise<TimeFactors> {
+  return apiGet<TimeFactors>(`${BASE}/admin/time-factors`);
+}
+
+export function putTimeFactors(factors: TimeFactorUpdate[]): Promise<TimeFactors> {
+  return apiPut<TimeFactors, { factors: TimeFactorUpdate[] }>(`${BASE}/admin/time-factors`, {
+    factors,
+  });
 }
 
 // Benchmark a dimensionless ratio (overrun_pct / recovery_rate) or cost-per-m2

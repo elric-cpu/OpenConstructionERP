@@ -412,6 +412,9 @@ const ValueDashboardPage = lazy(() =>
 );
 const PhoneLogPage = lazy(() => import('@/features/phonelog').then((m) => ({ default: m.PhoneLogPage })));
 const ConnectorsPage = lazy(() => import('@/features/connectors').then((m) => ({ default: m.ConnectorsPage })));
+const InboundCapturePage = lazy(() =>
+  import('@/features/inbound').then((m) => ({ default: m.InboundCapturePage })),
+);
 const RetrievalPage = lazy(() => import('@/features/retrieval').then((m) => ({ default: m.RetrievalPage })));
 // v4.1 — three additional P1 Slice-1 features land behind dedicated routes
 // (Assembly Library was already eagerly imported by the assemblies feature
@@ -1175,6 +1178,25 @@ export default function App() {
         <Route path="/projects/:projectId/phone-log" element={<P title="Phone Log"><PhoneLogPage /></P>} />
         <Route path="/connectors" element={<P title="Document Connectors"><ConnectorsPage /></P>} />
         <Route path="/projects/:projectId/connectors" element={<P title="Document Connectors"><ConnectorsPage /></P>} />
+        {/* Inbound Capture admin view - reads captured email / chat messages and
+            the configured sources. Admin-only (the read endpoint also gates with
+            inbound.read; the page exposes no secrets, only what was captured). */}
+        <Route
+          path="/inbound"
+          element={
+            <AdminOnly>
+              <P title="Inbound Capture"><InboundCapturePage /></P>
+            </AdminOnly>
+          }
+        />
+        <Route
+          path="/projects/:projectId/inbound"
+          element={
+            <AdminOnly>
+              <P title="Inbound Capture"><InboundCapturePage /></P>
+            </AdminOnly>
+          }
+        />
         <Route path="/find" element={<P title="Find Records"><RetrievalPage /></P>} />
         <Route path="/projects/:projectId/find" element={<P title="Find Records"><RetrievalPage /></P>} />
         <Route path="/estimates" element={<Navigate to="/boq" replace />} />

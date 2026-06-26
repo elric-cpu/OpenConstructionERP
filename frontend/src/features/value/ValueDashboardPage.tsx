@@ -32,11 +32,13 @@ import {
   CheckCircle2,
   Circle,
   MapPin,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { Card, Badge, EmptyState, SkeletonTable, DismissibleInfo, TabBar, tabIds } from '@/shared/ui';
 import { MoneyDisplay } from '@/shared/ui/MoneyDisplay';
 import { apiGet, getErrorMessage } from '@/shared/lib/api';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
+import { useAuthStore } from '@/stores/useAuthStore';
 import {
   getValueSummary,
   getPortfolioSummary,
@@ -45,6 +47,7 @@ import {
   getRegionalBenchmark,
   recordValueReport,
 } from './api';
+import { TimeFactorsEditor } from './TimeFactorsEditor';
 import type { Confidence, ValueSummary } from './types';
 
 type BadgeVariant = 'neutral' | 'blue' | 'success' | 'warning' | 'error';
@@ -636,7 +639,12 @@ export function ValueDashboardPage() {
 
   const [scope, setScope] = useState<Scope>('project');
   const [tab, setTab] = useState<Tab>('summary');
+  const [factorsOpen, setFactorsOpen] = useState(false);
   const ids = tabIds('value');
+
+  // The hours-saved minute factors are admin-tunable; the editor is only offered
+  // to admins (the backend also gates the GET/PUT with RequireRole("admin")).
+  const isAdmin = useAuthStore((s) => s.userRole) === 'admin';
 
   // The summary query follows the active scope: a single project or the whole
   // portfolio. The portfolio summary needs no project id, so it is always
@@ -667,6 +675,16 @@ export function ValueDashboardPage() {
             })}
           </p>
         </div>
+        {isAdmin ? (
+          <button
+            type="button"
+            onClick={() => setFactorsOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border-light bg-surface-primary px-3 py-1.5 text-sm font-medium text-content-secondary hover:bg-surface-secondary print:hidden"
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            {t('value.edit_factors', { defaultValue: 'Hours-saved factors' })}
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={async () => {
@@ -692,6 +710,10 @@ export function ValueDashboardPage() {
           {t('value.print_case', { defaultValue: 'Value case' })}
         </button>
       </header>
+
+      {isAdmin ? (
+        <TimeFactorsEditor open={factorsOpen} onClose={() => setFactorsOpen(false)} />
+      ) : null}
 
       <DismissibleInfo
         storageKey="value-realized"

@@ -13,8 +13,9 @@ manifest = ModuleManifest(
         "approved-change cost and schedule exposure, the cost-recovery ledger, "
         "and admin hours given back by assisted actions - into a single project "
         "and portfolio value-realized summary, plus an adoption-vs-non-adoption "
-        "benchmark on the firm's own projects. It owns no tables and needs no "
-        "migration: it reads the existing change, recovery and activity records"
+        "benchmark on the firm's own projects. It reads the existing change, "
+        "recovery and activity records; its only table is a small admin-tunable "
+        "lookup of the hours-saved minute factors (oe_value_time_factor)"
     ),
     author="OpenConstructionERP Core Team",
     category="controls",

@@ -19,13 +19,15 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit_log import log_activity
 from app.dependencies import (
+    CurrentTenantId,
     CurrentUserId,
+    RequireRole,
     SessionDep,
     accessible_project_ids,
     verify_project_access,
@@ -40,6 +42,9 @@ from app.modules.value.schemas import (
     HoursSavedBucketOut,
     HoursSavedOut,
     ProjectScoreOut,
+    TimeFactorOut,
+    TimeFactorsOut,
+    TimeFactorsUpdate,
     ValueSummaryOut,
 )
 from app.modules.value.service import (
@@ -47,6 +52,12 @@ from app.modules.value.service import (
     build_hours_saved,
     build_portfolio_summary,
     build_value_summary,
+)
+from app.modules.value.time_factors_service import (
+    FactorRow,
+    list_factors,
+    resolve_effective_factors,
+    set_factors,
 )
 from app.modules.value.time_saved import (
     BY_FEATURE,
@@ -110,10 +121,16 @@ async def get_value_summary(
     project_id: uuid.UUID,
     session: SessionDep,
     user_id: CurrentUserId = None,  # type: ignore[assignment]
+    tenant_id: CurrentTenantId = None,
 ) -> ValueSummaryOut:
-    """One project's composed value-realized summary (per currency + headlines)."""
+    """One project's composed value-realized summary (per currency + headlines).
+
+    The hours-saved headline honours the tenant's admin-tuned minute factors
+    (falling back to the documented defaults for any pair left unset).
+    """
     await verify_project_access(project_id, user_id or "", session)
-    summary = await build_value_summary(session, project_id)
+    factors = await resolve_effective_factors(session, tenant_id)
+    summary = await build_value_summary(session, project_id, factors=factors)
     return _summary_out(summary, project_id=str(project_id))
 
 
@@ -122,6 +139,7 @@ async def generate_value_report(
     project_id: uuid.UUID,
     session: SessionDep,
     user_id: CurrentUserId = None,  # type: ignore[assignment]
+    tenant_id: CurrentTenantId = None,
 ) -> ValueSummaryOut:
     """Generate a project's value report and record that it was generated.
 
@@ -132,7 +150,8 @@ async def generate_value_report(
     figure. Access is gated exactly like the summary (404 on missing or denied).
     """
     await verify_project_access(project_id, user_id or "", session)
-    summary = await build_value_summary(session, project_id)
+    factors = await resolve_effective_factors(session, tenant_id)
+    summary = await build_value_summary(session, project_id, factors=factors)
     await log_activity(
         session,
         actor_id=user_id or None,
@@ -150,16 +169,19 @@ async def generate_value_report(
 async def get_portfolio_summary(
     session: SessionDep,
     user_id: CurrentUserId = None,  # type: ignore[assignment]
+    tenant_id: CurrentTenantId = None,
 ) -> ValueSummaryOut:
     """Portfolio-wide value summary across every project the caller may access.
 
     Non-admins are scoped to projects they own or are a team member of; an admin
     sees all. An empty accessible set yields an empty summary rather than an
-    error - the safe default for a caller with no projects.
+    error - the safe default for a caller with no projects. The hours figure uses
+    the tenant's admin-tuned minute factors.
     """
     ids = await accessible_project_ids(session, user_id)
     project_ids = await _resolve_project_ids(session, ids)
-    summary = await build_portfolio_summary(session, project_ids)
+    factors = await resolve_effective_factors(session, tenant_id)
+    summary = await build_portfolio_summary(session, project_ids, factors=factors)
     return _summary_out(summary, project_id=None)
 
 
@@ -168,6 +190,7 @@ async def get_hours_saved(
     project_id: uuid.UUID,
     session: SessionDep,
     user_id: CurrentUserId = None,  # type: ignore[assignment]
+    tenant_id: CurrentTenantId = None,
     by: str = Query(BY_FEATURE, description="Grouping axis: user / project / feature / period"),
     period: str | None = Query(None, description="Period granularity when by=period: week / month"),
 ) -> HoursSavedOut:
@@ -175,7 +198,8 @@ async def get_hours_saved(
 
     ``by`` defaults to ``feature`` (``module/action``). When ``by=period`` a
     ``period`` of ``week`` or ``month`` is required. An unrecognised axis or
-    period yields a 422 before the engine is reached.
+    period yields a 422 before the engine is reached. The minutes/hours honour
+    the tenant's admin-tuned factors.
     """
     await verify_project_access(project_id, user_id or "", session)
 
@@ -184,11 +208,13 @@ async def get_hours_saved(
     if axis == BY_PERIOD:
         effective_period = period if period in _HOURS_PERIODS else PERIOD_WEEK
 
+    factors = await resolve_effective_factors(session, tenant_id)
     buckets, total, event_count = await build_hours_saved(
         session,
         project_id,
         by=axis,
         period=effective_period,
+        factors=factors,
     )
     return HoursSavedOut(
         project_id=str(project_id),
@@ -278,6 +304,74 @@ async def get_adoption_checklist(
             AdoptionStepOut(key=a.key, label=a.label, module=a.module, done=False) for a in checklist.next_actions
         ],
     )
+
+
+# --- Admin: editable hours-saved minute factors ----------------------------
+#
+# The hours-saved figure rests on a small "minutes one assisted action displaces"
+# lookup. The seed defaults are conservative; an operator who has measured their
+# own baseline can tune any factor here, per tenant. These endpoints are
+# admin-only (RequireRole) because the factor directly drives a headline figure
+# shown across the firm, and they are NOT project-scoped - the factors apply to
+# every project in the tenant.
+
+
+def _factor_out(row: FactorRow) -> TimeFactorOut:
+    """Render an editable factor row for the wire (minutes as strings, not money)."""
+    return TimeFactorOut(
+        module=row.module,
+        action=row.action,
+        minutes=str(row.minutes),
+        default_minutes=None if row.default_minutes is None else str(row.default_minutes),
+        is_override=row.is_override,
+    )
+
+
+@router.get("/admin/time-factors", response_model=TimeFactorsOut)
+async def get_time_factors(
+    session: SessionDep,
+    _: None = Depends(RequireRole("admin")),
+    tenant_id: CurrentTenantId = None,
+) -> TimeFactorsOut:
+    """List the tenant's editable hours-saved minute factors (admin only).
+
+    Returns every seed-default pair plus any tenant-only overrides, each marked
+    with its current minutes, the seed default, and whether it is a tuned
+    override. The values are minutes of saved effort - there is no money on this
+    surface.
+    """
+    rows = await list_factors(session, tenant_id)
+    return TimeFactorsOut(factors=[_factor_out(r) for r in rows])
+
+
+@router.put("/admin/time-factors", response_model=TimeFactorsOut)
+async def put_time_factors(
+    payload: TimeFactorsUpdate,
+    session: SessionDep,
+    _: None = Depends(RequireRole("admin")),
+    tenant_id: CurrentTenantId = None,
+) -> TimeFactorsOut:
+    """Update the tenant's hours-saved minute factors (admin only).
+
+    Applies a batch of ``(module, action, minutes)`` overrides for the caller's
+    tenant. A value equal to the seed default clears the override (the pair
+    reverts to inheriting the default). Minutes are validated as finite, non
+    -negative and capped; an invalid value rejects the whole batch with a 422 and
+    writes nothing. Returns the full factor surface after the change.
+    """
+    if tenant_id is None:
+        # An admin whose tenant cannot be resolved has nowhere to scope the
+        # write; refuse rather than persist an unscoped (null-tenant) override.
+        raise HTTPException(status_code=400, detail="Tenant could not be resolved for the current user")
+    try:
+        rows = await set_factors(
+            session,
+            tenant_id,
+            [(f.module, f.action, f.minutes) for f in payload.factors],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return TimeFactorsOut(factors=[_factor_out(r) for r in rows])
 
 
 async def _resolve_project_ids(

@@ -158,6 +158,27 @@ def minutes_to_hours(minutes: Decimal) -> Decimal:
     return (minutes / _MINUTES_PER_HOUR).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
 
 
+def merge_factors(
+    overrides: Mapping[tuple[str, str], Decimal],
+    base: Mapping[tuple[str, str], Decimal] = DEFAULT_FACTORS,
+) -> dict[tuple[str, str], Decimal]:
+    """Layer *overrides* on top of *base*, returning the effective factor map.
+
+    The result is ``base`` with each overridden ``(module, action)`` pair
+    replaced by its override value, so an admin who tuned only one factor still
+    gets the documented defaults for every other action. ``base`` is never
+    mutated. A pair present in *base* but not in *overrides* keeps its default;
+    a pair present only in *overrides* (a tenant crediting an action the seed map
+    does not) is added. This is the deterministic glue the service uses to turn a
+    sparse table of tenant overrides into the full factor map the aggregation
+    functions take - the engine stays the single place that defines what
+    "effective factors" means.
+    """
+    effective = dict(base)
+    effective.update(overrides)
+    return effective
+
+
 def estimate_saved_minutes(
     action: str,
     module: str,
@@ -305,6 +326,7 @@ __all__ = [
     "SavedBucket",
     "aggregate_hours",
     "estimate_saved_minutes",
+    "merge_factors",
     "minutes_to_hours",
     "total_hours",
 ]

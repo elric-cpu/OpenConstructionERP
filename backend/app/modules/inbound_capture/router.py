@@ -35,7 +35,7 @@ import os
 import re
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.dependencies import (
     CurrentUserId,
@@ -50,11 +50,16 @@ from app.modules.inbound_capture.normalize import (
 )
 from app.modules.inbound_capture.schemas import (
     InboundAttachmentOut,
+    InboundCapturedList,
     InboundEmailRequest,
     InboundMessageOut,
     InboundWebhookRequest,
 )
-from app.modules.inbound_capture.service import capture_message, to_message_out_fields
+from app.modules.inbound_capture.service import (
+    capture_message,
+    list_captured,
+    to_message_out_fields,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -259,3 +264,30 @@ async def capture_inbound_webhook(
     message = normalize(channel, body.payload)
     row, deduplicated = await capture_message(session, project_id, message, created_by=user_id)
     return _serialize(row, deduplicated=deduplicated)
+
+
+@router.get(
+    "/projects/{project_id}/captured",
+    response_model=InboundCapturedList,
+    dependencies=[Depends(RequirePermission("inbound.read"))],
+)
+async def list_captured_messages(
+    project_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    offset: int = Query(0, ge=0, description="Rows to skip (paging)"),
+    limit: int = Query(50, ge=1, le=200, description="Max rows to return"),
+) -> InboundCapturedList:
+    """List the inbound messages captured for a project (newest first).
+
+    Returns only correspondence this gateway created (rows carrying the inbound
+    envelope), so the admin view shows exactly what arrived through the capture
+    endpoints rather than every incoming letter. Requires ``inbound.read`` and
+    access to the project (404 on missing or denied, so existence never leaks).
+    """
+    await verify_project_access(project_id, user_id or "", session)
+    rows, total = await list_captured(session, project_id, offset=offset, limit=limit)
+    return InboundCapturedList(
+        items=[_serialize(row, deduplicated=False) for row in rows],
+        total=total,
+    )
