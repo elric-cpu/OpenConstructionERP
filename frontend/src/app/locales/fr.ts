@@ -12120,7 +12120,7 @@ const resource = {
     "approvalRoutes.unknown_route": "Circuit inconnu",
     "approvalRoutes.started_on": "Lancé le {{date}}",
     "approvalRoutes.sla_target_value": "SLA cible {{h}} h",
-    "approvalRoutes.sla_informational_hint": "Délai cible uniquement. Non imposé - pas d'escalade automatique ni de blocage en cas de retard.",
+    "approvalRoutes.sla_informational_hint": "Target turnaround with automatic follow-up. An overdue step notifies the approver, then escalates to the next authority past the grace window. The step itself is not hard-blocked.",
     "approvalRoutes.search_instances_placeholder": "Rechercher par circuit ou type…",
     "approvalRoutes.open_instance": "Ouvrir le détail du flux",
     "approvalRoutes.no_steps": "Ce circuit n'a aucune étape.",

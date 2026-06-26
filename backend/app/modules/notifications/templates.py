@@ -119,6 +119,13 @@ _TEMPLATES: dict[str, str] = {
     # ── Digests (Epic B / B3) ────────────────────────────────────────
     "notifications.digest.title": "Notification digest",
     "notifications.digest.body": "You have {count} new updates on the {channel} channel.",
+    # ── Approval SLA (overdue / escalation / reassignment) ────────────
+    "notifications.approval.overdue.title": "Approval overdue",
+    "notifications.approval.overdue.body": "Step {step_ordinal} on this {target_kind} is {hours_overdue}h overdue.",
+    "notifications.approval.escalated.title": "Approval escalated to you",
+    "notifications.approval.escalated.body": "Step {step_ordinal} on this {target_kind} escalated to you (level {level}).",
+    "notifications.approval.reassigned.title": "Approval reassigned to you",
+    "notifications.approval.reassigned.body": "Step {step_ordinal} on this {target_kind} is now yours to decide.",
 }
 
 
@@ -159,6 +166,10 @@ _TYPE_TO_ICON: dict[str, str] = {
     # Validation reports - errors are blocking, warnings are advisory
     "validation_errors": "error",
     "validation_warnings": "warning",
+    # Approval SLA - overdue/escalation need attention, a hand-off is neutral
+    "approval_overdue": "warning",
+    "approval_escalated": "error",
+    "approval_reassigned": "info",
 }
 
 

@@ -12441,7 +12441,7 @@ const resource = {
     "approvalRoutes.no_steps": "Tato trasa nemá žádné kroky.",
     "approvalRoutes.open_instance": "Otevřít podrobnosti workflow",
     "approvalRoutes.search_instances_placeholder": "Hledat podle trasy nebo druhu…",
-    "approvalRoutes.sla_informational_hint": "Pouze cílová doba vyřízení. Není vynucováno - žádná automatická eskalace ani blokování po termínu.",
+    "approvalRoutes.sla_informational_hint": "Target turnaround with automatic follow-up. An overdue step notifies the approver, then escalates to the next authority past the grace window. The step itself is not hard-blocked.",
     "approvalRoutes.sla_target_value": "Cílové SLA {{h}} h",
     "approvalRoutes.started_on": "Zahájeno {{date}}",
     "approvalRoutes.unknown_route": "Neznámá trasa",

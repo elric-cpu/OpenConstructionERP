@@ -12583,7 +12583,7 @@ const resource = {
     "approvalRoutes.no_steps": "Den här rutten har inga steg.",
     "approvalRoutes.open_instance": "Öppna flödesdetaljer",
     "approvalRoutes.search_instances_placeholder": "Sök efter rutt eller typ…",
-    "approvalRoutes.sla_informational_hint": "Endast måltid för handläggning. Ej framtvingad - ingen automatisk eskalering eller blockering vid försening.",
+    "approvalRoutes.sla_informational_hint": "Target turnaround with automatic follow-up. An overdue step notifies the approver, then escalates to the next authority past the grace window. The step itself is not hard-blocked.",
     "approvalRoutes.sla_target_value": "Mål-SLA {{h}}h",
     "approvalRoutes.started_on": "Startad {{date}}",
     "approvalRoutes.unknown_route": "Okänd rutt",

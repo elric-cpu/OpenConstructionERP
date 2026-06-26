@@ -12504,7 +12504,7 @@ const resource = {
     "approvalRoutes.no_steps": "Acest traseu nu are pași.",
     "approvalRoutes.open_instance": "Deschide detaliile fluxului",
     "approvalRoutes.search_instances_placeholder": "Căutați după traseu sau tip…",
-    "approvalRoutes.sla_informational_hint": "Doar timp țintă de soluționare. Neimpus - fără escaladare automată sau blocare la depășire.",
+    "approvalRoutes.sla_informational_hint": "Target turnaround with automatic follow-up. An overdue step notifies the approver, then escalates to the next authority past the grace window. The step itself is not hard-blocked.",
     "approvalRoutes.sla_target_value": "SLA țintă {{h}}h",
     "approvalRoutes.started_on": "Pornit {{date}}",
     "approvalRoutes.unknown_route": "Traseu necunoscut",

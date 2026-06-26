@@ -12544,7 +12544,7 @@ const resource = {
     "approvalRoutes.no_steps": "Rute ini tidak memiliki langkah.",
     "approvalRoutes.open_instance": "Buka detail alur kerja",
     "approvalRoutes.search_instances_placeholder": "Cari menurut rute atau jenis…",
-    "approvalRoutes.sla_informational_hint": "Hanya target waktu penyelesaian. Tidak ditegakkan - tidak ada eskalasi otomatis atau pemblokiran lewat tenggat.",
+    "approvalRoutes.sla_informational_hint": "Target turnaround with automatic follow-up. An overdue step notifies the approver, then escalates to the next authority past the grace window. The step itself is not hard-blocked.",
     "approvalRoutes.sla_target_value": "Target SLA {{h}}j",
     "approvalRoutes.started_on": "Dimulai {{date}}",
     "approvalRoutes.unknown_route": "Rute tak dikenal",

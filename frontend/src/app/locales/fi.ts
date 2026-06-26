@@ -12515,7 +12515,7 @@ const resource = {
     "approvalRoutes.no_steps": "Tällä reitillä ei ole vaiheita.",
     "approvalRoutes.open_instance": "Avaa työnkulun tiedot",
     "approvalRoutes.search_instances_placeholder": "Hae reitin tai tyypin mukaan…",
-    "approvalRoutes.sla_informational_hint": "Vain tavoitevasteaika. Ei pakotettu - ei automaattista eskalointia tai myöhästymisen estoa.",
+    "approvalRoutes.sla_informational_hint": "Target turnaround with automatic follow-up. An overdue step notifies the approver, then escalates to the next authority past the grace window. The step itself is not hard-blocked.",
     "approvalRoutes.sla_target_value": "Tavoite-SLA {{h}} h",
     "approvalRoutes.started_on": "Aloitettu {{date}}",
     "approvalRoutes.unknown_route": "Tuntematon reitti",

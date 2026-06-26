@@ -12610,7 +12610,7 @@ const resource = {
     "approvalRoutes.no_steps": "Энэ маршрутад алхам байхгүй.",
     "approvalRoutes.open_instance": "Урсгалын дэлгэрэнгүйг нээх",
     "approvalRoutes.search_instances_placeholder": "Маршрут буюу төрлөөр хайх…",
-    "approvalRoutes.sla_informational_hint": "Зөвхөн зорилтот эргэлтийн хугацаа. Албадан биш - автомат эскалаци буюу хугацаа хэтрэлтийн хаалт байхгүй.",
+    "approvalRoutes.sla_informational_hint": "Target turnaround with automatic follow-up. An overdue step notifies the approver, then escalates to the next authority past the grace window. The step itself is not hard-blocked.",
     "approvalRoutes.sla_target_value": "Зорилтот SLA {{h}}ц",
     "approvalRoutes.started_on": "{{date}}-нд эхэлсэн",
     "approvalRoutes.unknown_route": "Тодорхойгүй маршрут",

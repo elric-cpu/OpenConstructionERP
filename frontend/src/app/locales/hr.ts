@@ -12441,7 +12441,7 @@ const resource = {
     "approvalRoutes.no_steps": "Ova ruta nema korake.",
     "approvalRoutes.open_instance": "Otvori detalje tijeka",
     "approvalRoutes.search_instances_placeholder": "Traži po ruti ili vrsti…",
-    "approvalRoutes.sla_informational_hint": "Samo ciljano vrijeme obrade. Nije prisilno, bez automatske eskalacije ili blokiranja zakašnjelih.",
+    "approvalRoutes.sla_informational_hint": "Target turnaround with automatic follow-up. An overdue step notifies the approver, then escalates to the next authority past the grace window. The step itself is not hard-blocked.",
     "approvalRoutes.sla_target_value": "Ciljani SLA {{h}} h",
     "approvalRoutes.started_on": "Pokrenuto {{date}}",
     "approvalRoutes.unknown_route": "Nepoznata ruta",

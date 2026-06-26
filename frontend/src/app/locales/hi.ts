@@ -12610,7 +12610,7 @@ const resource = {
     "approvalRoutes.no_steps": "इस मार्ग में कोई चरण नहीं है।",
     "approvalRoutes.open_instance": "वर्कफ़्लो विवरण खोलें",
     "approvalRoutes.search_instances_placeholder": "मार्ग या प्रकार से खोजें…",
-    "approvalRoutes.sla_informational_hint": "केवल लक्ष्य निपटान समय। लागू नहीं - कोई स्वचालित वृद्धि या अतिदेय अवरोधन नहीं।",
+    "approvalRoutes.sla_informational_hint": "Target turnaround with automatic follow-up. An overdue step notifies the approver, then escalates to the next authority past the grace window. The step itself is not hard-blocked.",
     "approvalRoutes.sla_target_value": "लक्ष्य SLA {{h}} घं",
     "approvalRoutes.started_on": "{{date}} को शुरू हुआ",
     "approvalRoutes.unknown_route": "अज्ञात मार्ग",

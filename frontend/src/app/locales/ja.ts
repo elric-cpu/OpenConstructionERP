@@ -12609,7 +12609,7 @@ const resource = {
     "approvalRoutes.no_steps": "このルートにはステップがありません。",
     "approvalRoutes.open_instance": "ワークフローの詳細を開く",
     "approvalRoutes.search_instances_placeholder": "ルートまたは種別で検索…",
-    "approvalRoutes.sla_informational_hint": "目標処理時間のみ。強制されません - 自動エスカレーションや期限超過ブロックはありません。",
+    "approvalRoutes.sla_informational_hint": "Target turnaround with automatic follow-up. An overdue step notifies the approver, then escalates to the next authority past the grace window. The step itself is not hard-blocked.",
     "approvalRoutes.sla_target_value": "目標SLA {{h}}時間",
     "approvalRoutes.started_on": "{{date}} に開始",
     "approvalRoutes.unknown_route": "不明なルート",

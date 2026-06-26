@@ -12623,7 +12623,7 @@ const resource = {
     "approvalRoutes.no_steps": "У этого маршрута нет шагов.",
     "approvalRoutes.open_instance": "Открыть детали маршрута",
     "approvalRoutes.search_instances_placeholder": "Поиск по маршруту или типу…",
-    "approvalRoutes.sla_informational_hint": "Только целевой срок выполнения. Не принудительный - нет автоматической эскалации или блокировки за просрочку.",
+    "approvalRoutes.sla_informational_hint": "Target turnaround with automatic follow-up. An overdue step notifies the approver, then escalates to the next authority past the grace window. The step itself is not hard-blocked.",
     "approvalRoutes.sla_target_value": "Целевой SLA {{h}} ч",
     "approvalRoutes.started_on": "Начато {{date}}",
     "approvalRoutes.unknown_route": "Неизвестный маршрут",

@@ -12337,7 +12337,7 @@ const resource = {
     "approvalRoutes.no_steps": "Questo percorso non ha passaggi.",
     "approvalRoutes.open_instance": "Apri i dettagli del flusso",
     "approvalRoutes.search_instances_placeholder": "Cerca per percorso o tipo…",
-    "approvalRoutes.sla_informational_hint": "Solo tempo di evasione obiettivo. Non applicato, nessuna escalation automatica o blocco per ritardo.",
+    "approvalRoutes.sla_informational_hint": "Target turnaround with automatic follow-up. An overdue step notifies the approver, then escalates to the next authority past the grace window. The step itself is not hard-blocked.",
     "approvalRoutes.sla_target_value": "SLA obiettivo {{h}}h",
     "approvalRoutes.started_on": "Avviato il {{date}}",
     "approvalRoutes.unknown_route": "Percorso sconosciuto",
