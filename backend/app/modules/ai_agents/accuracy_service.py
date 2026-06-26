@@ -16,6 +16,7 @@ agent activity.
 
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import UTC, datetime
 
@@ -35,6 +36,30 @@ OUTCOME_KEY = "actual_outcome"
 OUTCOME_AT_KEY = "outcome_recorded_at"
 OUTCOME_BY_KEY = "outcome_recorded_by"
 OUTCOME_NOTE_KEY = "outcome_note"
+
+
+def _demo_mode_enabled() -> bool:
+    """Whether this deployment is the public hosted demo (``OE_DEMO_MODE`` set).
+
+    Mirrors the same env check the sandbox-seeding endpoint guards on, so the
+    seeded sample runs only ever count toward the scoreboard on the demo box.
+    """
+    return os.environ.get("OE_DEMO_MODE", "").lower() in ("1", "true", "yes")
+
+
+def _is_sample_run(trigger_source: object, trust: object) -> bool:
+    """Whether a run row is seeded sandbox sample data.
+
+    Checks both markers the seeder writes - the ``trigger_source`` column and the
+    ``trust["sample"]`` flag - so a sample row is recognised even if only one
+    marker survives. The sandbox constants are imported lazily to avoid a module
+    import cycle (``sandbox`` already imports the outcome keys from this module).
+    """
+    from app.modules.ai_agents.sandbox import SAMPLE_FLAG_KEY, SAMPLE_TRIGGER_SOURCE
+
+    if trigger_source == SAMPLE_TRIGGER_SOURCE:
+        return True
+    return isinstance(trust, dict) and bool(trust.get(SAMPLE_FLAG_KEY))
 
 
 def _confidence_of(trust: object) -> float | None:
@@ -131,15 +156,25 @@ async def build_scoreboard(
     A run contributes a prediction only when it carries both a usable trust
     confidence and a recorded actual outcome. Results are ordered by agent name
     for a stable response.
+
+    Defense-in-depth: seeded sandbox sample runs are excluded from the aggregate
+    unless this is the hosted demo box (``OE_DEMO_MODE``). The sandbox-seeding
+    endpoint is already demo-gated, so this only matters if a box was once run in
+    demo mode and later carries real runs - there, a misconfigured demo flag can
+    no longer blend illustrative sample numbers into genuine accuracy. On the demo
+    the sample rows still count, so the scoreboard lights up as intended.
     """
-    stmt = select(AgentRun.agent_name, AgentRun.trust).where(AgentRun.user_id == user_id)
+    stmt = select(AgentRun.agent_name, AgentRun.trust, AgentRun.trigger_source).where(AgentRun.user_id == user_id)
     if project_id is not None:
         stmt = stmt.where(AgentRun.project_id == project_id)
     if agent_name:
         stmt = stmt.where(AgentRun.agent_name == agent_name)
 
+    include_samples = _demo_mode_enabled()
     predictions: list[Prediction] = []
     for row in (await session.execute(stmt)).all():
+        if not include_samples and _is_sample_run(row.trigger_source, row.trust):
+            continue
         confidence = _confidence_of(row.trust)
         outcome = _outcome_of(row.trust)
         if confidence is None or outcome is None:

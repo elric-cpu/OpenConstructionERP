@@ -27,6 +27,7 @@ from app.core.audit_log import log_activity
 from app.dependencies import (
     CurrentTenantId,
     CurrentUserId,
+    RequirePermission,
     RequireRole,
     SessionDep,
     accessible_project_ids,
@@ -116,7 +117,11 @@ def _summary_out(summary: ValueSummary, *, project_id: str | None) -> ValueSumma
     )
 
 
-@router.get("/projects/{project_id}/summary", response_model=ValueSummaryOut)
+@router.get(
+    "/projects/{project_id}/summary",
+    response_model=ValueSummaryOut,
+    dependencies=[Depends(RequirePermission("value.read"))],
+)
 async def get_value_summary(
     project_id: uuid.UUID,
     session: SessionDep,
@@ -134,7 +139,11 @@ async def get_value_summary(
     return _summary_out(summary, project_id=str(project_id))
 
 
-@router.post("/projects/{project_id}/report", response_model=ValueSummaryOut)
+@router.post(
+    "/projects/{project_id}/report",
+    response_model=ValueSummaryOut,
+    dependencies=[Depends(RequirePermission("value.read"))],
+)
 async def generate_value_report(
     project_id: uuid.UUID,
     session: SessionDep,
@@ -165,7 +174,11 @@ async def generate_value_report(
     return _summary_out(summary, project_id=str(project_id))
 
 
-@router.get("/portfolio/summary", response_model=ValueSummaryOut)
+@router.get(
+    "/portfolio/summary",
+    response_model=ValueSummaryOut,
+    dependencies=[Depends(RequirePermission("value.read"))],
+)
 async def get_portfolio_summary(
     session: SessionDep,
     user_id: CurrentUserId = None,  # type: ignore[assignment]
@@ -185,7 +198,11 @@ async def get_portfolio_summary(
     return _summary_out(summary, project_id=None)
 
 
-@router.get("/projects/{project_id}/hours-saved", response_model=HoursSavedOut)
+@router.get(
+    "/projects/{project_id}/hours-saved",
+    response_model=HoursSavedOut,
+    dependencies=[Depends(RequirePermission("value.read"))],
+)
 async def get_hours_saved(
     project_id: uuid.UUID,
     session: SessionDep,
@@ -234,7 +251,11 @@ async def get_hours_saved(
     )
 
 
-@router.get("/adoption-benchmark", response_model=AdoptionBenchmarkOut)
+@router.get(
+    "/adoption-benchmark",
+    response_model=AdoptionBenchmarkOut,
+    dependencies=[Depends(RequirePermission("value.read"))],
+)
 async def get_adoption_benchmark(
     session: SessionDep,
     user_id: CurrentUserId = None,  # type: ignore[assignment]
@@ -273,7 +294,11 @@ async def get_adoption_benchmark(
     )
 
 
-@router.get("/projects/{project_id}/adoption-checklist", response_model=AdoptionChecklistOut)
+@router.get(
+    "/projects/{project_id}/adoption-checklist",
+    response_model=AdoptionChecklistOut,
+    dependencies=[Depends(RequirePermission("value.read"))],
+)
 async def get_adoption_checklist(
     project_id: uuid.UUID,
     session: SessionDep,

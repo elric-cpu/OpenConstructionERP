@@ -734,12 +734,25 @@ class ApprovalRouteService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Instance is {instance.status}, cannot reassign",
             )
+
+        # The chosen stand-in must actually belong to the route's project, or the
+        # hand-off would pin a decider who can never legitimately see the target.
+        # A project-agnostic route (no project_id) has no membership to enforce,
+        # so it is skipped. Mirrors the owner / team-member / admin rule that
+        # ``verify_project_access`` applies to the caller, but applied here to the
+        # reassignment TARGET so a step cannot be reassigned outside the project.
+        route = await self.get_route(instance.route_id)
+        if route.project_id is not None and not await self._user_can_access_project(route.project_id, to_user_id):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Assignee does not have access to this route's project",
+            )
+
         previous = instance.current_assignee_user_id
         instance.current_assignee_user_id = to_user_id
         await self.session.flush()
         await self.session.refresh(instance)
 
-        route = await self.get_route(instance.route_id)
         await log_activity(
             self.session,
             actor_id=actor_id,
@@ -892,6 +905,38 @@ class ApprovalRouteService:
         return delegation
 
     # ── Internal helpers ──────────────────────────────────────────────
+
+    async def _user_can_access_project(self, project_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+        """Whether ``user_id`` may access ``project_id`` (owner / member / admin).
+
+        The boolean companion to :func:`app.dependencies.verify_project_access`,
+        applying the same access rule (an admin reaches any project; otherwise the
+        user must own it or be a team member) so the reassignment target is held
+        to the exact policy the caller's own guard uses. Any lookup failure fails
+        closed (returns ``False``) rather than widening access.
+        """
+        from app.modules.projects.repository import ProjectRepository
+        from app.modules.teams.access import is_project_member
+        from app.modules.users.repository import UserRepository
+
+        try:
+            project = await ProjectRepository(self.session).get_by_id(project_id)
+        except Exception:  # noqa: BLE001 - a lookup failure must not widen access
+            return False
+        if project is None:
+            return False
+
+        if str(getattr(project, "owner_id", "")) == str(user_id):
+            return True
+
+        try:
+            user = await UserRepository(self.session).get_by_id(user_id)
+            if user is not None and getattr(user, "role", "") == "admin":
+                return True
+        except Exception:  # noqa: BLE001 - admin lookup failure falls through
+            logger.debug("admin-role lookup failed during reassign target check")
+
+        return await is_project_member(self.session, project_id, user_id)
 
     async def _lock_instance(self, instance_id: uuid.UUID) -> Instance:
         """Re-fetch the instance with a row lock.

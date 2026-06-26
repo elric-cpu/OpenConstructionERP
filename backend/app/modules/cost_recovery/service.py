@@ -62,7 +62,11 @@ def to_back_charge_item(bc: BackCharge) -> BackChargeItem:
         description=bc.description or "",
         basis=bc.basis or "",
         gross_amount=bc.gross_amount if bc.gross_amount is not None else Decimal("0"),
-        chargeable_pct=bc.chargeable_pct if bc.chargeable_pct is not None else Decimal("0"),
+        # Align the missing-value default with create_back_charge and the column
+        # server_default (both 1 = fully chargeable). Defaulting a None to 0 here
+        # would silently zero the chargeable amount of a row whose percentage was
+        # never set, understating the recovery ledger and analytics.
+        chargeable_pct=bc.chargeable_pct if bc.chargeable_pct is not None else Decimal("1"),
         currency=bc.currency or "",
         status=bc.status or "",
         recovered_amount=bc.recovered_amount if bc.recovered_amount is not None else Decimal("0"),

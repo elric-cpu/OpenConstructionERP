@@ -66,6 +66,20 @@ async def _project(session: AsyncSession, owner_id: uuid.UUID) -> uuid.UUID:
     return proj.id
 
 
+async def _add_member(session: AsyncSession, project_id: uuid.UUID, user_id: uuid.UUID) -> None:
+    """Add ``user_id`` to ``project_id``'s default team.
+
+    A reassignment target must belong to the route's project (the service now
+    enforces the same owner / team-member / admin rule ``verify_project_access``
+    applies to the caller), so a plain stand-in is enrolled as a project member
+    before it can be pinned to a step.
+    """
+    from app.modules.projects.member_schemas import AddProjectMemberRequest
+    from app.modules.projects.member_service import add_project_member
+
+    await add_project_member(session, project_id, AddProjectMemberRequest(user_id=user_id))
+
+
 async def _route_instance(
     session: AsyncSession,
     svc: ApprovalRouteService,
@@ -95,6 +109,7 @@ async def test_reassign_pins_assignee_and_locks_out_original(session: AsyncSessi
     project_id = await _project(session, owner.id)
     approver_a = await _user(session)
     stand_in_b = await _user(session)
+    await _add_member(session, project_id, stand_in_b.id)
 
     inst = await _route_instance(
         session,
@@ -273,6 +288,7 @@ async def test_override_clears_when_instance_advances(session: AsyncSession) -> 
     approver_a = await _user(session)
     stand_in_b = await _user(session)
     approver_c = await _user(session)
+    await _add_member(session, project_id, stand_in_b.id)
 
     inst = await _route_instance(
         session,

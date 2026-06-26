@@ -11,10 +11,15 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.audit_log import log_activity
-from app.dependencies import CurrentUserId, SessionDep, verify_project_access
+from app.dependencies import (
+    CurrentUserId,
+    RequirePermission,
+    SessionDep,
+    verify_project_access,
+)
 from app.modules.claims_evidence.provability_service import (
     SubjectNotFound,
     UnknownSubjectKind,
@@ -51,7 +56,11 @@ _RECONSTRUCT_KINDS = (
 )
 
 
-@router.get("/projects/{project_id}/pack", response_model=EvidencePackOut)
+@router.get(
+    "/projects/{project_id}/pack",
+    response_model=EvidencePackOut,
+    dependencies=[Depends(RequirePermission("claims_evidence.read"))],
+)
 async def get_evidence_pack(
     project_id: uuid.UUID,
     session: SessionDep,
@@ -76,6 +85,7 @@ async def get_evidence_pack(
 @router.get(
     "/projects/{project_id}/reconstruct/{subject_type}/{subject_id}",
     response_model=EvidencePackOut,
+    dependencies=[Depends(RequirePermission("claims_evidence.read"))],
 )
 async def reconstruct_change(
     project_id: uuid.UUID,
@@ -115,6 +125,7 @@ async def reconstruct_change(
 @router.post(
     "/projects/{project_id}/reconstruct/{subject_type}/{subject_id}/export",
     response_model=EvidencePackOut,
+    dependencies=[Depends(RequirePermission("claims_evidence.read"))],
 )
 async def export_reconstructed_pack(
     project_id: uuid.UUID,
@@ -169,6 +180,7 @@ async def export_reconstructed_pack(
 @router.get(
     "/projects/{project_id}/changes/{subject_kind}/{subject_id}/provability",
     response_model=ProvabilityScoreOut,
+    dependencies=[Depends(RequirePermission("claims_evidence.read"))],
 )
 async def get_change_provability(
     project_id: uuid.UUID,

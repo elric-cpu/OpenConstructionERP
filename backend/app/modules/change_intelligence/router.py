@@ -13,9 +13,14 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.dependencies import CurrentUserId, SessionDep, verify_project_access
+from app.dependencies import (
+    CurrentUserId,
+    RequirePermission,
+    SessionDep,
+    verify_project_access,
+)
 from app.modules.change_intelligence.schemas import (
     ChangeWatchOut,
     ClarifiedRequestOut,
@@ -73,7 +78,11 @@ from app.modules.change_intelligence.service import (
 router = APIRouter(tags=["Change Intelligence"])
 
 
-@router.get("/projects/{project_id}/cycle-time", response_model=CycleTimeBoardOut)
+@router.get(
+    "/projects/{project_id}/cycle-time",
+    response_model=CycleTimeBoardOut,
+    dependencies=[Depends(RequirePermission("change_intelligence.read"))],
+)
 async def get_cycle_time_board(
     project_id: uuid.UUID,
     session: SessionDep,
@@ -94,7 +103,11 @@ async def get_cycle_time_board(
     )
 
 
-@router.get("/projects/{project_id}/impact", response_model=ImpactProjectionOut)
+@router.get(
+    "/projects/{project_id}/impact",
+    response_model=ImpactProjectionOut,
+    dependencies=[Depends(RequirePermission("change_intelligence.read"))],
+)
 async def get_impact_projection(
     project_id: uuid.UUID,
     session: SessionDep,
@@ -126,7 +139,11 @@ async def get_impact_projection(
     )
 
 
-@router.post("/clarify", response_model=ClarifiedRequestOut)
+@router.post(
+    "/clarify",
+    response_model=ClarifiedRequestOut,
+    dependencies=[Depends(RequirePermission("change_intelligence.read"))],
+)
 async def clarify_change_request(
     payload: ClarifyIn,
     user_id: CurrentUserId = None,  # type: ignore[assignment]
@@ -140,7 +157,11 @@ async def clarify_change_request(
     return ClarifiedRequestOut.model_validate(clarified)
 
 
-@router.get("/projects/{project_id}/coordination", response_model=CoordinationPlanOut)
+@router.get(
+    "/projects/{project_id}/coordination",
+    response_model=CoordinationPlanOut,
+    dependencies=[Depends(RequirePermission("change_intelligence.read"))],
+)
 async def get_coordination_plan(
     project_id: uuid.UUID,
     session: SessionDep,
@@ -160,7 +181,11 @@ async def get_coordination_plan(
     )
 
 
-@router.get("/projects/{project_id}/comms-digest", response_model=CommsDigestOut)
+@router.get(
+    "/projects/{project_id}/comms-digest",
+    response_model=CommsDigestOut,
+    dependencies=[Depends(RequirePermission("change_intelligence.read"))],
+)
 async def get_comms_digest(
     project_id: uuid.UUID,
     session: SessionDep,
@@ -180,7 +205,11 @@ async def get_comms_digest(
     )
 
 
-@router.get("/changes/{kind}/{entity_id}/ownership-chain", response_model=OwnershipChainOut)
+@router.get(
+    "/changes/{kind}/{entity_id}/ownership-chain",
+    response_model=OwnershipChainOut,
+    dependencies=[Depends(RequirePermission("change_intelligence.read"))],
+)
 async def get_ownership_chain(
     kind: str,
     entity_id: uuid.UUID,
@@ -236,7 +265,11 @@ async def get_ownership_chain(
     )
 
 
-@router.get("/projects/{project_id}/dispute-risk", response_model=DisputeRiskBoardOut)
+@router.get(
+    "/projects/{project_id}/dispute-risk",
+    response_model=DisputeRiskBoardOut,
+    dependencies=[Depends(RequirePermission("change_intelligence.read"))],
+)
 async def get_dispute_risk_board(
     project_id: uuid.UUID,
     session: SessionDep,
@@ -298,7 +331,11 @@ async def get_dispute_risk_board(
     )
 
 
-@router.get("/decision-impact", response_model=DecisionImpactOut)
+@router.get(
+    "/decision-impact",
+    response_model=DecisionImpactOut,
+    dependencies=[Depends(RequirePermission("change_intelligence.read"))],
+)
 async def get_decision_impact(
     project_id: uuid.UUID,
     candidate_change_id: uuid.UUID,
@@ -353,7 +390,11 @@ async def get_decision_impact(
     )
 
 
-@router.get("/projects/{project_id}/change-watch", response_model=ChangeWatchOut)
+@router.get(
+    "/projects/{project_id}/change-watch",
+    response_model=ChangeWatchOut,
+    dependencies=[Depends(RequirePermission("change_intelligence.read"))],
+)
 async def get_change_watch(
     project_id: uuid.UUID,
     session: SessionDep,
@@ -386,7 +427,11 @@ async def get_change_watch(
     )
 
 
-@router.get("/projects/{project_id}/intake/profiles", response_model=IntakeProfilesOut)
+@router.get(
+    "/projects/{project_id}/intake/profiles",
+    response_model=IntakeProfilesOut,
+    dependencies=[Depends(RequirePermission("change_intelligence.read"))],
+)
 async def get_intake_profiles(
     project_id: uuid.UUID,
     session: SessionDep,
@@ -416,7 +461,11 @@ async def get_intake_profiles(
     )
 
 
-@router.post("/projects/{project_id}/intake/preview", response_model=IntakePreviewOut)
+@router.post(
+    "/projects/{project_id}/intake/preview",
+    response_model=IntakePreviewOut,
+    dependencies=[Depends(RequirePermission("change_intelligence.read"))],
+)
 async def preview_intake_record(
     project_id: uuid.UUID,
     payload: IntakePreviewIn,
@@ -456,7 +505,11 @@ async def preview_intake_record(
     )
 
 
-@router.get("/projects/{project_id}/delay-risk", response_model=DelayRiskBoardOut)
+@router.get(
+    "/projects/{project_id}/delay-risk",
+    response_model=DelayRiskBoardOut,
+    dependencies=[Depends(RequirePermission("change_intelligence.read"))],
+)
 async def get_delay_risk_board(
     project_id: uuid.UUID,
     session: SessionDep,
@@ -504,7 +557,11 @@ async def get_delay_risk_board(
     )
 
 
-@router.get("/projects/{project_id}/scope-ambiguity", response_model=ScopeAmbiguityReportOut)
+@router.get(
+    "/projects/{project_id}/scope-ambiguity",
+    response_model=ScopeAmbiguityReportOut,
+    dependencies=[Depends(RequirePermission("change_intelligence.read"))],
+)
 async def get_scope_ambiguity(
     project_id: uuid.UUID,
     session: SessionDep,
