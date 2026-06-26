@@ -227,20 +227,22 @@ async def demo_login(
     regular login - without ever asking for the random password.
 
     Hard guards:
-        * Disabled when ``SEED_DEMO`` env var is ``false`` / ``0`` / ``no``
-          (production deployments).
+        * Disabled whenever demo seeding is off - either ``SEED_DEMO`` is
+          ``false`` / ``0`` / ``no`` or the persisted first-run choice opted
+          out (``seed_demo_enabled()``). Production deployments that never
+          seeded demo data therefore cannot demo-login.
         * Email must be in the whitelist of seeded demo accounts.
         * Account must exist and be active. Missing rows return 404 with a
           message that points the operator at the seed log.
         * Rate-limited per source IP (``demo_{ip}`` bucket) - the same
           login_limiter so repeated taps don't bypass throttling.
     """
-    import os
+    from app.core.demo_seed import seed_demo_enabled
 
-    if os.environ.get("SEED_DEMO", "true").lower() in ("false", "0", "no"):
+    if not seed_demo_enabled():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Demo login is disabled on this server (SEED_DEMO=false).",
+            detail="Demo login is disabled on this server.",
         )
 
     email = (data.email or "").strip().lower()
@@ -356,11 +358,18 @@ async def first_run(
     try:
         return await service.first_run_status(is_desktop=is_desktop)
     except Exception:  # noqa: BLE001 - this endpoint must never error
+        try:
+            from app.core.demo_seed import seed_demo_enabled
+
+            demo_enabled = seed_demo_enabled()
+        except Exception:  # noqa: BLE001 - degrade to the safe default
+            demo_enabled = True
         return FirstRunResponse(
             desktop_mode=is_desktop,
             fresh_install=False,
             has_local_account=False,
             onboarding_completed=None,
+            demo_enabled=demo_enabled,
         )
 
 

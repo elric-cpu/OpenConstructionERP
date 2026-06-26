@@ -111,6 +111,9 @@ export function LoginPage() {
   const [brandOpen, setBrandOpen] = useState(false);
   const [demoOpen, setDemoOpen] = useState(true);
   const [demoLoading, setDemoLoading] = useState<string | null>(null);
+  // null = not probed yet; the demo block renders only once the server
+  // confirms demo accounts are available (see the first-run effect below).
+  const [demoEnabled, setDemoEnabled] = useState<boolean | null>(null);
   const langRef = useRef<HTMLDivElement>(null);
 
   // Desktop first-run: when running inside the Tauri shell with no stored
@@ -134,6 +137,32 @@ export function LoginPage() {
     setEmail('');
     setPassword('');
     setError('');
+  }, []);
+
+  // Probe whether this server offers demo accounts (public, no auth). The
+  // "Try demo" block is shown only when the server confirms demo is enabled,
+  // so production installs (SEED_DEMO=false, or a "no demo" first-run choice)
+  // never present a demo sign-in the server would reject - and a click can
+  // never silently create a demo account. Older servers omit the field, which
+  // we treat as enabled. Runs on web and desktop alike; a probe failure
+  // leaves the block hidden (safe default).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/v1/auth/first-run', {
+          headers: { Accept: 'application/json' },
+        });
+        if (!res.ok) return;
+        const status = (await res.json()) as FirstRunStatus;
+        if (!cancelled) setDemoEnabled(status.demo_enabled !== false);
+      } catch {
+        /* leave demoEnabled null -> demo block stays hidden */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Desktop auto-bootstrap. Runs once on mount. On ANY failure it silently
@@ -236,54 +265,18 @@ export function LoginPage() {
     setEmail('');
     setPassword('');
     try {
-      // Use the dedicated demo-login endpoint (v2.6.22) which mints tokens
-      // for seeded demo accounts without a password - necessary because the
-      // backend seeder generates a fresh `secrets.token_urlsafe(16)` per
-      // install (BUG-D01) and the frontend has no way to read it.
-      let res = await fetch('/api/v1/users/auth/demo-login/', {
+      // Password-less demo sign-in for the seeded showcase accounts. The
+      // backend seeder generates a fresh random password per install (BUG-D01)
+      // that the frontend cannot read, so this dedicated endpoint mints tokens
+      // from the demo email alone. When demo seeding is disabled the server
+      // returns 404 and we surface that message - we never fall back to
+      // registering the account, so a demo click cannot create one in
+      // production. The demo block is also hidden entirely in that config.
+      const res = await fetch('/api/v1/users/auth/demo-login/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: demoEmail }),
       });
-
-      // Fallback path: if the server is older than v2.6.22 it returns 404
-      // for /demo-login/. Try the legacy login + auto-register pair so
-      // existing deployments don't break the moment we ship the new client.
-      if (res.status === 404) {
-        res = await fetch('/api/v1/users/auth/login/', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: demoEmail, password: 'DemoPass1234!' }),
-        });
-        if (!res.ok) {
-          const errData = await res.json().catch(() => null);
-          const parsedMsg = extractErrorMessageFromBody(errData) ?? '';
-          if (
-            parsedMsg.includes('Invalid') ||
-            parsedMsg.includes('not found') ||
-            res.status === 401
-          ) {
-            const regRes = await fetch('/api/v1/users/auth/register/', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                email: demoEmail,
-                password: 'DemoPass1234!',
-                full_name: (demoEmail.split('@')[0] ?? 'Demo User')
-                  .replace(/[._]/g, ' ')
-                  .replace(/\b\w/g, (c) => c.toUpperCase()),
-              }),
-            });
-            if (regRes.ok) {
-              res = await fetch('/api/v1/users/auth/login/', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: demoEmail, password: 'DemoPass1234!' }),
-              });
-            }
-          }
-        }
-      }
 
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -854,7 +847,9 @@ export function LoginPage() {
             </div>
           </div>
 
-          {/* Demo Access */}
+          {/* Demo Access - shown only when the server confirms demo accounts
+              exist (SEED_DEMO on). Production installs hide it entirely. */}
+          {demoEnabled === true && (
           <div className="mt-3 animate-stagger-in" style={{ animationDelay: '500ms' }}>
             <div className="login-glass-pro relative rounded-2xl overflow-hidden">
               <div
@@ -904,6 +899,7 @@ export function LoginPage() {
               )}
             </div>
           </div>
+          )}
 
           {/* GitHub + Community - two primary entry points for the
               open-source project (replaces the old single "Learn more"

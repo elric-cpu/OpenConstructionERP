@@ -76,6 +76,9 @@ export function LoginPageNext() {
   const [langOpen, setLangOpen] = useState(false);
   const [demoOpen, setDemoOpen] = useState(true);
   const [demoLoading, setDemoLoading] = useState<string | null>(null);
+  // null = not probed yet; the demo block renders only once the server
+  // confirms demo accounts are available (see the first-run effect below).
+  const [demoEnabled, setDemoEnabled] = useState<boolean | null>(null);
   const langRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLDivElement>(null);
 
@@ -86,6 +89,30 @@ export function LoginPageNext() {
     setEmail('');
     setPassword('');
     setError('');
+  }, []);
+
+  // Probe whether this server offers demo accounts (public, no auth). The
+  // demo block is shown only when the server confirms demo is enabled, so
+  // production installs (SEED_DEMO=false) never present a demo sign-in - and a
+  // click can never silently create a demo account. Older servers omit the
+  // field, which we treat as enabled. A probe failure leaves the block hidden.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/v1/auth/first-run', {
+          headers: { Accept: 'application/json' },
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { demo_enabled?: boolean };
+        if (!cancelled) setDemoEnabled(data.demo_enabled !== false);
+      } catch {
+        /* leave demoEnabled null -> demo block stays hidden */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -144,47 +171,16 @@ export function LoginPageNext() {
     setEmail('');
     setPassword('');
     try {
-      let res = await fetch('/api/v1/users/auth/demo-login/', {
+      // Password-less demo sign-in for the seeded showcase accounts only.
+      // When demo seeding is disabled the server returns 404 and we surface
+      // the message - we never fall back to registering the account, so a
+      // demo click cannot create one in production. The demo block is also
+      // hidden entirely in that configuration.
+      const res = await fetch('/api/v1/users/auth/demo-login/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: demoEmail }),
       });
-
-      if (res.status === 404) {
-        res = await fetch('/api/v1/users/auth/login/', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: demoEmail, password: 'DemoPass1234!' }),
-        });
-        if (!res.ok) {
-          const errData = await res.json().catch(() => null);
-          const parsedMsg = extractErrorMessageFromBody(errData) ?? '';
-          if (
-            parsedMsg.includes('Invalid') ||
-            parsedMsg.includes('not found') ||
-            res.status === 401
-          ) {
-            const regRes = await fetch('/api/v1/users/auth/register/', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                email: demoEmail,
-                password: 'DemoPass1234!',
-                full_name: (demoEmail.split('@')[0] ?? 'Demo User')
-                  .replace(/[._]/g, ' ')
-                  .replace(/\b\w/g, (c) => c.toUpperCase()),
-              }),
-            });
-            if (regRes.ok) {
-              res = await fetch('/api/v1/users/auth/login/', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: demoEmail, password: 'DemoPass1234!' }),
-              });
-            }
-          }
-        }
-      }
 
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -686,7 +682,9 @@ export function LoginPageNext() {
                 </Button>
               </form>
 
-              {/* Demo accounts */}
+              {/* Demo accounts - shown only when the server confirms demo
+                  accounts exist (SEED_DEMO on). Production installs hide it. */}
+              {demoEnabled === true && (
               <div className="mt-6 animate-stagger-in" style={{ animationDelay: '260ms' }}>
                 <button
                   type="button"
@@ -731,6 +729,7 @@ export function LoginPageNext() {
                   </div>
                 )}
               </div>
+              )}
 
               {/* Footer */}
               <div className="mt-7 animate-stagger-in" style={{ animationDelay: '340ms' }}>

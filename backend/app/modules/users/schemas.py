@@ -112,6 +112,12 @@ class FirstRunResponse(BaseModel):
     fresh_install: bool
     has_local_account: bool
     onboarding_completed: bool | None = None
+    demo_enabled: bool = True
+    """Whether seeded demo accounts and the password-less demo-login are
+    available on this server. The login page hides its "Try demo" block when
+    this is ``False`` (production installs with ``SEED_DEMO=false`` or a
+    persisted "no demo" first-run choice), so it never offers a demo sign-in
+    the server would reject - and never silently creates a demo account."""
 
 
 # ── User CRUD ──────────────────────────────────────────────────────────────

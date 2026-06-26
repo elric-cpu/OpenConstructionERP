@@ -22,6 +22,10 @@ export interface FirstRunStatus {
   fresh_install: boolean;
   has_local_account: boolean;
   onboarding_completed: boolean | null;
+  /** Whether seeded demo accounts and the password-less demo-login are
+   *  available. Optional for backward compatibility with older servers that
+   *  predate the field; the login page treats a missing value as enabled. */
+  demo_enabled?: boolean;
 }
 
 /**

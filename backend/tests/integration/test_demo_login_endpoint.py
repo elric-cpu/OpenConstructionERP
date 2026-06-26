@@ -9,6 +9,8 @@ Covers:
       returns 404 even for a whitelisted email.
     * Test D — Whitelist must match the seeder spec list — a sync-test
       that fails loudly if the two lists drift apart (BUG-D02 guard).
+    * Test E — The public first-run probe reports ``demo_enabled`` so the
+      login page can hide the demo block when seeding is off (issue #272).
 
 The demo accounts are auto-seeded on startup by ``app.main._seed_demo_account``
 inside the regular lifespan, so we don't need to register them ourselves.
@@ -102,6 +104,27 @@ class TestDemoLoginEndpoint:
             )
             assert resp.status_code == 404, resp.text
             assert "disabled" in (resp.json().get("detail") or "").lower()
+        finally:
+            monkeypatch.setenv("SEED_DEMO", "true")
+
+    async def test_first_run_reports_demo_enabled(
+        self,
+        demo_client: AsyncClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The public first-run probe surfaces ``demo_enabled`` so the login
+        page can hide its demo block on installs that never seeded demo data.
+        It mirrors ``seed_demo_enabled()`` - true by default, false when
+        ``SEED_DEMO`` is off (issue #272)."""
+        resp = await demo_client.get("/api/v1/auth/first-run/")
+        assert resp.status_code == 200, resp.text
+        assert resp.json().get("demo_enabled") is True
+
+        monkeypatch.setenv("SEED_DEMO", "false")
+        try:
+            resp = await demo_client.get("/api/v1/auth/first-run/")
+            assert resp.status_code == 200, resp.text
+            assert resp.json().get("demo_enabled") is False
         finally:
             monkeypatch.setenv("SEED_DEMO", "true")
 

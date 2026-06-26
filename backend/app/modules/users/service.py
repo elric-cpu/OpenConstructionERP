@@ -586,11 +586,14 @@ class UserService:
 
         has_real_user = await self.user_repo.has_real_active_user()
 
+        from app.core.demo_seed import seed_demo_enabled
+
         return FirstRunResponse(
             desktop_mode=is_desktop,
             fresh_install=not has_real_user,
             has_local_account=has_local_account,
             onboarding_completed=onboarding_completed,
+            demo_enabled=seed_demo_enabled(),
         )
 
     async def desktop_bootstrap(self) -> TokenResponse:
