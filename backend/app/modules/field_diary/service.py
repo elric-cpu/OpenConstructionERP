@@ -530,21 +530,29 @@ class FieldDiaryService:
         if await self.ledger_repo.get_by_client_op_id(client_op_id) is not None:
             return
         try:
-            await self.ledger_repo.create(
-                FieldSyncLedger(
-                    client_op_id=client_op_id,
-                    project_id=project_id,
-                    user_id=user_id,
-                    op_kind=op_kind or "",
-                    result_type=result_type,
-                    result_id=result_id,
+            # Wrap ONLY the ledger insert in a SAVEPOINT so a duplicate-race
+            # IntegrityError rolls back just this insert, not the whole request
+            # transaction. The outer transaction already holds the applied
+            # activity (and any earlier ops drained in this same batch); a bare
+            # session.rollback() here would silently discard those already-
+            # applied writes, including the schedule-progress entry that reaches
+            # earned value.
+            async with self.session.begin_nested():
+                await self.ledger_repo.create(
+                    FieldSyncLedger(
+                        client_op_id=client_op_id,
+                        project_id=project_id,
+                        user_id=user_id,
+                        op_kind=op_kind or "",
+                        result_type=result_type,
+                        result_id=result_id,
+                    )
                 )
-            )
         except IntegrityError:
             # A racing drain already recorded this op; the activity row it points
-            # at is the canonical one. Roll back the failed insert savepoint so
-            # the surrounding transaction stays usable.
-            await self.session.rollback()
+            # at is the canonical one. The SAVEPOINT was rolled back on exit, so
+            # the surrounding transaction stays intact for the outer commit.
+            pass
 
     async def append_activity_by_date(
         self,

@@ -24,6 +24,12 @@ every ORM read 500s. Because every statement here is ``ADD COLUMN`` /
 ``CREATE INDEX IF NOT EXISTS`` - idempotent and non-destructive - it is safe
 to run as a belt-and-braces heal regardless of who owns the schema. The call
 site wraps it non-fatally so a DB role without DDL rights simply skips it.
+
+Concurrency- and traffic-safe on shared external databases: the heal takes a
+transaction-scoped advisory lock (only one worker heals at a time), bounds each
+DDL with ``SET LOCAL lock_timeout`` so it never blocks live queries behind an
+open transaction, and wraps every statement in its own SAVEPOINT so a single
+failure cannot poison the rest of the heal.
 """
 
 import logging
@@ -32,6 +38,12 @@ from sqlalchemy import Column, inspect, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 logger = logging.getLogger(__name__)
+
+# Stable application-defined key for ``pg_try_advisory_xact_lock``. Serialises
+# the heal across multiple workers / replicas pointed at the same external
+# database so they never issue concurrent ALTER / CREATE INDEX against the same
+# table. The value is arbitrary but must stay constant across releases.
+_HEAL_ADVISORY_LOCK_KEY = 826340271
 
 
 async def postgres_auto_migrate(engine: AsyncEngine, base) -> int:
@@ -54,6 +66,29 @@ async def postgres_auto_migrate(engine: AsyncEngine, base) -> int:
     indexes_added = 0
 
     async with engine.begin() as conn:
+        # Serialise the heal across processes: on a shared external database
+        # several app workers (or replicas) can boot at once. Only one should
+        # run the idempotent DDL; the others skip and rely on the holder. The
+        # xact-scoped advisory lock auto-releases when this transaction ends, so
+        # there is nothing to unlock by hand. On the single-process embedded
+        # server the lock is always free, so this is a no-op there.
+        got_lock = (
+            await conn.execute(
+                text("SELECT pg_try_advisory_xact_lock(:k)"),
+                {"k": _HEAL_ADVISORY_LOCK_KEY},
+            )
+        ).scalar()
+        if not got_lock:
+            logger.info("PostgreSQL auto-migration: another worker holds the heal lock - skipping")
+            return 0
+
+        # Never stall live traffic on a busy external database: cap how long any
+        # single DDL waits to acquire its table lock. If the table is busy the
+        # statement raises (caught per-statement below) and the heal is simply
+        # deferred to a later boot or the operator's ``alembic upgrade head``,
+        # rather than blocking startup behind an open transaction.
+        await conn.execute(text("SET LOCAL lock_timeout = '3s'"))
+
         existing_tables = await conn.run_sync(lambda sync_conn: set(inspect(sync_conn).get_table_names()))
 
         for table in base.metadata.sorted_tables:
@@ -102,7 +137,13 @@ async def postgres_auto_migrate(engine: AsyncEngine, base) -> int:
                 sql = f'ALTER TABLE "{table.name}" ADD COLUMN IF NOT EXISTS "{col.name}" {col_type}{not_null}{default}'
 
                 try:
-                    await conn.execute(text(sql))
+                    # SAVEPOINT per statement: a failed DDL aborts only its own
+                    # nested transaction, not the whole heal. Without this the
+                    # first failure would poison the outer transaction and every
+                    # later ADD COLUMN / CREATE INDEX would error with "current
+                    # transaction is aborted", silently halting the heal.
+                    async with conn.begin_nested():
+                        await conn.execute(text(sql))
                     columns_added += 1
                     logger.info(
                         "PostgreSQL migration: added column %s.%s (%s)",
@@ -169,7 +210,10 @@ async def postgres_auto_migrate(engine: AsyncEngine, base) -> int:
                 sql = f'CREATE {unique}INDEX IF NOT EXISTS "{index.name}" ON "{table.name}" ({cols_sql})'
 
                 try:
-                    await conn.execute(text(sql))
+                    # SAVEPOINT per statement - see the ADD COLUMN note above:
+                    # keeps one failed CREATE INDEX from poisoning the rest.
+                    async with conn.begin_nested():
+                        await conn.execute(text(sql))
                     indexes_added += 1
                     logger.info(
                         "PostgreSQL migration: created index %s on %s (%s)",

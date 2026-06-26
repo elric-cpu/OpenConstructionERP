@@ -643,10 +643,13 @@ async def serve_photo_file(
     file_path = Path(photo.file_path).resolve()
     photo_base = Path(PHOTO_BASE).resolve()
 
-    # Security: Path.resolve().relative_to() handles case-insensitive FS + symlinks
-    try:
-        file_path.relative_to(photo_base)
-    except ValueError:
+    # Security + cross-release containment: the blob must resolve inside a
+    # directory the platform owns. A photo written under an earlier release can
+    # live under a sibling data root (e.g. legacy ~/.openestimator vs the now
+    # canonical ~/.openestimate), so accept PHOTO_BASE plus the platform-wide
+    # safe data roots. is_within_safe_root uses resolve()/relative_to under the
+    # hood, so it still defeats case-fold + symlink escapes.
+    if not is_within_safe_root(file_path, extra_roots=[photo_base]):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
@@ -716,27 +719,26 @@ async def serve_photo_thumbnail(
 
     if thumb_path_str:
         thumb_path = Path(thumb_path_str).resolve()
-        try:
-            # Only allow paths that sit under the thumb-root - defence against
-            # symlink escape + stored-path tampering.
-            thumb_path.relative_to(thumb_base)
+        # Accept the thumb-root plus the platform-wide safe data roots, so a
+        # thumbnail written under an earlier release's data dir still resolves.
+        # The resolve()/relative_to containment (case-fold + symlink-escape
+        # defence) is preserved by is_within_safe_root.
+        if is_within_safe_root(thumb_path, extra_roots=[thumb_base]):
             if thumb_path.exists() and thumb_path.is_file() and not thumb_path.is_symlink():
                 return FileResponse(
                     path=str(thumb_path),
                     media_type="image/jpeg",
                     headers={"Cache-Control": "public, max-age=86400"},
                 )
-        except ValueError:
+        else:
             logger.warning(
-                "Photo %s has thumbnail_path outside thumb base - ignoring",
+                "Photo %s has thumbnail_path outside any safe root - ignoring",
                 photo_id,
             )
 
     # Fallback: serve the full file so the gallery never breaks.
     file_path = Path(photo.file_path).resolve()
-    try:
-        file_path.relative_to(photo_base)
-    except ValueError:
+    if not is_within_safe_root(file_path, extra_roots=[photo_base]):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
@@ -1337,9 +1339,11 @@ async def serve_share_link_file(
         )
     file_path = (raw if raw.is_absolute() else upload_base / raw).resolve()
 
-    try:
-        file_path.relative_to(upload_base)
-    except ValueError:
+    # Accept UPLOAD_BASE plus the platform-wide safe data roots, so a file
+    # uploaded under an earlier release's data dir still resolves (mirrors the
+    # authenticated download route). is_within_safe_root preserves the
+    # case-fold + symlink-escape protection of relative_to.
+    if not is_within_safe_root(file_path, extra_roots=[upload_base]):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="File not found on disk",
