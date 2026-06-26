@@ -31,6 +31,16 @@ async def session() -> AsyncSession:
         yield s
 
 
+@pytest.fixture(autouse=True)
+def _watch_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point the connectors base dir at ``tmp_path`` for the duration of a test.
+
+    The service confines a watched-folder root to this base dir, so the temp
+    folders these tests drop files into must live under it.
+    """
+    monkeypatch.setenv("OE_CONNECTORS_BASE_DIR", str(tmp_path))
+
+
 async def _project(session: AsyncSession) -> tuple[User, Project]:
     user = User(
         email=f"conn-{uuid.uuid4().hex[:8]}@example.com",
@@ -130,3 +140,70 @@ async def test_missing_folder_syncs_to_nothing(session: AsyncSession, tmp_path: 
     assert result["created"] == 0
     assert result["total"] == 0
     assert await _docs_for(session, proj.id) == []
+
+
+# ---------------------------------------------------------------------------
+# Watched-folder root is confined to the connectors base dir.
+# (The autouse ``_watch_base`` fixture points the base dir at ``tmp_path``.)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_source_accepts_root_inside_base(session: AsyncSession, tmp_path: Path) -> None:
+    user, proj = await _project(session)
+    inside = tmp_path / "site-drop"
+    inside.mkdir()
+
+    source = await _make_source(session, proj, user, inside)
+    assert source.root_path == str(inside)
+
+
+@pytest.mark.asyncio
+async def test_create_source_rejects_root_outside_base(session: AsyncSession, tmp_path: Path) -> None:
+    user, proj = await _project(session)
+    # A real absolute path that is not under the base dir (a sibling of it).
+    outside = tmp_path.parent / f"outside-{uuid.uuid4().hex[:6]}"
+    outside.mkdir()
+
+    with pytest.raises(ValueError, match="connectors base directory"):
+        await _make_source(session, proj, user, outside)
+    # Nothing was persisted.
+    assert await ConnectorService(session).list_sources(proj.id) == []
+
+
+@pytest.mark.asyncio
+async def test_create_source_rejects_parent_traversal(session: AsyncSession, tmp_path: Path) -> None:
+    user, proj = await _project(session)
+    # ``<base>/../<base-name>-escape`` resolves outside the base dir.
+    escape = tmp_path / ".." / f"escape-{uuid.uuid4().hex[:6]}"
+
+    with pytest.raises(ValueError, match="connectors base directory"):
+        await _make_source(session, proj, user, escape)
+
+
+@pytest.mark.asyncio
+async def test_create_source_rejects_relative_root(session: AsyncSession) -> None:
+    user, proj = await _project(session)
+    service = ConnectorService(session)
+
+    with pytest.raises(ValueError, match="absolute path"):
+        await service.create_source(
+            project_id=proj.id,
+            name="Relative",
+            root_path="some/relative/dir",
+            created_by=str(user.id),
+        )
+
+
+@pytest.mark.asyncio
+async def test_create_source_rejects_blank_root(session: AsyncSession) -> None:
+    user, proj = await _project(session)
+    service = ConnectorService(session)
+
+    with pytest.raises(ValueError, match="absolute path"):
+        await service.create_source(
+            project_id=proj.id,
+            name="Blank",
+            root_path="   ",
+            created_by=str(user.id),
+        )

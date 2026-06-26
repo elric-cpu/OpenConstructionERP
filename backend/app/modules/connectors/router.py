@@ -44,14 +44,17 @@ async def create_source(
     """Register an inbound document source for a project (admin only)."""
     await verify_project_access(project_id, user_id, session)
     service = ConnectorService(session)
-    source = await service.create_source(
-        project_id=project_id,
-        name=payload.name,
-        root_path=payload.root_path,
-        kind=payload.kind,
-        enabled=payload.enabled,
-        created_by=user_id,
-    )
+    try:
+        source = await service.create_source(
+            project_id=project_id,
+            name=payload.name,
+            root_path=payload.root_path,
+            kind=payload.kind,
+            enabled=payload.enabled,
+            created_by=user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return ConnectorSourceOut.model_validate(source)
 
 

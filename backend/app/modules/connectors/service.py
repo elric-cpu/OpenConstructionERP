@@ -30,6 +30,7 @@ from app.modules.connectors.models import ConnectorSource
 from app.modules.connectors.storage_connector import (
     compute_sync_plan,
     hash_bytes,
+    is_within_base,
     normalize_entry,
 )
 from app.modules.documents.models import Document
@@ -45,6 +46,60 @@ CONNECTOR_META_KEY = "connector"
 #: hashing (larger files fall back to a size signature for dedup).
 MAX_FILES_PER_SYNC = 2000
 MAX_HASH_BYTES = 8 * 1024 * 1024
+
+#: Sub-directory (under the unified data root) that bounds every watched-folder
+#: root when ``OE_CONNECTORS_BASE_DIR`` is not set.
+_CONNECTORS_BASE_SUBDIR = "connectors_watch"
+
+
+def _connectors_base_dir() -> Path:
+    """Return the only directory tree a watched-folder root may live under.
+
+    An operator can point this at a dedicated drop area with
+    ``OE_CONNECTORS_BASE_DIR``; otherwise it is ``connectors_watch`` under the
+    unified data root (:func:`app.core.storage.resolve_data_dir`, which honours
+    ``OE_DATA_DIR`` / ``DATA_DIR`` / ``OE_CLI_DATA_DIR`` and the persistent
+    per-user home for wheel installs). The directory is created if missing so a
+    fresh install can register a source without manual setup.
+
+    Resolved lazily, PER CALL (not at import time), so a test monkeypatch or an
+    operator setting the env after import takes effect, and so this module is
+    not import-coupled to ``app.config`` / Postgres. The returned path is
+    canonicalized (symlinks resolved) so containment checks compare real paths.
+    """
+    raw = os.environ.get("OE_CONNECTORS_BASE_DIR")
+    if raw and raw.strip():
+        base = Path(raw.strip()).expanduser()
+    else:
+        from app.core.storage import resolve_data_dir
+
+        base = resolve_data_dir() / _CONNECTORS_BASE_SUBDIR
+    base.mkdir(parents=True, exist_ok=True)
+    return base.resolve()
+
+
+def _validate_root_path(root_path: str) -> str:
+    """Confine a watched-folder root to the connectors base dir.
+
+    Returns the stripped root unchanged when it is an absolute path whose real
+    (symlink-resolved) location is the base dir or below it. Raises
+    :class:`ValueError` otherwise - an empty/relative path, or one that escapes
+    the base dir (for example ``/etc`` or a ``..`` traversal). Fail-closed: a
+    root that cannot be resolved is rejected. Connectors shipped in v8.11.0 with
+    no rows to migrate, so this can reject without back-compat concerns.
+    """
+    stripped = root_path.strip()
+    candidate = Path(stripped)
+    if not stripped or not candidate.is_absolute():
+        raise ValueError("root_path must be an absolute path")
+    base = _connectors_base_dir()
+    try:
+        resolved = candidate.resolve()
+    except OSError as exc:
+        raise ValueError("root_path could not be resolved") from exc
+    if not is_within_base(base, resolved):
+        raise ValueError("root_path must be inside the connectors base directory")
+    return stripped
 
 
 def _iso_now() -> str:
@@ -140,7 +195,7 @@ class ConnectorService:
         source = ConnectorSource(
             project_id=project_id,
             name=name.strip(),
-            root_path=root_path.strip(),
+            root_path=_validate_root_path(root_path),
             kind=kind.strip() or "watched_folder",
             enabled=enabled,
             created_by=created_by,

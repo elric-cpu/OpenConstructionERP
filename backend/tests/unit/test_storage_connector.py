@@ -9,6 +9,7 @@ adapter and the deterministic sync-plan reconciler. Runs on Python 3.11.
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 
 import pytest
 
@@ -20,6 +21,7 @@ from app.modules.connectors.storage_connector import (
     SyncPlan,
     compute_sync_plan,
     hash_bytes,
+    is_within_base,
     normalize_entry,
 )
 
@@ -535,3 +537,47 @@ def test_sync_plan_end_to_end_through_adapter():
     assert created_ids == ["fresh"]
     assert dup_ids == ["copy"]
     assert known_ids == ["stored"]
+
+
+# ---------------------------------------------------------------------------
+# is_within_base (watched-folder root containment)
+# ---------------------------------------------------------------------------
+
+# A base dir spelled with a Windows drive so the cases are valid absolute paths
+# on the local (Windows) runner; the comparison itself is OS-agnostic.
+_BASE = Path("C:/srv/connectors_watch")
+
+
+def test_within_base_equal_path_is_inside():
+    assert is_within_base(_BASE, Path("C:/srv/connectors_watch")) is True
+
+
+def test_within_base_direct_child_is_inside():
+    assert is_within_base(_BASE, Path("C:/srv/connectors_watch/site-drop")) is True
+
+
+def test_within_base_deep_descendant_is_inside():
+    assert is_within_base(_BASE, Path("C:/srv/connectors_watch/a/b/c")) is True
+
+
+def test_within_base_unrelated_root_is_outside():
+    # The classic abuse: pointing a source at a system directory.
+    assert is_within_base(_BASE, Path("C:/Windows")) is False
+
+
+def test_within_base_parent_is_outside():
+    assert is_within_base(_BASE, Path("C:/srv")) is False
+
+
+def test_within_base_sibling_sharing_a_name_prefix_is_outside():
+    # A naive string ``startswith`` would wrongly accept this; ``parents``
+    # membership does not, because it compares whole path components.
+    assert is_within_base(_BASE, Path("C:/srv/connectors_watch_evil")) is False
+    assert is_within_base(_BASE, Path("C:/srv/connectors_watch_evil/x")) is False
+
+
+def test_within_base_does_no_io():
+    # Neither path needs to exist; the function is a pure comparison.
+    missing_base = Path("C:/nope/does-not-exist")
+    assert is_within_base(missing_base, Path("C:/nope/does-not-exist/child")) is True
+    assert is_within_base(missing_base, Path("C:/elsewhere")) is False

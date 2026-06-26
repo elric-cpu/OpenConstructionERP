@@ -40,17 +40,37 @@ import hashlib
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping, Sequence, Set
 from dataclasses import dataclass, field
+from pathlib import Path
 
 __all__ = [
     "IncomingDocument",
     "ALIAS_MAP",
     "normalize_entry",
     "hash_bytes",
+    "is_within_base",
     "StorageAdapter",
     "InMemoryAdapter",
     "SyncPlan",
     "compute_sync_plan",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Path containment
+# ---------------------------------------------------------------------------
+
+
+def is_within_base(base: Path, candidate: Path) -> bool:
+    """Whether ``candidate`` is ``base`` itself or sits below it.
+
+    Pure comparison of two paths: it does **no** IO and resolves nothing, so
+    the caller is responsible for passing already-canonicalized (symlink-free)
+    paths when it wants the check to be about real locations. Used to confine a
+    watched-folder root to an allowlisted base directory so a source can never
+    be pointed at, say, ``/etc`` or escape the base via ``..``.
+    """
+    return candidate == base or base in candidate.parents
+
 
 # ---------------------------------------------------------------------------
 # Alias mapping
