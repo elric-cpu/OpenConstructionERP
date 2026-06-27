@@ -312,17 +312,39 @@ const DOC_DWG_TAKEOFF: ModuleTarget = {
   route: (_p, f) => withParam('/dwg-takeoff', 'docId', f),
 };
 
+// BIM viewer target for a file of the *document* kind. A `document`-kind
+// FileRow carries the **Document** id (file_manager_service maps
+// ``id=str(Document.id)``), NOT a BIMModel id - so the bare ``bim_model``
+// target (which builds ``/bim/<id>`` and BIMPage reads as a *model* id)
+// would 404 with "model not found" and never convert the upload. That is
+// issue #273: opening a BIM file uploaded from Project Files did nothing
+// because no model exists yet. This passes ``?docId=`` instead, which
+// BIMPage turns into a model on demand via createBimModelFromDocument
+// (idempotent backend), exactly mirroring the DWG handling above.
+const DOC_BIM_VIEWER: ModuleTarget = {
+  ...KIND_MODULES.bim_model[0]!,
+  route: (p, f) => withParam(PROJECT(p, 'bim'), 'docId', f),
+};
+
+// Extensions that live under the `document` kind but are really BIM source
+// files needing on-demand conversion when opened from the File Manager.
+const DOC_BIM_EXTS = new Set(['ifc', 'rvt', 'dgn', 'glb', 'gltf']);
+
 // Per-extension override for `document` since a PDF, IFC, RVT, DXF and
 // XLSX all live under the `document` kind but route to different
 // modules. Returns the *primary* target — the secondary list still
-// comes from KIND_MODULES so the user has the full menu.
+// comes from KIND_MODULES so the user has the full menu. These overrides
+// apply ONLY to the `document` kind (enforced in primaryModule): a real
+// bim_model / dwg_drawing row carries its own native id and must keep its
+// path-based route, so the kind guard stops a model/drawing id from being
+// mis-sent as a ``?docId=`` import.
 const EXT_PRIMARY_OVERRIDE: Record<string, ModuleTarget> = {
   pdf: KIND_MODULES.document[0]!, // PDF Takeoff
-  ifc: KIND_MODULES.bim_model[0]!,
-  rvt: KIND_MODULES.bim_model[0]!,
-  dgn: KIND_MODULES.bim_model[0]!,
-  glb: KIND_MODULES.bim_model[0]!,
-  gltf: KIND_MODULES.bim_model[0]!,
+  ifc: DOC_BIM_VIEWER,
+  rvt: DOC_BIM_VIEWER,
+  dgn: DOC_BIM_VIEWER,
+  glb: DOC_BIM_VIEWER,
+  gltf: DOC_BIM_VIEWER,
   dwg: DOC_DWG_TAKEOFF,
   dxf: DOC_DWG_TAKEOFF,
 };
@@ -334,8 +356,20 @@ const EXT_PRIMARY_OVERRIDE: Record<string, ModuleTarget> = {
 // surfaced for documents.)
 const DOC_DWG_MODULES: ModuleTarget[] = [DOC_DWG_TAKEOFF];
 
+// Module list for a `document`-kind BIM source file (IFC/RVT/...). Only the
+// docId-passing BIM viewer is offered: the BI Explorer and Clash targets
+// need a real BIMModel id, which this document does not have until the
+// viewer converts it on demand, so surfacing them here would hand those
+// pages a document id they cannot resolve.
+const DOC_BIM_MODULES: ModuleTarget[] = [DOC_BIM_VIEWER];
+
 export function primaryModule(kind: FileKind, extension?: string | null): ModuleTarget {
-  if (extension) {
+  // The per-extension overrides import a document on demand via ``?docId=``,
+  // so they apply ONLY to the `document` kind (whose id is a Document id).
+  // bim_model / dwg_drawing rows carry their own native id and keep their
+  // path-based route - guarding on kind stops a real model/drawing id from
+  // being mis-routed as a document import (issue #273).
+  if (kind === 'document' && extension) {
     const override = EXT_PRIMARY_OVERRIDE[extension.toLowerCase().replace(/^\./, '')];
     if (override) return override;
   }
@@ -343,12 +377,14 @@ export function primaryModule(kind: FileKind, extension?: string | null): Module
 }
 
 export function modulesForKind(kind: FileKind, extension?: string | null): ModuleTarget[] {
-  // A `document`-kind DWG/DXF carries the Document id, so its module list
-  // must use the docId-passing variants (see DOC_DWG_MODULES) instead of the
-  // raw drawingId-based dwg_drawing targets that would blank the viewer.
+  // A `document`-kind DWG/DXF or BIM source file carries the Document id, so
+  // its module list must use the docId-passing variants (DOC_DWG_MODULES /
+  // DOC_BIM_MODULES) that import on demand, instead of the raw id-based
+  // dwg_drawing / bim_model targets that would blank the viewer or 404.
   if (kind === 'document' && extension) {
     const ext = extension.toLowerCase().replace(/^\./, '');
     if (ext === 'dwg' || ext === 'dxf') return DOC_DWG_MODULES;
+    if (DOC_BIM_EXTS.has(ext)) return DOC_BIM_MODULES;
   }
   return KIND_MODULES[kind] ?? [];
 }

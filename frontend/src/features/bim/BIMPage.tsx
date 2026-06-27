@@ -2169,7 +2169,23 @@ export function BIMPage() {
       if (model?.project_id && model.project_id !== projectId) {
         setActiveProject(model.project_id, '');
       }
-    }).catch(() => {
+    }).catch(async () => {
+      // The path id may actually be a *document* id - e.g. a stale link, or
+      // a BIM file opened before the File Manager routed BIM documents
+      // through the on-demand converter. Try turning it into a model before
+      // giving up, so "Open" on an uploaded-but-unconverted BIM file still
+      // works (issue #273). The backend is idempotent and 404s a non-document
+      // id, so a genuinely missing model still falls through to the toast.
+      try {
+        const created = await createBimModelFromDocument(urlModelId);
+        autoDetectedRef.current = urlModelId;
+        urlModelMissingRef.current = false;
+        await queryClient.invalidateQueries({ queryKey: ['bim-models', projectId] });
+        setActiveModelId(created.model_id);
+        return;
+      } catch {
+        // Not a convertible document either - show the missing-model state.
+      }
       autoDetectedRef.current = urlModelId;
       urlModelMissingRef.current = true;
       // Surface the missing-model state so the user doesn't think the
@@ -2185,7 +2201,7 @@ export function BIMPage() {
         }),
       });
     });
-  }, [urlModelId, models, projectId, setActiveProject, modelsQuery.isLoading, addToast, t]);
+  }, [urlModelId, models, projectId, setActiveProject, modelsQuery.isLoading, addToast, t, queryClient, setActiveModelId]);
 
   // Pick a valid active model: handles initial mount, deep links (after auto-detect),
   // and project switches (when current activeModelId no longer belongs to the project).
