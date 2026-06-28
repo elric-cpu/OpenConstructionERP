@@ -3,7 +3,9 @@ import { QueryClientContext } from '@tanstack/react-query';
 import { takeoffApi, type MeasurementCreate, type MeasurementResponse } from '@/features/takeoff/api';
 import {
   type PageScales,
+  defaultScaleConfig,
   hydratePageScales,
+  pageIsCalibrated,
   scaleForPage,
 } from './data/page-scales';
 
@@ -209,6 +211,13 @@ function toApiFormat(
   const scale = pageScales ? scaleForPage(pageScales, m.page) : undefined;
   const ppu =
     scale && scale.pixelsPerUnit > 0 ? scale.pixelsPerUnit : null;
+  // Whether THIS measurement's page was explicitly calibrated by the user.
+  // Persisted so a reload can tell a real per-sheet calibration apart from a
+  // page still on the factory default - without it every measured page shows
+  // a phantom "calibrated 1:N" badge after reload (issue #277).
+  const scaleCalibrated = pageScales
+    ? pageIsCalibrated(pageScales, m.page)
+    : false;
   return {
     project_id: projectId,
     document_id: documentId,
@@ -238,6 +247,9 @@ function toApiFormat(
       height: m.height,
       area: areaValue ?? undefined,
       frontend_id: m.id,
+      // Per-page calibration intent (issue #277): distinguishes a real
+      // calibration from a page left on the factory default on reload.
+      scale_calibrated: scaleCalibrated,
       linked_boq_id: m.linkedBoqId,
       linked_position_ordinal: m.linkedPositionOrdinal,
       linked_position_label: m.linkedPositionLabel,
@@ -316,34 +328,41 @@ function fromApiFormat(r: MeasurementResponse): Measurement {
 /**
  * Reconstruct a {@link PageScales} from server measurements.
  *
- * Each row carries the ``scale_pixels_per_unit`` of the page it was drawn
- * on, so we take the most-recently-seen positive ratio per page as that
- * page's scale and the most common ratio across all pages as the document
- * default. Returns ``null`` when no row carries a usable ratio (the caller
- * then keeps whatever it already had). This restores per-page calibration
- * for a project opened on a device that has no localStorage copy.
+ * Each row carries the ``scale_pixels_per_unit`` of the page it was drawn on
+ * plus a ``metadata.scale_calibrated`` flag recording whether the user
+ * actually calibrated that sheet. We restore a page's scale ONLY when it was
+ * genuinely calibrated, so a page still on the factory default never comes
+ * back wearing a phantom "calibrated 1:N" badge (issue #277). Rows written
+ * before the flag existed carry no field: those are inferred from the ratio
+ * (the factory default is exactly 100 px/unit, so a legacy row still at 100
+ * was uncalibrated, while any other ratio is a real calibration) - that keeps
+ * an existing per-sheet calibration without resurrecting the phantom badge.
+ *
+ * Returns ``null`` when nothing was calibrated, so the caller keeps its own
+ * (default) state and every page correctly reads "not calibrated". This
+ * restores per-page calibration for a project opened on a device that has no
+ * localStorage copy.
  */
 function pageScalesFromServer(rows: MeasurementResponse[]): PageScales | null {
   const byPage: Record<number, ScaleConfig> = {};
-  const ratioFreq = new Map<number, number>();
+  let sawCalibratedPage = false;
   for (const r of rows) {
     const ppu = r.scale_pixels_per_unit;
     if (typeof ppu !== 'number' || !Number.isFinite(ppu) || ppu <= 0) continue;
-    // Scale is metric-canonical (always metres); only the ratio differs per
-    // page. Track frequency to pick the document default.
-    byPage[r.page] = { pixelsPerUnit: ppu, unitLabel: 'm' };
-    ratioFreq.set(ppu, (ratioFreq.get(ppu) ?? 0) + 1);
-  }
-  if (Object.keys(byPage).length === 0) return null;
-  let bestRatio = 100;
-  let bestCount = -1;
-  for (const [ratio, count] of ratioFreq.entries()) {
-    if (count > bestCount) {
-      bestCount = count;
-      bestRatio = ratio;
+    const flag = (r.metadata as Record<string, unknown> | null | undefined)
+      ?.scale_calibrated;
+    // Explicit flag wins; a legacy row without one is calibrated unless it is
+    // still sitting on the exact factory-default ratio (100 px/unit).
+    const calibrated =
+      flag === true ? true : flag === false ? false : ppu !== 100;
+    if (calibrated) {
+      // Scale is metric-canonical (always metres); only the ratio differs.
+      byPage[r.page] = { pixelsPerUnit: ppu, unitLabel: 'm' };
+      sawCalibratedPage = true;
     }
   }
-  return { defaultScale: { pixelsPerUnit: bestRatio, unitLabel: 'm' }, byPage };
+  if (!sawCalibratedPage) return null;
+  return { defaultScale: defaultScaleConfig(), byPage };
 }
 
 /* ── Hook ─────────────────────────────────────────────────────────────── */
@@ -432,6 +451,18 @@ export function useMeasurementPersistence({
   // it to broadcast a refresh to the unified Markups hub.
   const qc = useContext(QueryClientContext);
 
+  // Keep the latest setters in refs so the load effect can depend ONLY on the
+  // document ``identity`` (issue #276). A caller may pass an inline-arrow
+  // setter whose identity changes on every render; if such a setter sat in the
+  // load effect's dependency array, a re-render WHILE the initial server fetch
+  // was still in flight tore the effect down (cancelled = true) and the
+  // resolved measurements were silently dropped - the saved takeoff failed to
+  // reappear on reload.
+  const setMeasurementsRef = useRef(setMeasurements);
+  setMeasurementsRef.current = setMeasurements;
+  const setPageScalesRef = useRef(setPageScales);
+  setPageScalesRef.current = setPageScales;
+
   // Load persisted data when the document identity changes — try server
   // first (keyed by the stable document UUID, issue #238), fallback to
   // localStorage.
@@ -463,8 +494,8 @@ export function useMeasurementPersistence({
             // save) is authoritative when present, but for a project loaded
             // on a fresh device this is the only place the calibration lives.
             const fromServer = pageScalesFromServer(serverData);
-            if (fromServer) setPageScales(fromServer);
-            setMeasurements(mapped);
+            if (fromServer) setPageScalesRef.current(fromServer);
+            setMeasurementsRef.current(mapped);
             return;
           }
         } catch {
@@ -490,12 +521,12 @@ export function useMeasurementPersistence({
         }
         if (data) {
           hasPersistedRef.current = true;
-          setMeasurements(data.measurements);
+          setMeasurementsRef.current(data.measurements);
           // Graceful migration: a document saved before per-page scale only
           // carried ``data.scale``; hydratePageScales promotes it to the
           // document default so every page reads the same number it always
           // did until the user re-calibrates an individual sheet.
-          setPageScales(hydratePageScales(data.pageScales, data.scale));
+          setPageScalesRef.current(hydratePageScales(data.pageScales, data.scale));
         } else {
           hasPersistedRef.current = false;
         }
@@ -505,7 +536,7 @@ export function useMeasurementPersistence({
     loadData();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [identity, setMeasurements, setPageScales]);
+  }, [identity]);
 
   // Auto-save to localStorage with debounce (500ms). Keyed by the stable
   // project+document composite (issue #238), or a local-only key for an

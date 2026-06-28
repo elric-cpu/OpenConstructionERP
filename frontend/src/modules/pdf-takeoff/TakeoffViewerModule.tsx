@@ -665,11 +665,15 @@ export default function TakeoffViewerModule({
     // (issue #238); a null id (fresh local drop) keeps everything local.
     documentId,
     measurements,
-    setMeasurements: (ms) => setMeasurements(ms),
+    // Pass the stable useState setters directly (NOT inline arrows): an
+    // inline-arrow setter changes identity every render, which used to tear
+    // down the persistence hook's in-flight server load and drop the just-
+    // loaded measurements (issue #276).
+    setMeasurements,
     // Per-page scale: the hook persists the whole page-scale model and
     // migrates a legacy single-scale document into the default on load.
     pageScales,
-    setPageScales: (ps) => setPageScales(ps),
+    setPageScales,
     // The current page's effective scale is still sent on each measurement
     // (scale_pixels_per_unit) so the server-side B8 recompute uses the same
     // ratio the row was drawn at.

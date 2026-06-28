@@ -419,4 +419,188 @@ describe('useMeasurementPersistence', () => {
 
     vi.useRealTimers();
   });
+
+  // ── Issue #276: server measurements must survive a setter identity change ──
+  // The viewer used to pass inline-arrow setters whose identity changed on
+  // every render. Those setters sat in the load effect's dependency array, so
+  // a re-render WHILE the initial server fetch was in flight tore the effect
+  // down (cancelled = true) and the resolved rows were dropped - the saved
+  // takeoff silently failed to reappear. The hook now keeps the setters in
+  // refs and depends only on the document identity, so an unstable setter can
+  // no longer cancel an in-flight load.
+  it('keeps server measurements when the setter identity changes mid-load (issue #276)', async () => {
+    const { takeoffApi } = await import('@/features/takeoff/api');
+    let resolveList: ((rows: unknown[]) => void) | null = null;
+    (takeoffApi.list as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      () =>
+        new Promise((res) => {
+          resolveList = res as unknown as (rows: unknown[]) => void;
+        }),
+    );
+
+    const received: Array<Array<{ id: string }>> = [];
+    const setPS = vi.fn();
+
+    // Each render hands the hook brand-new inline-arrow setter closures (the
+    // exact #276 trigger).
+    const { rerender } = renderHook(() =>
+      useMeasurementPersistence({
+        fileName: 'race.pdf',
+        documentId: DOC,
+        measurements: [],
+        setMeasurements: (ms) => {
+          received.push(ms as Array<{ id: string }>);
+        },
+        pageScales: basePageScales,
+        setPageScales: (ps) => setPS(ps),
+        scale: defaultScale,
+        projectId: PROJECT,
+      }),
+    );
+
+    // Re-render twice while the server list promise is still pending.
+    rerender();
+    rerender();
+
+    // The server now returns one measurement.
+    await act(async () => {
+      resolveList?.([
+        {
+          id: 's1', project_id: PROJECT, document_id: DOC, page: 1,
+          type: 'distance', points: [{ x: 0, y: 0 }, { x: 10, y: 0 }],
+          group_name: 'General', group_color: '#3B82F6', annotation: 'D1',
+          measurement_value: 1, measurement_unit: 'm', depth: null,
+          volume: null, perimeter: null, count_value: null,
+          scale_pixels_per_unit: 100, linked_boq_position_id: null,
+          is_deduction: false,
+          metadata: { frontend_id: 'm1', scale_calibrated: false },
+        },
+      ]);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(received.length).toBeGreaterThan(0));
+    const last = received[received.length - 1]!;
+    expect(last).toHaveLength(1);
+    expect(last[0]!.id).toBe('m1');
+  });
+
+  // ── Issue #277: an uncalibrated page must not show a phantom calibration ──
+  // A measurement drawn on a page still using the factory default carries the
+  // default ratio (100 px/unit). Reconstructing per-page scale from the server
+  // used to treat that as a real calibration, so the page came back showing
+  // "Calibrated 1:N" instead of "Not calibrated". The page-scale model is now
+  // only overwritten for pages that were genuinely calibrated.
+  const serverRow = (over: Record<string, unknown>) => ({
+    id: 's', project_id: PROJECT, document_id: DOC, page: 1, type: 'distance',
+    points: [{ x: 0, y: 0 }, { x: 10, y: 0 }], group_name: 'General',
+    group_color: '#3B82F6', annotation: '', measurement_value: 1,
+    measurement_unit: 'm', depth: null, volume: null, perimeter: null,
+    count_value: null, scale_pixels_per_unit: 100, linked_boq_position_id: null,
+    is_deduction: false, metadata: { frontend_id: 'm' },
+    ...over,
+  });
+
+  it('does not restore an uncalibrated default-scale page as calibrated (issue #277)', async () => {
+    const { takeoffApi } = await import('@/features/takeoff/api');
+    (takeoffApi.list as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      serverRow({
+        page: 1, scale_pixels_per_unit: 100,
+        metadata: { frontend_id: 'm1', scale_calibrated: false },
+      }),
+    ]);
+    const setM = vi.fn();
+    const setPS = vi.fn();
+    renderHook(() =>
+      useMeasurementPersistence({
+        fileName: 'flat.pdf', documentId: DOC, measurements: [],
+        setMeasurements: setM, pageScales: basePageScales, setPageScales: setPS,
+        scale: defaultScale, projectId: PROJECT,
+      }),
+    );
+
+    // Measurements still load from the server...
+    await waitFor(() => expect(setM).toHaveBeenCalled());
+    // ...but the page-scale model is NOT replaced with a phantom calibration:
+    // an explicit ``scale_calibrated:false`` page stays on the default.
+    expect(setPS).not.toHaveBeenCalled();
+  });
+
+  it('restores an explicitly calibrated page from the server (issue #277)', async () => {
+    const { takeoffApi } = await import('@/features/takeoff/api');
+    (takeoffApi.list as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      serverRow({
+        id: 's2', page: 2, scale_pixels_per_unit: 25,
+        metadata: { frontend_id: 'm1', scale_calibrated: true },
+      }),
+    ]);
+    const setM = vi.fn();
+    const setPS = vi.fn();
+    renderHook(() =>
+      useMeasurementPersistence({
+        fileName: 'sheet.pdf', documentId: DOC, measurements: [],
+        setMeasurements: setM, pageScales: basePageScales, setPageScales: setPS,
+        scale: defaultScale, projectId: PROJECT,
+      }),
+    );
+
+    await waitFor(() => expect(setPS).toHaveBeenCalled());
+    const ps = setPS.mock.calls[0]![0] as PageScales;
+    expect(ps.byPage[2]!.pixelsPerUnit).toBe(25);
+    expect(ps.byPage[1]).toBeUndefined();
+  });
+
+  it('infers calibration for legacy rows (no flag) from the ratio (issue #277)', async () => {
+    const { takeoffApi } = await import('@/features/takeoff/api');
+    (takeoffApi.list as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      // Legacy row still on the factory default -> not calibrated.
+      serverRow({ id: 'a', page: 1, scale_pixels_per_unit: 100, metadata: { frontend_id: 'a' } }),
+      // Legacy row at a real ratio -> a genuine per-sheet calibration.
+      serverRow({ id: 'b', page: 2, scale_pixels_per_unit: 50, metadata: { frontend_id: 'b' } }),
+    ]);
+    const setM = vi.fn();
+    const setPS = vi.fn();
+    renderHook(() =>
+      useMeasurementPersistence({
+        fileName: 'legacy.pdf', documentId: DOC, measurements: [],
+        setMeasurements: setM, pageScales: basePageScales, setPageScales: setPS,
+        scale: defaultScale, projectId: PROJECT,
+      }),
+    );
+
+    await waitFor(() => expect(setPS).toHaveBeenCalled());
+    const ps = setPS.mock.calls[0]![0] as PageScales;
+    expect(ps.byPage[2]!.pixelsPerUnit).toBe(50);
+    expect(ps.byPage[1]).toBeUndefined();
+  });
+
+  it('persists the page calibration flag on server sync (issue #277)', async () => {
+    vi.useFakeTimers();
+    const { takeoffApi } = await import('@/features/takeoff/api');
+    (takeoffApi.bulkCreate as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
+    const calibrated: PageScales = {
+      defaultScale,
+      byPage: { 1: { pixelsPerUnit: 40, unitLabel: 'm' } },
+    };
+    renderHook(() =>
+      useMeasurementPersistence({
+        fileName: 'cal.pdf', documentId: DOC,
+        measurements: [makeMeasurement('m1', 1)],
+        setMeasurements: vi.fn(), pageScales: calibrated, setPageScales: vi.fn(),
+        scale: { pixelsPerUnit: 40, unitLabel: 'm' }, projectId: PROJECT,
+      }),
+    );
+
+    // Past the 3s server-sync debounce.
+    act(() => {
+      vi.advanceTimersByTime(3500);
+    });
+    expect(takeoffApi.bulkCreate).toHaveBeenCalled();
+    const row = (takeoffApi.bulkCreate as unknown as ReturnType<typeof vi.fn>)
+      .mock.calls[0]![0][0];
+    expect(row.scale_pixels_per_unit).toBe(40);
+    expect(row.metadata.scale_calibrated).toBe(true);
+
+    vi.useRealTimers();
+  });
 });

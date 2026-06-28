@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.0.2] - 2026-06-28
+
+A fix release for the PDF takeoff viewer: saved measurements and the per-sheet scale now come back correctly after a page reload.
+
+### Fixed
+
+- Quantity takeoff measurements saved to a project now reappear after you reload the page. The viewer loads them from the server in the background, but a re-render that happened while that load was still in flight could cancel it and leave the sheet blank even though the work was safely stored. The background load no longer cancels itself, so the measurements are restored every time.
+- A drawing page that was never calibrated no longer shows a "calibrated" scale badge after a reload. Each measurement now records whether its page was actually calibrated, so a page left on the default scale comes back reading "not calibrated" while a genuinely calibrated sheet keeps its scale.
+
 ## [9.0.1] - 2026-06-27
 
 A fix release for opening BIM files that were uploaded through Project Files.
