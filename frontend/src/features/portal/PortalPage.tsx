@@ -503,9 +503,15 @@ function MagicLinkBanner({
 }) {
   const { t } = useTranslation();
   const addToast = useToastStore((s) => s.addToast);
+  // Build the full, ready-to-send sign-in URL from the one-time token. The
+  // backend returns only the token (it cannot know the public origin behind a
+  // reverse proxy), so the admin's current origin is the correct base for a
+  // self-hosted deployment. ``/portal/payments`` is the portal-session landing
+  // that consumes the token, opens the session, then strips it from the URL.
+  const magicUrl = `${window.location.origin}/portal/payments?token=${encodeURIComponent(token)}`;
   const copy = async () => {
     try {
-      await copyToClipboard(token);
+      await copyToClipboard(magicUrl);
       addToast({
         type: 'success',
         title: t('portal.link_copied', { defaultValue: 'Magic link copied' }),
@@ -529,14 +535,14 @@ function MagicLinkBanner({
           <p className="mt-0.5 text-xs text-content-secondary">
             {t('portal.magic_link_warning', {
               defaultValue:
-                'Shown once - copy and send to the user manually. Email delivery is not wired up yet.',
+                'Shown once - copy this sign-in link and send it to the user manually. Email delivery is not wired up yet.',
             })}{' '}
             ·{' '}
             {t('portal.expires_at', { defaultValue: 'Expires' })}{' '}
             <DateDisplay value={expiresAt} />
           </p>
           <code className="mt-2 block w-full truncate rounded bg-surface-secondary px-2 py-1.5 font-mono text-xs">
-            {token}
+            {magicUrl}
           </code>
         </div>
         <div className="flex flex-col gap-1">

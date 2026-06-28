@@ -313,7 +313,10 @@ async def _on_portal_user_invited(event: Event) -> None:
                 },
                 entity_type="portal_user",
                 entity_id=str(portal_user_id),
-                action_url=f"/admin/portal/users/{portal_user_id}",
+                # The Client & Partner Portal admin page lists portal users;
+                # ``/admin/portal/users/...`` is not a real route and 404s when
+                # the inviter clicks the notification.
+                action_url="/portal",
             )
             await session.commit()
     except Exception:
