@@ -114,6 +114,31 @@ export interface FederatedMemberAdd {
   originOffset: { x: number; y: number; z: number };
 }
 
+/** Result of a successful pick against the federated scene. Reported to the
+ *  host via the onPick callback so the React layer can show element info
+ *  without reaching into Three.js internals (B1 - full interactive viewer). */
+export interface FederatedPickResult {
+  /** modelId of the member the picked mesh belongs to. */
+  modelId: string;
+  /** Discipline of the owning member (arch | struct | mep | ...). */
+  discipline: string;
+  /** Derived IfcClass of the picked mesh, when the GLB node name carries it. */
+  ifcClass: string | null;
+  /** GLB node name of the picked mesh - a best-effort element label. */
+  objectName: string;
+  /** World-space hit point. */
+  point: { x: number; y: number; z: number };
+}
+
+/** A distance measurement (or its in-progress state) reported to the host. */
+export interface FederatedMeasurement {
+  /** Straight-line distance between the two points, in scene units (metres
+   *  for IFC). 0 while only the first point has been placed. */
+  distance: number;
+  /** Points placed so far - 1 means we are awaiting the second click. */
+  pointCount: number;
+}
+
 interface MeshOverride {
   originalMaterial: THREE.Material | THREE.Material[];
   override: THREE.Material | THREE.Material[] | null;
@@ -163,6 +188,24 @@ export class FederatedViewerScene {
 
   private disciplineColoringEnabled = false;
   private isolatedClass: string | null = null;
+
+  /* ── Interaction: selection + measurement (B1 - full viewer) ─────── */
+  private raycaster = new THREE.Raycaster();
+  private ndc = new THREE.Vector2();
+  /** BoxHelper outlining the currently-selected mesh, or null. */
+  private selectionHelper: THREE.BoxHelper | null = null;
+  private selectedObject: THREE.Object3D | null = null;
+  private measureMode = false;
+  private measurePoints: THREE.Vector3[] = [];
+  /** Group holding the measurement markers + line; parented directly under the
+   * scene (not root) so isolation / colouring sweeps never touch it. */
+  private measureGroup: THREE.Group | null = null;
+  private _onPick: ((result: FederatedPickResult | null) => void) | null = null;
+  private _onMeasure: ((m: FederatedMeasurement | null) => void) | null = null;
+  /** Pointer-down screen position, used to tell a click from an orbit drag. */
+  private _pointerDownAt: { x: number; y: number } | null = null;
+  private _onPointerDown: ((e: PointerEvent) => void) | null = null;
+  private _onPointerUp: ((e: PointerEvent) => void) | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     const parent = canvas.parentElement;
@@ -248,6 +291,26 @@ export class FederatedViewerScene {
     this.controls.addEventListener('change', () => {
       this._needsRender = true;
     });
+
+    // Click vs drag discrimination: OrbitControls consumes pointer drags for
+    // orbit / pan, so we only treat a pointer-up as a "click" (pick a member,
+    // or drop a measurement point) when it lands within a few px of the
+    // pointer-down. A larger move means the user was orbiting, and we leave the
+    // current selection / measurement untouched.
+    this._onPointerDown = (e: PointerEvent) => {
+      this._pointerDownAt = { x: e.clientX, y: e.clientY };
+    };
+    this._onPointerUp = (e: PointerEvent) => {
+      const down = this._pointerDownAt;
+      this._pointerDownAt = null;
+      if (!down) return;
+      if (e.button !== 0) return; // left click only
+      const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+      if (moved > 5) return; // treated as an orbit / pan drag
+      this.handleClick(e.clientX, e.clientY);
+    };
+    canvas.addEventListener('pointerdown', this._onPointerDown);
+    canvas.addEventListener('pointerup', this._onPointerUp);
 
     this.setupLighting();
 
@@ -391,6 +454,11 @@ export class FederatedViewerScene {
   removeMember(modelId: string): void {
     const member = this.members.get(modelId);
     if (!member) return;
+    // Drop the selection outline if it points into the member being removed,
+    // otherwise the BoxHelper would reference a disposed object.
+    if (this.selectedObject && this.isDescendantOf(this.selectedObject, member)) {
+      this.clearSelection();
+    }
     this.root.remove(member);
     this.disposeGroup(member);
     this.members.delete(modelId);
@@ -583,6 +651,213 @@ export class FederatedViewerScene {
     this._needsRender = true;
   }
 
+  /* ── Interaction: selection + measurement (B1) ─────────────────── */
+
+  /** Register a callback fired when the user clicks a member element (or empty
+   *  space, which reports null). Pass null to clear. */
+  setOnPick(cb: ((result: FederatedPickResult | null) => void) | null): void {
+    this._onPick = cb;
+  }
+
+  /** Register a callback fired as measurement points are placed: pointCount=1
+   *  while awaiting the second click, then the finished distance, then null on
+   *  clear. Pass null to clear. */
+  setOnMeasure(cb: ((m: FederatedMeasurement | null) => void) | null): void {
+    this._onMeasure = cb;
+  }
+
+  /** Toggle distance-measurement mode. Turning it on clears the current
+   *  selection, turning it off clears any in-progress measurement, so the two
+   *  click modes never fight over the same pointer-up. */
+  setMeasureMode(enabled: boolean): void {
+    this.measureMode = enabled;
+    if (enabled) {
+      this.clearSelection();
+    } else {
+      this.clearMeasurements();
+    }
+  }
+
+  isMeasureMode(): boolean {
+    return this.measureMode;
+  }
+
+  /** Remove the selection outline (no-op if nothing is selected). */
+  clearSelection(): void {
+    this.selectedObject = null;
+    if (this.selectionHelper) {
+      this.scene.remove(this.selectionHelper);
+      this.selectionHelper.geometry.dispose();
+      (this.selectionHelper.material as THREE.Material).dispose();
+      this.selectionHelper = null;
+      this._needsRender = true;
+    }
+  }
+
+  /** Remove all measurement markers + the connecting line. */
+  clearMeasurements(): void {
+    this.measurePoints = [];
+    if (this.measureGroup) {
+      this.disposeMeasureGroup();
+      this._onMeasure?.(null);
+      this._needsRender = true;
+    }
+  }
+
+  private disposeMeasureGroup(): void {
+    if (!this.measureGroup) return;
+    this.measureGroup.traverse((obj) => {
+      const mesh = obj as THREE.Mesh & { geometry?: THREE.BufferGeometry };
+      if (mesh.geometry && typeof mesh.geometry.dispose === 'function') {
+        mesh.geometry.dispose();
+      }
+      const mat = (mesh as THREE.Mesh).material;
+      if (mat) {
+        const mats = Array.isArray(mat) ? mat : [mat];
+        for (const m of mats) {
+          if (m && typeof m.dispose === 'function') m.dispose();
+        }
+      }
+    });
+    this.scene.remove(this.measureGroup);
+    this.measureGroup = null;
+  }
+
+  /** True iff ``obj`` is ``ancestor`` or sits somewhere below it. */
+  private isDescendantOf(obj: THREE.Object3D, ancestor: THREE.Object3D): boolean {
+    let cursor: THREE.Object3D | null = obj;
+    while (cursor) {
+      if (cursor === ancestor) return true;
+      cursor = cursor.parent;
+    }
+    return false;
+  }
+
+  /** Convert a client (screen) coordinate to a raycast hit against visible
+   *  member meshes. Returns the leaf mesh + world hit point, or null. */
+  private raycast(
+    clientX: number,
+    clientY: number,
+  ): { object: THREE.Object3D; point: THREE.Vector3 } | null {
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+    this.ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    this.ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(this.ndc, this.camera);
+    const hits = this.raycaster.intersectObject(this.root, true);
+    for (const hit of hits) {
+      // intersectObject skips meshes with visible=false, but a member GROUP
+      // hidden via the legend keeps its meshes visible=true - guard against a
+      // hit inside a hidden member or under an isolated-away branch.
+      if (this.isHitVisible(hit.object)) {
+        return { object: hit.object, point: hit.point.clone() };
+      }
+    }
+    return null;
+  }
+
+  private isHitVisible(obj: THREE.Object3D): boolean {
+    let cursor: THREE.Object3D | null = obj;
+    while (cursor) {
+      if (cursor.visible === false) return false;
+      cursor = cursor.parent;
+    }
+    return true;
+  }
+
+  private handleClick(clientX: number, clientY: number): void {
+    const hit = this.raycast(clientX, clientY);
+    if (this.measureMode) {
+      if (hit) this.addMeasurePoint(hit.point);
+      return;
+    }
+    if (!hit) {
+      this.clearSelection();
+      this._onPick?.(null);
+      return;
+    }
+    this.applySelection(hit.object);
+    this._onPick?.(this.toPickResult(hit.object, hit.point));
+  }
+
+  private toPickResult(
+    obj: THREE.Object3D,
+    point: THREE.Vector3,
+  ): FederatedPickResult {
+    const ifcClass = deriveIfcClass(obj);
+    // modelId / discipline are stamped on the mesh by addMember; fall back to
+    // walking ancestors for nested meshes.
+    let modelId = '';
+    let discipline = '';
+    let cursor: THREE.Object3D | null = obj;
+    while (cursor && (!modelId || !discipline)) {
+      const ud = cursor.userData ?? {};
+      if (!modelId && typeof ud.modelId === 'string') modelId = ud.modelId;
+      if (!discipline && typeof ud.discipline === 'string') {
+        discipline = ud.discipline;
+      }
+      cursor = cursor.parent;
+    }
+    return {
+      modelId,
+      discipline: discipline || 'other',
+      ifcClass,
+      objectName: obj.name || '',
+      point: { x: point.x, y: point.y, z: point.z },
+    };
+  }
+
+  private applySelection(obj: THREE.Object3D): void {
+    this.clearSelection();
+    this.selectedObject = obj;
+    const helper = new THREE.BoxHelper(obj, 0xffaa00);
+    const mat = helper.material as THREE.LineBasicMaterial;
+    mat.depthTest = false;
+    mat.transparent = true;
+    helper.renderOrder = 999;
+    this.selectionHelper = helper;
+    this.scene.add(helper);
+    this._needsRender = true;
+  }
+
+  private addMeasurePoint(point: THREE.Vector3): void {
+    // A third click starts a fresh measurement.
+    if (this.measurePoints.length >= 2) {
+      this.clearMeasurements();
+    }
+    this.measurePoints.push(point.clone());
+    if (!this.measureGroup) {
+      this.measureGroup = new THREE.Group();
+      this.measureGroup.name = 'federation-measure';
+      this.scene.add(this.measureGroup);
+    }
+    // Marker sphere scaled by camera distance so it stays visible at any zoom.
+    const radius = Math.max(this.camera.position.distanceTo(point) * 0.01, 1e-4);
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(radius, 12, 12),
+      new THREE.MeshBasicMaterial({ color: 0xff3344, depthTest: false }),
+    );
+    sphere.position.copy(point);
+    sphere.renderOrder = 1000;
+    this.measureGroup.add(sphere);
+
+    if (this.measurePoints.length === 2) {
+      const a = this.measurePoints[0] as THREE.Vector3;
+      const b = this.measurePoints[1] as THREE.Vector3;
+      const lineGeom = new THREE.BufferGeometry().setFromPoints([a, b]);
+      const line = new THREE.Line(
+        lineGeom,
+        new THREE.LineBasicMaterial({ color: 0xff3344, depthTest: false }),
+      );
+      line.renderOrder = 1000;
+      this.measureGroup.add(line);
+      this._onMeasure?.({ distance: a.distanceTo(b), pointCount: 2 });
+    } else {
+      this._onMeasure?.({ distance: 0, pointCount: 1 });
+    }
+    this._needsRender = true;
+  }
+
   /* ── Disposal ──────────────────────────────────────────────────── */
 
   private disposeGroup(group: THREE.Group): void {
@@ -636,6 +911,20 @@ export class FederatedViewerScene {
       this._onContextRestored = null;
     }
     this._onContextStateChange = null;
+    // Detach the interaction (pick / measure) pointer listeners and tear down
+    // the selection outline + measurement markers.
+    if (this._onPointerDown) {
+      this.canvas.removeEventListener('pointerdown', this._onPointerDown);
+      this._onPointerDown = null;
+    }
+    if (this._onPointerUp) {
+      this.canvas.removeEventListener('pointerup', this._onPointerUp);
+      this._onPointerUp = null;
+    }
+    this.clearSelection();
+    this.clearMeasurements();
+    this._onPick = null;
+    this._onMeasure = null;
     this.clear();
     this.controls.dispose();
     // Release the WebGL context itself, not only GPU resources. The federated

@@ -459,4 +459,53 @@ describe('FederatedViewerScene', () => {
     expect(second).not.toBe(first);
     scene.dispose();
   });
+
+  /* ── B1 - selection + measurement interaction ─────────────────── */
+
+  it('setMeasureMode toggles measurement mode; clear* are safe no-ops', async () => {
+    const { FederatedViewerScene } = await import('../FederatedViewerScene');
+    const scene = new FederatedViewerScene(mountCanvas());
+    expect(scene.isMeasureMode()).toBe(false);
+    scene.setMeasureMode(true);
+    expect(scene.isMeasureMode()).toBe(true);
+    scene.setMeasureMode(false);
+    expect(scene.isMeasureMode()).toBe(false);
+    expect(() => scene.clearSelection()).not.toThrow();
+    expect(() => scene.clearMeasurements()).not.toThrow();
+    scene.dispose();
+  });
+
+  it('a same-spot click on empty space reports a null pick', async () => {
+    const { FederatedViewerScene } = await import('../FederatedViewerScene');
+    const canvas = mountCanvas();
+    const scene = new FederatedViewerScene(canvas);
+    const onPick = vi.fn();
+    scene.setOnPick(onPick);
+    // jsdom getBoundingClientRect is all-zero, so the raycast finds nothing and
+    // a same-spot pointer down/up is treated as a click on empty space.
+    canvas.dispatchEvent(
+      new MouseEvent('pointerdown', { clientX: 10, clientY: 10, button: 0 }),
+    );
+    canvas.dispatchEvent(
+      new MouseEvent('pointerup', { clientX: 10, clientY: 10, button: 0 }),
+    );
+    expect(onPick).toHaveBeenCalledWith(null);
+    scene.dispose();
+  });
+
+  it('a drag (pointer moved past the threshold) does NOT fire a pick', async () => {
+    const { FederatedViewerScene } = await import('../FederatedViewerScene');
+    const canvas = mountCanvas();
+    const scene = new FederatedViewerScene(canvas);
+    const onPick = vi.fn();
+    scene.setOnPick(onPick);
+    canvas.dispatchEvent(
+      new MouseEvent('pointerdown', { clientX: 10, clientY: 10, button: 0 }),
+    );
+    canvas.dispatchEvent(
+      new MouseEvent('pointerup', { clientX: 90, clientY: 90, button: 0 }),
+    );
+    expect(onPick).not.toHaveBeenCalled();
+    scene.dispose();
+  });
 });

@@ -21,6 +21,7 @@ import {
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Maximize2, Minimize2, Ruler, X } from 'lucide-react';
 
 import { Button } from '@/shared/ui';
 
@@ -28,6 +29,8 @@ import {
   FederatedViewerScene,
   WebGLUnavailableError,
   type FederatedMemberAdd,
+  type FederatedPickResult,
+  type FederatedMeasurement,
 } from './FederatedViewerScene';
 import {
   useFederatedGeometryLoader,
@@ -81,6 +84,13 @@ export const FederatedViewer = forwardRef<FederatedViewerHandle, Props>(
      *  (headless / no-GPU environments). We render a friendly notice instead of
      *  letting the constructor throw crash the page. */
     const [webglUnavailable, setWebglUnavailable] = useState(false);
+    /** B1 - full interactive viewer state. */
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [measureMode, setMeasureMode] = useState(false);
+    const [pick, setPick] = useState<FederatedPickResult | null>(null);
+    const [measurement, setMeasurement] = useState<FederatedMeasurement | null>(
+      null,
+    );
 
     const { detail, members, errors, isLoading, detailError } =
       useFederatedGeometryLoader(federationId);
@@ -108,6 +118,10 @@ export const FederatedViewer = forwardRef<FederatedViewerHandle, Props>(
       }
       setWebglUnavailable(false);
       sceneRef.current = scene;
+      // B1 - surface picks + measurements from the scene into React state so
+      // the overlays can render element info / distances.
+      scene.setOnPick((r) => setPick(r));
+      scene.setOnMeasure((m) => setMeasurement(m));
       return () => {
         scene.dispose();
         sceneRef.current = null;
@@ -227,6 +241,51 @@ export const FederatedViewer = forwardRef<FederatedViewerHandle, Props>(
       [],
     );
 
+    /* ── B1 interaction handlers ─────────────────────────────────── */
+    const onToggleFullscreen = useCallback(() => {
+      const el = containerRef.current;
+      if (!el) return;
+      if (document.fullscreenElement) {
+        void document.exitFullscreen?.();
+      } else {
+        void el.requestFullscreen?.();
+      }
+    }, []);
+
+    // Keep the fullscreen icon in sync whether the user toggled via our button
+    // or the Esc key / browser chrome. The ResizeObserver inside the scene
+    // already handles the canvas resize, so there is nothing to do here but
+    // track the flag for the button state.
+    useEffect(() => {
+      const onChange = (): void => {
+        setIsFullscreen(document.fullscreenElement === containerRef.current);
+      };
+      document.addEventListener('fullscreenchange', onChange);
+      return () => document.removeEventListener('fullscreenchange', onChange);
+    }, []);
+
+    const onToggleMeasure = useCallback(() => {
+      setMeasureMode((prev) => {
+        const next = !prev;
+        sceneRef.current?.setMeasureMode(next);
+        // Entering measure mode clears the current selection (in the scene
+        // too); leaving it drops the in-progress measurement.
+        if (next) setPick(null);
+        else setMeasurement(null);
+        return next;
+      });
+    }, []);
+
+    const onClearPick = useCallback(() => {
+      sceneRef.current?.clearSelection();
+      setPick(null);
+    }, []);
+
+    const onClearMeasurement = useCallback(() => {
+      sceneRef.current?.clearMeasurements();
+      setMeasurement(null);
+    }, []);
+
     /* ── Legend derivation ───────────────────────────────────────── */
     const legendRows = useMemo<LegendDiscipline[]>(() => {
       // Prefer the order from ``detail`` (which carries z_order from the
@@ -247,6 +306,16 @@ export const FederatedViewer = forwardRef<FederatedViewerHandle, Props>(
         visible: memberVisibility[m.modelId] ?? true,
       }));
     }, [detail, members, memberVisibility]);
+
+    /** modelId -> human model name, for the pick info overlay. */
+    const memberNameById = useMemo<Record<string, string>>(() => {
+      const map: Record<string, string> = {};
+      for (const m of members) map[m.modelId] = m.modelName;
+      return map;
+    }, [members]);
+
+    /** Federation shared units, used to label measured distances. */
+    const unitLabel = detail?.shared_units || 'm';
 
     /* ── Render ─────────────────────────────────────────────────── */
     return (
@@ -299,6 +368,37 @@ export const FederatedViewer = forwardRef<FederatedViewerHandle, Props>(
               defaultValue: 'Reset view',
             })}
           </Button>
+          <Button
+            size="sm"
+            variant={measureMode ? 'primary' : 'ghost'}
+            onClick={onToggleMeasure}
+            data-testid="federated-viewer-measure-toggle"
+            aria-pressed={measureMode}
+            title={t('bim.federation.viewer.measure_hint', {
+              defaultValue: 'Measure the distance between two points',
+            })}
+          >
+            <Ruler size={14} className="me-1.5" />
+            {t('bim.federation.viewer.measure', { defaultValue: 'Measure' })}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onToggleFullscreen}
+            data-testid="federated-viewer-fullscreen"
+            aria-pressed={isFullscreen}
+            title={
+              isFullscreen
+                ? t('bim.federation.viewer.exit_fullscreen', {
+                    defaultValue: 'Exit full screen',
+                  })
+                : t('bim.federation.viewer.fullscreen', {
+                    defaultValue: 'Full screen',
+                  })
+            }
+          >
+            {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+          </Button>
         </div>
 
         {/* Legend - top-right */}
@@ -306,6 +406,125 @@ export const FederatedViewer = forwardRef<FederatedViewerHandle, Props>(
           disciplines={legendRows}
           onToggleVisible={onToggleMemberVisible}
         />
+
+        {/* Measure readout - top-center, shown while measuring (B1) */}
+        {measureMode ? (
+          <div
+            data-testid="federated-viewer-measure-readout"
+            className="absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-lg border border-slate-200 bg-white/95 px-3 py-1.5 text-xs text-slate-700 shadow-md backdrop-blur"
+          >
+            {measurement && measurement.pointCount === 2 ? (
+              <span className="flex items-center gap-2">
+                <span className="font-semibold tabular-nums">
+                  {measurement.distance.toLocaleString(undefined, {
+                    maximumFractionDigits: 3,
+                  })}{' '}
+                  {unitLabel}
+                </span>
+                <button
+                  type="button"
+                  onClick={onClearMeasurement}
+                  className="text-slate-400 hover:text-slate-700"
+                  data-testid="federated-viewer-measure-clear"
+                  aria-label={t('bim.federation.viewer.measure_clear', {
+                    defaultValue: 'Clear measurement',
+                  })}
+                >
+                  <X size={13} />
+                </button>
+              </span>
+            ) : (
+              <span>
+                {measurement && measurement.pointCount === 1
+                  ? t('bim.federation.viewer.measure_second', {
+                      defaultValue: 'Click the second point',
+                    })
+                  : t('bim.federation.viewer.measure_first', {
+                      defaultValue: 'Click two points to measure',
+                    })}
+              </span>
+            )}
+          </div>
+        ) : null}
+
+        {/* Selected element info - bottom-left (B1) */}
+        {pick && !measureMode ? (
+          <div
+            data-testid="federated-viewer-pick-info"
+            className="absolute bottom-3 left-3 z-10 max-w-xs rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-xs shadow-md backdrop-blur"
+          >
+            <div className="mb-1 flex items-center justify-between gap-3">
+              <span className="font-semibold text-slate-800">
+                {t('bim.federation.viewer.selected', {
+                  defaultValue: 'Selected element',
+                })}
+              </span>
+              <button
+                type="button"
+                onClick={onClearPick}
+                className="text-slate-400 hover:text-slate-700"
+                data-testid="federated-viewer-pick-clear"
+                aria-label={t('bim.federation.viewer.pick_clear', {
+                  defaultValue: 'Clear selection',
+                })}
+              >
+                <X size={13} />
+              </button>
+            </div>
+            <dl className="space-y-0.5 text-slate-600">
+              {pick.ifcClass ? (
+                <div className="flex gap-2">
+                  <dt className="text-slate-400">
+                    {t('bim.federation.viewer.pick_class', {
+                      defaultValue: 'Type',
+                    })}
+                  </dt>
+                  <dd className="font-medium text-slate-700">{pick.ifcClass}</dd>
+                </div>
+              ) : null}
+              <div className="flex gap-2">
+                <dt className="text-slate-400">
+                  {t('bim.federation.viewer.pick_model', {
+                    defaultValue: 'Model',
+                  })}
+                </dt>
+                <dd className="font-medium text-slate-700">
+                  {memberNameById[pick.modelId] ||
+                    (pick.modelId
+                      ? pick.modelId.slice(0, 8)
+                      : t('bim.federation.viewer.pick_unknown_model', {
+                          defaultValue: 'Unknown',
+                        }))}
+                </dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="text-slate-400">
+                  {t('bim.federation.viewer.pick_discipline', {
+                    defaultValue: 'Discipline',
+                  })}
+                </dt>
+                <dd className="font-medium capitalize text-slate-700">
+                  {pick.discipline}
+                </dd>
+              </div>
+              {pick.objectName ? (
+                <div className="flex gap-2">
+                  <dt className="text-slate-400">
+                    {t('bim.federation.viewer.pick_node', {
+                      defaultValue: 'Node',
+                    })}
+                  </dt>
+                  <dd
+                    className="truncate font-mono text-[10px] text-slate-500"
+                    title={pick.objectName}
+                  >
+                    {pick.objectName}
+                  </dd>
+                </div>
+              ) : null}
+            </dl>
+          </div>
+        ) : null}
 
         {/* Loading overlay */}
         {isLoading ? (

@@ -23,7 +23,7 @@ import {
   beforeEach,
   afterEach,
 } from 'vitest';
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-library/react';
 import { createRef } from 'react';
 
 import {
@@ -43,10 +43,19 @@ interface FakeScene {
   setDisciplineColoringEnabled: ReturnType<typeof vi.fn>;
   setMemberVisible: ReturnType<typeof vi.fn>;
   setDarkMode: ReturnType<typeof vi.fn>;
+  setOnPick: ReturnType<typeof vi.fn>;
+  setOnMeasure: ReturnType<typeof vi.fn>;
+  setMeasureMode: ReturnType<typeof vi.fn>;
+  clearSelection: ReturnType<typeof vi.fn>;
+  clearMeasurements: ReturnType<typeof vi.fn>;
   dispose: ReturnType<typeof vi.fn>;
 }
 
 let lastFakeScene: FakeScene | null = null;
+// Captured B1 callbacks so tests can drive pick / measure events that would
+// normally originate from a real raycast.
+let lastOnPick: ((r: unknown) => void) | null = null;
+let lastOnMeasure: ((m: unknown) => void) | null = null;
 function makeFakeScene(): FakeScene {
   const f: FakeScene = {
     addMember: vi.fn().mockResolvedValue(undefined),
@@ -57,6 +66,15 @@ function makeFakeScene(): FakeScene {
     setDisciplineColoringEnabled: vi.fn(),
     setMemberVisible: vi.fn(),
     setDarkMode: vi.fn(),
+    setOnPick: vi.fn((cb) => {
+      lastOnPick = cb;
+    }),
+    setOnMeasure: vi.fn((cb) => {
+      lastOnMeasure = cb;
+    }),
+    setMeasureMode: vi.fn(),
+    clearSelection: vi.fn(),
+    clearMeasurements: vi.fn(),
     dispose: vi.fn(),
   };
   lastFakeScene = f;
@@ -118,6 +136,8 @@ beforeEach(() => {
 afterEach(() => {
   __setFederatedSceneFactoryForTests(null);
   lastFakeScene = null;
+  lastOnPick = null;
+  lastOnMeasure = null;
   cleanup();
 });
 
@@ -253,5 +273,98 @@ describe('FederatedViewer', () => {
     expect(lastFakeScene!.frameAll).toHaveBeenCalled();
     ref.current!.resetView();
     expect(lastFakeScene!.resetView).toHaveBeenCalled();
+  });
+
+  /* ── B1 - full interactive viewer ─────────────────────────────── */
+
+  it('toggling "Measure" drives scene.setMeasureMode on and off', async () => {
+    hookValue = {
+      detail: detailWith(['m1']),
+      members: [loadedMember('m1')],
+      errors: [],
+      isLoading: false,
+      isDetailLoading: false,
+      detailError: null,
+    };
+    render(<FederatedViewer federationId="fed-1" />);
+    await waitFor(() => expect(lastFakeScene).not.toBeNull());
+    fireEvent.click(screen.getByTestId('federated-viewer-measure-toggle'));
+    expect(lastFakeScene!.setMeasureMode).toHaveBeenCalledWith(true);
+    expect(
+      screen.getByTestId('federated-viewer-measure-readout'),
+    ).toHaveTextContent(/measure/i);
+    fireEvent.click(screen.getByTestId('federated-viewer-measure-toggle'));
+    expect(lastFakeScene!.setMeasureMode).toHaveBeenLastCalledWith(false);
+  });
+
+  it('a pick event renders the selected-element info overlay', async () => {
+    hookValue = {
+      detail: detailWith(['m1']),
+      members: [loadedMember('m1')],
+      errors: [],
+      isLoading: false,
+      isDetailLoading: false,
+      detailError: null,
+    };
+    render(<FederatedViewer federationId="fed-1" />);
+    await waitFor(() => expect(lastOnPick).not.toBeNull());
+    act(() => {
+      lastOnPick!({
+        modelId: 'm1',
+        discipline: 'arch',
+        ifcClass: 'IfcWall',
+        objectName: 'IfcWall_abc',
+        point: { x: 1, y: 2, z: 3 },
+      });
+    });
+    const info = screen.getByTestId('federated-viewer-pick-info');
+    expect(info).toHaveTextContent('IfcWall');
+    expect(info).toHaveTextContent('arch');
+    expect(info).toHaveTextContent('IfcWall_abc');
+    fireEvent.click(screen.getByTestId('federated-viewer-pick-clear'));
+    expect(lastFakeScene!.clearSelection).toHaveBeenCalled();
+    expect(screen.queryByTestId('federated-viewer-pick-info')).toBeNull();
+  });
+
+  it('a completed measurement renders the distance readout', async () => {
+    hookValue = {
+      detail: detailWith(['m1']),
+      members: [loadedMember('m1')],
+      errors: [],
+      isLoading: false,
+      isDetailLoading: false,
+      detailError: null,
+    };
+    render(<FederatedViewer federationId="fed-1" />);
+    await waitFor(() => expect(lastOnMeasure).not.toBeNull());
+    fireEvent.click(screen.getByTestId('federated-viewer-measure-toggle'));
+    act(() => {
+      lastOnMeasure!({ distance: 12.345, pointCount: 2 });
+    });
+    expect(
+      screen.getByTestId('federated-viewer-measure-readout'),
+    ).toHaveTextContent('12.345');
+  });
+
+  it('the full-screen button requests fullscreen on the container', async () => {
+    const reqSpy = vi.fn();
+    const origReq = Element.prototype.requestFullscreen;
+    Element.prototype.requestFullscreen = reqSpy;
+    try {
+      hookValue = {
+        detail: detailWith(['m1']),
+        members: [loadedMember('m1')],
+        errors: [],
+        isLoading: false,
+        isDetailLoading: false,
+        detailError: null,
+      };
+      render(<FederatedViewer federationId="fed-1" />);
+      await waitFor(() => expect(lastFakeScene).not.toBeNull());
+      fireEvent.click(screen.getByTestId('federated-viewer-fullscreen'));
+      expect(reqSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      Element.prototype.requestFullscreen = origReq;
+    }
   });
 });
