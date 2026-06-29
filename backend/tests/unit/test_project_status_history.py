@@ -182,10 +182,15 @@ async def test_delete_project_records_archived_transition(
     """Archiving records active -> archived."""
     service = _service(session)
     project = await service.create_project(ProjectCreate(name="To Archive"), owner_id)
+    # delete_project soft-deletes and (unlike update/restore) does not re-fetch
+    # the project, so its update_fields() expire_all() leaves this `project`
+    # expired. Capture the id up front so the assertions below don't trigger a
+    # lazy reload of the expired instance (MissingGreenlet under the async session).
+    project_id = project.id
 
-    await service.delete_project(project.id, changed_by=str(owner_id))
+    await service.delete_project(project_id, changed_by=str(owner_id))
 
-    rows = await service.list_status_history(project.id)
+    rows = await service.list_status_history(project_id)
     assert rows[0].from_status == "active"
     assert rows[0].to_status == "archived"
     assert str(rows[0].changed_by) == str(owner_id)
