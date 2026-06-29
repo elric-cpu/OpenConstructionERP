@@ -2320,6 +2320,13 @@ export function TakeoffPage() {
                 }
               >
                 <TakeoffViewerModule
+                  // Key by the open document id so switching documents via the
+                  // filmstrip REMOUNTS the viewer (issue #281). Without this the
+                  // component instance is reused and the previous document's
+                  // in-memory measurements bleed onto the newly opened one. The
+                  // unmount runs the persistence hook's teardown flush, so the
+                  // document being left is saved before the new one loads.
+                  key={viewerDoc?.id ?? 'no-doc'}
                   initialPdfUrl={viewerDoc?.url}
                   initialPdfName={viewerDoc?.name}
                   initialDocumentId={viewerDoc?.id}

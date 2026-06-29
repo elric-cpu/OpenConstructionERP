@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import {
   useMeasurementPersistence,
@@ -15,13 +15,31 @@ vi.mock('@/features/takeoff/api', () => ({
     list: vi.fn().mockResolvedValue([]),
     bulkCreate: vi.fn().mockResolvedValue([]),
     update: vi.fn().mockResolvedValue({}),
+    delete: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
-// Mock measurements
-const makeMeasurement = (id: string, page = 1) => ({
+// Mock measurements. The explicit return type includes the optional fields a
+// few tests set after the fact (serverId / color / text) so a ``let rows =
+// [makeMeasurement(...)]`` array can be reassigned with those props without a
+// narrowed-literal type error.
+type TestMeasurement = {
+  id: string;
+  type: 'distance';
+  points: { x: number; y: number }[];
+  value: number;
+  unit: string;
+  label: string;
+  annotation: string;
+  page: number;
+  group: string;
+  serverId?: string;
+  color?: string;
+  text?: string;
+};
+const makeMeasurement = (id: string, page = 1): TestMeasurement => ({
   id,
-  type: 'distance' as const,
+  type: 'distance',
   points: [{ x: 0, y: 0 }, { x: 100, y: 0 }],
   value: 2.5,
   unit: 'm',
@@ -42,8 +60,28 @@ const DOC = 'doc-uuid-1';
 const compositeKey = `oe_takeoff_${PROJECT}__${DOC}`;
 
 describe('useMeasurementPersistence', () => {
-  beforeEach(() => {
+  // Reset the module-default mock behaviour AND call history before every test.
+  // The hook now flushes a server sync on unmount (issue #281), so the
+  // testing-library cleanup of one test can dispatch bulkCreate/delete that
+  // would otherwise pollute the next test's call counts; several tests also
+  // install persistent implementations (``mockResolvedValue`` /
+  // ``mockImplementation``). A full reset here makes the full-file run match
+  // the isolated run.
+  beforeEach(async () => {
     localStorage.clear();
+    vi.useRealTimers();
+    const { takeoffApi } = await import('@/features/takeoff/api');
+    (takeoffApi.list as unknown as ReturnType<typeof vi.fn>).mockReset().mockResolvedValue([]);
+    (takeoffApi.bulkCreate as unknown as ReturnType<typeof vi.fn>).mockReset().mockResolvedValue([]);
+    (takeoffApi.update as unknown as ReturnType<typeof vi.fn>).mockReset().mockResolvedValue({});
+    (takeoffApi.delete as unknown as ReturnType<typeof vi.fn>).mockReset().mockResolvedValue(undefined);
+  });
+
+  // Defensive: if a test leaves fake timers on (e.g. an assertion threw before
+  // its own ``vi.useRealTimers()``), restore real timers so the NEXT test's
+  // ``waitFor`` polling is not frozen. Real-timer tests are unaffected.
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('returns empty state when no fileName', () => {
@@ -600,6 +638,263 @@ describe('useMeasurementPersistence', () => {
       .mock.calls[0]![0][0];
     expect(row.scale_pixels_per_unit).toBe(40);
     expect(row.metadata.scale_calibrated).toBe(true);
+
+    vi.useRealTimers();
+  });
+
+  /* ── Issue #281 / #282: create / update / delete sync + flush + reset ── */
+
+  // A synced measurement (one carrying a serverId) is the precondition for the
+  // delete + non-geometry-edit paths, so build one explicitly.
+  const makeSyncedMeasurement = (id: string, serverId: string, page = 1) => ({
+    ...makeMeasurement(id, page),
+    serverId,
+  });
+
+  // ── #282 A: deleting a synced measurement DELETEs it on the server ──
+  it('syncs a delete of a synced measurement to the server (issue #282)', async () => {
+    vi.useFakeTimers();
+    const { takeoffApi } = await import('@/features/takeoff/api');
+    const m1 = makeSyncedMeasurement('m1', 'srv-1');
+    let rows = [m1];
+    const setM = vi.fn();
+    const setPS = vi.fn();
+
+    const { result, rerender } = renderHook(() =>
+      useMeasurementPersistence({
+        fileName: 'del.pdf',
+        documentId: DOC,
+        measurements: rows,
+        setMeasurements: setM,
+        pageScales: basePageScales,
+        setPageScales: setPS,
+        scale: defaultScale,
+        projectId: PROJECT,
+      }),
+    );
+
+    // User deletes m1: the viewer registers the deletion then drops it from
+    // state. We mirror that here (registerDeletion + remove from the array).
+    act(() => {
+      result.current.registerDeletion('srv-1');
+    });
+    rows = [];
+    rerender();
+
+    // The delete is queued to localStorage immediately so a reload before the
+    // debounce still removes it.
+    expect(
+      JSON.parse(localStorage.getItem(`${compositeKey}__pending_deletes`)!),
+    ).toEqual(['srv-1']);
+
+    // Past the 3s server-sync debounce the DELETE fires and the queue clears.
+    await act(async () => {
+      vi.advanceTimersByTime(3500);
+      await Promise.resolve();
+    });
+    expect(takeoffApi.delete).toHaveBeenCalledWith('srv-1');
+    expect(localStorage.getItem(`${compositeKey}__pending_deletes`)).toBeNull();
+
+    vi.useRealTimers();
+  });
+
+  // ── #282 A: a deleted synced row does NOT resurrect on the next load ──
+  it('does not resurrect a locally-deleted row when the server still returns it (issue #282)', async () => {
+    const { takeoffApi } = await import('@/features/takeoff/api');
+    // Seed a pending delete for srv-1 as if a prior session deleted it but the
+    // server still has the row (the DELETE had not been applied / confirmed).
+    localStorage.setItem(`${compositeKey}__pending_deletes`, JSON.stringify(['srv-1']));
+    (takeoffApi.list as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      {
+        id: 'srv-1', project_id: PROJECT, document_id: DOC, page: 1,
+        type: 'distance', points: [{ x: 0, y: 0 }, { x: 10, y: 0 }],
+        group_name: 'General', group_color: '#3B82F6', annotation: 'D1',
+        measurement_value: 1, measurement_unit: 'm', depth: null,
+        volume: null, perimeter: null, count_value: null,
+        scale_pixels_per_unit: 100, linked_boq_position_id: null,
+        is_deduction: false, metadata: { frontend_id: 'm1', scale_calibrated: false },
+      },
+      {
+        id: 'srv-2', project_id: PROJECT, document_id: DOC, page: 1,
+        type: 'distance', points: [{ x: 0, y: 0 }, { x: 20, y: 0 }],
+        group_name: 'General', group_color: '#3B82F6', annotation: 'D2',
+        measurement_value: 2, measurement_unit: 'm', depth: null,
+        volume: null, perimeter: null, count_value: null,
+        scale_pixels_per_unit: 100, linked_boq_position_id: null,
+        is_deduction: false, metadata: { frontend_id: 'm2', scale_calibrated: false },
+      },
+    ]);
+    const setM = vi.fn();
+    const setPS = vi.fn();
+    renderHook(() =>
+      useMeasurementPersistence({
+        fileName: 'res.pdf', documentId: DOC, measurements: [],
+        setMeasurements: setM, pageScales: basePageScales, setPageScales: setPS,
+        scale: defaultScale, projectId: PROJECT,
+      }),
+    );
+
+    await waitFor(() => expect(setM).toHaveBeenCalled());
+    // The pending-deleted row (srv-1 / m1) is filtered out; only srv-2 loads.
+    const loaded = setM.mock.calls[setM.mock.calls.length - 1]![0] as Array<{ id: string }>;
+    expect(loaded.map((m) => m.id)).toEqual(['m2']);
+  });
+
+  // ── #282 B: a non-geometry edit (group/colour/annotation) PATCHes ──
+  it('syncs a non-geometry edit of a synced measurement (issue #282)', async () => {
+    vi.useFakeTimers();
+    const { takeoffApi } = await import('@/features/takeoff/api');
+    (takeoffApi.update as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      measurement_value: 2.5, metadata: {},
+    });
+    const m1 = makeSyncedMeasurement('m1', 'srv-1');
+    let rows = [m1];
+    const setM = vi.fn();
+    const setPS = vi.fn();
+
+    const { rerender } = renderHook(() =>
+      useMeasurementPersistence({
+        fileName: 'edit.pdf', documentId: DOC, measurements: rows,
+        setMeasurements: setM, pageScales: basePageScales, setPageScales: setPS,
+        scale: defaultScale, projectId: PROJECT,
+      }),
+    );
+
+    // First render seeds the sync baseline (no PATCH yet).
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(takeoffApi.update).not.toHaveBeenCalled();
+
+    // Edit only NON-geometry properties: group, colour, annotation, notes.
+    rows = [{ ...m1, group: 'Walls', color: '#FF0000', annotation: 'External wall', text: 'note' }];
+    rerender();
+
+    // Past the 400ms edit-PATCH debounce the row is PATCHed with the new props.
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+      await Promise.resolve();
+    });
+    expect(takeoffApi.update).toHaveBeenCalledTimes(1);
+    const [patchedId, body] = (takeoffApi.update as unknown as ReturnType<typeof vi.fn>)
+      .mock.calls[0]!;
+    expect(patchedId).toBe('srv-1');
+    expect(body.group_name).toBe('Walls');
+    expect(body.group_color).toBe('#FF0000');
+    expect(body.annotation).toBe('External wall');
+    expect(body.metadata.text).toBe('note');
+
+    vi.useRealTimers();
+  });
+
+  // ── #281: unmount/teardown flushes a pending change to localStorage ──
+  it('flushes the latest measurements to localStorage on unmount (issue #281)', () => {
+    const m1 = makeMeasurement('m1');
+    const setM = vi.fn();
+    const setPS = vi.fn();
+    const { unmount } = renderHook(() =>
+      useMeasurementPersistence({
+        fileName: 'flush.pdf', documentId: DOC, measurements: [m1],
+        setMeasurements: setM, pageScales: basePageScales, setPageScales: setPS,
+        scale: defaultScale, projectId: PROJECT,
+      }),
+    );
+
+    // Nothing persisted yet (the 500ms auto-save debounce has not fired and we
+    // never called saveNow).
+    expect(localStorage.getItem(compositeKey)).toBeNull();
+
+    // Leaving the document (SPA navigation / filmstrip switch remount) must
+    // flush synchronously so the just-drawn measurement is not lost.
+    unmount();
+    const raw = localStorage.getItem(compositeKey);
+    expect(raw).toBeTruthy();
+    expect(JSON.parse(raw!).measurements[0].id).toBe('m1');
+  });
+
+  // ── #281: switching the document id loads the new doc, never carrying the
+  //          previous document's measurements across. ──
+  it('resets and reloads when the document id changes (issue #281)', async () => {
+    const { takeoffApi } = await import('@/features/takeoff/api');
+    const DOC_A = 'doc-A';
+    const DOC_B = 'doc-B';
+    (takeoffApi.list as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (_p: string, d: string) =>
+        Promise.resolve(
+          d === DOC_B
+            ? [
+                {
+                  id: 'srv-b', project_id: PROJECT, document_id: DOC_B, page: 1,
+                  type: 'distance', points: [{ x: 0, y: 0 }, { x: 5, y: 0 }],
+                  group_name: 'General', group_color: '#3B82F6', annotation: 'B1',
+                  measurement_value: 1, measurement_unit: 'm', depth: null,
+                  volume: null, perimeter: null, count_value: null,
+                  scale_pixels_per_unit: 100, linked_boq_position_id: null,
+                  is_deduction: false, metadata: { frontend_id: 'b1', scale_calibrated: false },
+                },
+              ]
+            : [],
+        ),
+    );
+    const setM = vi.fn();
+    const setPS = vi.fn();
+    let docId = DOC_A;
+    const { rerender } = renderHook(() =>
+      useMeasurementPersistence({
+        fileName: 'doc-a.pdf', documentId: docId, measurements: [],
+        setMeasurements: setM, pageScales: basePageScales, setPageScales: setPS,
+        scale: defaultScale, projectId: PROJECT,
+      }),
+    );
+
+    // Doc A had no server rows; nothing loaded.
+    await act(async () => { await Promise.resolve(); });
+    setM.mockClear();
+
+    // Switch to document B (a different id => new identity => fresh load).
+    docId = DOC_B;
+    rerender();
+
+    // Document B's own measurement loads; A's nothing is carried across.
+    await waitFor(() => expect(setM).toHaveBeenCalled());
+    const loaded = setM.mock.calls[setM.mock.calls.length - 1]![0] as Array<{ id: string }>;
+    expect(loaded.map((m) => m.id)).toEqual(['b1']);
+  });
+
+  // ── #282: an undo that restores a deleted synced row cancels the queued
+  //          server delete instead of orphaning it. ──
+  it('cancels a queued delete when the row is restored before the sync (issue #282)', async () => {
+    vi.useFakeTimers();
+    const { takeoffApi } = await import('@/features/takeoff/api');
+    (takeoffApi.delete as unknown as ReturnType<typeof vi.fn>).mockClear();
+    const m1 = makeSyncedMeasurement('m1', 'srv-1');
+    let rows = [m1];
+    const setM = vi.fn();
+    const setPS = vi.fn();
+
+    const { result, rerender } = renderHook(() =>
+      useMeasurementPersistence({
+        fileName: 'undo.pdf', documentId: DOC, measurements: rows,
+        setMeasurements: setM, pageScales: basePageScales, setPageScales: setPS,
+        scale: defaultScale, projectId: PROJECT,
+      }),
+    );
+
+    // Delete then immediately undo (the row reappears in state with its
+    // serverId) - all before the 3s debounce fires.
+    act(() => { result.current.registerDeletion('srv-1'); });
+    rows = [];
+    rerender();
+    rows = [m1]; // undo restored it
+    rerender();
+
+    await act(async () => {
+      vi.advanceTimersByTime(3500);
+      await Promise.resolve();
+    });
+    // The delete was cancelled because the row is live again.
+    expect(takeoffApi.delete).not.toHaveBeenCalled();
+    expect(localStorage.getItem(`${compositeKey}__pending_deletes`)).toBeNull();
 
     vi.useRealTimers();
   });

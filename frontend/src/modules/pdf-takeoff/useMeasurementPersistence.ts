@@ -149,6 +149,43 @@ export function getDocumentIndex(): string[] {
   }
 }
 
+/* ── Pending server-side deletions (issue #282) ──────────────────────────
+ * A measurement deleted in the viewer must also be deleted on the server,
+ * but the delete is debounced (it batches with the create/update sync). Until
+ * it has been applied we remember the deleted ``serverId``s so that:
+ *   - the next load does NOT resurrect a row we are about to delete, and
+ *   - a reload BEFORE the debounced delete fired still removes it on the
+ *     next sync (the set is persisted per document, keyed off the local key).
+ * Stored under ``<localKey>__pending_deletes`` as a JSON array of serverIds.
+ */
+function pendingDeletesKey(localKey: string): string {
+  return `${localKey}__pending_deletes`;
+}
+
+function readPendingDeletes(localKey: string | null): string[] {
+  if (!localKey) return [];
+  try {
+    const raw = localStorage.getItem(pendingDeletesKey(localKey));
+    if (!raw) return [];
+    const arr = JSON.parse(raw) as unknown;
+    return Array.isArray(arr) ? (arr.filter((x) => typeof x === 'string') as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePendingDeletes(localKey: string | null, ids: Set<string>): void {
+  if (!localKey) return;
+  try {
+    const key = pendingDeletesKey(localKey);
+    if (ids.size === 0) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(Array.from(ids)));
+  } catch {
+    // localStorage full / unavailable - the in-memory ref still drives the
+    // delete this session; only the cross-reload guarantee is lost.
+  }
+}
+
 /* ── Unit canonicalization ───────────────────────────────────────────── */
 
 /**
@@ -258,15 +295,19 @@ function toApiFormat(
 }
 
 /**
- * Geometry signature for a synced measurement: the set of fields a
- * reshape can change that feed the server-side recompute (Audit B8). When
- * this string changes for a row that already has a `serverId`, the row was
- * edited in-canvas and must be PATCHed so the server re-derives the billed
- * quantity. Annotation / color / group edits are intentionally excluded -
- * those are handled by the existing flows and do not move the quantity.
+ * Sync signature for a synced measurement (issue #282): every field an edit
+ * can change that the server must hear about. When this string changes for a
+ * row that already has a `serverId`, the row was edited and must be PATCHed.
+ *
+ * It deliberately covers BOTH the geometry-bearing fields that feed the
+ * server-side recompute (Audit B8) AND the non-geometry properties (group,
+ * colour, annotation/label, notes) that used to be state-only and never
+ * persisted. {@link toApiUpdate} PATCHes the same union of fields, so a
+ * change to any of them re-syncs the server copy.
  */
-function geometrySignature(m: Measurement): string {
+function syncSignature(m: Measurement): string {
   return JSON.stringify({
+    // Geometry / quantity-bearing fields (server recomputes the value).
     p: m.points,
     d: m.depth ?? null,
     c: m.type === 'count' ? Math.round(m.value) : null,
@@ -275,14 +316,35 @@ function geometrySignature(m: Measurement): string {
     // changing its geometry; include it so toggling it triggers a PATCH and
     // the server row stays in sync.
     x: m.type === 'area' ? Boolean(m.isDeduction) : false,
+    // Non-geometry properties (issue #282): these never moved the billed
+    // quantity, so the old geometry-only signature ignored them and they
+    // never reached the server. They are now part of the signature so a
+    // group / colour / annotation / notes edit re-syncs.
+    g: m.group || 'General',
+    col: m.color || '#3B82F6',
+    a: m.annotation || m.label || null,
+    n: m.text ?? null,
   });
 }
 
-/** Build the reshape PATCH body: just the geometry-bearing fields. The
- *  server recomputes `measurement_value` / `volume` / `perimeter` from
- *  these, so a client cannot inflate a quantity through this path. */
-function toApiUpdate(m: Measurement, scale?: ScaleConfig): Partial<MeasurementCreate> {
+/** Build the PATCH body for a synced measurement (issue #282). Carries the
+ *  geometry-bearing fields (the server recomputes `measurement_value` /
+ *  `volume` / `perimeter` from these, so a client cannot inflate a quantity
+ *  through this path) PLUS the non-geometry properties (group, colour,
+ *  annotation/label, notes) that must now persist on an in-place edit.
+ *
+ *  ``metadata`` is sent merged: the server replaces the metadata blob
+ *  wholesale, so we re-send the same fields {@link toApiFormat} writes on
+ *  create (notes/dimensions/calibration intent/BOQ link mirror) to avoid
+ *  dropping them on an annotation-only edit. */
+function toApiUpdate(
+  m: Measurement,
+  scale?: ScaleConfig,
+  scaleCalibrated = false,
+): Partial<MeasurementCreate> {
   const ppu = scale && scale.pixelsPerUnit > 0 ? scale.pixelsPerUnit : null;
+  const areaValue =
+    m.type === 'area' ? m.value : m.type === 'volume' ? (m.area ?? null) : null;
   return {
     points: m.points,
     type: m.type,
@@ -290,6 +352,25 @@ function toApiUpdate(m: Measurement, scale?: ScaleConfig): Partial<MeasurementCr
     depth: m.depth ?? null,
     count_value: m.type === 'count' ? Math.round(m.value) : null,
     is_deduction: m.type === 'area' ? Boolean(m.isDeduction) : false,
+    // Non-geometry properties (issue #282).
+    group_name: m.group || 'General',
+    group_color: m.color || '#3B82F6',
+    annotation: m.annotation || m.label || null,
+    linked_boq_position_id: m.linkedPositionId ?? null,
+    metadata: {
+      text: m.text,
+      width: m.width,
+      height: m.height,
+      area: areaValue ?? undefined,
+      frontend_id: m.id,
+      // Preserve the per-page calibration intent (issue #277): the server
+      // replaces the metadata blob wholesale on PATCH, so re-send it or a
+      // reshape would resurrect the phantom "calibrated 1:N" badge.
+      scale_calibrated: scaleCalibrated,
+      linked_boq_id: m.linkedBoqId,
+      linked_position_ordinal: m.linkedPositionOrdinal,
+      linked_position_label: m.linkedPositionLabel,
+    },
   };
 }
 
@@ -323,6 +404,51 @@ function fromApiFormat(r: MeasurementResponse): Measurement {
     linkedPositionOrdinal: (meta.linked_position_ordinal as string) ?? undefined,
     linkedPositionLabel: (meta.linked_position_label as string) ?? undefined,
   };
+}
+
+/**
+ * Reconcile the server's measurements (the base) with the localStorage copy's
+ * locally-pending work (issue #281/#282).
+ *
+ * Merge rule (kept deliberately simple so it is auditable):
+ *   - Server rows are the base, keyed by ``serverId``.
+ *   - A local row WITHOUT a ``serverId`` is an unsynced create -> appended.
+ *   - A local row WITH a ``serverId`` that also exists on the server is an
+ *     edit that may not have synced yet. We prefer the LOCAL copy (it is at
+ *     least as new as the server's) but keep the server's ``serverId``. The
+ *     load effect seeds the sync baseline from the SERVER signature, so if the
+ *     local copy differs it is re-PATCHed on the next tick - never lost.
+ *   - A local row whose ``serverId`` is no longer on the server was deleted
+ *     elsewhere; we drop it (the server is authoritative on existence).
+ *
+ * When there is no local copy we just return the server rows unchanged.
+ */
+function reconcileWithLocal(
+  serverRows: Measurement[],
+  localRows: Measurement[] | undefined,
+): Measurement[] {
+  if (!localRows || localRows.length === 0) return serverRows;
+  const serverById = new Map(
+    serverRows.filter((m) => m.serverId).map((m) => [m.serverId as string, m]),
+  );
+  // Start from the server rows, swapping in the local copy for any synced row
+  // the user edited locally (prefer local, keep the serverId).
+  const merged = serverRows.map((srv) => {
+    if (!srv.serverId) return srv;
+    const localEdit = localRows.find((l) => l.serverId === srv.serverId);
+    return localEdit ? { ...localEdit, serverId: srv.serverId } : srv;
+  });
+  // Append unsynced local creates (no serverId, and not already represented).
+  for (const l of localRows) {
+    if (l.serverId) continue; // handled above (or deleted server-side)
+    if (merged.some((m) => m.id === l.id)) continue;
+    merged.push(l);
+  }
+  // Defensive: a local row pointing at a serverId the server no longer returns
+  // was deleted elsewhere - it is simply not added back (serverById guards the
+  // edit branch above).
+  void serverById;
+  return merged;
 }
 
 /**
@@ -399,6 +525,15 @@ interface UseMeasurementPersistenceResult {
   syncing: boolean;
   /** Whether server sync has been done at least once. */
   syncedToServer: boolean;
+  /**
+   * Record that a measurement was deleted in the viewer so the server copy
+   * is removed too (issue #282). Pass the deleted measurement's ``serverId``
+   * if it had one (the row exists on the server -> schedule a DELETE) or
+   * ``undefined`` for a never-synced row (nothing to do server-side). The
+   * caller still removes it from React state; this only handles the server +
+   * the resurrection guard. Safe to call for clear-all (one call per row).
+   */
+  registerDeletion: (serverId: string | undefined) => void;
 }
 
 export function useMeasurementPersistence({
@@ -437,14 +572,21 @@ export function useMeasurementPersistence({
   const [syncing, setSyncing] = useState(false);
   const [syncedToServer, setSyncedToServer] = useState(false);
   const serverSyncRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Reshape-PATCH tracking (#194 Feature 1). `geometrySigRef` remembers the
-  // last geometry we know the server has for each `serverId`, so we only
-  // PATCH a row whose geometry actually changed. `patchTimerRef` debounces
-  // and `inFlightPatchRef` coalesces rapid reshapes of the same row
-  // (last-write-wins) so mid-drag churn never floods the network.
-  const geometrySigRef = useRef<Map<string, string>>(new Map());
+  // Edit-PATCH tracking (#194 Feature 1, broadened for #282). `syncSigRef`
+  // remembers the last full sync-signature we know the server has for each
+  // `serverId` (geometry AND non-geometry props), so we only PATCH a row that
+  // actually changed. `patchTimerRef` debounces and `inFlightPatchRef`
+  // coalesces rapid edits of the same row (last-write-wins) so mid-drag churn
+  // never floods the network.
+  const syncSigRef = useRef<Map<string, string>>(new Map());
   const patchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlightPatchRef = useRef<Set<string>>(new Set());
+  // Pending server-side deletions (issue #282): serverIds of rows deleted in
+  // the viewer whose DELETE has not yet been applied. Seeded from localStorage
+  // on the load effect so a reload before the debounced delete fired still
+  // removes the row. Doubles as the load-reconciliation guard (a server row
+  // whose id is in here is dropped instead of resurrected).
+  const pendingDeletesRef = useRef<Set<string>>(new Set());
   // Read the QueryClient directly from context — ``useContext`` returns
   // ``undefined`` instead of throwing when the provider is absent (e.g. in
   // unit tests that render the hook in isolation). When present, we use
@@ -463,16 +605,56 @@ export function useMeasurementPersistence({
   const setPageScalesRef = useRef(setPageScales);
   setPageScalesRef.current = setPageScales;
 
+  // Latest-value refs (issue #281/#282). The teardown flush and registerDeletion
+  // run from event handlers / cleanup where a stale closure would persist the
+  // wrong document's state. These mirror the current render's values so a flush
+  // always writes the latest measurements under the latest key. Kept in sync on
+  // every render (cheap; refs do not trigger re-renders).
+  const measurementsRef = useRef(measurements);
+  measurementsRef.current = measurements;
+  const pageScalesRef = useRef(pageScales);
+  pageScalesRef.current = pageScales;
+  const scaleRef = useRef(scale);
+  scaleRef.current = scale;
+  const projectIdRef = useRef(projectId);
+  projectIdRef.current = projectId;
+  const documentIdRef = useRef(documentId);
+  documentIdRef.current = documentId;
+  const localKeyRef = useRef(localKey);
+  localKeyRef.current = localKey;
+  const canSyncRef = useRef(canSync);
+  canSyncRef.current = canSync;
+
   // Load persisted data when the document identity changes — try server
   // first (keyed by the stable document UUID, issue #238), fallback to
   // localStorage.
+  //
+  // Load reconciliation (issue #281/#282): the server copy is the BASE, but
+  // it is never trusted blindly. We:
+  //   1. drop any server row whose serverId is in the persisted pending-delete
+  //      set, so a locally-deleted row never resurrects, and
+  //   2. overlay the localStorage copy's locally-pending work on top - rows
+  //      that have no serverId yet (unsynced creates) and edits to a synced
+  //      row that the local copy made more recently than the last sync.
+  // The merge keys on serverId for synced rows and on the frontend id for
+  // unsynced ones, so local edits/creates survive a reload even when the
+  // server has not caught up yet.
   useEffect(() => {
     if (!fileName || identity === lastIdentityRef.current) return;
     lastIdentityRef.current = identity;
 
+    // Seed pending deletions for THIS document from localStorage so a reload
+    // before the debounced DELETE fired still removes the row (and the load
+    // below does not resurrect it).
+    pendingDeletesRef.current = new Set(readPendingDeletes(localKey));
+
     let cancelled = false;
 
     async function loadData() {
+      // The localStorage copy for this document, if any. Used both as the
+      // offline fallback and as the source of local-pending overlay edits.
+      const local = localKey ? readKey(localKey) : null;
+
       // Try server first, but only with BOTH a project and a stable document
       // UUID. Filename is never sent as the document key any more.
       if (canSync && projectId && documentId) {
@@ -481,21 +663,36 @@ export function useMeasurementPersistence({
           if (!cancelled && serverData.length > 0) {
             hasPersistedRef.current = true;
             setSyncedToServer(true);
-            const mapped = serverData.map(fromApiFormat);
-            // Seed the geometry baseline so a fresh load never re-PATCHes
-            // rows that already match the server (#194).
-            geometrySigRef.current = new Map(
+            // Drop rows we have locally deleted but not yet synced (#282).
+            const pending = pendingDeletesRef.current;
+            const mapped = serverData
+              .map(fromApiFormat)
+              .filter((m) => !(m.serverId && pending.has(m.serverId)));
+
+            // Overlay local-pending work (#281/#282): start from the server
+            // rows, then apply the localStorage copy's unsynced creates and
+            // any locally-newer edits to a synced row.
+            const merged = reconcileWithLocal(mapped, local?.measurements);
+
+            // Seed the sync baseline from the SERVER copy of each synced row
+            // (not the merged copy), so a locally-newer edit still looks dirty
+            // and re-PATCHes on the next tick rather than being lost (#282).
+            syncSigRef.current = new Map(
               mapped
                 .filter((m) => m.serverId)
-                .map((m) => [m.serverId as string, geometrySignature(m)]),
+                .map((m) => [m.serverId as string, syncSignature(m)]),
             );
             // Reconstruct the per-page scale from the per-measurement ratios
             // the server stored. The localStorage copy (set below on next
             // save) is authoritative when present, but for a project loaded
             // on a fresh device this is the only place the calibration lives.
             const fromServer = pageScalesFromServer(serverData);
-            if (fromServer) setPageScalesRef.current(fromServer);
-            setMeasurementsRef.current(mapped);
+            if (local?.pageScales || local?.scale) {
+              setPageScalesRef.current(hydratePageScales(local.pageScales, local.scale));
+            } else if (fromServer) {
+              setPageScalesRef.current(fromServer);
+            }
+            setMeasurementsRef.current(merged);
             return;
           }
         } catch {
@@ -506,7 +703,7 @@ export function useMeasurementPersistence({
       // Fallback to localStorage (the composite project+document key, or the
       // local-only key for an unsynced fresh drop).
       if (!cancelled) {
-        let data = localKey ? readKey(localKey) : null;
+        let data = local;
         // Back-compat (issue #238): nothing under the new composite key yet?
         // A user upgrading from a filename-keyed build still has their
         // measurements under ``oe_takeoff_<filename>``. Read it once and
@@ -521,7 +718,20 @@ export function useMeasurementPersistence({
         }
         if (data) {
           hasPersistedRef.current = true;
-          setMeasurementsRef.current(data.measurements);
+          // Even with no server rows, honour a pending delete: a row deleted
+          // offline must not reappear from the localStorage copy either.
+          const pending = pendingDeletesRef.current;
+          const rows = pending.size
+            ? data.measurements.filter((m) => !(m.serverId && pending.has(m.serverId)))
+            : data.measurements;
+          // Seed the sync baseline so a localStorage-loaded synced row does
+          // not immediately re-PATCH on mount (its signature is known).
+          syncSigRef.current = new Map(
+            rows
+              .filter((m) => m.serverId)
+              .map((m) => [m.serverId as string, syncSignature(m)]),
+          );
+          setMeasurementsRef.current(rows);
           // Graceful migration: a document saved before per-page scale only
           // carried ``data.scale``; hydratePageScales promotes it to the
           // document default so every page reads the same number it always
@@ -538,6 +748,38 @@ export function useMeasurementPersistence({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identity]);
 
+  // Synchronous localStorage write of the LATEST state (issue #281). Shared by
+  // the debounced auto-save, the manual ``saveNow`` button, and the teardown
+  // flush so leaving a document always persists its latest measurements under
+  // the right key. Reads refs (not the render closure) so a flush fired from a
+  // cleanup writes the correct document. Never persists AI suggestions.
+  const writeLocalNow = useCallback(() => {
+    const key = localKeyRef.current;
+    if (!key) return;
+    const projectIdNow = projectIdRef.current;
+    const documentIdNow = documentIdRef.current;
+    // Persist BOTH the new per-page model and the legacy single ``scale`` (the
+    // current page's, as a best-effort default) so a downgrade to an older
+    // build that only reads ``scale`` still finds a usable value.
+    const payload: PersistedDocument = {
+      measurements: measurementsRef.current.filter((m) => !m.suggested),
+      pageScales: pageScalesRef.current,
+      scale: scaleRef.current,
+      savedAt: Date.now(),
+    };
+    if (projectIdNow && documentIdNow) {
+      saveToStorage(projectIdNow, documentIdNow, payload);
+    } else {
+      // Local-only key (fresh drop, no server UUID yet) - written directly and
+      // not added to the document index (it isn't a synced document).
+      try {
+        localStorage.setItem(key, JSON.stringify(payload));
+      } catch {
+        // localStorage full — silently fail
+      }
+    }
+  }, []);
+
   // Auto-save to localStorage with debounce (500ms). Keyed by the stable
   // project+document composite (issue #238), or a local-only key for an
   // unsynced fresh drop.
@@ -545,109 +787,159 @@ export function useMeasurementPersistence({
     if (!localKey) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      // Never persist AI suggestions: only confirmed measurements are saved.
-      // Persist BOTH the new per-page model and the legacy single ``scale``
-      // (the current page's, as a best-effort default) so a downgrade to an
-      // older build that only reads ``scale`` still finds a usable value.
-      const payload: PersistedDocument = {
-        measurements: measurements.filter((m) => !m.suggested),
-        pageScales,
-        scale,
-        savedAt: Date.now(),
-      };
-      if (projectId && documentId) {
-        saveToStorage(projectId, documentId, payload);
-      } else {
-        // Local-only key (fresh drop, no server UUID yet) - written directly
-        // and not added to the document index (it isn't a synced document).
-        try {
-          localStorage.setItem(localKey, JSON.stringify(payload));
-        } catch {
-          // localStorage full — silently fail
-        }
-      }
+      writeLocalNow();
     }, 500);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [localKey, projectId, documentId, measurements, pageScales, scale]);
+  }, [localKey, projectId, documentId, measurements, pageScales, scale, writeLocalNow]);
+
+  // Apply pending server-side deletions (issue #282). A row is deleted on the
+  // server ONLY when its serverId is still in the pending set AND it is no
+  // longer present in ``measurements`` - so an undo that restored the deleted
+  // measurement (it reappears in state with its serverId) cancels the delete
+  // instead of orphaning the row. On success we clear it from the pending set
+  // (+ localStorage mirror); on failure we leave it so the next pass retries.
+  const applyPendingDeletes = useCallback(
+    async (current: Measurement[]): Promise<boolean> => {
+      const pending = pendingDeletesRef.current;
+      if (pending.size === 0) return false;
+      const liveServerIds = new Set(
+        current.filter((m) => m.serverId).map((m) => m.serverId as string),
+      );
+      let changed = false;
+      await Promise.all(
+        Array.from(pending).map(async (serverId) => {
+          // Undo brought it back -> cancel the delete.
+          if (liveServerIds.has(serverId)) {
+            pending.delete(serverId);
+            changed = true;
+            return;
+          }
+          try {
+            await takeoffApi.delete(serverId);
+            pending.delete(serverId);
+            syncSigRef.current.delete(serverId);
+            changed = true;
+          } catch {
+            // Leave it pending; the next sync pass retries.
+          }
+        }),
+      );
+      if (changed) writePendingDeletes(localKeyRef.current, pending);
+      return changed;
+    },
+    [],
+  );
+
+  // The actual create + delete sync, callable from both the debounced effect
+  // and the teardown flush. Reads the latest state via refs so a flush during
+  // unmount writes the right document's rows. Returns nothing; updates state
+  // (serverId stamps), the sync baseline, and the pending-delete set.
+  const runServerSync = useCallback(async () => {
+    const projectIdNow = projectIdRef.current;
+    const documentIdNow = documentIdRef.current;
+    if (!canSyncRef.current || !projectIdNow || !documentIdNow) return;
+    const current = measurementsRef.current;
+    const pageScalesNow = pageScalesRef.current;
+
+    setSyncing(true);
+    try {
+      // Creates and deletes act on disjoint rows, so dispatch BOTH up front
+      // (their network calls are invoked synchronously here) and await them
+      // together. Invoking the create synchronously matters: callers that
+      // advance a debounce inside a synchronous tick expect bulkCreate to have
+      // been called by the time control returns.
+      const deletePromise = applyPendingDeletes(current);
+
+      const toCreate = current
+        // Suggested-but-unconfirmed measurements are excluded; accepting a
+        // suggestion clears `suggested` and the next tick syncs it (#194).
+        .filter((m) => !m.serverId && !m.suggested)
+        // Per-page scale: toApiFormat resolves each row's own page scale
+        // from pageScales, so a multi-sheet set syncs correct ratios. The
+        // document_id sent is the stable UUID, never the filename (#238).
+        .map((m) => toApiFormat(m, projectIdNow, documentIdNow, pageScalesNow));
+      const createPromise =
+        toCreate.length > 0 ? takeoffApi.bulkCreate(toCreate) : null;
+
+      await deletePromise;
+
+      if (createPromise) {
+        const created = await createPromise;
+        // Update serverId on created measurements (map over the LATEST state).
+        setMeasurementsRef.current(
+          measurementsRef.current.map((m) => {
+            if (m.serverId) return m;
+            const match = created.find(
+              (c) => (c.metadata?.frontend_id as string) === m.id,
+            );
+            if (!match) return m;
+            // Seed the sync baseline for the freshly-synced row so a later
+            // edit PATCHes, but a no-op tick does not (#194/#282).
+            syncSigRef.current.set(match.id, syncSignature(m));
+            return { ...m, serverId: match.id };
+          }),
+        );
+        // Surface the new measurements in the unified Markups hub.
+        qc?.invalidateQueries({ queryKey: ['unified-markups'] });
+      }
+      setSyncedToServer(true);
+    } catch {
+      // Server sync failed — data safe in localStorage
+    } finally {
+      setSyncing(false);
+    }
+  }, [applyPendingDeletes, qc]);
 
   // Auto-sync to server with debounce (3s). Both measurement and annotation
   // types persist now (v2.6.7) — backend schema accepts the full set.
   // Gated on a stable document UUID + project (issue #238): a filename alone
   // never triggers server sync, so an unsynced local drop stays local-only.
+  // Runs even with zero measurements so a clear-all's pending deletions are
+  // applied (the create pass is then a no-op).
   useEffect(() => {
     if (!canSync || !projectId || !documentId) return;
-    if (measurements.length === 0) return;
-    const serverMeasurements = measurements;
+    const hasCreates = measurements.some((m) => !m.serverId && !m.suggested);
+    if (!hasCreates && pendingDeletesRef.current.size === 0) return;
 
     if (serverSyncRef.current) clearTimeout(serverSyncRef.current);
-    serverSyncRef.current = setTimeout(async () => {
-      setSyncing(true);
-      try {
-        const toCreate = serverMeasurements
-          // Suggested-but-unconfirmed measurements are excluded; accepting a
-          // suggestion clears `suggested` and the next tick syncs it (#194).
-          .filter((m) => !m.serverId && !m.suggested)
-          // Per-page scale: toApiFormat resolves each row's own page scale
-          // from pageScales, so a multi-sheet set syncs correct ratios. The
-          // document_id sent is the stable UUID, never the filename (#238).
-          .map((m) => toApiFormat(m, projectId, documentId, pageScales));
-
-        if (toCreate.length > 0) {
-          const created = await takeoffApi.bulkCreate(toCreate);
-          // Update serverId on created measurements
-          setMeasurements(measurements.map((m) => {
-            if (m.serverId) return m;
-            const match = created.find((c) =>
-              (c.metadata?.frontend_id as string) === m.id
-            );
-            if (!match) return m;
-            // Seed the reshape baseline for the freshly-synced row so a
-            // later in-canvas edit PATCHes, but a no-op tick does not (#194).
-            geometrySigRef.current.set(match.id, geometrySignature(m));
-            return { ...m, serverId: match.id };
-          }));
-          // Surface the new measurements in the unified Markups hub.
-          qc?.invalidateQueries({ queryKey: ['unified-markups'] });
-        }
-        setSyncedToServer(true);
-      } catch {
-        // Server sync failed — data safe in localStorage
-      } finally {
-        setSyncing(false);
-      }
+    serverSyncRef.current = setTimeout(() => {
+      void runServerSync();
     }, 3000);
 
     return () => {
       if (serverSyncRef.current) clearTimeout(serverSyncRef.current);
     };
-  }, [canSync, projectId, documentId, measurements, setMeasurements, pageScales]);
+  }, [canSync, projectId, documentId, measurements, runServerSync]);
 
-  // Reshape PATCH (#194 Feature 1). When a measurement that already has a
-  // `serverId` has its geometry changed in-canvas, PATCH just that row so
-  // the server re-derives the billed quantity (Audit B8). Debounced 400ms
-  // off the last change; mid-drag churn never reaches the network because
-  // the viewer only commits points on mouseup. Coalesced per `serverId`:
-  // if a row is already in-flight we skip it this tick and the changed
-  // signature keeps it dirty for the next pass (last-write-wins per row).
-  // Gated on canSync (#238): a serverId only exists after a sync, but gate
-  // explicitly so a stale row can't PATCH once the document id is gone.
+  // Edit PATCH (#194 Feature 1, broadened for #282). When a measurement that
+  // already has a `serverId` is edited - geometry reshaped in-canvas (Audit
+  // B8) OR a non-geometry property changed (group / colour / annotation /
+  // notes) - PATCH just that row so the server stays in sync. The dirty check
+  // keys on {@link syncSignature}, which now spans both, so a colour or label
+  // change is caught where the old geometry-only signature missed it.
+  // Debounced 400ms off the last change; mid-drag churn never reaches the
+  // network because the viewer only commits points on mouseup. Coalesced per
+  // `serverId`: if a row is already in-flight we skip it this tick and the
+  // changed signature keeps it dirty for the next pass (last-write-wins per
+  // row). Gated on canSync (#238): a serverId only exists after a sync, but
+  // gate explicitly so a stale row can't PATCH once the document id is gone.
   useEffect(() => {
     if (!canSync) return;
     if (measurements.length === 0) return;
 
-    // Find synced rows whose geometry drifted from the server baseline.
+    // Find synced rows whose sync-signature drifted from the server baseline.
     const dirty = measurements.filter((m) => {
       if (!m.serverId || m.suggested) return false;
-      const prevSig = geometrySigRef.current.get(m.serverId);
+      const prevSig = syncSigRef.current.get(m.serverId);
       // No baseline yet (e.g. a row hydrated before its baseline seeded)
       // -> record the current signature without firing a PATCH.
       if (prevSig === undefined) {
-        geometrySigRef.current.set(m.serverId, geometrySignature(m));
+        syncSigRef.current.set(m.serverId, syncSignature(m));
         return false;
       }
-      return prevSig !== geometrySignature(m);
+      return prevSig !== syncSignature(m);
     });
     if (dirty.length === 0) return;
 
@@ -659,16 +951,22 @@ export function useMeasurementPersistence({
           const serverId = m.serverId!;
           if (inFlightPatchRef.current.has(serverId)) return; // coalesce
           inFlightPatchRef.current.add(serverId);
-          const sig = geometrySignature(m);
+          const sig = syncSignature(m);
           try {
             // Per-page scale: PATCH with the measurement's own page scale so
-            // the server B8 recompute uses the ratio that sheet was drawn at.
+            // the server B8 recompute uses the ratio that sheet was drawn at,
+            // plus the page's calibration intent so the metadata round-trips
+            // without resurrecting the #277 phantom badge.
             const updated = await takeoffApi.update(
               serverId,
-              toApiUpdate(m, scaleForPage(pageScales, m.page)),
+              toApiUpdate(
+                m,
+                scaleForPage(pageScales, m.page),
+                pageIsCalibrated(pageScales, m.page),
+              ),
             );
-            // Mark this geometry as known-on-server so we don't re-PATCH it.
-            geometrySigRef.current.set(serverId, sig);
+            // Mark this signature as known-on-server so we don't re-PATCH it.
+            syncSigRef.current.set(serverId, sig);
             // Overwrite the optimistic value with the server-authoritative
             // recompute so the displayed quantity can never exceed what the
             // geometry justifies.
@@ -690,8 +988,8 @@ export function useMeasurementPersistence({
       );
 
       if (reconciled.length > 0) {
-        setMeasurements(
-          measurements.map((m) => {
+        setMeasurementsRef.current(
+          measurementsRef.current.map((m) => {
             const r = reconciled.find((x) => x.frontendId === m.id);
             if (!r) return m;
             return {
@@ -708,21 +1006,31 @@ export function useMeasurementPersistence({
     return () => {
       if (patchTimerRef.current) clearTimeout(patchTimerRef.current);
     };
-  }, [canSync, projectId, documentId, measurements, setMeasurements, pageScales, qc]);
+  }, [canSync, projectId, documentId, measurements, pageScales, qc]);
 
+  // Manual save (the toolbar Save button). Persists locally now AND triggers
+  // the server sync immediately rather than waiting out the 3s debounce, so a
+  // deliberate Save reliably pushes creates/edits/deletes.
   const saveNow = useCallback(() => {
-    if (!localKey) return;
-    const payload: PersistedDocument = { measurements, pageScales, scale, savedAt: Date.now() };
-    if (projectId && documentId) {
-      saveToStorage(projectId, documentId, payload);
-    } else {
-      try {
-        localStorage.setItem(localKey, JSON.stringify(payload));
-      } catch {
-        // localStorage full — silently fail
-      }
-    }
-  }, [localKey, projectId, documentId, measurements, pageScales, scale]);
+    writeLocalNow();
+    void runServerSync();
+  }, [writeLocalNow, runServerSync]);
+
+  /**
+   * Record a viewer-side deletion (issue #282). For a synced row (has a
+   * ``serverId``) we queue a server DELETE - persisted to localStorage so a
+   * reload before the debounced sync still removes it, and tracked so the next
+   * load does not resurrect it. The caller removes it from React state; the
+   * debounced server-sync effect (or saveNow / the teardown flush) applies the
+   * DELETE. A never-synced row has nothing on the server, so we only make sure
+   * its localStorage copy is rewritten (handled by the auto-save effect when
+   * state changes) - here it is a no-op.
+   */
+  const registerDeletion = useCallback((serverId: string | undefined) => {
+    if (!serverId) return;
+    pendingDeletesRef.current.add(serverId);
+    writePendingDeletes(localKeyRef.current, pendingDeletesRef.current);
+  }, []);
 
   const clearPersisted = useCallback(() => {
     if (projectId && documentId) {
@@ -737,6 +1045,26 @@ export function useMeasurementPersistence({
     hasPersistedRef.current = false;
   }, [projectId, documentId, localKey]);
 
+  // Teardown flush (issue #281). All the debounced writes above only
+  // clearTimeout on cleanup, so a measurement made just before leaving a
+  // document used to be lost: SPA navigation never fires beforeunload, and the
+  // viewer is remounted per-document (TakeoffPage keys it by document id), so
+  // leaving a document unmounts this hook. The empty dependency array means
+  // this cleanup runs ONLY on true unmount, at which point the refs still hold
+  // the leaving-document's latest state. We flush it synchronously to
+  // localStorage and kick a best-effort server sync (fire-and-forget; a
+  // cleanup cannot await) so creates / edits / queued deletes are not stranded.
+  // In-place identity changes (e.g. a local drop that later gains a server
+  // UUID) keep the same measurements and are covered by the debounced
+  // localStorage + server-sync effects above.
+  useEffect(() => {
+    return () => {
+      writeLocalNow();
+      void runServerSync();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return {
     hasPersistedData: hasPersistedRef.current,
     saveNow,
@@ -744,5 +1072,6 @@ export function useMeasurementPersistence({
     savedDocumentCount: getDocumentIndex().length,
     syncing,
     syncedToServer,
+    registerDeletion,
   };
 }

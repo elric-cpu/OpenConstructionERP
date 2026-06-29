@@ -659,7 +659,7 @@ export default function TakeoffViewerModule({
   // PDF / Excel export in-flight flags (drive button spinner state).
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isExportingXlsx, setIsExportingXlsx] = useState(false);
-  const { hasPersistedData, saveNow, clearPersisted, syncing, syncedToServer } = useMeasurementPersistence({
+  const { hasPersistedData, saveNow, clearPersisted, syncing, syncedToServer, registerDeletion } = useMeasurementPersistence({
     fileName,
     // Stable document UUID drives both the localStorage key and server sync
     // (issue #238); a null id (fresh local drop) keeps everything local.
@@ -912,12 +912,18 @@ export default function TakeoffViewerModule({
   useEffect(() => {
     if (measurements.length === 0) return;
     const handler = (e: BeforeUnloadEvent) => {
+      // Actually persist before warning (issue #281): the old handler only
+      // showed the browser prompt and relied on the user clicking "stay".
+      // saveNow writes localStorage synchronously (and best-effort kicks the
+      // server) so a tab close keeps the latest measurements regardless of
+      // which button the user picks. The prompt stays as a safety net.
+      saveNow();
       e.preventDefault();
       e.returnValue = '';
     };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-  }, [measurements.length]);
+  }, [measurements.length, saveNow]);
 
   /* ── First-measurement-without-calibration warning ───────────────── */
   // Fires exactly once per session: when the user creates their first
@@ -3249,16 +3255,21 @@ export default function TakeoffViewerModule({
   }, [measurements, scale, exportProjectName, addToast, t, measurementSystem]);
 
   const deleteMeasurement = useCallback((id: string) => {
-    setMeasurements((prev) => {
-      const target = prev.find((m) => m.id === id);
-      if (target) {
-        pushUndo({ kind: 'delete_measurement', measurement: { ...target, points: [...target.points] } });
-      }
-      return prev.filter((m) => m.id !== id);
-    });
+    // Capture the target up front so we can both push an undo frame and queue
+    // the server-side delete (issue #282) without running side-effects inside
+    // the state updater (which React may invoke twice under StrictMode).
+    const target = measurements.find((m) => m.id === id);
+    if (target) {
+      pushUndo({ kind: 'delete_measurement', measurement: { ...target, points: [...target.points] } });
+      // A synced row must also be removed on the server; a never-synced row
+      // (no serverId) just drops locally. registerDeletion is a no-op for the
+      // latter and an undo that restores the row cancels the queued delete.
+      registerDeletion(target.serverId);
+    }
+    setMeasurements((prev) => prev.filter((m) => m.id !== id));
     // Clear selection if the deleted measurement was selected.
     setSelectedMeasurementId((cur) => (cur === id ? null : cur));
-  }, [pushUndo]);
+  }, [measurements, pushUndo, registerDeletion]);
 
   /* ── Recognize: offline AI vector detection (issue #194) ───────────── */
 
@@ -3736,6 +3747,14 @@ export default function TakeoffViewerModule({
   }, [selectedBoqId, measurements, addToast, t]);
 
   const clearAll = useCallback(() => {
+    // Queue a server-side delete for every synced row before wiping state
+    // (issue #282) so clear-all does not leave orphaned measurements on the
+    // server that would resurrect on the next load. clearPersisted removes the
+    // document's localStorage copy but NOT the separate pending-delete queue,
+    // so the debounced server-sync still applies these deletes.
+    for (const m of measurements) {
+      if (m.serverId) registerDeletion(m.serverId);
+    }
     setMeasurements([]);
     setActivePoints([]);
     undoStackRef.current = [];
@@ -3753,7 +3772,7 @@ export default function TakeoffViewerModule({
     setRectStartPoint(null);
     setIsDraggingRect(false);
     clearPersisted();
-  }, [clearPersisted]);
+  }, [measurements, registerDeletion, clearPersisted]);
 
   /* ── Link measurement to BOQ ─────────────────────────────────────── */
 
@@ -4298,8 +4317,15 @@ export default function TakeoffViewerModule({
         break;
 
       case 'complete_measurement':
-        // Remove the completed measurement and restore active points
-        setMeasurements((prev) => prev.filter((m) => m.id !== op.measurement.id));
+        // Remove the completed measurement and restore active points. If the
+        // measurement was already synced (the 3s debounce fired before the
+        // undo), queue the server-side delete too so undoing a create does not
+        // leave an orphan that resurrects on reload (issue #282).
+        setMeasurements((prev) => {
+          const live = prev.find((m) => m.id === op.measurement.id);
+          if (live?.serverId) registerDeletion(live.serverId);
+          return prev.filter((m) => m.id !== op.measurement.id);
+        });
         setActivePoints(op.previousActivePoints);
         // Clear selection if we undid its creation
         setSelectedMeasurementId((sel) => (sel === op.measurement.id ? null : sel));
@@ -4364,7 +4390,7 @@ export default function TakeoffViewerModule({
     setRedoCount(redoStackRef.current.length);
 
     addToast({ type: 'info', title: t('takeoff.undo', { defaultValue: 'Undo' }), message: t('takeoff.measurement_undone', { defaultValue: 'Measurement undone' }) });
-  }, [addToast, t]);
+  }, [addToast, t, registerDeletion]);
 
   /** Re-apply the most recently undone operation. */
   const handleRedo = useCallback(() => {
@@ -4417,7 +4443,15 @@ export default function TakeoffViewerModule({
         break;
 
       case 'delete_measurement':
-        setMeasurements((prev) => prev.filter((m) => m.id !== op.measurement.id));
+        // Re-queue the server-side delete (issue #282): an undo cancelled it
+        // by restoring the row, so redoing the delete must remove it again.
+        // Look up the live row to read the serverId it may have gained after
+        // the original snapshot was taken.
+        setMeasurements((prev) => {
+          const live = prev.find((m) => m.id === op.measurement.id);
+          if (live?.serverId) registerDeletion(live.serverId);
+          return prev.filter((m) => m.id !== op.measurement.id);
+        });
         setSelectedMeasurementId((sel) => (sel === op.measurement.id ? null : sel));
         break;
 
@@ -4461,7 +4495,7 @@ export default function TakeoffViewerModule({
       title: t('takeoff.redo', { defaultValue: 'Redo' }),
       message: t('takeoff.measurement_redone', { defaultValue: 'Measurement redone' }),
     });
-  }, [addToast, t, countLabel, currentPage, activeGroup]);
+  }, [addToast, t, countLabel, currentPage, activeGroup, registerDeletion]);
 
   /** Unified tool-switch logic (shared between toolbar buttons + shortcuts). */
   const selectTool = useCallback((tool: MeasureTool) => {
