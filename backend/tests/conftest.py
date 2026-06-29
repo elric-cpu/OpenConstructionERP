@@ -145,14 +145,19 @@ import app.modules.users.models  # noqa: E402,F401
 # event has already fanned out to subscribers.
 from app.core.events import event_bus as _event_bus  # noqa: E402
 
-# Handlers that perform real async I/O — they open their own DB session
-# (webhook dispatch) or write an activity-log row (BOQ). Both subscribe to the
-# ``"*"`` wildcard, so they are present for *every* event once the full app has
-# started (i.e. in integration tests). Manually stepping a coroutine that does
-# real asyncpg I/O via ``coro.send(None)`` corrupts the connection
-# ("await wasn't used with future") and poisons the test's session, so whenever
-# one of these is registered we let the event loop drive the publish instead.
-_ASYNC_IO_EVENT_HANDLERS = {"_dispatch_to_webhooks", "_log_boq_activity"}
+# Handlers that perform real async I/O - they open their own DB session
+# (webhook dispatch), write an activity-log row (BOQ) or persist a timeline
+# ActivityLog row (timeline bridge). These are the three ``"*"`` wildcard
+# subscribers in the codebase, so each is present for *every* event once the
+# full app has started (i.e. in integration tests). Manually stepping a
+# coroutine that does real asyncpg I/O via ``coro.send(None)`` corrupts the
+# connection ("await wasn't used with future") and poisons the test's session,
+# so whenever one of these is registered we let the event loop drive the publish
+# instead. NOTE: keep this in sync with every ``event_bus.subscribe("*", ...)``
+# in app/ - a wildcard handler missing here is half-stepped and silently
+# poisons whichever unit test happens to publish first (manifests as a
+# ``GeneratorExit`` deep in asyncpg on the next DB op).
+_ASYNC_IO_EVENT_HANDLERS = {"_dispatch_to_webhooks", "_log_boq_activity", "_record_event"}
 
 # Keep strong references to scheduled publish tasks so the loop can't garbage-
 # collect them mid-flight (which would raise "Task was destroyed but it is
