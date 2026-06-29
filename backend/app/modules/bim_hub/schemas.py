@@ -783,6 +783,7 @@ class BIMElementGroupCreate(BaseModel):
 
     name: str = Field(..., min_length=1, max_length=255)
     description: str | None = None
+    folder: str | None = Field(default=None, max_length=255)
     model_id: UUID | None = None
     is_dynamic: bool = True
     filter_criteria: dict[str, Any] = Field(default_factory=dict)
@@ -803,6 +804,8 @@ class BIMElementGroupUpdate(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
+    # Pass "" to move the group out of its folder (back to ungrouped).
+    folder: str | None = Field(default=None, max_length=255)
     model_id: UUID | None = None
     is_dynamic: bool | None = None
     filter_criteria: dict[str, Any] | None = None
@@ -827,6 +830,7 @@ class BIMElementGroupResponse(BaseModel):
     model_id: UUID | None = None
     name: str
     description: str | None = None
+    folder: str | None = None
     is_dynamic: bool
     filter_criteria: dict[str, Any] = Field(default_factory=dict)
     element_ids: list[UUID] = Field(default_factory=list)

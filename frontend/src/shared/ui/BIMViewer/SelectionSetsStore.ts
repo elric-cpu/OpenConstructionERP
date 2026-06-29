@@ -49,6 +49,9 @@ export interface SelectionSet {
   color?: string;
   /** Optional free-text note. 0 ≤ length ≤ 200. */
   note?: string;
+  /** Optional folder label for grouping sets in the panel (B4). Empty / blank
+   *  means ungrouped. Trimmed; max 60 chars (same cap as the name). */
+  folder?: string;
 }
 
 type PersistedShape = Record<string, SelectionSet[]>;
@@ -113,6 +116,10 @@ function readAll(): PersistedShape {
           updatedAt: typeof candidate.updatedAt === 'string' ? candidate.updatedAt : nowIso(),
           color: typeof candidate.color === 'string' ? candidate.color : undefined,
           note: typeof candidate.note === 'string' ? candidate.note : undefined,
+          folder:
+            typeof candidate.folder === 'string' && candidate.folder.trim()
+              ? candidate.folder.trim()
+              : undefined,
         });
       }
       out[modelId] = sets;
@@ -152,6 +159,18 @@ function validateNote(rawNote: string | undefined): string | undefined {
   return rawNote;
 }
 
+/** Trim a folder label; blank becomes ``undefined`` (ungrouped). Throws when
+ *  the label exceeds the name cap so the UI can surface a clear error. */
+function validateFolder(rawFolder: string | undefined): string | undefined {
+  if (typeof rawFolder !== 'string') return undefined;
+  const trimmed = rawFolder.trim();
+  if (trimmed.length === 0) return undefined;
+  if (trimmed.length > NAME_MAX) {
+    throw new Error(`Selection set folder cannot exceed ${NAME_MAX} characters.`);
+  }
+  return trimmed;
+}
+
 export class SelectionSetsStore {
   private subscribers = new Set<() => void>();
   private listenerInstalled = false;
@@ -185,10 +204,11 @@ export class SelectionSetsStore {
     modelId: string,
     name: string,
     elementIds: string[],
-    extras?: { color?: string; note?: string },
+    extras?: { color?: string; note?: string; folder?: string },
   ): SelectionSet {
     const trimmedName = validateName(name);
     const note = validateNote(extras?.note);
+    const folder = validateFolder(extras?.folder);
     const all = readAll();
     const sets = all[modelId] ?? [];
     if (sets.length >= MAX_SETS_PER_MODEL) {
@@ -206,6 +226,7 @@ export class SelectionSetsStore {
       updatedAt: now,
       color: extras?.color,
       note,
+      folder,
     };
     all[modelId] = [...sets, set];
     writeAll(all);
@@ -220,7 +241,9 @@ export class SelectionSetsStore {
    */
   update(
     id: string,
-    patch: Partial<Pick<SelectionSet, 'name' | 'color' | 'note' | 'elementIds'>>,
+    patch: Partial<
+      Pick<SelectionSet, 'name' | 'color' | 'note' | 'folder' | 'elementIds'>
+    >,
   ): SelectionSet {
     const all = readAll();
     for (const [modelId, sets] of Object.entries(all)) {
@@ -231,6 +254,8 @@ export class SelectionSetsStore {
         patch.name !== undefined ? validateName(patch.name) : current.name;
       const nextNote = 'note' in patch ? validateNote(patch.note) : current.note;
       const nextColor = 'color' in patch ? patch.color : current.color;
+      const nextFolder =
+        'folder' in patch ? validateFolder(patch.folder) : current.folder;
       const nextIds =
         patch.elementIds !== undefined
           ? clampElementIds(patch.elementIds)
@@ -240,6 +265,7 @@ export class SelectionSetsStore {
         name: nextName,
         note: nextNote,
         color: nextColor,
+        folder: nextFolder,
         elementIds: nextIds,
         updatedAt: nowIso(),
       };

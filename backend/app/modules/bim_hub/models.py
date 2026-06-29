@@ -326,6 +326,10 @@ class BIMElementGroup(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Optional folder label so selection sets can be grouped in the UI tree.
+    # NULL / empty means "ungrouped"; a plain string keeps grouping migration
+    # light (renaming a folder is a bulk string update, not a row move).
+    folder: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
     is_dynamic: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

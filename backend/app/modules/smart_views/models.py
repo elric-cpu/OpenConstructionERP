@@ -81,6 +81,12 @@ class SmartView(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Optional folder label so the UI can group saved views in a tree.
+    # NULL / empty means "ungrouped". A plain string (not a separate folder
+    # entity) keeps the feature migration-light - the folder is just a name
+    # the user types or picks; renaming a folder is a bulk string update.
+    folder: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+
     # Ordered list of rule dicts (later wins). Persisted as JSON so a
     # schema migration is not required every time a new operator or
     # action ships. Validated by Pydantic on every write.

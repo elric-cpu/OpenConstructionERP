@@ -130,6 +130,9 @@ export interface SmartViewRuleEditorProps {
   /** Scope for newly-created views. Ignored when updating. */
   scopeType: SmartViewScopeType;
   scopeId: string;
+  /** Existing folder labels, surfaced as autocomplete for the folder field
+   *  so users reuse a folder name instead of creating near-duplicates (B4). */
+  existingFolders?: string[];
   /** Fired after a successful save with the server's response. */
   onSaved?: (view: SmartViewResponse) => void;
 }
@@ -142,6 +145,7 @@ export function SmartViewRuleEditor({
   initialView = null,
   scopeType,
   scopeId,
+  existingFolders = [],
   onSaved,
 }: SmartViewRuleEditorProps) {
   const { t } = useTranslation();
@@ -154,6 +158,7 @@ export function SmartViewRuleEditor({
       return {
         name: initialView.name,
         description: initialView.description ?? '',
+        folder: initialView.folder ?? '',
         defaultAction: (initialView.default_action as SmartViewDefaultAction) ?? 'show_all',
         rules: initialView.rules.map((r) => ({ ...r, action_args: { ...r.action_args } })),
       };
@@ -161,6 +166,7 @@ export function SmartViewRuleEditor({
     return {
       name: '',
       description: '',
+      folder: '',
       defaultAction: 'show_all' as SmartViewDefaultAction,
       rules: [] as SmartViewRule[],
     };
@@ -169,6 +175,7 @@ export function SmartViewRuleEditor({
 
   const [name, setName] = useState(seed.name);
   const [description, setDescription] = useState(seed.description);
+  const [folder, setFolder] = useState(seed.folder);
   const [defaultAction, setDefaultAction] = useState<SmartViewDefaultAction>(
     seed.defaultAction,
   );
@@ -184,6 +191,7 @@ export function SmartViewRuleEditor({
   useEffect(() => {
     setName(seed.name);
     setDescription(seed.description);
+    setFolder(seed.folder);
     setDefaultAction(seed.defaultAction);
     setRules(seed.rules);
     setNameError(null);
@@ -290,6 +298,8 @@ export function SmartViewRuleEditor({
         saved = await updateSmartView(initialView.id, {
           name: trimmedName,
           description: description.trim() || null,
+          // Send "" to clear the folder; the backend normalises blank to NULL.
+          folder: folder.trim(),
           rules,
           default_action: defaultAction,
         });
@@ -297,6 +307,7 @@ export function SmartViewRuleEditor({
         const payload: SmartViewCreatePayload = {
           name: trimmedName,
           description: description.trim() || null,
+          folder: folder.trim() || null,
           rules,
           default_action: defaultAction,
           scope_type: scopeType,
@@ -393,6 +404,32 @@ export function SmartViewRuleEditor({
             onChange={(e) => setDescription(e.target.value)}
             data-testid="smart-view-description-input"
           />
+        </div>
+
+        {/* Folder (B4) - optional grouping label with autocomplete */}
+        <div className="flex flex-col gap-1.5">
+          <label
+            htmlFor="smart-view-folder"
+            className="text-sm font-medium text-content-primary"
+          >
+            {t('smartViews.folder', { defaultValue: 'Folder (optional)' })}
+          </label>
+          <input
+            id="smart-view-folder"
+            list="smart-view-folder-options"
+            className="h-9 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm"
+            value={folder}
+            onChange={(e) => setFolder(e.target.value)}
+            placeholder={t('smartViews.folder_placeholder', {
+              defaultValue: 'e.g. Coordination, QA, Fire safety',
+            })}
+            data-testid="smart-view-folder-input"
+          />
+          <datalist id="smart-view-folder-options">
+            {existingFolders.map((f) => (
+              <option key={f} value={f} />
+            ))}
+          </datalist>
         </div>
 
         {/* Rules list */}

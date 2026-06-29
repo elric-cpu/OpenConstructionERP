@@ -189,4 +189,71 @@ describe('SelectionSetsPanel', () => {
     });
     expect(screen.getAllByTestId(/^bim-selection-set-row-/)).toHaveLength(2);
   });
+
+  // ── Folders (B4) ─────────────────────────────────────────────────────
+
+  it('groups sets under folder headers; ungrouped render directly', () => {
+    selectionSetsStore.create(MODEL_ID, 'loose', ['e1']);
+    selectionSetsStore.create(MODEL_ID, 'filed', ['e2'], { folder: 'Fire' });
+    const { manager } = buildMockManager([]);
+    render(<SelectionSetsPanel modelId={MODEL_ID} selectionManager={manager} />);
+    // Folder header is present for the "Fire" bucket...
+    expect(screen.getByTestId('bim-selection-set-folder-Fire')).toBeInTheDocument();
+    // ...and the ungrouped bucket holds the loose set.
+    expect(
+      screen.getByTestId('bim-selection-sets-ungrouped'),
+    ).toBeInTheDocument();
+    // Both rows render.
+    expect(screen.getAllByTestId(/^bim-selection-set-row-/)).toHaveLength(2);
+  });
+
+  it('collapsing a folder hides its rows', () => {
+    const filed = selectionSetsStore.create(MODEL_ID, 'filed', ['e2'], {
+      folder: 'Fire',
+    });
+    const { manager } = buildMockManager([]);
+    render(<SelectionSetsPanel modelId={MODEL_ID} selectionManager={manager} />);
+    expect(
+      screen.getByTestId(`bim-selection-set-row-${filed.id}`),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('bim-selection-set-folder-toggle-Fire'));
+    expect(
+      screen.queryByTestId(`bim-selection-set-row-${filed.id}`),
+    ).not.toBeInTheDocument();
+  });
+
+  it('Save-new flow stores the optional folder', () => {
+    const { manager } = buildMockManager(['e1', 'e2']);
+    render(<SelectionSetsPanel modelId={MODEL_ID} selectionManager={manager} />);
+    fireEvent.click(screen.getByTestId('bim-selection-set-save-new'));
+    fireEvent.change(screen.getByTestId('bim-selection-set-name-input'), {
+      target: { value: 'Risers' },
+    });
+    fireEvent.change(screen.getByTestId('bim-selection-set-folder-input'), {
+      target: { value: 'MEP' },
+    });
+    fireEvent.click(screen.getByTestId('bim-selection-set-create-confirm'));
+    const stored = selectionSetsStore.list(MODEL_ID);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.folder).toBe('MEP');
+  });
+
+  it('move-to-folder: folder button opens an editor that updates the set', () => {
+    const set = selectionSetsStore.create(MODEL_ID, 'a', ['e1']);
+    const { manager } = buildMockManager([]);
+    render(<SelectionSetsPanel modelId={MODEL_ID} selectionManager={manager} />);
+    fireEvent.click(
+      screen.getByTestId(`bim-selection-set-folder-btn-${set.id}`),
+    );
+    const input = screen.getByTestId(
+      `bim-selection-set-folder-edit-input-${set.id}`,
+    );
+    fireEvent.change(input, { target: { value: 'Zone A' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(selectionSetsStore.list(MODEL_ID)[0]?.folder).toBe('Zone A');
+    // The row now lives under the new folder header.
+    expect(
+      screen.getByTestId('bim-selection-set-folder-Zone A'),
+    ).toBeInTheDocument();
+  });
 });

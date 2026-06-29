@@ -3143,6 +3143,7 @@ class BIMHubService:
             model_id=payload.model_id,
             name=payload.name,
             description=payload.description,
+            folder=((payload.folder or "").strip() or None),
             is_dynamic=payload.is_dynamic,
             filter_criteria=payload.filter_criteria or {},
             element_ids=[str(eid) for eid in (payload.element_ids or [])],
@@ -3197,6 +3198,11 @@ class BIMHubService:
             fields["metadata_"] = (
                 {**(getattr(group, "metadata_", None) or {}), **_incoming} if isinstance(_incoming, dict) else _incoming
             )
+
+        # Blank folder ("") means "move to ungrouped" - normalise to NULL.
+        if "folder" in fields:
+            _folder = fields["folder"]
+            fields["folder"] = (_folder.strip() or None) if isinstance(_folder, str) else _folder
 
         # Normalise UUID list to str for JSON storage.
         if "element_ids" in fields and fields["element_ids"] is not None:

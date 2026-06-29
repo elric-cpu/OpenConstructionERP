@@ -207,4 +207,61 @@ describe('SelectionSetsStore', () => {
     const s = store.create(MODEL, 'fresh', ['e1']);
     expect(s.elementIds).toEqual(['e1']);
   });
+
+  // ── Folders (B4) ─────────────────────────────────────────────────────
+
+  it('create stores a trimmed folder label', () => {
+    const store = freshStore();
+    const set = store.create(MODEL, 'A', ['e1'], { folder: '  Fire safety  ' });
+    expect(set.folder).toBe('Fire safety');
+    expect(store.list(MODEL)[0]?.folder).toBe('Fire safety');
+  });
+
+  it('create treats a blank folder as ungrouped (undefined)', () => {
+    const store = freshStore();
+    const set = store.create(MODEL, 'A', ['e1'], { folder: '   ' });
+    expect(set.folder).toBeUndefined();
+  });
+
+  it('create rejects a folder longer than the name cap', () => {
+    const store = freshStore();
+    const longFolder = 'f'.repeat(__test__.NAME_MAX + 1);
+    expect(() =>
+      store.create(MODEL, 'A', ['e1'], { folder: longFolder }),
+    ).toThrow(/folder/i);
+  });
+
+  it('update can set, change and clear a folder', () => {
+    const store = freshStore();
+    const set = store.create(MODEL, 'A', ['e1']);
+    expect(set.folder).toBeUndefined();
+    const moved = store.update(set.id, { folder: 'Zone A' });
+    expect(moved.folder).toBe('Zone A');
+    const renamed = store.update(set.id, { folder: '  Zone B  ' });
+    expect(renamed.folder).toBe('Zone B');
+    const cleared = store.update(set.id, { folder: '' });
+    expect(cleared.folder).toBeUndefined();
+  });
+
+  it('update leaves the folder untouched when the patch omits it', () => {
+    const store = freshStore();
+    const set = store.create(MODEL, 'A', ['e1'], { folder: 'Keep me' });
+    const updated = store.update(set.id, { name: 'A renamed' });
+    expect(updated.folder).toBe('Keep me');
+  });
+
+  it('update rejects a folder longer than the name cap', () => {
+    const store = freshStore();
+    const set = store.create(MODEL, 'A', ['e1']);
+    const longFolder = 'f'.repeat(__test__.NAME_MAX + 1);
+    expect(() => store.update(set.id, { folder: longFolder })).toThrow(/folder/i);
+  });
+
+  it('persists and reloads the folder across store instances', () => {
+    const store = freshStore();
+    store.create(MODEL, 'A', ['e1'], { folder: 'Level 3' });
+    // A fresh instance reads the same localStorage key.
+    const reloaded = freshStore();
+    expect(reloaded.list(MODEL)[0]?.folder).toBe('Level 3');
+  });
 });

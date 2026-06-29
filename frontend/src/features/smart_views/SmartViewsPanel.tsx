@@ -21,7 +21,7 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { X, Plus, Sparkles, Filter } from 'lucide-react';
+import { X, Plus, Sparkles, Filter, Folder, ChevronDown, ChevronRight } from 'lucide-react';
 import clsx from 'clsx';
 import {
   Button,
@@ -43,6 +43,45 @@ import { SmartViewRuleEditor } from './SmartViewRuleEditor';
 import { SmartViewPresetsTab } from './SmartViewPresetsTab';
 import { SmartViewShareModal } from './SmartViewShareModal';
 import { useSmartViewState } from './useSmartViewState';
+
+/** One folder bucket of saved views. ``folder === null`` is the ungrouped
+ *  bucket, always rendered first. */
+export interface SmartViewFolderGroup {
+  folder: string | null;
+  views: SmartViewResponse[];
+}
+
+/** Group a flat view list into ordered folder buckets (B4). Ungrouped views
+ *  come first; folders follow in natural-sort order. Folder labels are
+ *  trimmed and blank labels fold into the ungrouped bucket. */
+export function groupViewsByFolder(
+  views: SmartViewResponse[],
+): SmartViewFolderGroup[] {
+  const ungrouped: SmartViewResponse[] = [];
+  const byFolder = new Map<string, SmartViewResponse[]>();
+  for (const v of views) {
+    const folder = (v.folder ?? '').trim();
+    if (!folder) {
+      ungrouped.push(v);
+      continue;
+    }
+    const bucket = byFolder.get(folder) ?? [];
+    bucket.push(v);
+    byFolder.set(folder, bucket);
+  }
+  const collator = new Intl.Collator(undefined, {
+    numeric: true,
+    sensitivity: 'base',
+  });
+  const groups: SmartViewFolderGroup[] = [];
+  if (ungrouped.length) groups.push({ folder: null, views: ungrouped });
+  for (const folder of Array.from(byFolder.keys()).sort((a, b) =>
+    collator.compare(a, b),
+  )) {
+    groups.push({ folder, views: byFolder.get(folder) ?? [] });
+  }
+  return groups;
+}
 
 export interface SmartViewsPanelProps {
   /** BIM model whose elements the evaluator runs against. ``null`` when
@@ -78,6 +117,18 @@ export function SmartViewsPanel({
   const [editingView, setEditingView] = useState<SmartViewResponse | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [sharingView, setSharingView] = useState<SmartViewResponse | null>(null);
+  /** Folders the user has collapsed in the list (B4). */
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const toggleFolder = (folder: string): void => {
+    setCollapsedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(folder)) next.delete(folder);
+      else next.add(folder);
+      return next;
+    });
+  };
 
   // The project tab is conditionally rendered, so its id is only
   // included in the keyboard nav set when projectId is present —
@@ -112,6 +163,17 @@ export function SmartViewsPanel({
     () => listQuery.data ?? [],
     [listQuery.data],
   );
+
+  /** Distinct folder labels across the current list, for the editor's folder
+   *  autocomplete (B4). */
+  const existingFolders = useMemo<string[]>(() => {
+    const set = new Set<string>();
+    for (const v of views) {
+      const f = (v.folder ?? '').trim();
+      if (f) set.add(f);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [views]);
 
   /* ── Apply ────────────────────────────────────────────────────────── */
 
@@ -198,6 +260,24 @@ export function SmartViewsPanel({
   });
 
   /* ── Render ───────────────────────────────────────────────────────── */
+
+  const renderCard = (v: SmartViewResponse) => (
+    <SmartViewCard
+      key={v.id}
+      view={v}
+      applied={appliedViewId === v.id}
+      onApply={() => applyMutation.mutate(v.id)}
+      onEdit={() => {
+        setEditingView(v);
+        setEditorOpen(true);
+      }}
+      onDuplicate={() => duplicateMutation.mutate(v)}
+      onDelete={() => setPendingDeleteId(v.id)}
+      // Only the authoring user gets a share_token in the payload; gate the
+      // menu item on that so a collaborator does not see a 403-on-click button.
+      onShare={v.created_by === userId ? () => setSharingView(v) : undefined}
+    />
+  );
 
   return (
     <div
@@ -333,29 +413,43 @@ export function SmartViewsPanel({
           </div>
         )}
         {tab !== 'presets' && listQuery.isSuccess && views.length > 0 && (
-          <div className="space-y-2">
-            {views.map((v) => (
-              <SmartViewCard
-                key={v.id}
-                view={v}
-                applied={appliedViewId === v.id}
-                onApply={() => applyMutation.mutate(v.id)}
-                onEdit={() => {
-                  setEditingView(v);
-                  setEditorOpen(true);
-                }}
-                onDuplicate={() => duplicateMutation.mutate(v)}
-                onDelete={() => setPendingDeleteId(v.id)}
-                // Only the authoring user gets a share_token in the
-                // payload; gate the menu item on that so a collaborator
-                // does not see a button that would 403 on click.
-                onShare={
-                  v.created_by === userId
-                    ? () => setSharingView(v)
-                    : undefined
-                }
-              />
-            ))}
+          <div className="space-y-3" data-testid="smart-views-list">
+            {groupViewsByFolder(views).map((group) =>
+              group.folder === null ? (
+                <div key="__ungrouped" className="space-y-2">
+                  {group.views.map(renderCard)}
+                </div>
+              ) : (
+                <div
+                  key={group.folder}
+                  data-testid={`smart-views-folder-${group.folder}`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleFolder(group.folder as string)}
+                    aria-expanded={!collapsedFolders.has(group.folder)}
+                    className="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-xs font-semibold text-content-secondary hover:bg-surface-secondary hover:text-content-primary"
+                    data-testid={`smart-views-folder-toggle-${group.folder}`}
+                  >
+                    {collapsedFolders.has(group.folder) ? (
+                      <ChevronRight size={13} />
+                    ) : (
+                      <ChevronDown size={13} />
+                    )}
+                    <Folder size={13} className="text-oe-blue/70" />
+                    <span className="truncate">{group.folder}</span>
+                    <span className="ms-auto font-normal text-content-tertiary">
+                      {group.views.length}
+                    </span>
+                  </button>
+                  {!collapsedFolders.has(group.folder) && (
+                    <div className="mt-1 space-y-2 ps-2">
+                      {group.views.map(renderCard)}
+                    </div>
+                  )}
+                </div>
+              ),
+            )}
           </div>
         )}
       </div>
@@ -370,6 +464,7 @@ export function SmartViewsPanel({
         initialView={editingView}
         scopeType={scopeType}
         scopeId={scopeId}
+        existingFolders={existingFolders}
         onSaved={() => {
           queryClient.invalidateQueries({
             queryKey: ['smart-views', scopeType, scopeId],

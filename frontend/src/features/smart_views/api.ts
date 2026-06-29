@@ -159,6 +159,7 @@ export async function duplicateSmartView(
   const payload: SmartViewCreatePayload = {
     name: `${source.name}${options.nameSuffix ?? ' (copy)'}`,
     description: source.description ?? null,
+    folder: source.folder ?? null,
     rules: source.rules.map((r) => ({ ...r })),
     default_action: (source.default_action as 'show_all' | 'hide_all') ?? 'show_all',
     scope_type: options.scopeType,

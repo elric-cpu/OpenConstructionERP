@@ -249,6 +249,9 @@ class SmartViewBase(BaseModel):
 
     name: str = Field(..., min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=4096)
+    # Optional folder label for grouping saved views in the UI. Empty / blank
+    # is normalised to "ungrouped" by the service.
+    folder: str | None = Field(default=None, max_length=255)
     rules: list[SmartViewRule] = Field(default_factory=list)
     default_action: Literal["show_all", "hide_all"] = "show_all"
 
@@ -280,6 +283,8 @@ class SmartViewUpdate(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=4096)
+    # Pass "" to move the view out of its folder (back to ungrouped).
+    folder: str | None = Field(default=None, max_length=255)
     rules: list[SmartViewRule] | None = None
     default_action: Literal["show_all", "hide_all"] | None = None
 
@@ -308,6 +313,7 @@ class SmartViewResponse(BaseModel):
     scope_id: UUID
     name: str
     description: str | None = None
+    folder: str | None = None
     rules: list[SmartViewRule] = Field(default_factory=list)
     default_action: str = "show_all"
     color_legend: dict[str, Any] | None = None

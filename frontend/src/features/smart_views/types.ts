@@ -74,6 +74,8 @@ export interface SmartViewResponse {
   scope_id: string;
   name: string;
   description: string | null;
+  /** Optional folder label for grouping saved views. ``null`` = ungrouped. */
+  folder: string | null;
   rules: SmartViewRule[];
   default_action: SmartViewDefaultAction | string;
   color_legend: Record<string, unknown> | null;
@@ -90,6 +92,8 @@ export interface SmartViewResponse {
 export interface SmartViewCreatePayload {
   name: string;
   description?: string | null;
+  /** Optional folder label. Blank / omitted = ungrouped. */
+  folder?: string | null;
   rules: SmartViewRule[];
   default_action: SmartViewDefaultAction;
   scope_type: SmartViewScopeType;
@@ -100,6 +104,8 @@ export interface SmartViewCreatePayload {
 export interface SmartViewUpdatePayload {
   name?: string;
   description?: string | null;
+  /** Pass "" to move the view back to ungrouped. */
+  folder?: string | null;
   rules?: SmartViewRule[];
   default_action?: SmartViewDefaultAction;
 }

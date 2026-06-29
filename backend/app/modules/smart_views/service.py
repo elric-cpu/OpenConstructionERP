@@ -48,6 +48,14 @@ _SHARE_SIGNER_SALT = "oe.smart_views.share.v1"
 logger = logging.getLogger(__name__)
 
 
+def _normalize_folder(value: str | None) -> str | None:
+    """Trim a folder label; blank / whitespace becomes ``None`` (ungrouped)."""
+    if value is None:
+        return None
+    trimmed = value.strip()
+    return trimmed or None
+
+
 class SmartViewService:
     """‌⁠‍Smart Views CRUD + evaluator orchestrator."""
 
@@ -311,6 +319,7 @@ class SmartViewService:
             scope_id=payload.scope_id,
             name=payload.name,
             description=payload.description,
+            folder=_normalize_folder(payload.folder),
             rules=rules_json,
             default_action=payload.default_action,
             color_legend=legend,
@@ -378,6 +387,9 @@ class SmartViewService:
             view.name = payload.name
         if payload.description is not None:
             view.description = payload.description
+        if payload.folder is not None:
+            # Pass "" to clear the folder; the normaliser maps blank to None.
+            view.folder = _normalize_folder(payload.folder)
         if payload.default_action is not None:
             view.default_action = payload.default_action
         if payload.rules is not None:
