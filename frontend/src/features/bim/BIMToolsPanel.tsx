@@ -13,7 +13,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Ruler, Camera, Trash2, Play, Pencil, Check, X, Eye, EyeOff, Crosshair, Image as ImageIcon, FileSpreadsheet } from 'lucide-react';
+import { Ruler, Camera, Trash2, Play, Pencil, Check, X, Eye, EyeOff, Crosshair, Image as ImageIcon, FileSpreadsheet, FileBarChart } from 'lucide-react';
 import {
   listViewpoints,
   removeViewpoint,
@@ -57,6 +57,9 @@ interface BIMToolsPanelProps {
    *  click time so the BOQ export reflects what the user has on screen.
    *  Optional - when absent the Export section exports the whole model. */
   getExportContext?: () => BoqExportContext;
+  /** Open the on-screen quantity report for the chosen scope. Optional -
+   *  the button is only shown when the parent wires this. */
+  onOpenReport?: (scope: BoqExportScope, groupBy: BoqGroupBy) => void;
 }
 
 export default function BIMToolsPanel({
@@ -67,6 +70,7 @@ export default function BIMToolsPanel({
   getCurrentScreenshot,
   onApplyViewpoint,
   getExportContext,
+  onOpenReport,
 }: BIMToolsPanelProps) {
   const { t } = useTranslation();
   const measureActive = useBIMViewerStore((s) => s.measureActive);
@@ -659,6 +663,17 @@ export default function BIMToolsPanel({
             ? t('bim.boq_export_running', { defaultValue: 'Exporting…' })
             : t('bim.boq_export_button', { defaultValue: 'Export BOQ (Excel)' })}
         </button>
+        {onOpenReport && (
+          <button
+            type="button"
+            onClick={() => onOpenReport(exportScope, exportGroupBy)}
+            data-testid="boq-report-button"
+            className="flex items-center justify-center gap-2 px-3 py-1.5 rounded-md text-[11px] font-medium border border-border-light bg-surface-secondary text-content-secondary hover:bg-surface-tertiary"
+          >
+            <FileBarChart size={12} />
+            {t('bim.boq_report_button', { defaultValue: 'View summary report' })}
+          </button>
+        )}
       </section>
     </div>
   );

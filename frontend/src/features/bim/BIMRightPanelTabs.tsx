@@ -46,13 +46,14 @@ import BIMGroupsPanel from './BIMGroupsPanel';
 import BIMLayersPanel from './BIMLayersPanel';
 import BIMToolsPanel from './BIMToolsPanel';
 import BIMSpatialTreePanel from './BIMSpatialTreePanel';
+import BIMFilterReportModal from './BIMFilterReportModal';
 import ColorByPropertyPanel from './ColorByPropertyPanel';
 import SelectionSetsPanel from './SelectionSetsPanel';
 import { MatchSuggestionsPanel, useAcceptMatch } from '@/features/match';
 import type { MatchCandidate } from '@/features/match';
 import { boqApi, type BOQ } from '@/features/boq/api';
 import { useToastStore } from '@/stores/useToastStore';
-import type { BIMElementGroup } from './api';
+import type { BIMElementGroup, BoqExportScope, BoqGroupBy } from './api';
 
 interface BIMRightPanelTabsProps {
   modelId: string;
@@ -90,6 +91,13 @@ export default function BIMRightPanelTabs({
   const { t } = useTranslation();
   const activeTab = useBIMViewerStore((s) => s.rightPanelTab);
   const setRightPanelTab = useBIMViewerStore((s) => s.setRightPanelTab);
+
+  // Filter-report modal (B5). Holds the scoped element subset + a label so the
+  // report opens against exactly the scope the user picked in the Tools panel.
+  const [reportState, setReportState] = useState<{
+    elements: BIMElementData[];
+    scopeLabel: string;
+  } | null>(null);
 
   const handleTabClick = useCallback(
     (tab: BIMRightPanelTab) => setRightPanelTab(tab),
@@ -412,6 +420,39 @@ export default function BIMRightPanelTabs({
                 filters,
               };
             }}
+            onOpenReport={(scope: BoqExportScope, _groupBy: BoqGroupBy) => {
+              // Resolve the scope to a concrete element subset, mirroring the
+              // export's scope semantics, then open the on-screen report.
+              let scoped = elements;
+              let scopeLabel = t('bim.report.scope_all', { defaultValue: 'Whole model' });
+              if (scope === 'selected') {
+                const ids = new Set(bridgeManagers.selectionManager?.getSelectedIds() ?? []);
+                scoped = elements.filter((e) => ids.has(e.id));
+                scopeLabel = t('bim.report.scope_selected', {
+                  defaultValue: 'Selected elements',
+                });
+              } else if (scope === 'filter') {
+                const f = getFilterBridge()?.get();
+                if (f) {
+                  const search = (f.search || '').toLowerCase();
+                  const storeys = new Set(f.storeys);
+                  const types = new Set(f.types);
+                  scoped = elements.filter((e) => {
+                    if (storeys.size > 0 && !(e.storey && storeys.has(e.storey))) return false;
+                    if (types.size > 0 && !(e.element_type && types.has(e.element_type)))
+                      return false;
+                    if (search) {
+                      const hay =
+                        `${e.name ?? ''} ${e.element_type ?? ''} ${e.storey ?? ''}`.toLowerCase();
+                      if (!hay.includes(search)) return false;
+                    }
+                    return true;
+                  });
+                  scopeLabel = t('bim.report.scope_filter', { defaultValue: 'Current filter' });
+                }
+              }
+              setReportState({ elements: scoped, scopeLabel });
+            }}
           />
         )}
         {activeTab === 'trait-lens' && (
@@ -477,6 +518,16 @@ export default function BIMRightPanelTabs({
           />
         )}
       </div>
+
+      {reportState && (
+        <BIMFilterReportModal
+          open
+          onClose={() => setReportState(null)}
+          modelId={modelId}
+          scopeLabel={reportState.scopeLabel}
+          elements={reportState.elements}
+        />
+      )}
     </div>
   );
 }
