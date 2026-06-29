@@ -1114,11 +1114,14 @@ class ProjectService:
         project = await self.get_project(project_id, include_archived=True)
         if project.status == "archived":
             return  # Already archived - silently succeed
-        # Snapshot fields before update_fields() - that calls session.expire_all(),
-        # after which any attribute access on `project` would trigger lazy IO and
-        # crash with greenlet_spawn / MissingGreenlet under the async session.
+        # Snapshot fields now, while `project` is still fresh. Both the
+        # cascade-delete loop below and update_fields() (which calls
+        # session.expire_all()) expire `project`, after which any attribute
+        # access on it would trigger lazy IO and crash with greenlet_spawn /
+        # MissingGreenlet under the async session.
         owner_id = str(project.owner_id)
         project_name = project.name
+        prior_status = project.status
 
         # Cascade-delete child records that belong to this project.
         # These models all have project_id FK with ondelete=CASCADE, but
@@ -1185,7 +1188,6 @@ class ProjectService:
                     exc,
                 )
 
-        prior_status = project.status
         await self.repo.update_fields(project_id, status="archived")
 
         # Status-history row for the archive transition (-> archived) so the
