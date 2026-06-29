@@ -28,6 +28,7 @@ import {
   MessageSquare,
   Paperclip,
   Pencil,
+  Send,
   User,
   X,
 } from 'lucide-react';
@@ -376,6 +377,25 @@ export function RFIDetailPage() {
       }),
   });
 
+  // Publish a drafted RFI: draft -> open. The backend validates the
+  // transition, so this affordance is only shown while status === 'draft'.
+  const openMut = useMutation({
+    mutationFn: () => updateRFI(rfiId as string, { status: 'open' }),
+    onSuccess: () => {
+      invalidate();
+      addToast({
+        type: 'success',
+        title: t('rfi.opened', { defaultValue: 'RFI opened' }),
+      });
+    },
+    onError: (e: Error) =>
+      addToast({
+        type: 'error',
+        title: t('rfi.open_failed', { defaultValue: 'Failed to open RFI' }),
+        message: e.message,
+      }),
+  });
+
   const { confirm, ...confirmProps } = useConfirm();
 
   const handleClose = useCallback(async () => {
@@ -558,6 +578,23 @@ export function RFIDetailPage() {
               icon={<Pencil size={14} />}
             >
               {t('rfi.action_edit', { defaultValue: 'Edit' })}
+            </Button>
+          )}
+          {rfi.status === 'draft' && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => openMut.mutate()}
+              disabled={openMut.isPending}
+              icon={
+                openMut.isPending ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Send size={14} />
+                )
+              }
+            >
+              {t('rfi.action_open', { defaultValue: 'Open RFI' })}
             </Button>
           )}
           {rfi.status === 'open' && (

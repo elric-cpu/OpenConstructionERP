@@ -16,7 +16,7 @@
 
 import { useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Bell,
@@ -130,11 +130,40 @@ type NotificationFilter = 'all' | 'unread' | 'read';
 export function NotificationsPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<Tab>('inbox');
+  // Notification settings are deep-linkable: the bell footer, the Settings
+  // page and the Integrations page can point a user at ?tab=preferences and
+  // land them straight on their routing matrix. The query param seeds the
+  // initial tab once; clicks after that are local state (read off
+  // location.search rather than useSearchParams so a single Router context
+  // drives the initial read).
+  const initialTab: Tab =
+    new URLSearchParams(location.search).get('tab') === 'preferences'
+      ? 'preferences'
+      : 'inbox';
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [filter, setFilter] = useState<NotificationFilter>('all');
   const [page, setPage] = useState(0);
+
+  const selectTab = useCallback(
+    (tab: Tab) => {
+      setActiveTab(tab);
+      // Keep the URL in step so the tab stays shareable / bookmarkable. The
+      // tab itself is driven by local state above, so this is best-effort
+      // and never blocks the switch.
+      const params = new URLSearchParams(location.search);
+      if (tab === 'preferences') params.set('tab', 'preferences');
+      else params.delete('tab');
+      const qs = params.toString();
+      navigate(
+        { pathname: location.pathname, search: qs ? `?${qs}` : '' },
+        { replace: true },
+      );
+    },
+    [navigate, location.pathname, location.search],
+  );
 
   /* The backend's `is_read` query param is tri-state: `undefined` =
      don't filter, `true` = only read, `false` = only unread. */
@@ -267,7 +296,7 @@ export function NotificationsPage() {
       <div className="border-b border-border-light flex items-center gap-1">
         <button
           type="button"
-          onClick={() => setActiveTab('inbox')}
+          onClick={() => selectTab('inbox')}
           className={clsx(
             'px-3 py-1.5 text-sm font-medium border-b-2 -mb-px transition-colors',
             activeTab === 'inbox'
@@ -280,7 +309,7 @@ export function NotificationsPage() {
         </button>
         <button
           type="button"
-          onClick={() => setActiveTab('preferences')}
+          onClick={() => selectTab('preferences')}
           className={clsx(
             'px-3 py-1.5 text-sm font-medium border-b-2 -mb-px transition-colors',
             activeTab === 'preferences'

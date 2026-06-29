@@ -72,6 +72,13 @@ describe('updateRFI', () => {
     expect(nthArg(apiPatch, 0, 0)).toBe('/v1/rfi/abc-123');
     expect(nthArg(apiPatch, 0, 1)).toEqual(body);
   });
+
+  it('forwards a status transition (draft -> open) in the PATCH body', async () => {
+    // The "Open RFI" affordance publishes a drafted RFI by PATCHing status.
+    await updateRFI('abc-123', { status: 'open' });
+    expect(nthArg(apiPatch, 0, 0)).toBe('/v1/rfi/abc-123');
+    expect(nthArg(apiPatch, 0, 1)).toEqual({ status: 'open' });
+  });
 });
 
 describe('createVariationFromRFI', () => {

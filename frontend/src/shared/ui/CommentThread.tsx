@@ -51,6 +51,20 @@ interface CommentListResponse {
   total: number;
 }
 
+/**
+ * Minimal user shape consumed when resolving a comment's ``author_id`` to a
+ * readable name. Mirrors the subset of ``GET /v1/users/`` the rest of the app
+ * reads (RFI detail, approval routes, user picker) so the shared
+ * ``['users-search']`` cache is reused rather than re-fetched.
+ */
+interface UserResult {
+  id: string;
+  email: string;
+  full_name: string;
+  role: string;
+  is_active: boolean;
+}
+
 export interface CommentThreadProps {
   entityType: string;
   entityId: string;
@@ -76,9 +90,10 @@ function formatTimeAgo(
   return t('time.days_ago', { defaultValue: '{{count}}d ago', count: days });
 }
 
-/** Get the first letter of a user ID for avatar placeholder. */
-function avatarLetter(authorId: string): string {
-  return (authorId[0] ?? 'U').toUpperCase();
+/** First letter for the avatar placeholder, taken from the resolved
+ *  display name where possible (falls back to the id). */
+function avatarLetter(label: string): string {
+  return (label.trim()[0] ?? 'U').toUpperCase();
 }
 
 /** Deterministic color based on author ID. */
@@ -119,6 +134,8 @@ function renderTextWithMentions(text: string): React.ReactNode {
 
 interface CommentItemProps {
   comment: CommentData;
+  /** Resolved author label (full name / email), or the short id fallback. */
+  displayName: string;
   isReply?: boolean;
   onReply: (commentId: string) => void;
   onEdit: (commentId: string, newText: string) => void;
@@ -129,6 +146,7 @@ interface CommentItemProps {
 
 function CommentItem({
   comment,
+  displayName,
   isReply = false,
   onReply,
   onEdit,
@@ -196,22 +214,26 @@ function CommentItem({
         isNew && 'bg-oe-blue-subtle/30 rounded-lg px-2 -mx-2',
       )}
     >
-      {/* Avatar */}
+      {/* Avatar — colour stays keyed on the stable author id so a user keeps
+          the same swatch; the letter comes from the resolved display name. */}
       <div
         className={clsx(
           'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white',
           avatarColor(comment.author_id),
         )}
-        title={comment.author_id}
+        title={displayName}
       >
-        {avatarLetter(comment.author_id)}
+        {avatarLetter(displayName)}
       </div>
 
       {/* Body */}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-content-primary truncate max-w-[120px]">
-            {comment.author_id.slice(0, 8)}
+          <span
+            className="text-xs font-semibold text-content-primary truncate max-w-[160px]"
+            title={displayName}
+          >
+            {displayName}
           </span>
           <span className="text-2xs text-content-quaternary">
             {formatTimeAgo(comment.created_at, t)}
@@ -320,6 +342,34 @@ export function CommentThread({ entityType, entityId, className }: CommentThread
     refetchInterval: 30_000,
     retry: false,
   });
+
+  // Resolve author ids to readable names. Reuses the shared
+  // ``['users-search']`` cache (same key + URL as the RFI detail page and the
+  // user picker) so this never costs an extra request when those have run.
+  // ``retry: false`` + the ``[]`` fallback keep a discussion rendering even if
+  // the users endpoint fails for this viewer -- it simply falls back to the
+  // short id, never crashing the thread (root cause of issue #279: the author
+  // id was printed raw because it was never mapped to a name).
+  const { data: users = [] } = useQuery({
+    queryKey: ['users-search'],
+    queryFn: () => apiGet<UserResult[]>('/v1/users/?limit=100&is_active=true'),
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  const userById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const u of users) {
+      const label = (u.full_name || u.email || '').trim();
+      if (label) map.set(u.id, label);
+    }
+    return map;
+  }, [users]);
+
+  const displayAuthor = useCallback(
+    (authorId: string): string => userById.get(authorId) ?? authorId.slice(0, 8),
+    [userById],
+  );
 
   const comments = data?.items ?? [];
   const total = data?.total ?? 0;
@@ -526,6 +576,7 @@ export function CommentThread({ entityType, entityId, className }: CommentThread
             <div key={comment.id}>
               <CommentItem
                 comment={comment}
+                displayName={displayAuthor(comment.author_id)}
                 onReply={handleReply}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
@@ -538,6 +589,7 @@ export function CommentThread({ entityType, entityId, className }: CommentThread
                     <CommentItem
                       key={reply.id}
                       comment={reply}
+                      displayName={displayAuthor(reply.author_id)}
                       isReply
                       onReply={handleReply}
                       onEdit={handleEdit}

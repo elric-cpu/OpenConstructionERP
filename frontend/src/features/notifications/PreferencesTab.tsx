@@ -11,8 +11,9 @@
 
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, XCircle, BellOff } from 'lucide-react';
+import { Loader2, XCircle, BellOff, Cable, ArrowRight } from 'lucide-react';
 import clsx from 'clsx';
 import { Button } from '@/shared/ui';
 import {
@@ -178,6 +179,34 @@ export function PreferencesTab(): JSX.Element {
             'Choose how you want to be notified for each kind of event. ' +
             'Realtime is immediate; hourly and daily batch into a digest.',
         })}
+      </div>
+
+      {/* Connected chat integrations (Telegram, Slack, Teams, Discord, ...)
+          deliver these same in-app notifications, filtered by the event list
+          configured on each integration. Point the user there so they can
+          route events to an outside tool, not just the channels in this
+          matrix. Closes the issue #279 gap: settings here did not explain or
+          link the integration delivery path. */}
+      <div className="mb-4 flex items-start gap-2.5 rounded-lg border border-border-light bg-surface-secondary/50 px-3 py-2.5">
+        <Cable size={15} className="mt-0.5 shrink-0 text-oe-blue" />
+        <div className="min-w-0 text-xs text-content-secondary">
+          <span>
+            {t('notifications.preferences.integrations_note', {
+              defaultValue:
+                'Connected chat integrations also receive these notifications. ' +
+                'Choose which events each one delivers on the Integrations page.',
+            })}
+          </span>
+          <Link
+            to="/integrations"
+            className="ms-1.5 inline-flex items-center gap-0.5 font-medium text-oe-blue hover:underline"
+          >
+            {t('notifications.preferences.manage_integrations', {
+              defaultValue: 'Manage integrations',
+            })}
+            <ArrowRight size={12} />
+          </Link>
+        </div>
       </div>
 
       <div className="rounded-xl border border-border-light bg-surface-elevated overflow-x-auto">

@@ -108,9 +108,28 @@ interface ConnectorDef {
   infoText?: string;
   calendarFeedUrl?: boolean;
   eventOptions?: string[];
+  /**
+   * Optional human labels for {@link eventOptions}, keyed by the raw option
+   * value. When present the checkbox shows the label (with the raw value as a
+   * caption) instead of a bare code chip - used by the chat connectors whose
+   * options are notification-type slugs rather than self-describing names.
+   */
+  eventOptionLabels?: Record<string, { label: string; defaultLabel: string }>;
+  /**
+   * When true and {@link eventOptions} are present, the connect form starts
+   * with every event selected (so the connector's out-of-box behaviour is
+   * "deliver everything", which the user can then narrow). Used by the chat
+   * connectors to preserve their historical "all events" default. The raw
+   * webhook connector leaves this off so the user must opt into events.
+   */
+  defaultAllEvents?: boolean;
   externalUrl?: string;
 }
 
+/**
+ * Event names a raw outbound *webhook* may subscribe to. These are the
+ * dotted event-bus names the webhook sink emits.
+ */
 const AVAILABLE_EVENTS = [
   'task.created',
   'task.updated',
@@ -123,6 +142,92 @@ const AVAILABLE_EVENTS = [
   'project.updated',
   'boq.changed',
 ];
+
+/**
+ * Notification types a connected chat connector (Telegram / Slack / Teams /
+ * Discord) may be limited to. These are the per-recipient ``notification_type``
+ * slugs the notification-to-connector bridge filters on (NOT the dotted
+ * event-bus names used by the raw webhook sink above), so selecting one here
+ * actually narrows what the bot delivers. Leaving the connector on "all" (the
+ * historical default) keeps every notification flowing. New comment activity
+ * in project discussions is ``comment_added`` (issue #279).
+ */
+const NOTIFICATION_EVENT_OPTIONS = [
+  'comment_added',
+  'file_comment_mention',
+  'rfi_assigned',
+  'rfi_responded',
+  'task_assigned',
+  'risk_assigned',
+  'submittal_submitted',
+  'submittal_approved',
+  'submittal_rejected',
+  'transmittal_issued',
+  'transmittal_acknowledged',
+  'approval_overdue',
+  'approval_escalated',
+  'validation_errors',
+  'validation_warnings',
+  'clash_high_severity',
+];
+
+const NOTIFICATION_EVENT_LABELS: Record<
+  string,
+  { label: string; defaultLabel: string }
+> = {
+  comment_added: {
+    label: 'integrations.evt.comment_added',
+    defaultLabel: 'New discussion comment',
+  },
+  file_comment_mention: {
+    label: 'integrations.evt.file_comment_mention',
+    defaultLabel: 'Mentioned in a file comment',
+  },
+  rfi_assigned: { label: 'integrations.evt.rfi_assigned', defaultLabel: 'RFI assigned to you' },
+  rfi_responded: { label: 'integrations.evt.rfi_responded', defaultLabel: 'RFI response received' },
+  task_assigned: { label: 'integrations.evt.task_assigned', defaultLabel: 'Task assigned to you' },
+  risk_assigned: { label: 'integrations.evt.risk_assigned', defaultLabel: 'Risk assigned to you' },
+  submittal_submitted: {
+    label: 'integrations.evt.submittal_submitted',
+    defaultLabel: 'Submittal submitted',
+  },
+  submittal_approved: {
+    label: 'integrations.evt.submittal_approved',
+    defaultLabel: 'Submittal approved',
+  },
+  submittal_rejected: {
+    label: 'integrations.evt.submittal_rejected',
+    defaultLabel: 'Submittal rejected',
+  },
+  transmittal_issued: {
+    label: 'integrations.evt.transmittal_issued',
+    defaultLabel: 'Transmittal issued',
+  },
+  transmittal_acknowledged: {
+    label: 'integrations.evt.transmittal_acknowledged',
+    defaultLabel: 'Transmittal acknowledged',
+  },
+  approval_overdue: {
+    label: 'integrations.evt.approval_overdue',
+    defaultLabel: 'Approval overdue',
+  },
+  approval_escalated: {
+    label: 'integrations.evt.approval_escalated',
+    defaultLabel: 'Approval escalated',
+  },
+  validation_errors: {
+    label: 'integrations.evt.validation_errors',
+    defaultLabel: 'Validation errors',
+  },
+  validation_warnings: {
+    label: 'integrations.evt.validation_warnings',
+    defaultLabel: 'Validation warnings',
+  },
+  clash_high_severity: {
+    label: 'integrations.evt.clash_high_severity',
+    defaultLabel: 'High-severity clash',
+  },
+};
 
 const CONNECTORS: ConnectorDef[] = [
   // ── Notifications ──────────────────────────────────────────────────
@@ -150,6 +255,9 @@ const CONNECTORS: ConnectorDef[] = [
       { text: 'Copy the webhook URL' },
       { text: 'Paste it below' },
     ],
+    eventOptions: NOTIFICATION_EVENT_OPTIONS,
+    eventOptionLabels: NOTIFICATION_EVENT_LABELS,
+    defaultAllEvents: true,
   },
   {
     type: 'slack',
@@ -175,6 +283,9 @@ const CONNECTORS: ConnectorDef[] = [
       { text: 'Copy the webhook URL' },
       { text: 'Paste it below' },
     ],
+    eventOptions: NOTIFICATION_EVENT_OPTIONS,
+    eventOptionLabels: NOTIFICATION_EVENT_LABELS,
+    defaultAllEvents: true,
   },
   {
     type: 'telegram',
@@ -206,6 +317,9 @@ const CONNECTORS: ConnectorDef[] = [
       { text: 'Add the bot to your group/channel' },
       { text: 'Get the chat ID (send a message, then check getUpdates)' },
     ],
+    eventOptions: NOTIFICATION_EVENT_OPTIONS,
+    eventOptionLabels: NOTIFICATION_EVENT_LABELS,
+    defaultAllEvents: true,
   },
   {
     type: 'discord',
@@ -230,6 +344,9 @@ const CONNECTORS: ConnectorDef[] = [
       { text: 'Name it and select the channel' },
       { text: 'Copy the webhook URL' },
     ],
+    eventOptions: NOTIFICATION_EVENT_OPTIONS,
+    eventOptionLabels: NOTIFICATION_EVENT_LABELS,
+    defaultAllEvents: true,
   },
   {
     type: 'email',
@@ -564,9 +681,12 @@ function ConnectModal({
   const [fieldValues, setFieldValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(connector.fields.map((f) => [f.key, '']))
   );
-  const [selectedEvents, setSelectedEvents] = useState<string[]>(
-    connector.eventOptions ? [] : ['*']
-  );
+  const [selectedEvents, setSelectedEvents] = useState<string[]>(() => {
+    if (!connector.eventOptions) return ['*'];
+    // Chat connectors start with everything selected (their historical
+    // default); the raw webhook connector starts empty so the user opts in.
+    return connector.defaultAllEvents ? [...connector.eventOptions] : [];
+  });
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{
@@ -758,12 +878,16 @@ function ConnectModal({
           </div>
         ))}
 
-        {/* Event selection for webhooks */}
+        {/* Event selection. The raw webhook connector subscribes to dotted
+            event-bus names; the chat connectors (which carry eventOptionLabels)
+            choose which notification types the bot delivers. */}
         {connector.eventOptions && (
           <div className="mb-3">
             <div className="mb-1.5 flex items-center justify-between">
               <label className="text-sm font-medium text-primary">
-                {t('integrations.events', 'Events to subscribe')}
+                {connector.eventOptionLabels
+                  ? t('integrations.events_notify', 'Notify me about')
+                  : t('integrations.events', 'Events to subscribe')}
               </label>
               <button
                 onClick={selectAllEvents}
@@ -774,21 +898,38 @@ function ConnectModal({
                   : t('common.select_all', 'Select all')}
               </button>
             </div>
+            {connector.eventOptionLabels && (
+              <p className="mb-1.5 text-2xs text-content-tertiary">
+                {t('integrations.events_notify_hint', {
+                  defaultValue:
+                    'This connector delivers the in-app notifications you pick here. Leave all selected to receive everything.',
+                })}
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-1.5 rounded-lg bg-surface-secondary p-2.5">
-              {connector.eventOptions.map((event) => (
-                <label
-                  key={event}
-                  className="flex cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 text-xs text-content-secondary hover:bg-surface-primary transition-colors"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedEvents.includes(event)}
-                    onChange={() => toggleEvent(event)}
-                    className="h-3.5 w-3.5 rounded border-border text-oe-blue focus:ring-oe-blue"
-                  />
-                  <code className="text-2xs">{event}</code>
-                </label>
-              ))}
+              {connector.eventOptions.map((event) => {
+                const meta = connector.eventOptionLabels?.[event];
+                return (
+                  <label
+                    key={event}
+                    className="flex cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 text-xs text-content-secondary hover:bg-surface-primary transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedEvents.includes(event)}
+                      onChange={() => toggleEvent(event)}
+                      className="h-3.5 w-3.5 shrink-0 rounded border-border text-oe-blue focus:ring-oe-blue"
+                    />
+                    {meta ? (
+                      <span className="truncate" title={meta.defaultLabel}>
+                        {t(meta.label, meta.defaultLabel)}
+                      </span>
+                    ) : (
+                      <code className="text-2xs">{event}</code>
+                    )}
+                  </label>
+                );
+              })}
             </div>
           </div>
         )}

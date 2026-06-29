@@ -118,10 +118,16 @@ export interface CreateRFIPayload {
  *
  * The backend refuses any edit once an RFI is ``closed`` / ``void`` (400),
  * so callers should gate the edit affordance on an actionable status.
+ *
+ * ``status`` is accepted for explicit lifecycle transitions the backend
+ * validates (notably ``draft`` -> ``open`` to publish a drafted RFI).
+ * Illegal jumps are rejected server-side, so the UI only offers the
+ * transitions that make sense for the current status.
  */
 export interface UpdateRFIPayload {
   subject?: string;
   question?: string;
+  status?: RFIStatus;
   ball_in_court?: string | null;
   assigned_to?: string | null;
   response_due_date?: string | null;

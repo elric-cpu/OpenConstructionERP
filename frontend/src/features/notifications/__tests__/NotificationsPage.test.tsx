@@ -21,7 +21,7 @@ import {
   cleanup,
 } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
 
 /* ── API mock — page imports apiGet/apiPost/apiDelete directly. ────── */
 
@@ -94,16 +94,21 @@ function makeNotification(over: Partial<NotificationFixture> = {}): Notification
   };
 }
 
-function renderPage() {
+function renderPage(initialEntry = '/notifications') {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
+  // Mount under a real Route at /notifications so useSearchParams + the
+  // ?tab= deep-link drive the tab exactly as they do in the app.
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter
+        initialEntries={[initialEntry]}
         future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
-        <NotificationsPage />
+        <Routes>
+          <Route path="/notifications" element={<NotificationsPage />} />
+        </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -155,9 +160,17 @@ describe('<NotificationsPage />', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Preferences/i }));
 
-    await waitFor(() => {
-      expect(screen.getByTestId('preferences-tab-stub')).toBeTruthy();
-    });
+    // The tab is URL-driven now (?tab=preferences); findByTestId auto-waits
+    // through the router transition.
+    expect(await screen.findByTestId('preferences-tab-stub')).toBeTruthy();
+  });
+
+  it('opens straight to the preferences tab from the ?tab=preferences deep link', async () => {
+    renderPage('/notifications?tab=preferences');
+
+    // No click needed: the deep link lands the user on their notification
+    // routing so other surfaces (Settings, Integrations) can point here.
+    expect(await screen.findByTestId('preferences-tab-stub')).toBeTruthy();
   });
 
   it('fetches /v1/notifications with limit + offset query params', async () => {
