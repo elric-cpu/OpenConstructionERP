@@ -1,4 +1,12 @@
-import { apiGet, apiPost, apiPatch, apiPut, apiDelete } from '@/shared/lib/api';
+import {
+  apiGet,
+  apiPost,
+  apiPatch,
+  apiPut,
+  apiDelete,
+  API_BASE,
+  getAuthToken,
+} from '@/shared/lib/api';
 
 export interface Schedule {
   id: string;
@@ -686,6 +694,86 @@ function unwrapList<T>(res: T[] | { items: T[] }): T[] {
   return Array.isArray(res) ? res : res.items ?? [];
 }
 
+/* ── Vendor interchange: MS Project XML + Primavera XER (#205) ───────────
+   These file routes live on the schedule module router whose decorators are
+   prefixed with ``/schedule`` while the module itself mounts at
+   ``/api/v1/schedule`` - hence the doubled segment below. Imports are
+   multipart POSTs into an existing schedule; exports stream a file we
+   download client-side with the bearer token attached (a plain link would
+   not carry the Authorization header). */
+
+const SCHEDULE_FILE_BASE = `${API_BASE}/v1/schedule/schedule`;
+
+/** Result of importing a vendor file into a schedule. */
+export interface VendorImportResult {
+  activities_imported: number;
+  relationships_imported: number;
+  calendars_imported: number;
+  warnings: string[];
+}
+
+function scheduleFileHeaders(json: boolean): HeadersInit {
+  const headers: Record<string, string> = { 'X-DDC-Client': 'OE/1.0' };
+  if (json) headers['Accept'] = 'application/json';
+  const token = getAuthToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  return headers;
+}
+
+async function readErrorDetail(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = await res.json();
+    if (typeof body?.detail === 'string') return body.detail;
+  } catch {
+    /* not JSON */
+  }
+  return fallback;
+}
+
+async function uploadScheduleFile(
+  kind: 'msp-xml' | 'xer',
+  scheduleId: string,
+  file: File,
+): Promise<VendorImportResult> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(
+    `${SCHEDULE_FILE_BASE}/import/${kind}/?schedule_id=${encodeURIComponent(scheduleId)}`,
+    { method: 'POST', headers: scheduleFileHeaders(true), body: form },
+  );
+  if (!res.ok) {
+    throw new Error(await readErrorDetail(res, `Import failed (${res.status})`));
+  }
+  return res.json() as Promise<VendorImportResult>;
+}
+
+async function downloadScheduleExport(
+  kind: 'msp-xml' | 'csv',
+  scheduleId: string,
+  filename: string,
+): Promise<void> {
+  const res = await fetch(
+    `${SCHEDULE_FILE_BASE}/export/${kind}/?schedule_id=${encodeURIComponent(scheduleId)}`,
+    { method: 'GET', headers: scheduleFileHeaders(false) },
+  );
+  if (!res.ok) {
+    throw new Error(await readErrorDetail(res, `Export failed (${res.status})`));
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.rel = 'noopener';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, 1000);
+}
+
 export const scheduleApi = {
   // Schedules
   listSchedules: (projectId: string) =>
@@ -794,6 +882,21 @@ export const scheduleApi = {
       `/v1/schedule/schedules/import`,
       body,
     ),
+
+  /* ── MS Project / Primavera files (#205) ─────────────────────────────── */
+
+  /** Import a Microsoft Project XML file into an existing schedule. */
+  importMspXml: (scheduleId: string, file: File) =>
+    uploadScheduleFile('msp-xml', scheduleId, file),
+  /** Import a Primavera P6 XER file into an existing schedule. */
+  importXer: (scheduleId: string, file: File) =>
+    uploadScheduleFile('xer', scheduleId, file),
+  /** Download a schedule as a Microsoft Project XML (MSPDI) file. */
+  exportMspXml: (scheduleId: string, filename: string) =>
+    downloadScheduleExport('msp-xml', scheduleId, filename),
+  /** Download a schedule as a CSV file. */
+  exportCsv: (scheduleId: string, filename: string) =>
+    downloadScheduleExport('csv', scheduleId, filename),
 
   /* ── Progress rigor (T3.2) ──────────────────────────────────────────── */
 

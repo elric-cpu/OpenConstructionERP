@@ -2104,6 +2104,122 @@ async def export_schedule_csv(
     )
 
 
+@router.get(
+    "/schedule/export/msp-xml/",
+    dependencies=[Depends(RequirePermission("schedule.read"))],
+)
+async def export_schedule_msp_xml(
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    schedule_id: uuid.UUID = Query(..., description="Schedule to export"),
+    service: ScheduleService = Depends(_get_service),
+    session: SessionDep = None,
+) -> StreamingResponse:
+    """Export a schedule as a Microsoft Project XML (MSPDI) file.
+
+    Round-trips with ``import_msp_xml``: tasks become ``<Task>`` rows (UID,
+    dates, 8h-day duration, percent complete, milestone/summary flags,
+    constraints) and both the relationship table and inline dependencies
+    become ``<PredecessorLink>`` entries. Verifies the caller owns the parent
+    project (admins bypass).
+    """
+    from sqlalchemy import select
+
+    from app.modules.schedule.models import ScheduleRelationship
+    from app.modules.schedule.mspdi_export import (
+        MspdiActivity,
+        MspdiPredecessor,
+        MspdiProject,
+        build_mspdi_xml,
+    )
+
+    await _verify_schedule_owner(service, session, schedule_id, _user_id, payload)
+    schedule = await service.get_schedule(schedule_id)
+    activities, _ = await service.list_activities_for_schedule(schedule_id, limit=5000)
+
+    # Stable 1..N UID per activity, preserving the listed order.
+    uid_by_act: dict[str, int] = {}
+    mspdi_acts: list[MspdiActivity] = []
+    for idx, act in enumerate(activities, start=1):
+        uid_by_act[str(act.id)] = idx
+        mspdi_acts.append(
+            MspdiActivity(
+                uid=idx,
+                name=act.name or "",
+                start_date=act.start_date or "",
+                end_date=act.end_date or "",
+                duration_days=act.duration_days or 0,
+                progress_pct=_str_to_float(act.progress_pct),
+                activity_type=act.activity_type or "task",
+                wbs_code=act.wbs_code or "",
+                constraint_type=act.constraint_type,
+                constraint_date=act.constraint_date,
+            )
+        )
+
+    # Predecessor links: relationship rows first, then inline dependencies.
+    # Dedupe by (predecessor UID, relationship type) so a link recorded both
+    # ways is only emitted once.
+    preds_by_uid: dict[int, list[MspdiPredecessor]] = {}
+    seen: set[tuple[int, int, str]] = set()
+
+    def _add_link(succ_uid: int, pred_uid: int, rel_type: str, lag_days: int) -> None:
+        key = (succ_uid, pred_uid, rel_type)
+        if pred_uid == succ_uid or key in seen:
+            return
+        seen.add(key)
+        preds_by_uid.setdefault(succ_uid, []).append(
+            MspdiPredecessor(
+                predecessor_uid=pred_uid,
+                relationship_type=rel_type,
+                lag_days=lag_days,
+            )
+        )
+
+    rel_stmt = select(ScheduleRelationship).where(
+        ScheduleRelationship.schedule_id == schedule_id
+    )
+    rel_result = await session.execute(rel_stmt)
+    for rel in rel_result.scalars().all():
+        succ = uid_by_act.get(str(rel.successor_id))
+        pred = uid_by_act.get(str(rel.predecessor_id))
+        if succ is None or pred is None:
+            continue
+        _add_link(succ, pred, rel.relationship_type or "FS", rel.lag_days or 0)
+
+    for act in activities:
+        succ = uid_by_act.get(str(act.id))
+        if succ is None:
+            continue
+        for dep in act.dependencies or []:
+            if not isinstance(dep, dict):
+                continue
+            pred = uid_by_act.get(str(dep.get("activity_id", "")))
+            if pred is None:
+                continue
+            try:
+                lag = int(dep.get("lag_days", 0) or 0)
+            except (TypeError, ValueError):
+                lag = 0
+            _add_link(succ, pred, str(dep.get("type", "FS")), lag)
+
+    xml_str = build_mspdi_xml(
+        MspdiProject(
+            name=schedule.name or "Schedule",
+            activities=mspdi_acts,
+            predecessors_by_uid=preds_by_uid,
+        )
+    )
+
+    schedule_name = schedule.name.replace(" ", "_")[:40]
+    filename = f"schedule_{schedule_name}.xml"
+    return StreamingResponse(
+        io.BytesIO(xml_str.encode("utf-8")),
+        media_type="application/xml",
+        headers={"Content-Disposition": content_disposition_attachment(filename)},
+    )
+
+
 # ── Schedule Stats & Critical Path ──────────────────────────────────────────
 
 

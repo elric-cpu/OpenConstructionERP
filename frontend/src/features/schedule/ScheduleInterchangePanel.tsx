@@ -24,6 +24,8 @@ import {
   Stethoscope,
   Loader2,
   FileJson,
+  FileCode2,
+  FileSpreadsheet,
   CheckCircle2,
   AlertTriangle,
   ShieldCheck,
@@ -39,6 +41,7 @@ import {
   type ScheduleExport,
   type ScheduleImportResult,
   type InterchangeDocument,
+  type VendorImportResult,
 } from './api';
 
 interface ScheduleInterchangePanelProps {
@@ -124,6 +127,11 @@ export function ScheduleInterchangePanel({
   // ── Results ────────────────────────────────────────────────────────────
   const [preview, setPreview] = useState<ScheduleCleanPreview | null>(null);
   const [importResult, setImportResult] = useState<ScheduleImportResult | null>(null);
+
+  // ── Vendor file import (#205): MS Project XML / Primavera XER ────────────
+  const vendorInputRef = useRef<HTMLInputElement>(null);
+  const [vendorFile, setVendorFile] = useState<File | null>(null);
+  const [vendorResult, setVendorResult] = useState<VendorImportResult | null>(null);
 
   /* ── Export ──────────────────────────────────────────────────────────── */
   const exportMut = useMutation({
@@ -223,6 +231,75 @@ export function ScheduleInterchangePanel({
     },
   });
 
+  /* ── Export to vendor formats (#205) ─────────────────────────────────── */
+  const exportMspMut = useMutation({
+    mutationFn: () =>
+      scheduleApi.exportMspXml(scheduleId, `schedule-${scheduleId}.xml`),
+    onSuccess: () => {
+      addToast({
+        type: 'success',
+        title: t('schedule.interchange.msp_export_done', {
+          defaultValue: 'Microsoft Project XML downloaded',
+        }),
+      });
+    },
+    onError: (e) => {
+      addToast({
+        type: 'error',
+        title: t('common.error', { defaultValue: 'Error' }),
+        message: getErrorMessage(e),
+      });
+    },
+  });
+
+  const exportCsvMut = useMutation({
+    mutationFn: () =>
+      scheduleApi.exportCsv(scheduleId, `schedule-${scheduleId}.csv`),
+    onError: (e) => {
+      addToast({
+        type: 'error',
+        title: t('common.error', { defaultValue: 'Error' }),
+        message: getErrorMessage(e),
+      });
+    },
+  });
+
+  /* ── Import a vendor file (MS Project XML / Primavera XER) (#205) ─────── */
+  const vendorImportMut = useMutation({
+    mutationFn: () => {
+      if (!vendorFile) return Promise.reject(new Error('No file selected'));
+      const isXer = vendorFile.name.toLowerCase().endsWith('.xer');
+      return isXer
+        ? scheduleApi.importXer(scheduleId, vendorFile)
+        : scheduleApi.importMspXml(scheduleId, vendorFile);
+    },
+    onSuccess: (data) => {
+      setVendorResult(data);
+      // The file imports into THIS schedule, so refresh its activities/gantt.
+      queryClient.invalidateQueries({ queryKey: ['gantt', scheduleId] });
+      queryClient.invalidateQueries({ queryKey: ['schedule-activities', scheduleId] });
+      queryClient.invalidateQueries({ queryKey: ['cpm', scheduleId] });
+      addToast({
+        type: 'success',
+        title: t('schedule.interchange.vendor_import_done', {
+          defaultValue: 'Schedule file imported',
+        }),
+        message: t('schedule.interchange.vendor_import_done_msg', {
+          defaultValue: 'Added {{activities}} activities and {{relationships}} links.',
+          activities: data.activities_imported,
+          relationships: data.relationships_imported,
+        }),
+      });
+    },
+    onError: (e) => {
+      addToast({
+        type: 'error',
+        title: t('common.error', { defaultValue: 'Error' }),
+        message: getErrorMessage(e),
+      });
+    },
+  });
+
   // Parse a chosen .json file into the interchange document, client-side.
   const handleFile = (file: File | undefined) => {
     if (!file) return;
@@ -295,6 +372,51 @@ export function ScheduleInterchangePanel({
             ? t('schedule.interchange.exporting', { defaultValue: 'Exporting...' })
             : t('schedule.interchange.export', { defaultValue: 'Export' })}
         </Button>
+
+        {/* Vendor exports (#205): hand the plan to other tools. */}
+        <div className="mt-3 border-t border-border-light pt-3">
+          <p className="mb-2 text-2xs font-medium uppercase tracking-wide text-content-tertiary">
+            {t('schedule.interchange.other_formats', {
+              defaultValue: 'Or export to another tool',
+            })}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => exportMspMut.mutate()}
+              disabled={exportMspMut.isPending}
+              data-testid="schedule-export-msp-xml"
+              icon={
+                exportMspMut.isPending ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <FileCode2 size={14} />
+                )
+              }
+            >
+              {t('schedule.interchange.export_msp', {
+                defaultValue: 'Microsoft Project XML',
+              })}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => exportCsvMut.mutate()}
+              disabled={exportCsvMut.isPending}
+              data-testid="schedule-export-csv"
+              icon={
+                exportCsvMut.isPending ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <FileSpreadsheet size={14} />
+                )
+              }
+            >
+              {t('schedule.interchange.export_csv', { defaultValue: 'CSV' })}
+            </Button>
+          </div>
+        </div>
       </Card>
 
       {/* ── Health check (clean-preview) ────────────────────────────────── */}
@@ -461,6 +583,108 @@ export function ScheduleInterchangePanel({
               })}
               title={t('schedule.interchange.applied', { defaultValue: 'Repairs applied' })}
             />
+          </div>
+        )}
+      </Card>
+
+      {/* ── Import from MS Project / Primavera (#205) ─────────────────────── */}
+      <Card padding="md">
+        <div className="mb-1 flex items-center gap-2">
+          <FileCode2 size={16} className="text-content-secondary" />
+          <h3 className="text-sm font-semibold text-content-primary">
+            {t('schedule.interchange.vendor_import_title', {
+              defaultValue: 'Import from MS Project or Primavera',
+            })}
+          </h3>
+        </div>
+        <p className="mb-3 text-xs text-content-secondary">
+          {t('schedule.interchange.vendor_import_desc', {
+            defaultValue:
+              'Load a Microsoft Project XML (.xml) or Primavera P6 XER (.xer) file. Its tasks and logic links are added to this schedule, ready for the CPM engine.',
+          })}
+        </p>
+
+        <div className="space-y-3">
+          <div>
+            <label
+              htmlFor="vendor-file"
+              className="mb-1 block text-2xs font-medium uppercase tracking-wide text-content-secondary"
+            >
+              {t('schedule.interchange.vendor_file_label', {
+                defaultValue: 'Project file (.xml or .xer)',
+              })}
+            </label>
+            <input
+              ref={vendorInputRef}
+              id="vendor-file"
+              type="file"
+              accept=".xml,.xer,application/xml,text/xml"
+              data-testid="schedule-vendor-file-input"
+              onChange={(e) => {
+                setVendorResult(null);
+                setVendorFile(e.target.files?.[0] ?? null);
+              }}
+              className="block w-full text-sm text-content-secondary file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-surface-secondary file:px-3 file:py-2 file:text-sm file:font-medium file:text-content-primary hover:file:bg-surface-secondary/70"
+            />
+            {vendorFile && (
+              <span className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-content-secondary">
+                <FileCode2 size={13} className="text-oe-blue" />
+                {vendorFile.name}
+              </span>
+            )}
+          </div>
+
+          <Button
+            variant="primary"
+            onClick={() => vendorImportMut.mutate()}
+            disabled={!vendorFile || vendorImportMut.isPending}
+            data-testid="schedule-vendor-import"
+            icon={
+              vendorImportMut.isPending ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Upload size={16} />
+              )
+            }
+          >
+            {vendorImportMut.isPending
+              ? t('schedule.interchange.importing', { defaultValue: 'Importing...' })
+              : t('schedule.interchange.vendor_import', {
+                  defaultValue: 'Import into this schedule',
+                })}
+          </Button>
+        </div>
+
+        {vendorResult && (
+          <div className="mt-4 space-y-3 border-t border-border-light pt-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <CheckCircle2 size={16} className="text-semantic-success" />
+              <Badge variant="success">
+                {t('schedule.interchange.created_activities', {
+                  defaultValue: '{{count}} activities',
+                  count: vendorResult.activities_imported,
+                })}
+              </Badge>
+              <Badge variant="blue">
+                {t('schedule.interchange.created_relationships', {
+                  defaultValue: '{{count}} links',
+                  count: vendorResult.relationships_imported,
+                })}
+              </Badge>
+            </div>
+            {vendorResult.warnings.length > 0 && (
+              <ul className="space-y-1 rounded-lg border border-semantic-warning/30 bg-semantic-warning-bg/40 p-2 text-xs text-content-secondary">
+                {vendorResult.warnings.slice(0, 20).map((w, i) => (
+                  <li key={i} className="flex items-start gap-1.5">
+                    <AlertTriangle
+                      size={12}
+                      className="mt-0.5 shrink-0 text-semantic-warning"
+                    />
+                    <span>{w}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
       </Card>

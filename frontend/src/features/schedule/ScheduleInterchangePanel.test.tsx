@@ -21,6 +21,10 @@ vi.mock('./api', async () => {
       exportSchedule: vi.fn(),
       cleanPreviewSchedule: vi.fn(),
       importSchedule: vi.fn(),
+      exportMspXml: vi.fn(),
+      exportCsv: vi.fn(),
+      importMspXml: vi.fn(),
+      importXer: vi.fn(),
     },
   };
 });
@@ -105,5 +109,61 @@ describe('ScheduleInterchangePanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /^export$/i }));
     await waitFor(() => expect(scheduleApi.exportSchedule).toHaveBeenCalledWith('s1'));
+  });
+
+  it('MS Project XML export button calls exportMspXml (#205)', async () => {
+    (scheduleApi.exportMspXml as any).mockResolvedValue(undefined);
+    renderPanel();
+
+    fireEvent.click(screen.getByTestId('schedule-export-msp-xml'));
+    await waitFor(() =>
+      expect(scheduleApi.exportMspXml).toHaveBeenCalledWith(
+        's1',
+        expect.stringMatching(/\.xml$/),
+      ),
+    );
+  });
+
+  it('importing a .xml file calls importMspXml (#205)', async () => {
+    (scheduleApi.importMspXml as any).mockResolvedValue({
+      activities_imported: 3,
+      relationships_imported: 2,
+      calendars_imported: 0,
+      warnings: [],
+    });
+    renderPanel();
+
+    const input = screen.getByTestId('schedule-vendor-file-input');
+    const file = new File(['<Project/>'], 'plan.xml', { type: 'application/xml' });
+    fireEvent.change(input, { target: { files: [file] } });
+    fireEvent.click(screen.getByTestId('schedule-vendor-import'));
+
+    await waitFor(() =>
+      expect(scheduleApi.importMspXml).toHaveBeenCalledWith('s1', file),
+    );
+    expect(scheduleApi.importXer).not.toHaveBeenCalled();
+  });
+
+  it('importing a .xer file routes to importXer (#205)', async () => {
+    (scheduleApi.importXer as any).mockResolvedValue({
+      activities_imported: 5,
+      relationships_imported: 4,
+      calendars_imported: 1,
+      warnings: ['Calendar 2 was approximated.'],
+    });
+    renderPanel();
+
+    const input = screen.getByTestId('schedule-vendor-file-input');
+    const file = new File(['ERMHDR'], 'plan.xer', { type: 'text/plain' });
+    fireEvent.change(input, { target: { files: [file] } });
+    fireEvent.click(screen.getByTestId('schedule-vendor-import'));
+
+    await waitFor(() =>
+      expect(scheduleApi.importXer).toHaveBeenCalledWith('s1', file),
+    );
+    // The warning surfaces in the result panel.
+    expect(
+      await screen.findByText(/Calendar 2 was approximated\./i),
+    ).toBeInTheDocument();
   });
 });
