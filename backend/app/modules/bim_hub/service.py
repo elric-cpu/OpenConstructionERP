@@ -1554,9 +1554,7 @@ class BIMHubService:
             offset = 0
             page_size = 5000
             while True:
-                batch, total = await self.element_repo.list_for_model(
-                    model_id, offset=offset, limit=page_size
-                )
+                batch, total = await self.element_repo.list_for_model(model_id, offset=offset, limit=page_size)
                 elements.extend(batch)
                 if offset + page_size >= total or not batch:
                     break
@@ -1564,11 +1562,7 @@ class BIMHubService:
 
             if element_ids:
                 wanted = {str(x) for x in element_ids}
-                elements = [
-                    e
-                    for e in elements
-                    if str(e.id) in wanted or (e.stable_id and str(e.stable_id) in wanted)
-                ]
+                elements = [e for e in elements if str(e.id) in wanted or (e.stable_id and str(e.stable_id) in wanted)]
             elif filters:
                 elements = [e for e in elements if _element_matches_filters(e, filters)]
 
