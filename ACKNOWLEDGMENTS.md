@@ -42,3 +42,4 @@ while making sure community input is recognized.
 | [Tigercatman](https://github.com/Tigercatman) | [#271](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/271) |
 | [Tigercatman](https://github.com/Tigercatman) | [#272](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/272) |
 | [Tigercatman](https://github.com/Tigercatman) | [#273](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/273) |
+| [skeltic-wq](https://github.com/skeltic-wq) | [#244](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/244) |
