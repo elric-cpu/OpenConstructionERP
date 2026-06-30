@@ -375,6 +375,7 @@ class ProgressClaimCreate(BaseModel):
     period_end: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     claim_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     currency: str = Field(default="", max_length=3)
+    milestone_id: UUID | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -387,6 +388,7 @@ class ProgressClaimUpdate(BaseModel):
     claim_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     status: str | None = Field(default=None, pattern=rf"^({CLAIM_STATUSES})$")
     currency: str | None = Field(default=None, max_length=3)
+    milestone_id: UUID | None = None
     metadata: dict[str, Any] | None = None
 
 
@@ -408,6 +410,7 @@ class ProgressClaimResponse(BaseModel):
     approved_at: str | None = None
     paid_at: str | None = None
     currency: str
+    milestone_id: UUID | None = None
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
     created_at: datetime
     updated_at: datetime
@@ -718,3 +721,301 @@ class AIAApplicationResponse(BaseModel):
     summary: AIAG702Summary
     lines: list[AIAG703Line]
     certification: AIACertification
+
+
+# == ContractParty (structured parties / roles) ============================
+
+
+PARTY_ROLES = "employer|contractor|subcontractor|consultant|architect|engineer|guarantor|other"
+PARTY_TYPES = "contact|subcontractor|user|external"
+
+
+class ContractPartyCreate(BaseModel):
+    """Create a structured party / role on a contract."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    contract_id: UUID
+    party_role: str = Field(default="other", pattern=rf"^({PARTY_ROLES})$")
+    party_type: str = Field(default="external", pattern=rf"^({PARTY_TYPES})$")
+    party_id: UUID | None = None
+    display_name: str = Field(default="", max_length=500)
+    is_primary: bool = False
+    contact_details: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ContractPartyUpdate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    party_role: str | None = Field(default=None, pattern=rf"^({PARTY_ROLES})$")
+    party_type: str | None = Field(default=None, pattern=rf"^({PARTY_TYPES})$")
+    party_id: UUID | None = None
+    display_name: str | None = Field(default=None, max_length=500)
+    is_primary: bool | None = None
+    contact_details: dict[str, Any] | None = None
+    metadata: dict[str, Any] | None = None
+
+
+class ContractPartyResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    contract_id: UUID
+    party_role: str
+    party_type: str
+    party_id: UUID | None = None
+    display_name: str
+    # Live name resolved by the service from the linked contact / subcontractor
+    # / user. None when the link is missing or unresolved; the UI then falls
+    # back to ``display_name``.
+    resolved_name: str | None = None
+    is_primary: bool
+    contact_details: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
+    created_at: datetime
+    updated_at: datetime
+
+
+# == ContractSecurity (bonds / guarantees / insurance) =====================
+
+
+SECURITY_TYPES = (
+    "performance_bond|payment_bond|advance_payment_bond|retention_bond|"
+    "parent_company_guarantee|bank_guarantee|insurance_pl|insurance_car|"
+    "insurance_pi|other"
+)
+SECURITY_STATUSES = "required|received|active|expired|released|claimed"
+
+
+class ContractSecurityCreate(BaseModel):
+    """Create a bond / guarantee / insurance record on a contract."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    contract_id: UUID
+    security_type: str = Field(default="other", pattern=rf"^({SECURITY_TYPES})$")
+    reference: str | None = Field(default=None, max_length=120)
+    provider_name: str = Field(default="", max_length=255)
+    amount: Decimal = Field(default=Decimal("0"), ge=0)
+    currency: str = Field(default="", max_length=3)
+    percent_of_contract: Decimal | None = Field(default=None, ge=0, le=100)
+    valid_from: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    valid_to: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    status: str = Field(default="required", pattern=rf"^({SECURITY_STATUSES})$")
+    document_id: UUID | None = None
+    notes: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ContractSecurityUpdate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    security_type: str | None = Field(default=None, pattern=rf"^({SECURITY_TYPES})$")
+    reference: str | None = Field(default=None, max_length=120)
+    provider_name: str | None = Field(default=None, max_length=255)
+    amount: Decimal | None = Field(default=None, ge=0)
+    currency: str | None = Field(default=None, max_length=3)
+    percent_of_contract: Decimal | None = Field(default=None, ge=0, le=100)
+    valid_from: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    valid_to: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    status: str | None = Field(default=None, pattern=rf"^({SECURITY_STATUSES})$")
+    document_id: UUID | None = None
+    notes: str | None = None
+    metadata: dict[str, Any] | None = None
+
+
+class ContractSecurityResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    contract_id: UUID
+    security_type: str
+    reference: str | None = None
+    provider_name: str
+    amount: Decimal
+    currency: str
+    percent_of_contract: Decimal | None = None
+    valid_from: str | None = None
+    valid_to: str | None = None
+    status: str
+    document_id: UUID | None = None
+    notes: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
+    created_at: datetime
+    updated_at: datetime
+
+
+# == EOTClaim (extension-of-time claims) ===================================
+
+
+EOT_STATUSES = "draft|submitted|under_review|granted|partially_granted|rejected|withdrawn"
+# Statuses that represent a final decision on an EOT claim.
+EOT_DECISIONS = "granted|partially_granted|rejected"
+
+
+class EOTClaimCreate(BaseModel):
+    """Create an extension-of-time claim (always starts in ``draft``)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    contract_id: UUID
+    eot_number: str | None = Field(default=None, max_length=40)
+    cause_category: str = Field(default="other", max_length=80)
+    description: str = Field(default="", max_length=4000)
+    days_claimed: int = Field(default=0, ge=0)
+    claim_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    linked_delay_event_id: UUID | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class EOTClaimUpdate(BaseModel):
+    """Partial update for an EOT claim.
+
+    Status changes are driven only by the dedicated submit / decide / withdraw
+    endpoints (FSM + event emission), so ``status``, ``days_granted`` and the
+    decision fields are intentionally not editable here.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    eot_number: str | None = Field(default=None, max_length=40)
+    cause_category: str | None = Field(default=None, max_length=80)
+    description: str | None = Field(default=None, max_length=4000)
+    days_claimed: int | None = Field(default=None, ge=0)
+    claim_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    linked_delay_event_id: UUID | None = None
+    metadata: dict[str, Any] | None = None
+
+
+class EOTDecisionRequest(BaseModel):
+    """Body for ``POST /eot-claims/{id}/decide``.
+
+    ``decision`` is the target status (granted / partially_granted / rejected).
+    ``days_granted`` is clamped server-side to ``[0, days_claimed]`` so a
+    decision can never grant more time than was claimed. A rejected claim
+    grants zero days regardless of the supplied value.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    decision: str = Field(..., pattern=rf"^({EOT_DECISIONS})$")
+    days_granted: int = Field(default=0, ge=0)
+    decision_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    revised_completion_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+
+class EOTClaimResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    contract_id: UUID
+    eot_number: str
+    cause_category: str
+    description: str
+    days_claimed: int
+    days_granted: int
+    claim_date: str | None = None
+    decision_date: str | None = None
+    status: str
+    revised_completion_date: str | None = None
+    linked_delay_event_id: UUID | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
+    created_at: datetime
+    updated_at: datetime
+
+
+# == ContractDocument (documents register) =================================
+
+
+DOC_ROLES = "executed_agreement|drawing|specification|bond|insurance|correspondence|variation|other"
+
+
+class ContractDocumentCreate(BaseModel):
+    """Register a document against a contract."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    contract_id: UUID
+    document_id: UUID | None = None
+    doc_role: str = Field(default="other", pattern=rf"^({DOC_ROLES})$")
+    title: str = Field(default="", max_length=500)
+    version: str = Field(default="", max_length=40)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ContractDocumentUpdate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    document_id: UUID | None = None
+    doc_role: str | None = Field(default=None, pattern=rf"^({DOC_ROLES})$")
+    title: str | None = Field(default=None, max_length=500)
+    version: str | None = Field(default=None, max_length=40)
+    metadata: dict[str, Any] | None = None
+
+
+class ContractDocumentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    contract_id: UUID
+    document_id: UUID | None = None
+    doc_role: str
+    title: str
+    version: str
+    metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
+    created_at: datetime
+    updated_at: datetime
+
+
+# == ContractMilestone (milestones / payment schedule) =====================
+
+
+MILESTONE_TRIGGERS = "date|completion|approval"
+MILESTONE_STATUSES = "pending|reached|invoiced|paid"
+
+
+class ContractMilestoneCreate(BaseModel):
+    """Create a contract milestone / payment-schedule entry."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    contract_id: UUID
+    code: str = Field(default="", max_length=80)
+    name: str = Field(default="", max_length=500)
+    planned_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    value: Decimal | None = None
+    percent_of_contract: Decimal | None = Field(default=None, ge=0, le=100)
+    trigger: str = Field(default="date", pattern=rf"^({MILESTONE_TRIGGERS})$")
+    status: str = Field(default="pending", pattern=rf"^({MILESTONE_STATUSES})$")
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ContractMilestoneUpdate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    code: str | None = Field(default=None, max_length=80)
+    name: str | None = Field(default=None, max_length=500)
+    planned_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    value: Decimal | None = None
+    percent_of_contract: Decimal | None = Field(default=None, ge=0, le=100)
+    trigger: str | None = Field(default=None, pattern=rf"^({MILESTONE_TRIGGERS})$")
+    status: str | None = Field(default=None, pattern=rf"^({MILESTONE_STATUSES})$")
+    metadata: dict[str, Any] | None = None
+
+
+class ContractMilestoneResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    contract_id: UUID
+    code: str
+    name: str
+    planned_date: str | None = None
+    value: Decimal | None = None
+    percent_of_contract: Decimal | None = None
+    trigger: str
+    status: str
+    metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
+    created_at: datetime
+    updated_at: datetime

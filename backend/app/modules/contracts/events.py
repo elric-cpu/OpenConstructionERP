@@ -37,4 +37,33 @@ from __future__ import annotations
 #: Emitted when a claim's lines are (re)built from progress observations.
 CLAIM_POPULATED = "contracts.claim.populated"
 
-__all__ = ["CLAIM_POPULATED"]
+#: Emitted when an extension-of-time claim is submitted for review. Payload::
+#:
+#:     {
+#:         "eot_id": str,
+#:         "contract_id": str,
+#:         "eot_number": str,
+#:         "days_claimed": int,
+#:         "actor": str | None,
+#:     }
+EOT_SUBMITTED = "contracts.eot.submitted"
+
+#: Emitted when an extension-of-time claim is decided (granted /
+#: partially_granted / rejected). Payload::
+#:
+#:     {
+#:         "eot_id": str,
+#:         "contract_id": str,
+#:         "eot_number": str,
+#:         "status": str,                  # the decision status
+#:         "days_claimed": int,
+#:         "days_granted": int,
+#:         "revised_completion_date": str | None,
+#:         "actor": str | None,
+#:     }
+#:
+#: Scheduling / dashboards subscribe to refresh the contract completion date
+#: when time is granted. Informational only; it posts nothing to the ledger.
+EOT_DECIDED = "contracts.eot.decided"
+
+__all__ = ["CLAIM_POPULATED", "EOT_DECIDED", "EOT_SUBMITTED"]

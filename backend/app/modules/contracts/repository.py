@@ -12,8 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.contracts.models import (
     Contract,
+    ContractDocument,
     ContractLine,
+    ContractMilestone,
+    ContractParty,
+    ContractSecurity,
     ContractTypeConfiguration,
+    EOTClaim,
     FeeStructure,
     FinalAccount,
     GainshareConfiguration,
@@ -370,3 +375,110 @@ class FinalAccountRepository(_CRUDBase):
             .limit(1)
         )
         return result.scalar_one_or_none()
+
+
+class ContractPartyRepository(_CRUDBase):
+    model = ContractParty
+
+    async def list_for_contract(self, contract_id: uuid.UUID) -> list[ContractParty]:
+        stmt = (
+            select(ContractParty)
+            .where(ContractParty.contract_id == contract_id)
+            .order_by(ContractParty.is_primary.desc(), ContractParty.party_role)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+
+class ContractSecurityRepository(_CRUDBase):
+    model = ContractSecurity
+
+    async def list_for_contract(
+        self,
+        contract_id: uuid.UUID,
+        *,
+        status: str | None = None,
+        security_type: str | None = None,
+    ) -> list[ContractSecurity]:
+        stmt = select(ContractSecurity).where(ContractSecurity.contract_id == contract_id)
+        if status is not None:
+            stmt = stmt.where(ContractSecurity.status == status)
+        if security_type is not None:
+            stmt = stmt.where(ContractSecurity.security_type == security_type)
+        result = await self.session.execute(stmt.order_by(ContractSecurity.created_at.desc()))
+        return list(result.scalars().all())
+
+    async def has_active_of_type(self, contract_id: uuid.UUID, security_type: str) -> bool:
+        """True when an active security of the given type exists on the contract."""
+        result = await self.session.execute(
+            select(func.count())
+            .select_from(ContractSecurity)
+            .where(
+                ContractSecurity.contract_id == contract_id,
+                ContractSecurity.security_type == security_type,
+                ContractSecurity.status == "active",
+            )
+        )
+        return int(result.scalar_one() or 0) > 0
+
+
+class EOTClaimRepository(_CRUDBase):
+    model = EOTClaim
+
+    async def list_for_contract(
+        self,
+        contract_id: uuid.UUID,
+        *,
+        status: str | None = None,
+    ) -> list[EOTClaim]:
+        stmt = select(EOTClaim).where(EOTClaim.contract_id == contract_id)
+        if status is not None:
+            stmt = stmt.where(EOTClaim.status == status)
+        result = await self.session.execute(stmt.order_by(EOTClaim.created_at.desc()))
+        return list(result.scalars().all())
+
+    async def next_eot_number(self, contract_id: uuid.UUID) -> str:
+        result = await self.session.execute(
+            select(func.count()).select_from(EOTClaim).where(EOTClaim.contract_id == contract_id)
+        )
+        count = result.scalar_one()
+        return f"EOT-{count + 1:04d}"
+
+    async def total_days_granted(self, contract_id: uuid.UUID) -> int:
+        """Sum of granted days across decided EOT claims on the contract."""
+        result = await self.session.execute(
+            select(func.coalesce(func.sum(EOTClaim.days_granted), 0)).where(
+                EOTClaim.contract_id == contract_id,
+                EOTClaim.status.in_(("granted", "partially_granted")),
+            )
+        )
+        return int(result.scalar_one() or 0)
+
+
+class ContractDocumentRepository(_CRUDBase):
+    model = ContractDocument
+
+    async def list_for_contract(
+        self,
+        contract_id: uuid.UUID,
+        *,
+        doc_role: str | None = None,
+    ) -> list[ContractDocument]:
+        stmt = select(ContractDocument).where(ContractDocument.contract_id == contract_id)
+        if doc_role is not None:
+            stmt = stmt.where(ContractDocument.doc_role == doc_role)
+        result = await self.session.execute(stmt.order_by(ContractDocument.created_at.desc()))
+        return list(result.scalars().all())
+
+
+class ContractMilestoneRepository(_CRUDBase):
+    model = ContractMilestone
+
+    async def list_for_contract(self, contract_id: uuid.UUID) -> list[ContractMilestone]:
+        stmt = (
+            select(ContractMilestone)
+            .where(ContractMilestone.contract_id == contract_id)
+            .order_by(ContractMilestone.planned_date, ContractMilestone.code)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())

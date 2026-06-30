@@ -30,10 +30,15 @@ from app.modules.contracts.compliance_packs import (
     WORKFLOW_CONTRACT_SIGNATURE,
     resolve_rule_sets,
 )
-from app.modules.contracts.events import CLAIM_POPULATED
+from app.modules.contracts.events import CLAIM_POPULATED, EOT_DECIDED, EOT_SUBMITTED
 from app.modules.contracts.models import (
     Contract,
+    ContractDocument,
     ContractLine,
+    ContractMilestone,
+    ContractParty,
+    ContractSecurity,
+    EOTClaim,
     FeeStructure,
     FinalAccount,
     GainshareConfiguration,
@@ -43,9 +48,14 @@ from app.modules.contracts.models import (
     RetentionSchedule,
 )
 from app.modules.contracts.repository import (
+    ContractDocumentRepository,
     ContractLineRepository,
+    ContractMilestoneRepository,
+    ContractPartyRepository,
     ContractRepository,
+    ContractSecurityRepository,
     ContractTypeConfigurationRepository,
+    EOTClaimRepository,
     FeeStructureRepository,
     FinalAccountRepository,
     GainshareConfigurationRepository,
@@ -70,9 +80,12 @@ CONTRACT_TYPES = (
     "unit_price",
     "design_build",
     "combination",
+    "remeasurement",
 )
 
 # Type-specific required-keys map. Empty list = no extra required keys.
+# "remeasurement" mirrors "unit_price" semantics (re-measured quantities at
+# agreed unit rates), so it carries no extra required terms.
 _REQUIRED_TERM_FIELDS: dict[str, tuple[str, ...]] = {
     "lump_sum": (),
     "gmp": ("gmp_cap", "target_cost"),
@@ -81,6 +94,7 @@ _REQUIRED_TERM_FIELDS: dict[str, tuple[str, ...]] = {
     "unit_price": (),
     "design_build": (),
     "combination": (),
+    "remeasurement": (),
 }
 
 
@@ -122,6 +136,26 @@ _FINAL_ACCOUNT_TRANSITIONS: dict[str, frozenset[str]] = {
     "closed": frozenset(),
 }
 
+# Extension-of-time claim FSM. A claim is raised (draft), submitted, optionally
+# moved under review, then decided (granted / partially_granted / rejected) or
+# withdrawn. Decisions and withdrawals are terminal.
+_EOT_CLAIM_TRANSITIONS: dict[str, frozenset[str]] = {
+    "draft": frozenset({"submitted", "withdrawn"}),
+    "submitted": frozenset(
+        {"under_review", "granted", "partially_granted", "rejected", "withdrawn"},
+    ),
+    "under_review": frozenset({"granted", "partially_granted", "rejected", "withdrawn"}),
+    "granted": frozenset(),
+    "partially_granted": frozenset(),
+    "rejected": frozenset(),
+    "withdrawn": frozenset(),
+}
+
+# The subset of EOT statuses that represent a final decision on the claim.
+_EOT_DECISION_STATUSES: frozenset[str] = frozenset(
+    {"granted", "partially_granted", "rejected"},
+)
+
 
 def allowed_contract_transitions(current: str) -> frozenset[str]:
     """Return the set of statuses a contract may transition to from ``current``."""
@@ -158,6 +192,31 @@ def assert_final_account_transition(current: str, target: str) -> None:
         raise InvalidTransitionError(
             f"Cannot transition final account from {current!r} to {target!r}",
         )
+
+
+def allowed_eot_transitions(current: str) -> frozenset[str]:
+    """Return the set of statuses an EOT claim may transition to from ``current``."""
+    return _EOT_CLAIM_TRANSITIONS.get(current, frozenset())
+
+
+def assert_eot_transition(current: str, target: str) -> None:
+    if target not in allowed_eot_transitions(current):
+        raise InvalidTransitionError(
+            f"Cannot transition EOT claim from {current!r} to {target!r}",
+        )
+
+
+def clamp_eot_days_granted(days_claimed: int, days_granted: int, decision: str) -> int:
+    """Pure: constrain granted days to ``[0, days_claimed]`` for a decision.
+
+    A rejected claim always grants zero days; otherwise the granted figure is
+    clamped so a decision can never award more time than was claimed.
+    """
+    if decision == "rejected":
+        return 0
+    claimed = max(0, int(days_claimed or 0))
+    granted = max(0, int(days_granted or 0))
+    return min(granted, claimed)
 
 
 # ── Pure validators / calculators ─────────────────────────────────────────
@@ -374,6 +433,26 @@ def compute_ld_amount(
         if raw > cap:
             return cap
     return raw
+
+
+def compute_milestone_value(
+    value: Decimal | float | int | None,
+    percent_of_contract: Decimal | float | int | None,
+    contract_value: Decimal | float | int,
+) -> Decimal:
+    """Pure: resolve a milestone's monetary value.
+
+    Uses the explicit ``value`` when set, otherwise derives it from
+    ``percent_of_contract`` of the contract value (rounded to 0.0001). Returns
+    zero when neither is provided.
+    """
+    if value is not None:
+        return Decimal(str(value or 0))
+    if percent_of_contract is not None:
+        base = Decimal(str(contract_value or 0))
+        pct = Decimal(str(percent_of_contract or 0))
+        return (base * pct / DEC_HUNDRED).quantize(Decimal("0.0001"))
+    return DEC_ZERO
 
 
 # ── Per-type claim generators (pure) ──────────────────────────────────────
@@ -625,6 +704,11 @@ class ContractsService:
         self.claim_repo = ProgressClaimRepository(session)
         self.claim_line_repo = ProgressClaimLineRepository(session)
         self.final_account_repo = FinalAccountRepository(session)
+        self.party_repo = ContractPartyRepository(session)
+        self.security_repo = ContractSecurityRepository(session)
+        self.eot_repo = EOTClaimRepository(session)
+        self.document_repo = ContractDocumentRepository(session)
+        self.milestone_repo = ContractMilestoneRepository(session)
 
     # ── Contracts ────────────────────────────────────────────────────────
 
@@ -1326,6 +1410,7 @@ class ContractsService:
             period_end=data.period_end,
             claim_date=data.claim_date,
             currency=data.currency or contract.currency,
+            milestone_id=getattr(data, "milestone_id", None),
             metadata_=data.metadata,
             status="draft",
         )
@@ -1455,7 +1540,9 @@ class ContractsService:
                 payload.completion or {},
                 prior_paid,
             )
-        elif contract.contract_type == "unit_price":
+        elif contract.contract_type in ("unit_price", "remeasurement"):
+            # Remeasurement contracts bill re-measured quantities at agreed
+            # unit rates, exactly like unit-price, so they share the generator.
             result = generate_unit_price_claim(
                 contract,
                 lines,
@@ -2342,6 +2429,477 @@ class ContractsService:
             },
         }
 
+    # ── Helpers (shared by the depth entities) ───────────────────────────
+
+    @staticmethod
+    def _create_kwargs(data: Any) -> dict[str, Any]:
+        """Build ORM kwargs from a create schema, mapping metadata -> metadata_."""
+        payload = data.model_dump()
+        if "metadata" in payload:
+            payload["metadata_"] = payload.pop("metadata")
+        return payload
+
+    async def _apply_update(self, repo: Any, obj: Any, data: Any) -> Any:
+        """Generic partial update with metadata merge; mirrors update_contract.
+
+        Only fields explicitly set on ``data`` are touched. A provided
+        ``metadata`` dict is deep-merged into the existing ``metadata_`` (never
+        clobbered). None values are dropped so an omitted optional field is not
+        written as NULL, matching the rest of the module's update endpoints.
+        """
+        fields: dict[str, Any] = data.model_dump(exclude_unset=True)
+        if "metadata" in fields:
+            incoming = fields.pop("metadata")
+            fields["metadata_"] = (
+                merge_metadata(getattr(obj, "metadata_", None), incoming) if isinstance(incoming, dict) else incoming
+            )
+        fields = {k: v for k, v in fields.items() if v is not None or k == "metadata_"}
+        if fields:
+            await repo.update_fields(obj.id, **fields)
+            await self.session.refresh(obj)
+        return obj
+
+    # ── Party / counterparty name resolution ─────────────────────────────
+
+    @staticmethod
+    def _contact_display_name(contact: Any) -> str | None:
+        """Best display label for a contact row (company, then person, then legal)."""
+        if contact is None:
+            return None
+        company = getattr(contact, "company_name", None)
+        if company:
+            return str(company)
+        first = getattr(contact, "first_name", None) or ""
+        last = getattr(contact, "last_name", None) or ""
+        full = f"{first} {last}".strip()
+        if full:
+            return full
+        legal = getattr(contact, "legal_name", None)
+        return str(legal) if legal else None
+
+    @staticmethod
+    def _subcontractor_display_name(sub: Any) -> str | None:
+        """Best display label for a subcontractor row (trade name, then legal name)."""
+        if sub is None:
+            return None
+        label = getattr(sub, "trade_name", None) or getattr(sub, "legal_name", None) or ""
+        return str(label) or None
+
+    @staticmethod
+    def _user_display_name(user: Any) -> str | None:
+        """Best display label for a platform user (full name, then email)."""
+        if user is None:
+            return None
+        label = getattr(user, "full_name", None) or getattr(user, "email", None) or ""
+        return str(label) or None
+
+    async def _load_contact_name(self, entity_id: uuid.UUID | None) -> str | None:
+        if entity_id is None:
+            return None
+        try:
+            from app.modules.contacts.models import Contact  # noqa: PLC0415
+
+            contact = await self.session.get(Contact, entity_id)
+        except Exception:
+            logger.debug("contracts: contact name resolution failed for %s", entity_id)
+            return None
+        return self._contact_display_name(contact)
+
+    async def _load_subcontractor_name(self, entity_id: uuid.UUID | None) -> str | None:
+        if entity_id is None:
+            return None
+        try:
+            from app.modules.subcontractors.models import Subcontractor  # noqa: PLC0415
+
+            sub = await self.session.get(Subcontractor, entity_id)
+        except Exception:
+            logger.debug("contracts: subcontractor name resolution failed for %s", entity_id)
+            return None
+        return self._subcontractor_display_name(sub)
+
+    async def _load_user_name(self, entity_id: uuid.UUID | None) -> str | None:
+        if entity_id is None:
+            return None
+        try:
+            from app.modules.users.models import User  # noqa: PLC0415
+
+            user = await self.session.get(User, entity_id)
+        except Exception:
+            logger.debug("contracts: user name resolution failed for %s", entity_id)
+            return None
+        return self._user_display_name(user)
+
+    async def resolve_counterparty_name(self, contract: Contract) -> str | None:
+        """Resolve a contract counterparty's live display name.
+
+        ``counterparty_id`` is a plain UUID that may reference a contact OR a
+        subcontractor row, so both directories are tried (the declared
+        ``counterparty_type`` decides which is tried first). Returns ``None``
+        when nothing resolves, so the caller can fall back to its own label.
+        """
+        cid = getattr(contract, "counterparty_id", None)
+        if cid is None:
+            return None
+        if getattr(contract, "counterparty_type", None) == "subcontractor":
+            return await self._load_subcontractor_name(cid) or await self._load_contact_name(cid)
+        return await self._load_contact_name(cid) or await self._load_subcontractor_name(cid)
+
+    async def resolve_party_name(self, party: ContractParty) -> str | None:
+        """Resolve a structured party's live display name from its linked entity.
+
+        Dispatches on ``party_type`` (contact / subcontractor / user). External
+        parties have no linked row and resolve to ``None`` (the UI falls back to
+        the stored ``display_name``).
+        """
+        pid = getattr(party, "party_id", None)
+        if pid is None:
+            return None
+        ptype = getattr(party, "party_type", None)
+        if ptype == "contact":
+            return await self._load_contact_name(pid)
+        if ptype == "subcontractor":
+            return await self._load_subcontractor_name(pid)
+        if ptype == "user":
+            return await self._load_user_name(pid)
+        return None
+
+    async def list_parties_with_names(
+        self,
+        contract_id: uuid.UUID,
+    ) -> list[tuple[ContractParty, str | None]]:
+        """List a contract's parties paired with their resolved live names."""
+        parties = await self.party_repo.list_for_contract(contract_id)
+        return [(p, await self.resolve_party_name(p)) for p in parties]
+
+    async def counterparty_overview(self, contract: Contract) -> dict[str, Any]:
+        """Return the contract counterparty plus its resolved display name."""
+        return {
+            "contract_id": str(contract.id),
+            "counterparty_type": contract.counterparty_type,
+            "counterparty_id": (str(contract.counterparty_id) if contract.counterparty_id else None),
+            "resolved_name": await self.resolve_counterparty_name(contract),
+        }
+
+    # ── Parties (CRUD) ───────────────────────────────────────────────────
+
+    async def create_party(self, data: Any) -> ContractParty:
+        await self.get_contract(data.contract_id)
+        obj = ContractParty(**self._create_kwargs(data))
+        return await self.party_repo.create(obj)
+
+    async def update_party(self, party_id: uuid.UUID, data: Any) -> ContractParty:
+        obj = await self.party_repo.get_by_id(party_id)
+        if obj is None:
+            raise HTTPException(status_code=404, detail="Contract party not found")
+        return await self._apply_update(self.party_repo, obj, data)
+
+    async def delete_party(self, party_id: uuid.UUID) -> None:
+        await self.party_repo.delete(party_id)
+
+    # ── Securities (CRUD + coverage) ─────────────────────────────────────
+
+    async def create_security(self, data: Any) -> ContractSecurity:
+        await self.get_contract(data.contract_id)
+        obj = ContractSecurity(**self._create_kwargs(data))
+        return await self.security_repo.create(obj)
+
+    async def update_security(self, security_id: uuid.UUID, data: Any) -> ContractSecurity:
+        obj = await self.security_repo.get_by_id(security_id)
+        if obj is None:
+            raise HTTPException(status_code=404, detail="Contract security not found")
+        return await self._apply_update(self.security_repo, obj, data)
+
+    async def delete_security(self, security_id: uuid.UUID) -> None:
+        await self.security_repo.delete(security_id)
+
+    async def security_coverage(self, contract_id: uuid.UUID) -> dict[str, Any]:
+        """Summarise the bonds / guarantees / insurance held on a contract."""
+        contract = await self.get_contract(contract_id)
+        securities = await self.security_repo.list_for_contract(contract_id)
+        active = [s for s in securities if s.status == "active"]
+        total_active = sum((Decimal(str(s.amount or 0)) for s in active), DEC_ZERO)
+        by_status: dict[str, int] = {}
+        for s in securities:
+            by_status[s.status] = by_status.get(s.status, 0) + 1
+        return {
+            "contract_id": str(contract_id),
+            "currency": contract.currency,
+            "count": len(securities),
+            "active_count": len(active),
+            "total_active_amount": str(total_active),
+            "by_status": by_status,
+            "active_types": sorted({s.security_type for s in active}),
+        }
+
+    # ── Extension-of-time claims ─────────────────────────────────────────
+
+    async def _get_eot_or_404(self, eot_id: uuid.UUID) -> EOTClaim:
+        eot = await self.eot_repo.get_by_id(eot_id)
+        if eot is None:
+            raise HTTPException(status_code=404, detail="EOT claim not found")
+        return eot
+
+    async def create_eot_claim(self, data: Any) -> EOTClaim:
+        """Create an extension-of-time claim (always starts in ``draft``)."""
+        contract = await self.get_contract(data.contract_id)
+        eot_number = data.eot_number or await self.eot_repo.next_eot_number(contract.id)
+        eot = EOTClaim(
+            contract_id=contract.id,
+            eot_number=eot_number,
+            cause_category=data.cause_category,
+            description=data.description,
+            days_claimed=int(data.days_claimed or 0),
+            days_granted=0,
+            claim_date=data.claim_date,
+            status="draft",
+            linked_delay_event_id=data.linked_delay_event_id,
+            metadata_=data.metadata,
+        )
+        return await self.eot_repo.create(eot)
+
+    async def update_eot_claim(self, eot_id: uuid.UUID, data: Any) -> EOTClaim:
+        eot = await self._get_eot_or_404(eot_id)
+        # Status / days_granted / decision fields are FSM-driven (submit /
+        # decide / withdraw), never free-edited here, so EOTClaimUpdate omits
+        # them entirely.
+        return await self._apply_update(self.eot_repo, eot, data)
+
+    async def delete_eot_claim(self, eot_id: uuid.UUID) -> None:
+        await self.eot_repo.delete(eot_id)
+
+    async def transition_eot_claim(
+        self,
+        eot_id: uuid.UUID,
+        target_status: str,
+        actor_id: str | None = None,
+    ) -> EOTClaim:
+        """Apply a non-decision EOT transition (submitted / under_review / withdrawn)."""
+        eot = await self._get_eot_or_404(eot_id)
+        try:
+            assert_eot_transition(eot.status, target_status)
+        except InvalidTransitionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if target_status in _EOT_DECISION_STATUSES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Use the decide endpoint to record an EOT decision",
+            )
+        await self.eot_repo.update_fields(eot_id, status=target_status)
+        await self.session.refresh(eot)
+        if target_status == "submitted":
+            event_bus.publish_detached(
+                EOT_SUBMITTED,
+                data={
+                    "eot_id": str(eot.id),
+                    "contract_id": str(eot.contract_id),
+                    "eot_number": eot.eot_number,
+                    "days_claimed": int(eot.days_claimed or 0),
+                    "actor": actor_id,
+                },
+                source_module="contracts",
+            )
+        return eot
+
+    async def decide_eot_claim(
+        self,
+        eot_id: uuid.UUID,
+        decision: str,
+        *,
+        days_granted: int = 0,
+        decision_date: str | None = None,
+        revised_completion_date: str | None = None,
+        actor_id: str | None = None,
+    ) -> EOTClaim:
+        """Record a final decision on an EOT claim.
+
+        ``decision`` is one of granted / partially_granted / rejected. Granted
+        days are clamped to ``[0, days_claimed]`` (rejected always grants zero)
+        so a decision can never award more time than was claimed. Emits
+        ``contracts.eot.decided``.
+        """
+        eot = await self._get_eot_or_404(eot_id)
+        if decision not in _EOT_DECISION_STATUSES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid EOT decision: {decision!r}",
+            )
+        try:
+            assert_eot_transition(eot.status, decision)
+        except InvalidTransitionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        from datetime import UTC, datetime  # noqa: PLC0415
+
+        granted = clamp_eot_days_granted(eot.days_claimed, days_granted, decision)
+        fields: dict[str, Any] = {
+            "status": decision,
+            "days_granted": granted,
+            "decision_date": decision_date or datetime.now(UTC).date().isoformat(),
+        }
+        if revised_completion_date is not None:
+            fields["revised_completion_date"] = revised_completion_date
+        await self.eot_repo.update_fields(eot_id, **fields)
+        await self.session.refresh(eot)
+        event_bus.publish_detached(
+            EOT_DECIDED,
+            data={
+                "eot_id": str(eot.id),
+                "contract_id": str(eot.contract_id),
+                "eot_number": eot.eot_number,
+                "status": decision,
+                "days_claimed": int(eot.days_claimed or 0),
+                "days_granted": granted,
+                "revised_completion_date": eot.revised_completion_date,
+                "actor": actor_id,
+            },
+            source_module="contracts",
+        )
+        return eot
+
+    async def eot_summary(self, contract_id: uuid.UUID) -> dict[str, Any]:
+        """Aggregate EOT exposure for a contract (days claimed / granted, dates)."""
+        claims = await self.eot_repo.list_for_contract(contract_id)
+        granted_states = ("granted", "partially_granted")
+        total_claimed = sum(int(c.days_claimed or 0) for c in claims)
+        total_granted = sum(int(c.days_granted or 0) for c in claims if c.status in granted_states)
+        pending = [c for c in claims if c.status in ("draft", "submitted", "under_review")]
+        decided = [c for c in claims if c.status in _EOT_DECISION_STATUSES]
+        revised_dates = [c.revised_completion_date for c in claims if c.revised_completion_date]
+        return {
+            "contract_id": str(contract_id),
+            "claims_count": len(claims),
+            "pending_count": len(pending),
+            "decided_count": len(decided),
+            "total_days_claimed": total_claimed,
+            "total_days_granted": total_granted,
+            "latest_revised_completion_date": (max(revised_dates) if revised_dates else None),
+        }
+
+    # ── Documents register (CRUD) ────────────────────────────────────────
+
+    async def create_document(self, data: Any) -> ContractDocument:
+        await self.get_contract(data.contract_id)
+        obj = ContractDocument(**self._create_kwargs(data))
+        return await self.document_repo.create(obj)
+
+    async def update_document(self, document_id: uuid.UUID, data: Any) -> ContractDocument:
+        obj = await self.document_repo.get_by_id(document_id)
+        if obj is None:
+            raise HTTPException(status_code=404, detail="Contract document not found")
+        return await self._apply_update(self.document_repo, obj, data)
+
+    async def delete_document(self, document_id: uuid.UUID) -> None:
+        await self.document_repo.delete(document_id)
+
+    # ── Milestones (CRUD + schedule) ─────────────────────────────────────
+
+    async def create_milestone(self, data: Any) -> ContractMilestone:
+        await self.get_contract(data.contract_id)
+        obj = ContractMilestone(**self._create_kwargs(data))
+        return await self.milestone_repo.create(obj)
+
+    async def update_milestone(self, milestone_id: uuid.UUID, data: Any) -> ContractMilestone:
+        obj = await self.milestone_repo.get_by_id(milestone_id)
+        if obj is None:
+            raise HTTPException(status_code=404, detail="Contract milestone not found")
+        return await self._apply_update(self.milestone_repo, obj, data)
+
+    async def delete_milestone(self, milestone_id: uuid.UUID) -> None:
+        await self.milestone_repo.delete(milestone_id)
+
+    async def milestone_schedule(self, contract_id: uuid.UUID) -> dict[str, Any]:
+        """Resolve each milestone's value and the total scheduled milestone value."""
+        contract = await self.get_contract(contract_id)
+        milestones = await self.milestone_repo.list_for_contract(contract_id)
+        contract_value = Decimal(str(contract.total_value or 0))
+        items: list[dict[str, Any]] = []
+        total_value = DEC_ZERO
+        for m in milestones:
+            value = compute_milestone_value(m.value, m.percent_of_contract, contract_value)
+            total_value += value
+            items.append(
+                {
+                    "id": str(m.id),
+                    "code": m.code,
+                    "name": m.name,
+                    "planned_date": m.planned_date,
+                    "trigger": m.trigger,
+                    "status": m.status,
+                    "value": str(value),
+                }
+            )
+        return {
+            "contract_id": str(contract_id),
+            "currency": contract.currency,
+            "count": len(items),
+            "scheduled_value": str(total_value),
+            "milestones": items,
+        }
+
+    # ── Completeness validation (contracts rule set) ─────────────────────
+
+    async def validate_contract_completeness(self, contract_id: uuid.UUID) -> dict[str, Any]:
+        """Run the ``contracts`` rule set against a contract and return the report.
+
+        Assembles the dict context the contracts validation rules consume
+        (contract header + parties + securities + EOT claims) and runs the
+        shared validation engine. Returns the report summary plus the grouped
+        error / warning lists, mirroring the compliance-gate preview shape.
+        """
+        from app.modules.contracts.validators import CONTRACTS_RULE_SET  # noqa: PLC0415
+
+        contract = await self.get_contract(contract_id)
+        parties = await self.party_repo.list_for_contract(contract_id)
+        securities = await self.security_repo.list_for_contract(contract_id)
+        eot_claims = await self.eot_repo.list_for_contract(contract_id)
+        context = {
+            "contract": {
+                "id": str(contract.id),
+                "status": contract.status,
+                "contract_type": contract.contract_type,
+                "terms": contract.terms or {},
+            },
+            "parties": [{"party_role": p.party_role, "party_type": p.party_type} for p in parties],
+            "securities": [{"security_type": s.security_type, "status": s.status} for s in securities],
+            "eot_claims": [
+                {
+                    "id": str(e.id),
+                    "eot_number": e.eot_number,
+                    "days_claimed": e.days_claimed,
+                    "days_granted": e.days_granted,
+                    "status": e.status,
+                }
+                for e in eot_claims
+            ],
+        }
+        report = await validation_engine.validate(
+            data=context,
+            rule_sets=[CONTRACTS_RULE_SET],
+            target_type="contract",
+            target_id=str(contract.id),
+            project_id=str(contract.project_id),
+        )
+
+        def _serialise(r: Any) -> dict[str, Any]:
+            return {
+                "rule_id": r.rule_id,
+                "rule_name": r.rule_name,
+                "severity": r.severity.value,
+                "passed": r.passed,
+                "message": r.message,
+                "element_ref": r.element_ref,
+                "suggestion": r.suggestion,
+            }
+
+        return {
+            "contract_id": str(contract.id),
+            "status": report.status.value,
+            "score": report.score,
+            "summary": report.summary(),
+            "errors": [_serialise(r) for r in report.errors],
+            "warnings": [_serialise(r) for r in report.warnings],
+        }
+
 
 __all__ = [
     "BOQ_POSITION_META_KEY",
@@ -2351,16 +2909,20 @@ __all__ = [
     "_REQUIRED_TERM_FIELDS",
     "allowed_claim_transitions",
     "allowed_contract_transitions",
+    "allowed_eot_transitions",
     "allowed_final_account_transitions",
     "apply_change_order_to_contract_pure",
     "assert_claim_transition",
     "assert_contract_transition",
+    "assert_eot_transition",
     "assert_final_account_transition",
     "boq_position_id_for_line",
+    "clamp_eot_days_granted",
     "compute_contract_total",
     "compute_gmp_gainshare",
     "compute_ld_amount",
     "compute_line_total",
+    "compute_milestone_value",
     "compute_progress_claim_line",
     "compute_progress_claim_total",
     "generate_cost_plus_claim",

@@ -80,6 +80,12 @@ _TYPE_CONFIG_CATALOG: list[dict[str, object]] = [
         "allowed_fields": ["component_breakdown"],
         "default_fee_structure": {},
     },
+    {
+        "contract_type": "remeasurement",
+        "display_name": "Remeasurement",
+        "allowed_fields": ["measurement_method", "qty_variance_threshold"],
+        "default_fee_structure": {},
+    },
 ]
 
 

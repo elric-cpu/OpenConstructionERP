@@ -40,7 +40,12 @@ from app.dependencies import (
 from app.modules.contracts.compliance_packs import list_rule_packs
 from app.modules.contracts.models import (
     Contract,
+    ContractDocument,
     ContractLine,
+    ContractMilestone,
+    ContractParty,
+    ContractSecurity,
+    EOTClaim,
     FeeStructure,
     FinalAccount,
     GainshareConfiguration,
@@ -50,7 +55,11 @@ from app.modules.contracts.models import (
     RetentionSchedule,
 )
 from app.modules.contracts.repository import (
+    ContractDocumentRepository,
+    ContractMilestoneRepository,
+    ContractSecurityRepository,
     ContractTypeConfigurationRepository,
+    EOTClaimRepository,
     FeeStructureRepository,
     FinalAccountRepository,
     GainshareConfigurationRepository,
@@ -64,13 +73,29 @@ from app.modules.contracts.schemas import (
     ContractCloneRequest,
     ContractCreate,
     ContractDashboardResponse,
+    ContractDocumentCreate,
+    ContractDocumentResponse,
+    ContractDocumentUpdate,
     ContractLineBulkCreate,
     ContractLineCreate,
     ContractLineResponse,
     ContractLineUpdate,
+    ContractMilestoneCreate,
+    ContractMilestoneResponse,
+    ContractMilestoneUpdate,
+    ContractPartyCreate,
+    ContractPartyResponse,
+    ContractPartyUpdate,
     ContractResponse,
+    ContractSecurityCreate,
+    ContractSecurityResponse,
+    ContractSecurityUpdate,
     ContractTypeConfigurationResponse,
     ContractUpdate,
+    EOTClaimCreate,
+    EOTClaimResponse,
+    EOTClaimUpdate,
+    EOTDecisionRequest,
     FeeStructureCreate,
     FeeStructureResponse,
     FeeStructureUpdate,
@@ -207,10 +232,17 @@ def _claim_to_response(item: ProgressClaim) -> ProgressClaimResponse:
         approved_at=item.approved_at,
         paid_at=item.paid_at,
         currency=item.currency,
+        milestone_id=item.milestone_id,
         metadata=getattr(item, "metadata_", {}) or {},
         created_at=item.created_at,
         updated_at=item.updated_at,
     )
+
+
+def _party_to_response(item: ContractParty, resolved_name: str | None) -> ContractPartyResponse:
+    resp = ContractPartyResponse.model_validate(item)
+    resp.resolved_name = resolved_name
+    return resp
 
 
 # ── Contracts ────────────────────────────────────────────────────────────
@@ -1563,3 +1595,596 @@ async def get_clause_template(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         ) from exc
+
+
+# ── Counterparty resolution ──────────────────────────────────────────────
+
+
+@router.get("/contracts/{contract_id}/counterparty")
+async def get_contract_counterparty(
+    contract_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.read")),
+) -> dict:
+    """Resolve the contract counterparty's live display name.
+
+    The legacy ``counterparty_id`` is a plain UUID that may point at a contact
+    or a subcontractor row; the service joins both directories and returns the
+    resolved name (or None for the caller to fall back on).
+    """
+    contract = await _verify_contract_access(session, contract_id, user_id)
+    service = ContractsService(session)
+    return await service.counterparty_overview(contract)
+
+
+# ── Parties (structured roles) ─────────────────────────────────────────────
+
+
+@router.get(
+    "/contracts/{contract_id}/parties",
+    response_model=list[ContractPartyResponse],
+)
+async def list_contract_parties(
+    contract_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.read")),
+) -> list[ContractPartyResponse]:
+    """List a contract's parties, each with its resolved live display name."""
+    await _verify_contract_access(session, contract_id, user_id)
+    service = ContractsService(session)
+    pairs = await service.list_parties_with_names(contract_id)
+    return [_party_to_response(p, name) for p, name in pairs]
+
+
+@router.post(
+    "/contracts/{contract_id}/parties",
+    response_model=ContractPartyResponse,
+    status_code=201,
+)
+async def create_contract_party(
+    contract_id: uuid.UUID,
+    data: ContractPartyCreate,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.create")),
+) -> ContractPartyResponse:
+    if data.contract_id != contract_id:
+        raise HTTPException(status_code=400, detail="contract_id mismatch between URL and body")
+    await _verify_contract_access(session, contract_id, user_id)
+    service = ContractsService(session)
+    party = await service.create_party(data)
+    return _party_to_response(party, await service.resolve_party_name(party))
+
+
+@router.get("/contracts/parties/{party_id}", response_model=ContractPartyResponse)
+async def get_contract_party(
+    party_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.read")),
+) -> ContractPartyResponse:
+    obj = await session.get(ContractParty, party_id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail="Contract party not found")
+    await _verify_contract_access(session, obj.contract_id, user_id)
+    service = ContractsService(session)
+    return _party_to_response(obj, await service.resolve_party_name(obj))
+
+
+@router.patch("/contracts/parties/{party_id}", response_model=ContractPartyResponse)
+async def update_contract_party(
+    party_id: uuid.UUID,
+    data: ContractPartyUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.update")),
+) -> ContractPartyResponse:
+    obj = await session.get(ContractParty, party_id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail="Contract party not found")
+    await _verify_contract_access(session, obj.contract_id, user_id)
+    service = ContractsService(session)
+    party = await service.update_party(party_id, data)
+    return _party_to_response(party, await service.resolve_party_name(party))
+
+
+@router.delete("/contracts/parties/{party_id}", status_code=204)
+async def delete_contract_party(
+    party_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.delete")),
+) -> None:
+    obj = await session.get(ContractParty, party_id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail="Contract party not found")
+    await _verify_contract_access(session, obj.contract_id, user_id)
+    service = ContractsService(session)
+    await service.delete_party(party_id)
+
+
+# ── Securities (bonds / guarantees / insurance) ────────────────────────────
+
+
+@router.get(
+    "/contracts/{contract_id}/securities",
+    response_model=list[ContractSecurityResponse],
+)
+async def list_contract_securities(
+    contract_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    status_filter: str | None = Query(default=None, alias="status"),
+    security_type: str | None = Query(default=None),
+    _perm: None = Depends(RequirePermission("contracts.read")),
+) -> list[ContractSecurityResponse]:
+    await _verify_contract_access(session, contract_id, user_id)
+    repo = ContractSecurityRepository(session)
+    items = await repo.list_for_contract(
+        contract_id,
+        status=status_filter,
+        security_type=security_type,
+    )
+    return [ContractSecurityResponse.model_validate(it) for it in items]
+
+
+@router.get("/contracts/{contract_id}/security-coverage")
+async def contract_security_coverage(
+    contract_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.read")),
+) -> dict:
+    """Summary of bonds / guarantees / insurance held against a contract."""
+    await _verify_contract_access(session, contract_id, user_id)
+    service = ContractsService(session)
+    return await service.security_coverage(contract_id)
+
+
+@router.post(
+    "/contracts/{contract_id}/securities",
+    response_model=ContractSecurityResponse,
+    status_code=201,
+)
+async def create_contract_security(
+    contract_id: uuid.UUID,
+    data: ContractSecurityCreate,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.create")),
+) -> ContractSecurityResponse:
+    if data.contract_id != contract_id:
+        raise HTTPException(status_code=400, detail="contract_id mismatch between URL and body")
+    await _verify_contract_access(session, contract_id, user_id)
+    service = ContractsService(session)
+    obj = await service.create_security(data)
+    return ContractSecurityResponse.model_validate(obj)
+
+
+@router.get("/contracts/securities/{security_id}", response_model=ContractSecurityResponse)
+async def get_contract_security(
+    security_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.read")),
+) -> ContractSecurityResponse:
+    obj = await session.get(ContractSecurity, security_id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail="Contract security not found")
+    await _verify_contract_access(session, obj.contract_id, user_id)
+    return ContractSecurityResponse.model_validate(obj)
+
+
+@router.patch("/contracts/securities/{security_id}", response_model=ContractSecurityResponse)
+async def update_contract_security(
+    security_id: uuid.UUID,
+    data: ContractSecurityUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.update")),
+) -> ContractSecurityResponse:
+    obj = await session.get(ContractSecurity, security_id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail="Contract security not found")
+    await _verify_contract_access(session, obj.contract_id, user_id)
+    service = ContractsService(session)
+    updated = await service.update_security(security_id, data)
+    return ContractSecurityResponse.model_validate(updated)
+
+
+@router.delete("/contracts/securities/{security_id}", status_code=204)
+async def delete_contract_security(
+    security_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.delete")),
+) -> None:
+    obj = await session.get(ContractSecurity, security_id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail="Contract security not found")
+    await _verify_contract_access(session, obj.contract_id, user_id)
+    service = ContractsService(session)
+    await service.delete_security(security_id)
+
+
+# ── Extension-of-time (EOT) claims ─────────────────────────────────────────
+
+
+@router.get(
+    "/contracts/{contract_id}/eot-claims",
+    response_model=list[EOTClaimResponse],
+)
+async def list_eot_claims(
+    contract_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    status_filter: str | None = Query(default=None, alias="status"),
+    _perm: None = Depends(RequirePermission("contracts.read")),
+) -> list[EOTClaimResponse]:
+    await _verify_contract_access(session, contract_id, user_id)
+    repo = EOTClaimRepository(session)
+    items = await repo.list_for_contract(contract_id, status=status_filter)
+    return [EOTClaimResponse.model_validate(it) for it in items]
+
+
+@router.get("/contracts/{contract_id}/eot-summary")
+async def contract_eot_summary(
+    contract_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.read")),
+) -> dict:
+    """Aggregate EOT exposure: days claimed / granted and latest revised date."""
+    await _verify_contract_access(session, contract_id, user_id)
+    service = ContractsService(session)
+    return await service.eot_summary(contract_id)
+
+
+@router.post(
+    "/contracts/{contract_id}/eot-claims",
+    response_model=EOTClaimResponse,
+    status_code=201,
+)
+async def create_eot_claim(
+    contract_id: uuid.UUID,
+    data: EOTClaimCreate,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.create")),
+) -> EOTClaimResponse:
+    if data.contract_id != contract_id:
+        raise HTTPException(status_code=400, detail="contract_id mismatch between URL and body")
+    await _verify_contract_access(session, contract_id, user_id)
+    service = ContractsService(session)
+    obj = await service.create_eot_claim(data)
+    return EOTClaimResponse.model_validate(obj)
+
+
+@router.get("/contracts/eot-claims/{eot_id}", response_model=EOTClaimResponse)
+async def get_eot_claim(
+    eot_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.read")),
+) -> EOTClaimResponse:
+    obj = await session.get(EOTClaim, eot_id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail="EOT claim not found")
+    await _verify_contract_access(session, obj.contract_id, user_id)
+    return EOTClaimResponse.model_validate(obj)
+
+
+@router.patch("/contracts/eot-claims/{eot_id}", response_model=EOTClaimResponse)
+async def update_eot_claim(
+    eot_id: uuid.UUID,
+    data: EOTClaimUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.update")),
+) -> EOTClaimResponse:
+    obj = await session.get(EOTClaim, eot_id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail="EOT claim not found")
+    await _verify_contract_access(session, obj.contract_id, user_id)
+    service = ContractsService(session)
+    updated = await service.update_eot_claim(eot_id, data)
+    return EOTClaimResponse.model_validate(updated)
+
+
+@router.delete("/contracts/eot-claims/{eot_id}", status_code=204)
+async def delete_eot_claim(
+    eot_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.delete")),
+) -> None:
+    obj = await session.get(EOTClaim, eot_id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail="EOT claim not found")
+    await _verify_contract_access(session, obj.contract_id, user_id)
+    service = ContractsService(session)
+    await service.delete_eot_claim(eot_id)
+
+
+@router.post("/contracts/eot-claims/{eot_id}/submit", response_model=EOTClaimResponse)
+async def submit_eot_claim(
+    eot_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.submit_eot")),
+) -> EOTClaimResponse:
+    obj = await session.get(EOTClaim, eot_id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail="EOT claim not found")
+    await _verify_contract_access(session, obj.contract_id, user_id)
+    service = ContractsService(session)
+    eot = await service.transition_eot_claim(eot_id, "submitted", user_id)
+    return EOTClaimResponse.model_validate(eot)
+
+
+@router.post("/contracts/eot-claims/{eot_id}/review", response_model=EOTClaimResponse)
+async def review_eot_claim(
+    eot_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.decide_eot")),
+) -> EOTClaimResponse:
+    """Move a submitted EOT claim into review."""
+    obj = await session.get(EOTClaim, eot_id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail="EOT claim not found")
+    await _verify_contract_access(session, obj.contract_id, user_id)
+    service = ContractsService(session)
+    eot = await service.transition_eot_claim(eot_id, "under_review", user_id)
+    return EOTClaimResponse.model_validate(eot)
+
+
+@router.post("/contracts/eot-claims/{eot_id}/withdraw", response_model=EOTClaimResponse)
+async def withdraw_eot_claim(
+    eot_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.submit_eot")),
+) -> EOTClaimResponse:
+    obj = await session.get(EOTClaim, eot_id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail="EOT claim not found")
+    await _verify_contract_access(session, obj.contract_id, user_id)
+    service = ContractsService(session)
+    eot = await service.transition_eot_claim(eot_id, "withdrawn", user_id)
+    return EOTClaimResponse.model_validate(eot)
+
+
+@router.post("/contracts/eot-claims/{eot_id}/decide", response_model=EOTClaimResponse)
+async def decide_eot_claim(
+    eot_id: uuid.UUID,
+    payload: EOTDecisionRequest,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.decide_eot")),
+) -> EOTClaimResponse:
+    """Record a final EOT decision (granted / partially_granted / rejected).
+
+    ``days_granted`` is clamped server-side to ``[0, days_claimed]`` so a
+    decision can never award more time than was claimed.
+    """
+    obj = await session.get(EOTClaim, eot_id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail="EOT claim not found")
+    await _verify_contract_access(session, obj.contract_id, user_id)
+    service = ContractsService(session)
+    eot = await service.decide_eot_claim(
+        eot_id,
+        payload.decision,
+        days_granted=payload.days_granted,
+        decision_date=payload.decision_date,
+        revised_completion_date=payload.revised_completion_date,
+        actor_id=user_id,
+    )
+    return EOTClaimResponse.model_validate(eot)
+
+
+# ── Documents register ─────────────────────────────────────────────────────
+
+
+@router.get(
+    "/contracts/{contract_id}/documents",
+    response_model=list[ContractDocumentResponse],
+)
+async def list_contract_documents(
+    contract_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    doc_role: str | None = Query(default=None),
+    _perm: None = Depends(RequirePermission("contracts.read")),
+) -> list[ContractDocumentResponse]:
+    await _verify_contract_access(session, contract_id, user_id)
+    repo = ContractDocumentRepository(session)
+    items = await repo.list_for_contract(contract_id, doc_role=doc_role)
+    return [ContractDocumentResponse.model_validate(it) for it in items]
+
+
+@router.post(
+    "/contracts/{contract_id}/documents",
+    response_model=ContractDocumentResponse,
+    status_code=201,
+)
+async def create_contract_document(
+    contract_id: uuid.UUID,
+    data: ContractDocumentCreate,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.create")),
+) -> ContractDocumentResponse:
+    if data.contract_id != contract_id:
+        raise HTTPException(status_code=400, detail="contract_id mismatch between URL and body")
+    await _verify_contract_access(session, contract_id, user_id)
+    service = ContractsService(session)
+    obj = await service.create_document(data)
+    return ContractDocumentResponse.model_validate(obj)
+
+
+@router.get("/contracts/documents/{document_id}", response_model=ContractDocumentResponse)
+async def get_contract_document(
+    document_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.read")),
+) -> ContractDocumentResponse:
+    obj = await session.get(ContractDocument, document_id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail="Contract document not found")
+    await _verify_contract_access(session, obj.contract_id, user_id)
+    return ContractDocumentResponse.model_validate(obj)
+
+
+@router.patch("/contracts/documents/{document_id}", response_model=ContractDocumentResponse)
+async def update_contract_document(
+    document_id: uuid.UUID,
+    data: ContractDocumentUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.update")),
+) -> ContractDocumentResponse:
+    obj = await session.get(ContractDocument, document_id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail="Contract document not found")
+    await _verify_contract_access(session, obj.contract_id, user_id)
+    service = ContractsService(session)
+    updated = await service.update_document(document_id, data)
+    return ContractDocumentResponse.model_validate(updated)
+
+
+@router.delete("/contracts/documents/{document_id}", status_code=204)
+async def delete_contract_document(
+    document_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.delete")),
+) -> None:
+    obj = await session.get(ContractDocument, document_id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail="Contract document not found")
+    await _verify_contract_access(session, obj.contract_id, user_id)
+    service = ContractsService(session)
+    await service.delete_document(document_id)
+
+
+# ── Milestones / payment schedule ──────────────────────────────────────────
+
+
+@router.get(
+    "/contracts/{contract_id}/milestones",
+    response_model=list[ContractMilestoneResponse],
+)
+async def list_contract_milestones(
+    contract_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.read")),
+) -> list[ContractMilestoneResponse]:
+    await _verify_contract_access(session, contract_id, user_id)
+    repo = ContractMilestoneRepository(session)
+    items = await repo.list_for_contract(contract_id)
+    return [ContractMilestoneResponse.model_validate(it) for it in items]
+
+
+@router.get("/contracts/{contract_id}/milestone-schedule")
+async def contract_milestone_schedule(
+    contract_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.read")),
+) -> dict:
+    """Resolve each milestone's value and the total scheduled milestone value."""
+    await _verify_contract_access(session, contract_id, user_id)
+    service = ContractsService(session)
+    return await service.milestone_schedule(contract_id)
+
+
+@router.post(
+    "/contracts/{contract_id}/milestones",
+    response_model=ContractMilestoneResponse,
+    status_code=201,
+)
+async def create_contract_milestone(
+    contract_id: uuid.UUID,
+    data: ContractMilestoneCreate,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.create")),
+) -> ContractMilestoneResponse:
+    if data.contract_id != contract_id:
+        raise HTTPException(status_code=400, detail="contract_id mismatch between URL and body")
+    await _verify_contract_access(session, contract_id, user_id)
+    service = ContractsService(session)
+    obj = await service.create_milestone(data)
+    return ContractMilestoneResponse.model_validate(obj)
+
+
+@router.get("/contracts/milestones/{milestone_id}", response_model=ContractMilestoneResponse)
+async def get_contract_milestone(
+    milestone_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.read")),
+) -> ContractMilestoneResponse:
+    obj = await session.get(ContractMilestone, milestone_id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail="Contract milestone not found")
+    await _verify_contract_access(session, obj.contract_id, user_id)
+    return ContractMilestoneResponse.model_validate(obj)
+
+
+@router.patch("/contracts/milestones/{milestone_id}", response_model=ContractMilestoneResponse)
+async def update_contract_milestone(
+    milestone_id: uuid.UUID,
+    data: ContractMilestoneUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.update")),
+) -> ContractMilestoneResponse:
+    obj = await session.get(ContractMilestone, milestone_id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail="Contract milestone not found")
+    await _verify_contract_access(session, obj.contract_id, user_id)
+    service = ContractsService(session)
+    updated = await service.update_milestone(milestone_id, data)
+    return ContractMilestoneResponse.model_validate(updated)
+
+
+@router.delete("/contracts/milestones/{milestone_id}", status_code=204)
+async def delete_contract_milestone(
+    milestone_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.delete")),
+) -> None:
+    obj = await session.get(ContractMilestone, milestone_id)
+    if obj is None:
+        raise HTTPException(status_code=404, detail="Contract milestone not found")
+    await _verify_contract_access(session, obj.contract_id, user_id)
+    service = ContractsService(session)
+    await service.delete_milestone(milestone_id)
+
+
+# ── Completeness validation ────────────────────────────────────────────────
+
+
+@router.get("/contracts/{contract_id}/completeness")
+async def contract_completeness(
+    contract_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.read")),
+) -> dict:
+    """Run the contracts rule set (parties / security / EOT) over a contract.
+
+    Returns the report status, score and the grouped error / warning lists so
+    the UI can show a traffic-light completeness panel for the contract.
+    """
+    await _verify_contract_access(session, contract_id, user_id)
+    service = ContractsService(session)
+    return await service.validate_contract_completeness(contract_id)

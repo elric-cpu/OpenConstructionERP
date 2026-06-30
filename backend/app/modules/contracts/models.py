@@ -11,20 +11,31 @@ Tables:
     oe_contracts_progress_claim            - periodic payment / progress claims
     oe_contracts_progress_claim_line       - line-level claim breakdown
     oe_contracts_final_account             - final account / close-out summary
+    oe_contracts_party                     - structured parties / roles
+    oe_contracts_security                  - bonds / guarantees / insurance
+    oe_contracts_eot_claim                 - extension-of-time claims
+    oe_contracts_document                  - contract documents register
+    oe_contracts_milestone                 - milestones / payment schedule
 
 Notes:
     * counterparty_id is a plain UUID column (no SQLAlchemy ForeignKey) since
       a counterparty may live in oe_contacts_contact OR in a subcontractor table
       and the resolution is done at the service layer.
-    * milestone_id on LDClause is also a plain UUID - milestones may live in
-      planning/tasks/schedule modules and are resolved at runtime.
+    * party_id (Party), document_id (Security / Document) and milestone_id
+      (LDClause / ProgressClaim / Milestone) follow the same convention: plain
+      UUID columns with no ORM ForeignKey, resolved at the service layer, since
+      they may reference rows owned by other modules (contacts, subcontractors,
+      users, documents, planning / schedule).
+    * milestone_id on LDClause / ProgressClaim is a plain UUID - it may point at
+      an oe_contracts_milestone row OR a milestone owned by planning / tasks /
+      schedule, and is resolved at runtime.
     * All monetary values use Numeric(18, 4) for accountancy precision.
 """
 
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import JSON, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import GUID, Base
@@ -320,7 +331,8 @@ class LDClause(Base):
         Numeric(18, 4),
         nullable=True,
     )
-    # Plain UUID - milestone may live in planning/tasks/schedule modules.
+    # Plain UUID - milestone may be an oe_contracts_milestone row OR live in
+    # planning/tasks/schedule modules, resolved at the service layer.
     milestone_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
     enforcement_status: Mapped[str] = mapped_column(
         String(40),
@@ -374,6 +386,10 @@ class ProgressClaim(Base):
     approved_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     paid_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="")
+    # Optional link to the payment milestone this claim bills against. Plain
+    # UUID - may point at an oe_contracts_milestone row OR a milestone owned by
+    # the planning / schedule modules, so it is resolved at the service layer.
+    milestone_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata",
         JSON,
@@ -474,3 +490,311 @@ class FinalAccount(Base):
         index=True,
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class ContractParty(Base):
+    """A party to a contract with a structured role.
+
+    Complements the legacy single ``counterparty_*`` columns on Contract with a
+    full party register (employer, contractor, consultants, guarantor, etc.).
+    ``party_id`` is a plain UUID (no ORM ForeignKey) that may reference a
+    contact, a subcontractor, a platform user or nothing (external party); the
+    service layer resolves the live display name and falls back to
+    ``display_name`` when no row is found.
+    """
+
+    __tablename__ = "oe_contracts_party"
+
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_contracts_contract.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    party_role: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        default="other",
+        server_default="other",
+        index=True,
+    )
+    party_type: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        default="external",
+        server_default="external",
+    )
+    # Plain UUID - may reference oe_contacts_contact / a subcontractor row /
+    # oe_users_user, resolved at the service layer (no ORM ForeignKey).
+    party_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
+    display_name: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+        default="",
+        server_default="",
+    )
+    is_primary: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0",
+    )
+    contact_details: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata",
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+
+    def __repr__(self) -> str:
+        return f"<ContractParty {self.party_role} {self.display_name!r}>"
+
+
+class ContractSecurity(Base):
+    """Financial security held against a contract.
+
+    Covers performance / payment / advance-payment / retention bonds, parent
+    company and bank guarantees, and the standard insurance lines. The optional
+    ``document_id`` is a plain UUID to the documents module (resolved at the
+    service layer, no ORM ForeignKey).
+    """
+
+    __tablename__ = "oe_contracts_security"
+
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_contracts_contract.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    security_type: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        default="other",
+        server_default="other",
+        index=True,
+    )
+    reference: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    provider_name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        default="",
+        server_default="",
+    )
+    amount: Mapped[Decimal] = mapped_column(
+        Numeric(18, 4),
+        nullable=False,
+        default=Decimal("0"),
+        server_default="0",
+    )
+    currency: Mapped[str] = mapped_column(
+        String(3),
+        nullable=False,
+        default="",
+        server_default="",
+    )
+    percent_of_contract: Mapped[Decimal | None] = mapped_column(Numeric(7, 4), nullable=True)
+    valid_from: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    valid_to: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        default="required",
+        server_default="required",
+        index=True,
+    )
+    # Plain UUID to oe_documents_document (no ORM ForeignKey, resolved at runtime).
+    document_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata",
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+
+    def __repr__(self) -> str:
+        return f"<ContractSecurity {self.security_type} {self.status}>"
+
+
+class EOTClaim(Base):
+    """Extension-of-time (EOT) claim against a contract.
+
+    Mirrors the ProgressClaim lifecycle style: a status FSM tracks the claim
+    from draft through a decision, and ``days_granted`` is constrained by the
+    service so it can never exceed ``days_claimed``. ``linked_delay_event_id``
+    is a plain UUID to a delay / disruption event owned elsewhere.
+    """
+
+    __tablename__ = "oe_contracts_eot_claim"
+
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_contracts_contract.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    eot_number: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        default="",
+        server_default="",
+    )
+    cause_category: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+        default="other",
+        server_default="other",
+    )
+    description: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="",
+        server_default="",
+    )
+    days_claimed: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    days_granted: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    claim_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    decision_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        default="draft",
+        server_default="draft",
+        index=True,
+    )
+    revised_completion_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Plain UUID to a delay / disruption event (no ORM ForeignKey).
+    linked_delay_event_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata",
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+
+    def __repr__(self) -> str:
+        return f"<EOTClaim {self.eot_number} {self.status}>"
+
+
+class ContractDocument(Base):
+    """A document attached to a contract (executed agreement, bond, drawing...).
+
+    ``document_id`` is a plain UUID to the documents module (no ORM ForeignKey),
+    resolved at the service layer.
+    """
+
+    __tablename__ = "oe_contracts_document"
+
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_contracts_contract.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Plain UUID to oe_documents_document (no ORM ForeignKey, resolved at runtime).
+    document_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
+    doc_role: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        default="other",
+        server_default="other",
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+        default="",
+        server_default="",
+    )
+    version: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        default="",
+        server_default="",
+    )
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata",
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+
+    def __repr__(self) -> str:
+        return f"<ContractDocument {self.doc_role} {self.title!r}>"
+
+
+class ContractMilestone(Base):
+    """A contract milestone / payment-schedule entry.
+
+    A milestone may carry a fixed value or a percent of the contract, and is
+    triggered by a date, completion, or approval. ProgressClaim / LDClause can
+    optionally reference a milestone via their (plain UUID) ``milestone_id``.
+    """
+
+    __tablename__ = "oe_contracts_milestone"
+
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_contracts_contract.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    code: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+        default="",
+        server_default="",
+    )
+    name: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+        default="",
+        server_default="",
+    )
+    planned_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    value: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    percent_of_contract: Mapped[Decimal | None] = mapped_column(Numeric(7, 4), nullable=True)
+    trigger: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        default="date",
+        server_default="date",
+    )
+    status: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        default="pending",
+        server_default="pending",
+        index=True,
+    )
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata",
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+
+    def __repr__(self) -> str:
+        return f"<ContractMilestone {self.code} {self.status}>"
