@@ -215,26 +215,30 @@ class DriverAnalytics:
 def _pareto(buckets: dict[str, tuple[int, Decimal]]) -> list[ParetoRow]:
     """Rank *buckets* (key -> (count, cost)) into a Pareto with cumulative %.
 
-    Rows sort by cost descending, then count descending, then key ascending.
-    Percentages are taken over the summed cost when any cost exists, otherwise
-    over the summed count, so the cumulative always climbs to 100 for the
-    metric that actually ranks the rows.
+    Rows sort by absolute cost descending, then count descending, then key
+    ascending. Percentages are taken over the summed absolute cost when any
+    cost exists, otherwise over the summed count. Normalising on absolute cost
+    keeps the cumulative monotonic and within 0..100 even when the change set
+    mixes additions with credits (a value-engineering saving is a negative
+    cost): a credit's magnitude still drives its rank and share, while its
+    signed value is reported verbatim in ``cost``. The headline
+    ``DriverAnalytics.total_cost`` stays the net signed sum.
     """
-    total_cost = sum((cost for _c, cost in buckets.values()), Decimal("0"))
+    total_abs_cost = sum((abs(cost) for _c, cost in buckets.values()), Decimal("0"))
     total_count = sum(count for count, _cost in buckets.values())
-    use_cost = total_cost != 0
+    use_cost = total_abs_cost != 0
 
-    ordered = sorted(buckets.items(), key=lambda kv: (-kv[1][1], -kv[1][0], kv[0]))
+    ordered = sorted(buckets.items(), key=lambda kv: (-abs(kv[1][1]), -kv[1][0], kv[0]))
 
     rows: list[ParetoRow] = []
-    running_cost = Decimal("0")
+    running_abs_cost = Decimal("0")
     running_count = 0
     for key, (count, cost) in ordered:
-        running_cost += cost
+        running_abs_cost += abs(cost)
         running_count += count
         if use_cost:
-            cost_pct = float(cost / total_cost * 100)
-            cumulative_pct = float(running_cost / total_cost * 100)
+            cost_pct = float(abs(cost) / total_abs_cost * 100)
+            cumulative_pct = float(running_abs_cost / total_abs_cost * 100)
         else:
             cost_pct = float(count / total_count * 100) if total_count else 0.0
             cumulative_pct = float(running_count / total_count * 100) if total_count else 0.0

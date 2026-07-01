@@ -205,6 +205,32 @@ def test_credit_reduces_cause_total() -> None:
     assert analytics.total_cost == Decimal("2500")
 
 
+def test_pareto_cross_bucket_credit_keeps_cumulative_monotonic() -> None:
+    # A scope addition in one cause and a value-engineering credit in another
+    # must not break the Pareto: normalising on absolute cost keeps the
+    # cumulative climbing monotonically to 100 with every share inside 0..100,
+    # while each bucket still reports its signed net cost verbatim and the
+    # headline total stays the net signed sum.
+    analytics = build_driver_analytics(
+        [
+            _rec("design_error", "3000"),
+            _rec("client_request", "-500"),
+        ]
+    )
+    causes = analytics.by_cause
+    assert [r.key for r in causes] == ["design_error", "client_request"]
+    assert causes[0].cost == Decimal("3000")
+    assert causes[1].cost == Decimal("-500")
+    assert causes[0].cost_pct == pytest.approx(85.71, abs=0.01)
+    assert causes[1].cost_pct == pytest.approx(14.29, abs=0.01)
+    assert causes[0].cumulative_pct == pytest.approx(85.71, abs=0.01)
+    assert causes[1].cumulative_pct == 100.0
+    cumulatives = [r.cumulative_pct for r in causes]
+    assert cumulatives == sorted(cumulatives)
+    assert all(0.0 <= r.cost_pct <= 100.0 for r in causes)
+    assert analytics.total_cost == Decimal("2500")
+
+
 # --------------------------------------------------------------------------
 # Trend
 # --------------------------------------------------------------------------
