@@ -581,6 +581,15 @@ def cmd_serve(args: argparse.Namespace) -> None:
         os.environ["SEED_DEMO"] = "false"
         write_demo_seed_choice(False, data_dir)
 
+    # ``serve --demo``: the mirror of ``--no-demo``. Force demo seeding on and
+    # clear any persisted opt-out so the demo sign-in block returns on the next
+    # start. Explicit and idempotent, so it is safe to pass on every start.
+    if getattr(args, "demo", False):
+        from app.core.demo_seed import write_demo_seed_choice
+
+        os.environ["SEED_DEMO"] = "true"
+        write_demo_seed_choice(True, data_dir)
+
     _setup_env(data_dir, args.host, args.port)
 
     # Run only the fatal preflight checks before attempting to start.
@@ -1625,13 +1634,24 @@ def main() -> None:
     _add_common_server_args(serve_p)
     serve_p.add_argument("--open", action="store_true", help="Open browser after startup")
     serve_p.add_argument("--quiet", action="store_true", help="Suppress banner and info logs")
-    serve_p.add_argument(
+    demo_group = serve_p.add_mutually_exclusive_group()
+    demo_group.add_argument(
         "--no-demo",
         action="store_true",
         help=(
             "Start without demo accounts and showcase projects (sets SEED_DEMO=false "
             "and persists the choice to <data-dir>/demo_seed_choice.json so later "
             "starts stay clean too)"
+        ),
+    )
+    demo_group.add_argument(
+        "--demo",
+        action="store_true",
+        help=(
+            "Force demo accounts and showcase projects on and clear any earlier "
+            "opt-out saved in <data-dir>/demo_seed_choice.json (from --no-demo, a "
+            "'no' answer on first run, or removing demo data in the app), so the "
+            "demo sign-in comes back"
         ),
     )
 
