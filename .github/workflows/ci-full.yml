@@ -64,3 +64,47 @@ jobs:
         # six hours of Postgres logs. 900s is generous: no real unit or
         # integration test should approach 15 minutes.
         run: pytest -q -ra --durations=50 --timeout=900 --timeout-method=thread
+
+  backend-full-cross-os:
+    name: Backend Full Suite (${{ matrix.os }}, embedded PG)
+    # Nightly cross-OS deep run: the full backend suite on the embedded
+    # PostgreSQL the desktop and self-hosted builds ship (pixeltable-pgserver,
+    # no Docker), on the two OSes the Linux service-container job above cannot
+    # cover. Nightly, so the heavier embedded-PG path has room and a red run is a
+    # signal to fix rather than a merge blocker. This is where OS-specific
+    # integration gaps (path handling, file locking, case sensitivity) surface.
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Create empty frontend dist (hatchling force-include)
+        shell: bash
+        run: |
+          mkdir -p ../frontend/dist
+          touch ../frontend/dist/.gitkeep
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run full test suite (embedded PostgreSQL)
+        # No DATABASE_URL -> conftest boots the embedded pixeltable-pgserver
+        # cluster. thread timeout method because signal/SIGALRM is Unix-only and
+        # would break the Windows runner.
+        run: pytest -q -ra --durations=50 --timeout=900 --timeout-method=thread
