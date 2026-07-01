@@ -49,6 +49,7 @@ import {
   WideModal,
   WideModalSection,
   WideModalField,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { MoneyDisplay } from '@/shared/ui/MoneyDisplay';
 import { apiGet, getErrorMessage } from '@/shared/lib/api';
@@ -91,6 +92,7 @@ import {
   type ScopeBand,
   type IntakePreview,
 } from './api';
+import { changeIntelligenceGuide } from './change_intelligenceGuide';
 
 type BadgeVariant = 'neutral' | 'blue' | 'success' | 'warning' | 'error';
 
@@ -2537,6 +2539,7 @@ export function ChangeIntelligencePage() {
             })}
           </p>
         </div>
+        <ModuleGuideButton content={changeIntelligenceGuide} className="ml-auto" />
       </header>
 
       <DismissibleInfo

@@ -215,3 +215,6 @@ export { OfflineBanner } from './OfflineBanner';
 export { PWAInstallPrompt } from './PWAInstallPrompt';
 
 export { OfflineFallback, markLastSync } from './OfflineFallback';
+
+export { Markdown, renderDocMarkdown } from './Markdown';
+export type { MarkdownProps } from './Markdown';

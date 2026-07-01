@@ -503,6 +503,11 @@ const AboutPage = lazy(() =>
   import('@/features/about/AboutPage').then((m) => ({ default: m.AboutPage }))
 );
 const HowItWorksPage = lazy(() => import('@/features/help/HowItWorksPage'));
+// Cases (playbooks) - cross-module, end-to-end guided scenarios. Lazy so the
+// playbook data + runner stay out of the boot bundle.
+const CasesPage = lazy(() =>
+  import('@/features/cases').then((m) => ({ default: m.CasesPage }))
+);
 
 // CPMView is keyed by the schedule it analyses, so the route reads :id and
 // forwards it through. Kept as a tiny inline component to avoid bloating
@@ -1058,6 +1063,10 @@ export default function App() {
         <Route path="/integrations" element={<P title="Integrations"><IntegrationsPage /></P>} />
         <Route path="/about" element={<P title="About"><AboutPage /></P>} />
         <Route path="/how-it-works" element={<P title="How it works"><HowItWorksPage /></P>} />
+        {/* Cases (playbooks) - list at /cases, the stepper at /cases/:playbookId
+            (one component serves both so it stays a single lazy chunk). */}
+        <Route path="/cases" element={<P title="Cases"><CasesPage /></P>} />
+        <Route path="/cases/:playbookId" element={<P title="Cases"><CasesPage /></P>} />
         <Route path="/project-intelligence" element={<P title="Project Intelligence"><ProjectIntelligencePage /></P>} />
         {/* Architecture Map — internal tool, admin-only. Surfaces module
             dependency graph + DDC integrity audit; not for day-to-day use. */}

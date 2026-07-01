@@ -34,7 +34,16 @@ import {
   MapPin,
   SlidersHorizontal,
 } from 'lucide-react';
-import { Card, Badge, EmptyState, SkeletonTable, DismissibleInfo, TabBar, tabIds } from '@/shared/ui';
+import {
+  Card,
+  Badge,
+  EmptyState,
+  SkeletonTable,
+  DismissibleInfo,
+  TabBar,
+  tabIds,
+  ModuleGuideButton,
+} from '@/shared/ui';
 import { MoneyDisplay } from '@/shared/ui/MoneyDisplay';
 import { apiGet, getErrorMessage } from '@/shared/lib/api';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
@@ -48,6 +57,7 @@ import {
   recordValueReport,
 } from './api';
 import { TimeFactorsEditor } from './TimeFactorsEditor';
+import { valueGuide } from './valueGuide';
 import type { Confidence, ValueSummary } from './types';
 
 type BadgeVariant = 'neutral' | 'blue' | 'success' | 'warning' | 'error';
@@ -675,6 +685,7 @@ export function ValueDashboardPage() {
             })}
           </p>
         </div>
+        <ModuleGuideButton content={valueGuide} className="print:hidden" />
         {isAdmin ? (
           <button
             type="button"

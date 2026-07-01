@@ -43,6 +43,7 @@ import {
   HardHat,
   Users,
   HelpCircle,
+  GraduationCap,
   AlertOctagon,
   FileCheck,
   Mail,
@@ -213,6 +214,9 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.dashboard', to: '/', icon: LayoutDashboard },
       { labelKey: 'projects.title', to: '/projects', icon: FolderOpen, tourId: 'projects' },
       { labelKey: 'nav.project_files', to: '/files', icon: HardDrive },
+      // Cases (playbooks) - guided, cross-module worked examples. Sits in
+      // Overview so the "learn by example" entry is discoverable from the top.
+      { labelKey: 'nav.cases', to: '/cases', icon: GraduationCap },
     ],
   },
   // ── 2. TAKEOFF ─────────────────────────────────────────────────────

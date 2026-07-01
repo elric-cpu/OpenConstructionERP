@@ -22,6 +22,27 @@ import { communicationDocumentsModules } from './catalog/communication-documents
 import { realestateFinanceControlsModules } from './catalog/realestate-finance-controls';
 import { automationIntegrationsAdminModules } from './catalog/automation-integrations-admin';
 
+// Per-module gap-fill cards, one file each under ./catalog/modules/*. Listed
+// explicitly rather than via import.meta.glob so the Node-side i18n extract
+// tooling (which bundles this file with esbuild) can read them; esbuild does
+// not implement Vite's import.meta.glob. To add a card: drop its file here,
+// then add one import below and one spread in MODULE_EXPLANATIONS. The
+// `category` field on each entry (not the file) decides its on-page section.
+import { bcfModules } from './catalog/modules/bcf';
+import { changeIntelligenceModules } from './catalog/modules/change_intelligence';
+import { claimsEvidenceModules } from './catalog/modules/claims_evidence';
+import { complianceModules } from './catalog/modules/compliance';
+import { constructionControlModules } from './catalog/modules/construction_control';
+import { costRecoveryModules } from './catalog/modules/cost_recovery';
+import { enterpriseWorkflowsModules } from './catalog/modules/enterprise_workflows';
+import { fullEvmModules } from './catalog/modules/full_evm';
+import { scheduleProgressModules } from './catalog/modules/progress';
+import { savedViewsModules } from './catalog/modules/saved_views';
+import { searchModules } from './catalog/modules/search';
+import { smartViewsModules } from './catalog/modules/smart_views';
+import { teamsModules } from './catalog/modules/teams';
+import { valueModules } from './catalog/modules/value';
+
 export const MODULE_EXPLANATIONS: ModuleExplanation[] = [
   ...overviewEstimatingModules,
   ...takeoffRealityModules,
@@ -33,6 +54,20 @@ export const MODULE_EXPLANATIONS: ModuleExplanation[] = [
   ...communicationDocumentsModules,
   ...realestateFinanceControlsModules,
   ...automationIntegrationsAdminModules,
+  ...bcfModules,
+  ...changeIntelligenceModules,
+  ...claimsEvidenceModules,
+  ...complianceModules,
+  ...constructionControlModules,
+  ...costRecoveryModules,
+  ...enterpriseWorkflowsModules,
+  ...fullEvmModules,
+  ...scheduleProgressModules,
+  ...savedViewsModules,
+  ...searchModules,
+  ...smartViewsModules,
+  ...teamsModules,
+  ...valueModules,
 ];
 
 export { HOW_IT_WORKS_CATEGORIES };

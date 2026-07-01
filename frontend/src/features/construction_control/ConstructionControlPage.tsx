@@ -20,10 +20,11 @@ import {
   ShieldAlert,
   PackageCheck,
 } from 'lucide-react';
-import { TabBar, tabIds, type TabBarTab } from '@/shared/ui';
+import { TabBar, tabIds, ModuleGuideButton, type TabBarTab } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
+import { constructionControlGuide } from './construction_controlGuide';
 import { AcceptanceInspectionsSection } from './sections/AcceptanceInspectionsSection';
 import { MaterialsLabsSection } from './sections/MaterialsLabsSection';
 import { AsBuiltSection } from './sections/AsBuiltSection';
@@ -75,6 +76,7 @@ export function ConstructionControlPage() {
           defaultValue:
             'Quality assurance and control: acceptance criteria, inspections, material passports, as-built records, hold points and the acceptance handover package.',
         })}
+        actions={<ModuleGuideButton content={constructionControlGuide} />}
       />
 
       <RequiresProject

@@ -22,7 +22,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Sparkles, Save, Wand2, AlertTriangle } from 'lucide-react';
-import { Button, Card, Badge, DismissibleInfo, IntroRichText } from '@/shared/ui';
+import { Button, Card, Badge, DismissibleInfo, IntroRichText, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { copyToClipboard } from '@/shared/lib/browser';
 import { useToastStore } from '@/stores/useToastStore';
@@ -34,6 +34,7 @@ import {
 } from './api';
 import { DslPreview } from './DslPreview';
 import { NlPatternHints } from './NlPatternHints';
+import { complianceGuide } from './complianceGuide';
 
 type SupportedLang = 'en' | 'de' | 'ru';
 
@@ -174,6 +175,7 @@ export function NlRuleBuilderPanel() {
           defaultValue:
             'Describe your rule in plain English, German, or Russian and the builder generates valid DSL.',
         })}
+        actions={<ModuleGuideButton content={complianceGuide} />}
       />
 
       <DismissibleInfo

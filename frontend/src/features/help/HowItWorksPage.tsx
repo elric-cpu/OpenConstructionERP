@@ -351,7 +351,7 @@ export function HowItWorksPage() {
           titleDefault: 'Where to find it',
           bodyKey: locate.summaryKey,
           bodyDefault: locate.summaryDefault,
-          spotlightSelector: `[data-testid="app-sidebar"] a[href="${locate.route}"]`,
+          spotlightSelector: `[data-testid="app-sidebar"] a[href="${locate.spotlightRoute ?? locate.route}"]`,
         },
       ],
       ctaKey: 'howto.locate.open',

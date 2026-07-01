@@ -38,6 +38,7 @@ import {
   CircleDashed,
   Activity,
   LayoutGrid,
+  GraduationCap,
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
@@ -2479,6 +2480,41 @@ function DashboardPageInner() {
         {/* System status pills */}
         <SystemStatusSummary projects={projects} boqs={allBoqs} boqsLoading={rollup.isLoading} />
       </div>
+
+      {/* ─── Start here: Cases (learn by example) ─────────────────────────
+          A discoverable entry into the guided, cross-module playbooks at
+          /cases. Slim, always visible, not part of the customizable widget
+          grid so it never gets hidden. */}
+      <button
+        type="button"
+        onClick={() => navigate('/cases')}
+        data-testid="dashboard-cases-card"
+        className="group flex w-full items-center gap-4 rounded-xl border border-oe-blue/30 bg-gradient-to-r from-oe-blue/[0.06] to-transparent px-4 py-3 text-left shadow-xs transition-all hover:border-oe-blue/50 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40 animate-card-in"
+        style={{ animationDelay: '120ms' }}
+      >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-oe-blue/10 text-oe-blue ring-1 ring-inset ring-oe-blue/20">
+          <GraduationCap size={20} strokeWidth={1.9} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-content-primary">
+            {t('cases.dashboard_card.title', { defaultValue: 'Start here - learn by example' })}
+          </p>
+          <p className="mt-0.5 text-xs leading-relaxed text-content-secondary">
+            {t('cases.dashboard_card.body', {
+              defaultValue:
+                'Follow a guided playbook from a PDF to a priced, validated estimate, step by step across the modules.',
+            })}
+          </p>
+        </div>
+        <span className="hidden shrink-0 items-center gap-1 text-xs font-semibold text-oe-blue sm:inline-flex">
+          {t('cases.dashboard_card.cta', { defaultValue: 'Browse cases' })}
+          <ArrowRight
+            size={14}
+            className="transition-transform group-hover:translate-x-0.5"
+            aria-hidden="true"
+          />
+        </span>
+      </button>
 
       {/* ─── Customize panel (collapsible) — same manager as Settings ─── */}
       {customizing && (

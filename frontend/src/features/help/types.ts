@@ -74,9 +74,15 @@ export type CategoryId =
 export interface ModuleExplanation {
   /** Stable slug, e.g. `boq`. Used for i18n key prefixes + React keys. */
   id: string;
-  /** Sidebar route this module lives at, e.g. `/boq`. Drives both the
-   *  "Open module" action and the sidebar spotlight target. */
+  /** Sidebar route this module lives at, e.g. `/boq`. Drives the "Open module"
+   *  action, and the sidebar spotlight target unless `spotlightRoute` overrides
+   *  it. */
   route: string;
+  /** Optional spotlight target for modules that open at a sub-route with no
+   *  sidebar link of its own (e.g. `/files/search`). "Show me where" highlights
+   *  this parent entry (e.g. `/files`) instead, while "Open module" still uses
+   *  `route`. Defaults to `route`. */
+  spotlightRoute?: string;
   /** Lucide icon name (see ICON map). Unknown names fall back gracefully. */
   icon: string;
   /** Display grouping. */
