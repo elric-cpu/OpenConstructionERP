@@ -92,8 +92,14 @@ async def app_instance():
         # startup-import block doesn't list. ``create_all`` is idempotent
         # so this never destroys data.
         from app.database import Base, engine
+        from app.modules.bid_management import models as _bid_management_models  # noqa: F401
+        from app.modules.cost_recovery import models as _cost_recovery_models  # noqa: F401
         from app.modules.dashboards import models as _dashboards_models  # noqa: F401
         from app.modules.eac import models as _eac_models  # noqa: F401
+        from app.modules.finance import models as _finance_models  # noqa: F401
+        from app.modules.procurement import models as _procurement_models  # noqa: F401
+        from app.modules.tendering import models as _tendering_models  # noqa: F401
+        from app.modules.variations import models as _variations_models  # noqa: F401
 
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
@@ -834,3 +840,373 @@ async def test_costs_reference_data_readable_across_tenants(http_client, rw_proj
         body = resp.json()
         assert body["id"] == item_id
         assert body["code"] == w["cost_item_code"]
+
+
+# --- Commercial modules (finance / procurement / tendering / bids / variations /
+#     cost recovery / claims evidence): per-row project-scope gate --------------
+#
+# RLS Phase 2 extends the manager-outsider proof above from rfi / change orders
+# / submittals to the highest-risk project-scoped commercial modules. The
+# attacker is the same manager M from ``rw_project_world``: RBAC-privileged on
+# every module below (holds each module's read + update) yet not a member of O's
+# project, so ``verify_project_access`` is the only guard left. Each read must
+# answer a strict 404 with an owner-200 positive control, and each mutation must
+# 404 AND leave O's row untouched. These pin the audited-correct behaviour so a
+# future refactor that drops a guard surfaces as a red test.
+
+
+@pytest_asyncio.fixture(scope="module")
+async def commercial_records(http_client, rw_project_world):
+    """Seed one owner-owned row in each high-risk commercial module.
+
+    Reuses ``rw_project_world``'s owner O (admin), attacker M (manager) and O's
+    project, then creates - through O's authorised POST - one finance invoice,
+    purchase order, tender package, bid package, variation request and
+    back-charge inside that project. Every seed carries an ``A-owned`` marker so
+    a later mutation test can prove an outsider PATCH changed nothing. The
+    create status doubles as proof each route is mounted, so a 404 from M on the
+    same URL can only be the access gate, never a missing route.
+    """
+    w = rw_project_world
+    owner = w["owner_headers"]
+    project_id = w["project_id"]
+
+    invoice = await http_client.post(
+        "/api/v1/finance/",
+        json={
+            "project_id": project_id,
+            "invoice_direction": "payable",
+            "invoice_number": f"INV-OWNER-{uuid.uuid4().hex[:6]}",
+        },
+        headers=owner,
+    )
+    assert invoice.status_code in (200, 201), f"invoice seed failed: {invoice.status_code} {invoice.text}"
+    invoice_id = invoice.json()["id"]
+
+    po = await http_client.post(
+        "/api/v1/procurement/",
+        json={"project_id": project_id, "po_type": "A-OWNED-PO"},
+        headers=owner,
+    )
+    assert po.status_code in (200, 201), f"purchase-order seed failed: {po.status_code} {po.text}"
+    po_id = po.json()["id"]
+
+    package = await http_client.post(
+        "/api/v1/tendering/packages/",
+        json={"project_id": project_id, "name": "A-owned package"},
+        headers=owner,
+    )
+    assert package.status_code in (200, 201), f"tender-package seed failed: {package.status_code} {package.text}"
+    tender_package_id = package.json()["id"]
+
+    bid_package = await http_client.post(
+        "/api/v1/bid-management/bid-packages/",
+        json={
+            "project_id": project_id,
+            "code": f"BM-{uuid.uuid4().hex[:6]}",
+            "title": "A-owned bid package",
+        },
+        headers=owner,
+    )
+    assert bid_package.status_code in (200, 201), (
+        f"bid-package seed failed: {bid_package.status_code} {bid_package.text}"
+    )
+    bid_package_id = bid_package.json()["id"]
+
+    variation = await http_client.post(
+        "/api/v1/variations/variation-requests/",
+        json={"project_id": project_id, "title": "A-owned VR"},
+        headers=owner,
+    )
+    assert variation.status_code in (200, 201), f"variation seed failed: {variation.status_code} {variation.text}"
+    variation_id = variation.json()["id"]
+
+    back_charge = await http_client.post(
+        f"/api/v1/cost-recovery/projects/{project_id}/back-charges",
+        json={
+            "description": "A-owned back-charge",
+            "responsible_party": "Sub-X",
+            "gross_amount": "1000",
+        },
+        headers=owner,
+    )
+    assert back_charge.status_code in (200, 201), (
+        f"back-charge seed failed: {back_charge.status_code} {back_charge.text}"
+    )
+    back_charge_id = back_charge.json()["id"]
+
+    return {
+        "owner_headers": owner,
+        "attacker_headers": w["attacker_headers"],
+        "project_id": project_id,
+        "invoice_id": invoice_id,
+        "po_id": po_id,
+        "tender_package_id": tender_package_id,
+        "bid_package_id": bid_package_id,
+        "variation_id": variation_id,
+        "back_charge_id": back_charge_id,
+    }
+
+
+# --- Finance (invoices) ------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_outsider_cannot_read_invoice(http_client, commercial_records):
+    """Reading O's invoice as a manager outsider must 404; the owner still can."""
+    w = commercial_records
+    resp = await http_client.get(f"/api/v1/finance/{w['invoice_id']}", headers=w["attacker_headers"])
+    _assert_cross_tenant_404(resp, verb="GET", target=f"finance/{w['invoice_id']}")
+
+    owner_view = await http_client.get(f"/api/v1/finance/{w['invoice_id']}", headers=w["owner_headers"])
+    assert owner_view.status_code == 200, owner_view.text
+
+
+@pytest.mark.asyncio
+async def test_outsider_cannot_update_invoice(http_client, commercial_records):
+    """Patching O's invoice as a manager outsider must 404 and mutate nothing."""
+    w = commercial_records
+    resp = await http_client.patch(
+        f"/api/v1/finance/{w['invoice_id']}",
+        json={"invoice_direction": "receivable"},
+        headers=w["attacker_headers"],
+    )
+    _assert_cross_tenant_404(resp, verb="PATCH", target=f"finance/{w['invoice_id']}")
+
+    owner_view = await http_client.get(f"/api/v1/finance/{w['invoice_id']}", headers=w["owner_headers"])
+    assert owner_view.status_code == 200, owner_view.text
+    assert owner_view.json()["invoice_direction"] == "payable", (
+        "outsider PATCH leaked through and mutated tenant O's invoice"
+    )
+
+
+# --- Procurement (purchase orders) -------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_outsider_cannot_read_purchase_order(http_client, commercial_records):
+    """Reading O's purchase order as a manager outsider must 404."""
+    w = commercial_records
+    resp = await http_client.get(f"/api/v1/procurement/{w['po_id']}", headers=w["attacker_headers"])
+    _assert_cross_tenant_404(resp, verb="GET", target=f"procurement/{w['po_id']}")
+
+    owner_view = await http_client.get(f"/api/v1/procurement/{w['po_id']}", headers=w["owner_headers"])
+    assert owner_view.status_code == 200, owner_view.text
+
+
+@pytest.mark.asyncio
+async def test_outsider_cannot_update_purchase_order(http_client, commercial_records):
+    """Patching O's purchase order as a manager outsider must 404 and mutate nothing."""
+    w = commercial_records
+    resp = await http_client.patch(
+        f"/api/v1/procurement/{w['po_id']}",
+        json={"po_type": "hijacked-type"},
+        headers=w["attacker_headers"],
+    )
+    _assert_cross_tenant_404(resp, verb="PATCH", target=f"procurement/{w['po_id']}")
+
+    owner_view = await http_client.get(f"/api/v1/procurement/{w['po_id']}", headers=w["owner_headers"])
+    assert owner_view.status_code == 200, owner_view.text
+    assert owner_view.json()["po_type"] == "A-OWNED-PO", (
+        "outsider PATCH leaked through and mutated tenant O's purchase order"
+    )
+
+
+# --- Tendering (packages) ----------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_outsider_cannot_read_tender_package(http_client, commercial_records):
+    """Reading O's tender package as a manager outsider must 404."""
+    w = commercial_records
+    resp = await http_client.get(
+        f"/api/v1/tendering/packages/{w['tender_package_id']}",
+        headers=w["attacker_headers"],
+    )
+    _assert_cross_tenant_404(resp, verb="GET", target=f"tendering/packages/{w['tender_package_id']}")
+
+    owner_view = await http_client.get(
+        f"/api/v1/tendering/packages/{w['tender_package_id']}",
+        headers=w["owner_headers"],
+    )
+    assert owner_view.status_code == 200, owner_view.text
+
+
+@pytest.mark.asyncio
+async def test_outsider_cannot_update_tender_package(http_client, commercial_records):
+    """Patching O's tender package as a manager outsider must 404 and mutate nothing."""
+    w = commercial_records
+    resp = await http_client.patch(
+        f"/api/v1/tendering/packages/{w['tender_package_id']}",
+        json={"name": "hijacked by outsider"},
+        headers=w["attacker_headers"],
+    )
+    _assert_cross_tenant_404(resp, verb="PATCH", target=f"tendering/packages/{w['tender_package_id']}")
+
+    owner_view = await http_client.get(
+        f"/api/v1/tendering/packages/{w['tender_package_id']}",
+        headers=w["owner_headers"],
+    )
+    assert owner_view.status_code == 200, owner_view.text
+    assert owner_view.json()["name"] == "A-owned package", (
+        "outsider PATCH leaked through and mutated tenant O's tender package"
+    )
+
+
+# --- Bid management (packages) -----------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_outsider_cannot_read_bid_package(http_client, commercial_records):
+    """Reading O's bid package as a manager outsider must 404."""
+    w = commercial_records
+    resp = await http_client.get(
+        f"/api/v1/bid-management/bid-packages/{w['bid_package_id']}",
+        headers=w["attacker_headers"],
+    )
+    _assert_cross_tenant_404(resp, verb="GET", target=f"bid-management/bid-packages/{w['bid_package_id']}")
+
+    owner_view = await http_client.get(
+        f"/api/v1/bid-management/bid-packages/{w['bid_package_id']}",
+        headers=w["owner_headers"],
+    )
+    assert owner_view.status_code == 200, owner_view.text
+
+
+@pytest.mark.asyncio
+async def test_outsider_cannot_update_bid_package(http_client, commercial_records):
+    """Patching O's bid package as a manager outsider must 404 and mutate nothing."""
+    w = commercial_records
+    resp = await http_client.patch(
+        f"/api/v1/bid-management/bid-packages/{w['bid_package_id']}",
+        json={"title": "hijacked by outsider"},
+        headers=w["attacker_headers"],
+    )
+    _assert_cross_tenant_404(resp, verb="PATCH", target=f"bid-management/bid-packages/{w['bid_package_id']}")
+
+    owner_view = await http_client.get(
+        f"/api/v1/bid-management/bid-packages/{w['bid_package_id']}",
+        headers=w["owner_headers"],
+    )
+    assert owner_view.status_code == 200, owner_view.text
+    assert owner_view.json()["title"] == "A-owned bid package", (
+        "outsider PATCH leaked through and mutated tenant O's bid package"
+    )
+
+
+# --- Variations (variation requests) -----------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_outsider_cannot_read_variation_request(http_client, commercial_records):
+    """Reading O's variation request as a manager outsider must 404."""
+    w = commercial_records
+    resp = await http_client.get(
+        f"/api/v1/variations/variation-requests/{w['variation_id']}",
+        headers=w["attacker_headers"],
+    )
+    _assert_cross_tenant_404(resp, verb="GET", target=f"variations/variation-requests/{w['variation_id']}")
+
+    owner_view = await http_client.get(
+        f"/api/v1/variations/variation-requests/{w['variation_id']}",
+        headers=w["owner_headers"],
+    )
+    assert owner_view.status_code == 200, owner_view.text
+
+
+@pytest.mark.asyncio
+async def test_outsider_cannot_update_variation_request(http_client, commercial_records):
+    """Patching O's variation request as a manager outsider must 404 and mutate nothing."""
+    w = commercial_records
+    resp = await http_client.patch(
+        f"/api/v1/variations/variation-requests/{w['variation_id']}",
+        json={"title": "hijacked by outsider"},
+        headers=w["attacker_headers"],
+    )
+    _assert_cross_tenant_404(resp, verb="PATCH", target=f"variations/variation-requests/{w['variation_id']}")
+
+    owner_view = await http_client.get(
+        f"/api/v1/variations/variation-requests/{w['variation_id']}",
+        headers=w["owner_headers"],
+    )
+    assert owner_view.status_code == 200, owner_view.text
+    assert owner_view.json()["title"] == "A-owned VR", (
+        "outsider PATCH leaked through and mutated tenant O's variation request"
+    )
+
+
+# --- Cost recovery (back-charges, project-nested routes) ---------------------
+
+
+@pytest.mark.asyncio
+async def test_outsider_cannot_list_back_charges(http_client, commercial_records):
+    """Listing O's project back-charges as a manager outsider must 404.
+
+    The route is nested under ``/projects/{project_id}/`` so the attacker
+    supplies O's project id in the URL; ``verify_project_access`` denies it.
+    """
+    w = commercial_records
+    resp = await http_client.get(
+        f"/api/v1/cost-recovery/projects/{w['project_id']}/back-charges",
+        headers=w["attacker_headers"],
+    )
+    _assert_cross_tenant_404(resp, verb="GET", target=f"cost-recovery/projects/{w['project_id']}/back-charges")
+
+    owner_view = await http_client.get(
+        f"/api/v1/cost-recovery/projects/{w['project_id']}/back-charges",
+        headers=w["owner_headers"],
+    )
+    assert owner_view.status_code == 200, owner_view.text
+    assert any(bc.get("id") == w["back_charge_id"] for bc in owner_view.json()), (
+        "owner cannot see their own seeded back-charge"
+    )
+
+
+@pytest.mark.asyncio
+async def test_outsider_cannot_update_back_charge(http_client, commercial_records):
+    """Patching O's back-charge as a manager outsider must 404 and mutate nothing."""
+    w = commercial_records
+    resp = await http_client.patch(
+        f"/api/v1/cost-recovery/projects/{w['project_id']}/back-charges/{w['back_charge_id']}",
+        json={"description": "hijacked by outsider"},
+        headers=w["attacker_headers"],
+    )
+    _assert_cross_tenant_404(resp, verb="PATCH", target=f"cost-recovery/.../back-charges/{w['back_charge_id']}")
+
+    owner_view = await http_client.get(
+        f"/api/v1/cost-recovery/projects/{w['project_id']}/back-charges",
+        headers=w["owner_headers"],
+    )
+    assert owner_view.status_code == 200, owner_view.text
+    seeded = next((bc for bc in owner_view.json() if bc.get("id") == w["back_charge_id"]), None)
+    assert seeded is not None and seeded["description"] == "A-owned back-charge", (
+        "outsider PATCH leaked through and mutated tenant O's back-charge"
+    )
+
+
+# --- Claims evidence (project-scoped derived pack) ---------------------------
+
+
+@pytest.mark.asyncio
+async def test_outsider_cannot_read_evidence_pack(http_client, commercial_records):
+    """Assembling O's evidence pack as a manager outsider must 404.
+
+    The pack is derived (no stored row to seed); the project id in the URL is the
+    only tenant handle, so ``verify_project_access`` is the whole guard. The
+    owner gets a 200 (an empty pack for an unknown subject is still a 200), which
+    proves the 404 is the access gate and not a missing route.
+    """
+    w = commercial_records
+    resp = await http_client.get(
+        f"/api/v1/claims-evidence/projects/{w['project_id']}/pack",
+        params={"subject_ref": "CLAIM-001"},
+        headers=w["attacker_headers"],
+    )
+    _assert_cross_tenant_404(resp, verb="GET", target=f"claims-evidence/projects/{w['project_id']}/pack")
+
+    owner_view = await http_client.get(
+        f"/api/v1/claims-evidence/projects/{w['project_id']}/pack",
+        params={"subject_ref": "CLAIM-001"},
+        headers=w["owner_headers"],
+    )
+    assert owner_view.status_code == 200, owner_view.text
