@@ -16,6 +16,7 @@ A localization, contracts and construction-control release. The interface is now
 - A Mexican Spanish (es-MX) interface option with Latin American construction terminology, falling back to Spanish and then English for anything not localized.
 - A Contracts workspace for counterparties, security and guarantees, extension-of-time claims and contract milestones, reachable from the Simple view navigation.
 - A Mexico regional pack with unit-price analysis (APU), IMSS and NOM site safety, IVA, retention and CFDI billing, public works (LOPSRM) and social housing (Infonavit) rule sets.
+- Two worked Mexican demo projects that install with the Mexico pack: a Ciudad de Mexico mixed-use tower (deep foundation and seismic RC frame for the lacustrine Zona III) and a Monterrey residential complex, both priced by unit-price analysis in pesos.
 - Cross-module Cases playbooks that guide you through end-to-end scenarios across the modules involved.
 - A built-in How-It-Works guide for every remaining module, short guided tours on the change intelligence, construction control, value and compliance screens, and a readable module developer guide.
 - 6D carbon links embodied carbon to BIM model elements and enriches it automatically from the model.
@@ -28,6 +29,12 @@ A localization, contracts and construction-control release. The interface is now
 - The file manager shows media in a viewer with context-menu actions and keyboard access.
 - New projects and forms take their currency from your regional preference instead of a fixed default.
 - Project status history now records who changed the status and when, with the interim waiting state removed, and daily diary, field reports and GeoHub anchoring were improved.
+
+### Fixed
+
+- The Imperial editable Bill of Quantities grid no longer changes a stored value when you edit it. A quantity or unit-rate cell now opens showing the value in your measurement system and converts back to metric only on commit, so opening a cell and saving it unchanged leaves storage untouched. Pasting, the bulk set-value action and copy round-trips convert the same way, and the metric system is a strict no-op throughout, so this works correctly for every country (issue #287).
+- The PDF takeoff panel now shows the measurement label, the transfer preview and the create-position quantity in your measurement system, matching the on-canvas readout, while the value stored on the created position stays metric.
+- The demo sign-in can be turned back on after it was disabled. A new "serve --demo" flag re-enables the demo accounts and showcase projects and clears any earlier opt-out, whether it came from "serve --no-demo", a "no" answer on first run, or removing the demo data in the app.
 
 ## [9.4.0] - 2026-06-30
 
