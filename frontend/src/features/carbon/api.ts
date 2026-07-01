@@ -659,3 +659,272 @@ export function autoEnrichFromBim(
     { longRunning: true },
   );
 }
+
+/* --- 6D Phase 2: operational carbon (B6), whole-life cost, whole-life view --- */
+
+/** Draft/confirmed status shared by the computed 6D lines. AI proposes the
+ *  line as `draft`; a human confirm flips it to `confirmed`. */
+export type EntryStatus = 'draft' | 'confirmed';
+
+/** A B6 use-phase operational-carbon line. Computed rows land as `draft` with a
+ *  `match_confidence` band for the human accept/reject step. */
+export interface OperationalCarbonEntry {
+  id: string;
+  inventory_id: string;
+  element_id?: string | null;
+  element_ref?: string | null;
+  system: string;
+  description: string;
+  end_use: string;
+  energy_source: string;
+  annual_energy_kwh: number | string;
+  grid_country: string;
+  grid_year?: number | null;
+  grid_factor_kg_co2e_per_kwh: number | string;
+  study_period_years: number;
+  annual_carbon_kg: number | string;
+  carbon_kg: number | string;
+  stage: string;
+  source: EmbodiedSource | string;
+  match_confidence?: 'high' | 'medium' | 'low' | null;
+  status: EntryStatus;
+  assumptions?: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Result of an operational-carbon compute pass (dry-run proposals or the
+ *  persisted draft rows). */
+export interface OperationalCarbonComputeResult {
+  inventory_id: string;
+  model_id?: string | null;
+  dry_run: boolean;
+  study_period_years: number;
+  grid_factor_kg_co2e_per_kwh: number | string;
+  grid_factor_source: string;
+  created: number;
+  skipped_existing: number;
+  skipped_no_energy: number;
+  total_b6_carbon_kg: number | string;
+  entries: OperationalCarbonEntry[];
+}
+
+/** An ISO 15686-5 whole-life cost line. Computed rows land as `draft` with a
+ *  `confidence` band for the human accept/reject step. */
+export interface LifeCycleCostEntry {
+  id: string;
+  inventory_id: string;
+  element_id?: string | null;
+  element_ref?: string | null;
+  description: string;
+  category: string;
+  currency: string;
+  capex: number | string;
+  annual_opex: number | string;
+  replacement_cost: number | string;
+  service_life_years: number;
+  eol_cost: number | string;
+  discount_rate: number | string;
+  study_period_years: number;
+  capex_pv: number | string;
+  opex_pv: number | string;
+  replacement_pv: number | string;
+  replacement_count: number;
+  eol_pv: number | string;
+  whole_life_cost: number | string;
+  source: EmbodiedSource | string;
+  confidence?: 'high' | 'medium' | 'low' | null;
+  status: EntryStatus;
+  assumptions?: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Result of a whole-life cost compute pass (dry-run proposals or persisted
+ *  draft rows). */
+export interface LifeCycleCostComputeResult {
+  inventory_id: string;
+  model_id?: string | null;
+  dry_run: boolean;
+  currency: string;
+  discount_rate: number | string;
+  study_period_years: number;
+  created: number;
+  skipped_existing: number;
+  skipped_no_cost: number;
+  total_whole_life_cost: number | string;
+  entries: LifeCycleCostEntry[];
+}
+
+/** EN 15978 whole-life carbon A-B-C-D breakdown (kgCO2e). `whole_life_total`
+ *  is A1-A5 + B + C; module D is reported separately and never in the total. */
+export interface WholeLifeCarbonBreakdown {
+  a1a3: number | string;
+  a4: number | string;
+  a5: number | string;
+  a1a5: number | string;
+  b_embodied: number | string;
+  b6_operational: number | string;
+  b_total: number | string;
+  c_end_of_life: number | string;
+  d_beyond: number | string;
+  whole_life_total: number | string;
+}
+
+/** ISO 15686-5 whole-life cost breakdown (present values). */
+export interface WholeLifeCostBreakdown {
+  currency: string;
+  capex: number | string;
+  opex_pv: number | string;
+  replacement_pv: number | string;
+  eol_pv: number | string;
+  whole_life_cost: number | string;
+  entry_count: number;
+}
+
+/** How much of the project BIM each figure is linked to. */
+export interface WholeLifeCoverage {
+  bim_element_count: number;
+  embodied_linked_count: number;
+  operational_linked_count: number;
+  lcc_linked_count: number;
+  embodied_coverage_pct: number;
+  operational_coverage_pct: number;
+  lcc_coverage_pct: number;
+}
+
+/** Combined 6D whole-life rollup: carbon and cost side by side, with coverage
+ *  and an optional monetised whole-life carbon figure. */
+export interface WholeLifeSummary {
+  inventory_id: string;
+  study_period_years: number;
+  carbon: WholeLifeCarbonBreakdown;
+  cost: WholeLifeCostBreakdown;
+  coverage: WholeLifeCoverage;
+  carbon_price_per_tonne?: number | string | null;
+  cost_of_whole_life_carbon?: number | string | null;
+}
+
+/** A single explicit whole-life cost line (used without BIM cost data). */
+export interface LccLineInput {
+  description?: string;
+  category?: string;
+  capex?: number | string;
+  annual_opex?: number | string | null;
+  replacement_cost?: number | string | null;
+  service_life_years?: number | null;
+  eol_cost?: number | string | null;
+}
+
+/**
+ * Combined whole-life rollup for an inventory. Pass `carbonPricePerTonne` to
+ * also get the monetised whole-life carbon back.
+ * Wires GET /carbon/inventories/{id}/whole-life.
+ */
+export function getWholeLife(
+  inventoryId: string,
+  carbonPricePerTonne?: number | string | null,
+): Promise<WholeLifeSummary> {
+  const qs = new URLSearchParams();
+  if (
+    carbonPricePerTonne !== undefined &&
+    carbonPricePerTonne !== null &&
+    carbonPricePerTonne !== ''
+  ) {
+    qs.set('carbon_price_per_tonne', String(carbonPricePerTonne));
+  }
+  const q = qs.toString();
+  return apiGet<WholeLifeSummary>(
+    `/v1/carbon/inventories/${inventoryId}/whole-life${q ? `?${q}` : ''}`,
+  );
+}
+
+/**
+ * Compute B6 operational carbon from the project BIM. Always preview with
+ * `dryRun: true` first, then persist with `dryRun: false` - AI proposes, the
+ * user confirms. Marked long-running: it scans every element.
+ * Wires POST /carbon/inventories/{id}/operational-carbon/compute?dry_run=.
+ */
+export function computeOperationalCarbon(
+  inventoryId: string,
+  body: {
+    model_id?: string | null;
+    grid_country?: string;
+    grid_year?: number;
+    grid_factor_kg_co2e_per_kwh?: number | string | null;
+    study_period_years?: number;
+    end_use?: string;
+    gross_floor_area_m2?: number | string | null;
+    modelled_intensity_kwh_per_m2_year?: number | string | null;
+  },
+  dryRun: boolean,
+): Promise<OperationalCarbonComputeResult> {
+  const qs = new URLSearchParams();
+  qs.set('dry_run', String(dryRun));
+  return apiPost<OperationalCarbonComputeResult>(
+    `/v1/carbon/inventories/${inventoryId}/operational-carbon/compute?${qs.toString()}`,
+    body,
+    { longRunning: true },
+  );
+}
+
+export function listOperationalCarbon(inventoryId: string): Promise<OperationalCarbonEntry[]> {
+  return apiGet<OperationalCarbonEntry[]>(
+    `/v1/carbon/inventories/${inventoryId}/operational-carbon`,
+  );
+}
+
+/** Human accept: flip a draft B6 line to `confirmed`. */
+export function confirmOperationalCarbon(entryId: string): Promise<OperationalCarbonEntry> {
+  return apiPost<OperationalCarbonEntry>(`/v1/carbon/operational-carbon/${entryId}/confirm`, {});
+}
+
+/** Human reject: delete a draft (or any) B6 line. */
+export function deleteOperationalCarbon(entryId: string): Promise<void> {
+  return apiDelete(`/v1/carbon/operational-carbon/${entryId}`);
+}
+
+/**
+ * Compute ISO 15686-5 whole-life cost from the project BIM (plus any explicit
+ * `lines`). Preview with `dryRun: true`, then persist with `dryRun: false`.
+ * Wires POST /carbon/inventories/{id}/life-cycle-cost/compute?dry_run=.
+ */
+export function computeLifeCycleCost(
+  inventoryId: string,
+  body: {
+    model_id?: string | null;
+    discount_rate?: number | string;
+    study_period_years?: number;
+    currency?: string;
+    default_capex?: number | string | null;
+    opex_rate_pct?: number | string;
+    eol_rate_pct?: number | string;
+    default_service_life_years?: number;
+    lines?: LccLineInput[];
+  },
+  dryRun: boolean,
+): Promise<LifeCycleCostComputeResult> {
+  const qs = new URLSearchParams();
+  qs.set('dry_run', String(dryRun));
+  return apiPost<LifeCycleCostComputeResult>(
+    `/v1/carbon/inventories/${inventoryId}/life-cycle-cost/compute?${qs.toString()}`,
+    body,
+    { longRunning: true },
+  );
+}
+
+export function listLifeCycleCost(inventoryId: string): Promise<LifeCycleCostEntry[]> {
+  return apiGet<LifeCycleCostEntry[]>(`/v1/carbon/inventories/${inventoryId}/life-cycle-cost`);
+}
+
+/** Human accept: flip a draft whole-life cost line to `confirmed`. */
+export function confirmLifeCycleCost(entryId: string): Promise<LifeCycleCostEntry> {
+  return apiPost<LifeCycleCostEntry>(`/v1/carbon/life-cycle-cost/${entryId}/confirm`, {});
+}
+
+/** Human reject: delete a draft (or any) whole-life cost line. */
+export function deleteLifeCycleCost(entryId: string): Promise<void> {
+  return apiDelete(`/v1/carbon/life-cycle-cost/${entryId}`);
+}

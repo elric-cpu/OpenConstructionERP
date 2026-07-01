@@ -2,7 +2,17 @@
 import { describe, it, expect } from 'vitest';
 
 import type { AutoEnrichBimResult, EmbodiedEntry } from './api';
-import { summarizeEnrich, sourceLabel, sourcePillVariant } from './sixd';
+import {
+  summarizeEnrich,
+  sourceLabel,
+  sourcePillVariant,
+  toNumber,
+  formatCarbonKg,
+  coverageTone,
+  isDraftStatus,
+  summarizeCompute,
+  COVERAGE_GOOD_MIN,
+} from './sixd';
 
 function mkEntry(over: Partial<EmbodiedEntry> = {}): EmbodiedEntry {
   return {
@@ -135,3 +145,102 @@ describe('sourcePillVariant', () => {
     expect(sourcePillVariant(null)).toBe('neutral');
   });
 });
+
+describe('toNumber', () => {
+  it('coerces strings and numbers, never returns NaN', () => {
+    expect(toNumber('228000')).toBe(228000);
+    expect(toNumber(9)).toBe(9);
+    expect(toNumber('12.5')).toBe(12.5);
+    expect(toNumber(null)).toBe(0);
+    expect(toNumber(undefined)).toBe(0);
+    expect(toNumber('not-a-number')).toBe(0);
+    expect(toNumber(Number.POSITIVE_INFINITY)).toBe(0);
+  });
+});
+
+describe('formatCarbonKg', () => {
+  it('scales to kg / t / kt', () => {
+    expect(formatCarbonKg(500)).toBe('500 kg');
+    expect(formatCarbonKg(2700)).toBe('2.70 t');
+    expect(formatCarbonKg(228000)).toBe('228.00 t');
+    expect(formatCarbonKg(1_500_000)).toBe('1.50 kt');
+  });
+
+  it('keeps the sign for module-D credits', () => {
+    expect(formatCarbonKg(-2000)).toBe('-2.00 t');
+  });
+});
+
+describe('coverageTone', () => {
+  it('maps a percentage to a traffic-light band', () => {
+    expect(coverageTone(0)).toBe('none');
+    expect(coverageTone(1)).toBe('partial');
+    expect(coverageTone(COVERAGE_GOOD_MIN - 0.1)).toBe('partial');
+    expect(coverageTone(COVERAGE_GOOD_MIN)).toBe('good');
+    expect(coverageTone(100)).toBe('good');
+  });
+
+  it('treats missing / invalid input as no coverage', () => {
+    expect(coverageTone(null)).toBe('none');
+    expect(coverageTone(undefined)).toBe('none');
+    expect(coverageTone(Number.NaN)).toBe('none');
+    expect(coverageTone(-5)).toBe('none');
+  });
+});
+
+describe('isDraftStatus', () => {
+  it('is true only for a draft line', () => {
+    expect(isDraftStatus('draft')).toBe(true);
+    expect(isDraftStatus('confirmed')).toBe(false);
+    expect(isDraftStatus(null)).toBe(false);
+    expect(isDraftStatus(undefined)).toBe(false);
+  });
+});
+
+describe('summarizeCompute', () => {
+  it('counts proposals from entries during a dry run (created=0)', () => {
+    const s = summarizeCompute({
+      created: 0,
+      skipped_no_energy: 2,
+      skipped_existing: 1,
+      entries: [{}, {}, {}],
+    });
+    expect(s.created).toBe(3);
+    expect(s.skipped).toBe(3);
+    expect(s.total).toBe(6);
+    expect(s.hasProposals).toBe(true);
+  });
+
+  it('folds the whole-life-cost skip counter (skipped_no_cost)', () => {
+    const s = summarizeCompute({
+      entries: [{}],
+      skipped_no_cost: 4,
+      skipped_existing: 1,
+    });
+    expect(s.created).toBe(1);
+    expect(s.skipped).toBe(5);
+    expect(s.total).toBe(6);
+  });
+
+  it('falls back to the persisted counter when entries is absent', () => {
+    const s = summarizeCompute({ created: 2, skipped_no_energy: 1 });
+    expect(s.created).toBe(2);
+    expect(s.skipped).toBe(1);
+    expect(s.hasProposals).toBe(true);
+  });
+
+  it('never returns NaN for a null / malformed payload', () => {
+    expect(summarizeCompute(null)).toEqual({
+      created: 0,
+      skipped: 0,
+      total: 0,
+      hasProposals: false,
+    });
+    const partial = { entries: [] } as ComputeCountersLike;
+    expect(summarizeCompute(partial).hasProposals).toBe(false);
+  });
+});
+
+// Local structural alias so the malformed-payload test above can pass an empty
+// object without importing the exported interface name into every assertion.
+type ComputeCountersLike = { entries?: unknown[] | null };

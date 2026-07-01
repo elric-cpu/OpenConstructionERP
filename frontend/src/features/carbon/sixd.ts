@@ -92,3 +92,87 @@ export function sourceLabel(source: EmbodiedSource | null | undefined): SourceLa
 export function sourcePillVariant(source: EmbodiedSource | null | undefined): SourcePillVariant {
   return source === 'auto_enriched' ? 'blue' : 'neutral';
 }
+
+/* --- 6D Phase 2: whole-life helpers (carbon + cost) --- */
+
+/** Non-negative float view of a possibly-missing / string numeric value. Kept
+ *  separate from {@link count} (which floors to an integer counter). */
+export function toNumber(value: number | string | null | undefined): number {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  const n = parseFloat(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Human kgCO2e with a magnitude unit (kg / t / kt). Mirrors the inventory
+ *  drawer so the whole-life tab reads the same. */
+export function formatCarbonKg(kg: number): string {
+  const abs = Math.abs(kg);
+  if (abs >= 1_000_000) return `${(kg / 1_000_000).toFixed(2)} kt`;
+  if (abs >= 1_000) return `${(kg / 1_000).toFixed(2)} t`;
+  return `${kg.toFixed(0)} kg`;
+}
+
+/** Traffic-light band for a coverage percentage (0..100).
+ *  - `none`: nothing linked (0% or absent) -> red.
+ *  - `partial`: some but under the good threshold -> amber.
+ *  - `good`: at or above the threshold -> green. */
+export type CoverageTone = 'good' | 'partial' | 'none';
+
+/** At/above this percentage a coverage row is considered well covered. */
+export const COVERAGE_GOOD_MIN = 80;
+
+export function coverageTone(pct: number | null | undefined): CoverageTone {
+  if (typeof pct !== 'number' || !Number.isFinite(pct) || pct <= 0) return 'none';
+  if (pct >= COVERAGE_GOOD_MIN) return 'good';
+  return 'partial';
+}
+
+/** True only for a draft line, i.e. one that still needs a human accept /
+ *  reject. Confirmed (or any other) status never shows the accept control. */
+export function isDraftStatus(status: string | null | undefined): boolean {
+  return status === 'draft';
+}
+
+/** Loose shape shared by the operational-carbon and whole-life-cost compute
+ *  responses. Only the counters the preview UI reads are declared; the two
+ *  skip fields differ per endpoint so both are optional. */
+export interface ComputeCounters {
+  created?: number | null;
+  skipped_existing?: number | null;
+  skipped_no_energy?: number | null;
+  skipped_no_cost?: number | null;
+  entries?: unknown[] | null;
+}
+
+/** Plain-number summary of a compute pass, ready for display. */
+export interface ComputeSummary {
+  /** Lines proposed (dry run) or persisted (real run). */
+  created: number;
+  /** Every skipped element (no signal + already computed). */
+  skipped: number;
+  /** Everything the pass looked at. */
+  total: number;
+  /** True when there is at least one line worth saving. */
+  hasProposals: boolean;
+}
+
+/**
+ * Fold an operational-carbon or whole-life-cost compute result into display
+ * counters. Like {@link summarizeEnrich}, a dry-run reports `created=0` while
+ * still returning every proposal in `entries`, so count `entries` first and
+ * fall back to the persisted counter only when `entries` is absent.
+ */
+export function summarizeCompute(result: ComputeCounters | null | undefined): ComputeSummary {
+  const created = Array.isArray(result?.entries) ? result.entries.length : count(result?.created);
+  const skipped =
+    count(result?.skipped_existing) +
+    count(result?.skipped_no_energy) +
+    count(result?.skipped_no_cost);
+  return {
+    created,
+    skipped,
+    total: created + skipped,
+    hasProposals: created > 0,
+  };
+}

@@ -22,6 +22,7 @@ import {
   Search,
   Sparkles,
   Box,
+  Recycle,
 } from 'lucide-react';
 import {
   Button,
@@ -42,6 +43,7 @@ import { BIMModelPicker, type BIMModelOption } from '@/shared/ui/BIMModelPicker'
 import { fetchBIMModels } from '@/features/bim/api';
 import { carbonGuide } from './carbonGuide';
 import { summarizeEnrich, sourceLabel, sourcePillVariant } from './sixd';
+import { WholeLifePanel } from './WholeLifePanel';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { useDisplayQuantity } from '@/shared/hooks/useDisplayQuantity';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
@@ -103,7 +105,7 @@ import {
   type MaterialCarbonFactor,
 } from './api';
 
-type Tab = 'inventory' | 'epds' | 'targets' | 'reports';
+type Tab = 'inventory' | 'wholelife' | 'epds' | 'targets' | 'reports';
 
 interface Project {
   id: string;
@@ -284,6 +286,11 @@ export function CarbonPage() {
                 label: t('carbon.tab_inventory', { defaultValue: 'Inventory' }),
                 icon: Leaf,
               },
+              {
+                id: 'wholelife',
+                label: t('carbon.sixd.wl_tab', { defaultValue: 'Whole-life (6D)' }),
+                icon: Recycle,
+              },
               { id: 'epds', label: t('carbon.tab_epds', { defaultValue: 'EPDs' }), icon: Database },
               {
                 id: 'targets',
@@ -333,6 +340,12 @@ export function CarbonPage() {
         <InventoryTab
           projectId={effectiveProjectId}
           onOpenDrawer={(id) => setInventoryDrawerId(id)}
+        />
+      )}
+      {tab === 'wholelife' && effectiveProjectId && (
+        <WholeLifePanel
+          projectId={effectiveProjectId}
+          currency={effectiveProject?.currency}
         />
       )}
       {tab === 'epds' && <EPDsTab />}
