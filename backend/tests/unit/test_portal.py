@@ -395,9 +395,7 @@ async def test_consume_magic_link_success() -> None:
             email="carl@example.com",
             role="consultant",
         )
-        user2, sess, session_plain, sess_expires, redirect_path = (
-            await svc.consume_magic_link(plain)
-        )
+        user2, sess, session_plain, sess_expires, redirect_path = await svc.consume_magic_link(plain)
     assert user2.id == user.id
     assert sess.portal_user_id == user.id
     assert len(session_plain) == 64
