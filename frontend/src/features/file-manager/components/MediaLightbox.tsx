@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 
 import { AuthImage } from '@/shared/ui';
-import { fetchProtectedObjectUrl, downloadProtectedFile } from '../api';
+import { downloadProtectedFile, mintEmailLink } from '../api';
 import { isVideoRow, type MediaRowLike } from '../kindModule';
 
 /** One viewable media file. A trimmed FileRow is assignable to this. */
@@ -68,6 +68,7 @@ export function MediaLightbox({
   const current: MediaLightboxItem | undefined = items[safeIndex];
   const isVideo = current ? isVideoRow(current) : false;
   const downloadUrl = current?.download_url ?? null;
+  const currentId = current?.id ?? null;
   const canPage = Boolean(onIndexChange) && items.length > 1;
 
   const goPrev = useCallback(() => {
@@ -80,37 +81,40 @@ export function MediaLightbox({
     onIndexChange((safeIndex + 1) % items.length);
   }, [onIndexChange, items.length, safeIndex]);
 
-  // Fetch the protected bytes into a blob URL for the <video> element whenever
-  // the overlay opens for a new VIDEO. Images go through AuthImage, which owns
-  // its own blob lifecycle, so we only manage the URL here for clips. Revoke
-  // the previous blob on cleanup so we never leak object URLs.
+  // For a VIDEO, mint a short-lived signed URL and let the native <video>
+  // element stream it with HTTP Range requests, instead of pre-downloading the
+  // entire clip into a blob first (which left a large site video stuck on the
+  // spinner and risked running the tab out of memory). The bearer-only download
+  // route can't be a media ``src`` directly - a media subresource can't carry
+  // the auth header - so we exchange the session for a short-lived HMAC share
+  // link the browser streams anonymously (the share endpoint now serves via a
+  // Range-capable FileResponse). Images still go through AuthImage, which owns
+  // its own blob lifecycle.
   useEffect(() => {
-    if (!open || !isVideo || !downloadUrl) {
+    if (!open || !isVideo || !currentId) {
       setVideoUrl(null);
       setVideoFailed(false);
       return;
     }
     let cancelled = false;
-    let created: string | null = null;
     setVideoUrl(null);
     setVideoFailed(false);
-    void fetchProtectedObjectUrl(downloadUrl).then((url) => {
-      if (cancelled) {
-        if (url) URL.revokeObjectURL(url);
-        return;
-      }
-      if (!url) {
-        setVideoFailed(true);
-        return;
-      }
-      created = url;
-      setVideoUrl(url);
-    });
+    void mintEmailLink(currentId, 1)
+      .then((link) => {
+        if (cancelled) return;
+        if (link?.url) {
+          setVideoUrl(link.url);
+        } else {
+          setVideoFailed(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setVideoFailed(true);
+      });
     return () => {
       cancelled = true;
-      if (created) URL.revokeObjectURL(created);
     };
-  }, [open, isVideo, downloadUrl]);
+  }, [open, isVideo, currentId]);
 
   // Lock background scroll and give the overlay initial focus while open, so
   // it behaves like a real modal: the page underneath does not scroll behind

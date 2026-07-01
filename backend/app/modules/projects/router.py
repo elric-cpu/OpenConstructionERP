@@ -3052,23 +3052,26 @@ async def get_share_file(
 
     fname = getattr(row, name_attr, None) or os.path.basename(path)
 
-    def _iter_file(p: str):
-        with open(p, "rb") as fh:
-            while True:
-                chunk = fh.read(64 * 1024)
-                if not chunk:
-                    break
-                yield chunk
+    # Serve straight from disk with FileResponse so the browser can stream and
+    # seek via HTTP Range requests (206 Partial Content + Accept-Ranges). The
+    # previous hand-rolled StreamingResponse ignored Range and forced
+    # application/octet-stream, so a shared video sat on the loading spinner and
+    # never played. Media (video/audio/image) is served inline with its real
+    # content type so the native player/viewer can load it; every other kind
+    # keeps downloading as an attachment exactly as before.
+    import mimetypes
 
-    from fastapi.responses import StreamingResponse
+    from fastapi.responses import FileResponse
 
-    return StreamingResponse(
-        _iter_file(path),
-        media_type="application/octet-stream",
-        headers={
-            "Content-Disposition": f'attachment; filename="{fname}"',
-            "X-Bundle-Format": "share-link",
-        },
+    guessed, _ = mimetypes.guess_type(fname)
+    media_type = guessed or "application/octet-stream"
+    inline = media_type.split("/", 1)[0] in {"video", "audio", "image"}
+    return FileResponse(
+        path,
+        media_type=media_type,
+        filename=fname,
+        content_disposition_type="inline" if inline else "attachment",
+        headers={"X-Bundle-Format": "share-link"},
     )
 
 
