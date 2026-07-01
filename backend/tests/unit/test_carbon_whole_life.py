@@ -115,6 +115,8 @@ def test_replacement_pv_discounted_is_below_nominal() -> None:
 
 def test_lcc_zero_discount_is_plain_sum() -> None:
     # capex 100000 + opex 2000*60=120000 + repl 50000*2=100000 + eol 10000
+    # = 330000 gross, less the residual value of the component installed at
+    # year 50 (15 of its 25 years unexpired at year 60): 50000 * 15/25 = 30000.
     result = lcc.compute_life_cycle_cost(
         capex=100000,
         annual_opex=2000,
@@ -124,7 +126,10 @@ def test_lcc_zero_discount_is_plain_sum() -> None:
         discount_rate=0,
         study_period_years=60,
     )
-    assert result["whole_life_cost"] == Decimal("330000")
+    assert result["residual_value"] == Decimal("30000")
+    # Zero discount rate: the residual present value equals its nominal value.
+    assert result["residual_value_pv"] == Decimal("30000")
+    assert result["whole_life_cost"] == Decimal("300000")
     assert result["replacement_count"] == 2
     assert result["replacement_years"] == [25, 50]
 
@@ -140,7 +145,12 @@ def test_lcc_components_sum_to_whole_life() -> None:
         study_period_years=60,
     )
     parts = result["capex_pv"] + result["opex_pv"] + result["replacement_pv"] + result["eol_pv"]
-    assert parts == result["whole_life_cost"]
+    # Whole-life cost is the discounted parts less the residual-value credit.
+    assert parts - result["residual_value_pv"] == result["whole_life_cost"]
+    # The component re-installed at year 40 reaches exactly the end of its
+    # 20-year life at the year-60 study end, so nothing is unexpired: residual 0.
+    assert result["residual_value"] == Decimal("0")
+    assert result["residual_value_pv"] == Decimal("0")
     # Capex is booked at year 0, never discounted.
     assert result["capex_pv"] == Decimal("120000")
     # Everything discounted is strictly below its nominal counterpart.
@@ -160,7 +170,65 @@ def test_lcc_no_replacement_when_life_exceeds_period() -> None:
     )
     assert result["replacement_count"] == 0
     assert result["replacement_pv"] == Decimal("0")
-    assert result["whole_life_cost"] == Decimal("1000")
+    # Original capex-funded component, never replaced, keeps 40 of its 100
+    # years at the year-60 study end: nominal residual 1000 * 40/100 = 400,
+    # credited back at its year-60 present value.
+    assert result["residual_value"] == Decimal("400")
+    assert Decimal("0") < result["residual_value_pv"] < Decimal("400")
+    # Whole-life cost is capex less the discounted residual credit.
+    assert result["whole_life_cost"] == Decimal("1000") - result["residual_value_pv"]
+    assert result["whole_life_cost"] < Decimal("1000")
+
+
+# -- residual_value ---------------------------------------------------------
+
+
+def test_residual_value_no_replacement_prorates_capex() -> None:
+    # Never replaced: basis is capex, 40 of 100 years unexpired at year 60.
+    assert lcc.residual_value(
+        capex=1000, replacement_cost=500, service_life_years=100, study_period_years=60
+    ) == Decimal("400")
+
+
+def test_residual_value_after_replacement_prorates_replacement_cost() -> None:
+    # Replaced at 25 and 50; the year-50 install keeps 15 of 25 years.
+    assert lcc.residual_value(
+        capex=100000, replacement_cost=50000, service_life_years=25, study_period_years=60
+    ) == Decimal("30000")
+
+
+def test_residual_value_zero_at_exact_end_of_life() -> None:
+    # Re-installed at year 40, a 20-year life ends exactly at the year-60 study
+    # end - nothing unexpired.
+    assert lcc.residual_value(capex=1, replacement_cost=1, service_life_years=20, study_period_years=60) == Decimal("0")
+
+
+def test_residual_value_guards_non_positive() -> None:
+    rv = lcc.residual_value
+    # Unknown service life or a zero-length study yields no residual.
+    assert rv(capex=1000, replacement_cost=9, service_life_years=0, study_period_years=60) == Decimal("0")
+    assert rv(capex=1000, replacement_cost=9, service_life_years=25, study_period_years=0) == Decimal("0")
+    # No basis (capex and replacement cost both zero) -> no residual.
+    assert rv(capex=0, replacement_cost=0, service_life_years=100, study_period_years=60) == Decimal("0")
+
+
+def test_lcc_include_residual_value_false_reproduces_pre_residual() -> None:
+    common = {
+        "capex": 100000,
+        "annual_opex": 2000,
+        "replacement_cost": 50000,
+        "service_life_years": 25,
+        "eol_cost": 10000,
+        "discount_rate": 0,
+        "study_period_years": 60,
+    }
+    with_residual = lcc.compute_life_cycle_cost(**common)
+    without = lcc.compute_life_cycle_cost(**common, include_residual_value=False)
+    assert without["residual_value"] == Decimal("0")
+    assert without["residual_value_pv"] == Decimal("0")
+    assert without["whole_life_cost"] == Decimal("330000")
+    # The credit is exactly the difference between the two runs.
+    assert without["whole_life_cost"] - with_residual["whole_life_cost"] == with_residual["residual_value_pv"]
 
 
 # -- operational carbon (B6) ------------------------------------------------
@@ -316,20 +384,23 @@ def test_summarize_lcc_from_objects() -> None:
             opex_pv=Decimal("50"),
             replacement_pv=Decimal("30"),
             eol_pv=Decimal("10"),
-            whole_life_cost=Decimal("190"),
+            residual_value_pv=Decimal("5"),
+            whole_life_cost=Decimal("185"),
         ),
         SimpleNamespace(
             capex=Decimal("200"),
             opex_pv=Decimal("60"),
             replacement_pv=Decimal("0"),
             eol_pv=Decimal("20"),
-            whole_life_cost=Decimal("280"),
+            residual_value_pv=Decimal("15"),
+            whole_life_cost=Decimal("265"),
         ),
     ]
     summary = lcc.summarize_life_cycle_cost(entries)
     assert summary["capex"] == Decimal("300")
     assert summary["opex_pv"] == Decimal("110")
-    assert summary["whole_life_cost"] == Decimal("470")
+    assert summary["residual_value_pv"] == Decimal("20")
+    assert summary["whole_life_cost"] == Decimal("450")
     assert summary["entry_count"] == 2
 
 

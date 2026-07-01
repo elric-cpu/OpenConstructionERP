@@ -248,6 +248,57 @@ def replacement_present_value(
     return total
 
 
+def residual_value(
+    *,
+    capex: Any,
+    replacement_cost: Any,
+    service_life_years: int,
+    study_period_years: int,
+) -> Decimal:
+    """Straight-line residual value of a component at the study-period end.
+
+    ISO 15686-5 credits the unexpired worth of a component still in service at
+    the end of the study period back against the whole-life cost - otherwise a
+    heating plant one year into a 20-year life at the study end is written off
+    as if it were scrap. The component is installed at year 0 (funded by capex)
+    and re-installed at each replacement year; the installation still live at
+    the study end has consumed only part of its service life, and the remaining
+    fraction is worth crediting back.
+
+    The residual is pro-rated straight-line on the cost of the *last*
+    installation: ``basis x remaining_life / service_life``, where ``basis`` is
+    the replacement cost once at least one replacement has occurred, else the
+    capex. The returned figure is a nominal value at the study end (year ``P``);
+    the caller discounts it to a present value.
+
+    Returns ``Decimal("0")`` when the service life is unknown (<= 0), when the
+    last installation reaches exactly end of life at the study end (nothing
+    unexpired), or when the basis cost is not positive.
+    """
+    life = int(service_life_years)
+    period = int(study_period_years)
+    if life <= 0 or period <= 0:
+        return Decimal("0")
+    repl_years = replacement_years(life, period)
+    if repl_years:
+        last_install = repl_years[-1]
+        basis = _dec(replacement_cost)
+    else:
+        last_install = 0
+        basis = _dec(capex)
+    if basis <= 0:
+        return Decimal("0")
+    remaining_life = life - (period - last_install)
+    if remaining_life <= 0:
+        return Decimal("0")
+    fraction = Decimal(remaining_life) / Decimal(life)
+    # A component cannot be worth more than its installed cost, even if the
+    # study period ends before its first anniversary.
+    if fraction > 1:
+        fraction = Decimal("1")
+    return basis * fraction
+
+
 def compute_life_cycle_cost(
     *,
     capex: Any,
@@ -257,12 +308,17 @@ def compute_life_cycle_cost(
     eol_cost: Any,
     discount_rate: Any,
     study_period_years: int,
+    include_residual_value: bool = True,
 ) -> dict[str, Any]:
     """Whole-life cost of one element or system per ISO 15686-5.
 
-    ``LCC = capex + PV(opex) + PV(replacements) + PV(end-of-life)``. Capex is
-    incurred at year 0 and is not discounted; every other term is brought to a
-    present value with the real discount rate.
+    ``LCC = capex + PV(opex) + PV(replacements) + PV(end-of-life)
+    - PV(residual value)``. Capex is incurred at year 0 and is not discounted;
+    every other term is brought to a present value with the real discount rate.
+    The residual value is the unexpired worth of the component still in service
+    at the study end and is credited back (a negative cash flow), per ISO
+    15686-5; pass ``include_residual_value=False`` to reproduce the pre-residual
+    figure.
 
     Args:
         capex: Initial construction / acquisition cost (year 0).
@@ -272,9 +328,11 @@ def compute_life_cycle_cost(
         eol_cost: End-of-life / disposal cost incurred at the study end (C).
         discount_rate: Real discount rate used for present values.
         study_period_years: Study period ``P`` (years).
+        include_residual_value: Credit the study-end residual value (default on).
 
     Returns:
-        A dict of the four present-value components, the replacement schedule,
+        A dict of the present-value components (capex, opex, replacements,
+        end-of-life and the residual-value credit), the replacement schedule,
         and the whole-life cost, all as ``Decimal`` (plus plain-int counts).
     """
     period = int(study_period_years)
@@ -286,7 +344,18 @@ def compute_life_cycle_cost(
     for year in repl_years:
         replacement_pv += net_present_value(repl_cost, discount_rate, year)
     eol_pv = net_present_value(eol_cost, discount_rate, period)
-    whole_life_cost = capex_pv + opex_pv + replacement_pv + eol_pv
+    residual_nominal = (
+        residual_value(
+            capex=capex,
+            replacement_cost=replacement_cost,
+            service_life_years=service_life_years,
+            study_period_years=period,
+        )
+        if include_residual_value
+        else Decimal("0")
+    )
+    residual_pv = net_present_value(residual_nominal, discount_rate, period)
+    whole_life_cost = capex_pv + opex_pv + replacement_pv + eol_pv - residual_pv
     return {
         "capex": capex_pv,
         "capex_pv": capex_pv,
@@ -298,6 +367,8 @@ def compute_life_cycle_cost(
         "replacement_years": repl_years,
         "eol_cost": _dec(eol_cost),
         "eol_pv": eol_pv,
+        "residual_value": residual_nominal,
+        "residual_value_pv": residual_pv,
         "service_life_years": int(service_life_years),
         "discount_rate": _dec(discount_rate),
         "study_period_years": period,
@@ -520,8 +591,9 @@ def summarize_life_cycle_cost(entries: Any) -> dict[str, Any]:
     """Roll up capex / opex / replacement / end-of-life across LCC entries.
 
     Each entry may be an object or a dict carrying ``capex``, ``opex_pv``,
-    ``replacement_pv``, ``eol_pv`` and ``whole_life_cost``. Missing fields count
-    as zero.
+    ``replacement_pv``, ``eol_pv``, ``residual_value_pv`` and
+    ``whole_life_cost``. Missing fields count as zero, so entries produced
+    before residual value was modelled still roll up cleanly.
     """
 
     def _get(entry: Any, key: str) -> Decimal:
@@ -537,6 +609,7 @@ def summarize_life_cycle_cost(entries: Any) -> dict[str, Any]:
     opex_pv = Decimal("0")
     replacement_pv = Decimal("0")
     eol_pv = Decimal("0")
+    residual_value_pv = Decimal("0")
     whole_life_cost = Decimal("0")
     count = 0
     for entry in entries:
@@ -544,6 +617,7 @@ def summarize_life_cycle_cost(entries: Any) -> dict[str, Any]:
         opex_pv += _get(entry, "opex_pv")
         replacement_pv += _get(entry, "replacement_pv")
         eol_pv += _get(entry, "eol_pv")
+        residual_value_pv += _get(entry, "residual_value_pv")
         whole_life_cost += _get(entry, "whole_life_cost")
         count += 1
     return {
@@ -551,6 +625,7 @@ def summarize_life_cycle_cost(entries: Any) -> dict[str, Any]:
         "opex_pv": opex_pv,
         "replacement_pv": replacement_pv,
         "eol_pv": eol_pv,
+        "residual_value_pv": residual_value_pv,
         "whole_life_cost": whole_life_cost,
         "entry_count": count,
     }
