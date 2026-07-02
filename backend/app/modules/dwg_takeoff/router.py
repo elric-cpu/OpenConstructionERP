@@ -44,6 +44,7 @@ from app.modules.dwg_takeoff.schemas import (
     BoqLinkRequest,
     CreateVariationFromDiffRequest,
     CreateVariationFromDiffResponse,
+    CreateVariationFromPairRequest,
     DwgAnnotationCreate,
     DwgAnnotationResponse,
     DwgAnnotationUpdate,
@@ -536,6 +537,101 @@ async def download_drawing(
 
 
 # ── Revision compare (Item 17) ───────────────────────────────────────────────
+
+
+# Literal /drawings/compare/* routes are registered before the parameterised
+# /drawings/{drawing_id}/compare/* routes so the two-drawing compare can never
+# be shadowed by the version-vs-version compare.
+@router.post(
+    "/drawings/compare/",
+    response_model=DwgDrawingDiffResponse,
+)
+async def compare_drawing_pair(
+    project_id: uuid.UUID = Query(...),
+    from_drawing_id: uuid.UUID = Query(
+        ...,
+        description="Baseline drawing id (the 'before' side of the diff).",
+    ),
+    to_drawing_id: uuid.UUID = Query(
+        ...,
+        description="Target drawing id (the 'after' side of the diff).",
+    ),
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    session: SessionDep = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("dwg_takeoff.read")),
+    service: DwgTakeoffService = Depends(_get_service),
+) -> DwgDrawingDiffResponse:
+    """Compare two INDEPENDENT drawings in a project and return the diff.
+
+    Unlike the version-vs-version compare below (which diffs two parsed
+    versions of ONE drawing), this diffs the latest version of two
+    separately uploaded drawings - the user picks (or uploads) a second
+    drawing as the comparison target. Mirrors the PDF module's two-document
+    compare.
+
+    Gated three ways: the caller must reach ``project_id`` AND each
+    drawing's own project (``_gate_by_drawing`` per side), and both drawings
+    must live in ``project_id`` so a compare never crosses tenants or blends
+    two base currencies. A missing or foreign-tenant drawing 404s the same
+    way, preventing UUID-existence probes.
+    """
+    await verify_project_access(project_id, str(user_id or ""), session)
+    from_drawing = await _gate_by_drawing(from_drawing_id, user_id, service, session)
+    to_drawing = await _gate_by_drawing(to_drawing_id, user_id, service, session)
+    for drawing in (from_drawing, to_drawing):
+        if getattr(drawing, "project_id", None) != project_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Drawing not found",
+            )
+    payload = await service.compare_drawing_pair(
+        project_id,
+        from_drawing_id,
+        to_drawing_id,
+    )
+    return DwgDrawingDiffResponse(**payload)
+
+
+@router.post(
+    "/drawings/compare/create-variation",
+    response_model=CreateVariationFromDiffResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_variation_from_drawing_pair(
+    body: CreateVariationFromPairRequest,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    session: SessionDep = None,  # type: ignore[assignment]
+    _perm_read: None = Depends(RequirePermission("dwg_takeoff.read")),
+    _perm_create: None = Depends(RequirePermission("variations.create")),
+    service: DwgTakeoffService = Depends(_get_service),
+) -> CreateVariationFromDiffResponse:
+    """Create a DRAFT variation request from a drawing-vs-drawing delta.
+
+    Recomputes the deterministic pair-compare and turns its net cost impact
+    into a draft VariationRequest (never submitted - a human confirms it in
+    the variations module). Requires BOTH ``dwg_takeoff.read`` (to see the
+    drawings) AND ``variations.create`` (so a read-only viewer cannot mint a
+    variation). Gated the same way as the pair compare: the caller must
+    reach the project and each drawing, and both drawings must live in
+    ``body.project_id``.
+    """
+    await verify_project_access(body.project_id, str(user_id or ""), session)
+    from_drawing = await _gate_by_drawing(body.from_drawing_id, user_id, service, session)
+    to_drawing = await _gate_by_drawing(body.to_drawing_id, user_id, service, session)
+    for drawing in (from_drawing, to_drawing):
+        if getattr(drawing, "project_id", None) != body.project_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Drawing not found",
+            )
+    payload = await service.create_variation_from_drawing_pair(
+        body.project_id,
+        body.from_drawing_id,
+        body.to_drawing_id,
+        title=body.title,
+        user_id=str(user_id) if user_id else None,
+    )
+    return CreateVariationFromDiffResponse(**payload)
 
 
 @router.get(

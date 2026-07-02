@@ -360,9 +360,18 @@ class DwgAnnotationDiffRow(BaseModel):
 
 
 class DwgDrawingDiffResponse(BaseModel):
-    """Full revision-compare payload for two versions of one drawing."""
+    """Full revision-compare payload for a drawing diff.
+
+    ``drawing_id`` is always populated. On the single-drawing path it is
+    the drawing whose version pair was diffed. On a drawing-vs-drawing
+    compare (two independently uploaded drawings), ``from_drawing_id`` /
+    ``to_drawing_id`` additionally identify each side so the UI can label
+    both; ``drawing_id`` then carries the baseline drawing for back-compat.
+    """
 
     drawing_id: UUID
+    from_drawing_id: UUID | None = None
+    to_drawing_id: UUID | None = None
     from_version_id: UUID
     from_version_number: int
     to_version_id: UUID
@@ -389,6 +398,25 @@ class CreateVariationFromDiffRequest(BaseModel):
 
     from_version_id: UUID
     to_version_id: UUID
+    title: str | None = Field(default=None, max_length=500)
+
+
+class CreateVariationFromPairRequest(BaseModel):
+    """Turn a drawing-vs-drawing compare delta into a draft variation request.
+
+    Mirrors :class:`CreateVariationFromDiffRequest` for the drawing-pair
+    path (two independently uploaded drawings). The compare is recomputed
+    server-side from the project + drawing pair (the deterministic
+    :meth:`compare_drawing_pair` is the single source of truth), so the
+    client carries only the ids and an optional title override. The created
+    variation is always a *draft* - automation proposes, a human confirms.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    project_id: UUID
+    from_drawing_id: UUID
+    to_drawing_id: UUID
     title: str | None = Field(default=None, max_length=500)
 
 

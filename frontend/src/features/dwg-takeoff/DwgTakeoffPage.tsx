@@ -4941,6 +4941,7 @@ export function DwgTakeoffPage() {
           drawingName={
             selectedDrawingFromList?.name || selectedDrawingFromList?.filename || ''
           }
+          projectId={selectedDrawingFromList?.project_id || projectId}
           onOverlayChange={setCompareOverlay}
         />
       )}

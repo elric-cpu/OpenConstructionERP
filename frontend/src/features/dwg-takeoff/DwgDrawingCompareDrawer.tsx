@@ -20,10 +20,10 @@
  * impact already expressed in the project base currency.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import {
@@ -35,14 +35,20 @@ import {
   BarChart3,
   Eye,
   FilePlus2,
+  Upload,
 } from 'lucide-react';
 
 import { SideDrawer, MoneyDisplay, Badge } from '@/shared/ui';
 import { useToastStore } from '@/stores/useToastStore';
 import {
   fetchDrawingVersions,
+  fetchDrawings,
+  uploadDrawing,
   compareDrawings,
+  compareDrawingPair,
   createVariationFromDiff,
+  createVariationFromDrawingPair,
+  type DwgDrawing,
   type DwgDrawingVersion,
   type DwgDrawingDiffResponse,
   type DwgEntityDiffRow,
@@ -63,6 +69,9 @@ export interface DwgDrawingCompareDrawerProps {
   onClose: () => void;
   drawingId: string;
   drawingName: string;
+  /** Project the drawing belongs to. Powers the "compare against" picker
+   *  (other ready drawings in the project) and the inline upload target. */
+  projectId: string;
   /** Notifies the page so the canvas can render the onion-skin underlay. */
   onOverlayChange?: (state: DwgCompareOverlayState) => void;
 }
@@ -107,15 +116,26 @@ export function DwgDrawingCompareDrawer({
   onClose,
   drawingId,
   drawingName,
+  projectId,
   onOverlayChange,
 }: DwgDrawingCompareDrawerProps) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const addToast = useToastStore((s) => s.addToast);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   const [tab, setTab] = useState<CompareTab>('summary');
   const [fromId, setFromId] = useState<string>('');
   const [toId, setToId] = useState<string>('');
+  // Empty string = version-vs-version mode (revisions of THIS drawing); a
+  // drawing id = drawing-vs-drawing mode (compare against another drawing).
+  const [targetDrawingId, setTargetDrawingId] = useState<string>('');
   const [hideUnchanged, setHideUnchanged] = useState(true);
   const [overlay, setOverlay] = useState(false);
   const [opacity, setOpacity] = useState(0.5);
+
+  const mode: 'version' | 'pair' = targetDrawingId ? 'pair' : 'version';
 
   const versionsQuery = useQuery({
     queryKey: ['dwg-versions', drawingId],
@@ -124,6 +144,37 @@ export function DwgDrawingCompareDrawer({
   });
 
   const versions = useMemo(() => versionsQuery.data ?? [], [versionsQuery.data]);
+
+  // Drawings in the project usable as a comparison target. Shares the page's
+  // query key so the cache is reused (and refreshed after an inline upload).
+  const drawingsQuery = useQuery({
+    queryKey: ['dwg-drawings', projectId],
+    queryFn: () => fetchDrawings(projectId),
+    enabled: open && !!projectId,
+    // Poll while a just-uploaded target is still converting so the diff runs
+    // automatically the moment it reaches "ready".
+    refetchInterval: (q) => {
+      const list = (q.state.data as DwgDrawing[] | undefined) ?? [];
+      const target = list.find((d) => d.id === targetDrawingId);
+      const s = target?.status;
+      if (!targetDrawingId || !target) return false;
+      if (s === 'ready' || s === 'error' || s === 'empty' || s === 'needs_conversion') {
+        return false;
+      }
+      return 3000;
+    },
+  });
+
+  const drawings = useMemo(() => drawingsQuery.data ?? [], [drawingsQuery.data]);
+  const otherDrawings = useMemo(
+    () => drawings.filter((d) => d.id !== drawingId && d.status === 'ready'),
+    [drawings, drawingId],
+  );
+  const targetDrawing = useMemo(
+    () => drawings.find((d) => d.id === targetDrawingId),
+    [drawings, targetDrawingId],
+  );
+  const targetReady = targetDrawing?.status === 'ready';
 
   // Seed defaults once versions arrive: baseline = previous, target = latest.
   useEffect(() => {
@@ -135,6 +186,12 @@ export function DwgDrawingCompareDrawer({
     setToId((cur) => cur || latest.id);
     setFromId((cur) => cur || previous.id);
   }, [versions]);
+
+  // Reset the comparison target when the drawer is pointed at another drawing
+  // so a stale target from a previous drawing never leaks in.
+  useEffect(() => {
+    setTargetDrawingId('');
+  }, [drawingId]);
 
   // Push overlay state up to the page whenever it changes (and clear on close).
   useEffect(() => {
@@ -148,18 +205,52 @@ export function DwgDrawingCompareDrawer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const canCompare = !!fromId && !!toId && fromId !== toId;
+  const uploadMutation = useMutation({
+    mutationFn: (file: File) =>
+      uploadDrawing(projectId, file, file.name.replace(/\.[^./\\]+$/, ''), ''),
+    onSuccess: (created) => {
+      // Select the freshly uploaded drawing as the target; the drawings query
+      // polls until it converts, then the diff runs automatically.
+      setTargetDrawingId(created.id);
+      queryClient.invalidateQueries({ queryKey: ['dwg-drawings', projectId] });
+      addToast({
+        type: 'success',
+        title: t('dwg_compare.upload_started', {
+          defaultValue: 'Uploading {{name}}',
+          name: created.name || created.filename,
+        }),
+        message: t('dwg_compare.upload_started_hint', {
+          defaultValue: 'The diff runs automatically once the drawing is ready.',
+        }),
+      });
+    },
+    onError: () => {
+      addToast({
+        type: 'error',
+        title: t('dwg_compare.upload_error', {
+          defaultValue: 'Could not upload the drawing. Please try again.',
+        }),
+      });
+    },
+  });
+
+  const canCompareVersion = mode === 'version' && !!fromId && !!toId && fromId !== toId;
+  const canComparePair = mode === 'pair' && !!targetDrawingId && !!targetReady;
+  const canCompare = canCompareVersion || canComparePair;
 
   const diffQuery = useQuery<DwgDrawingDiffResponse>({
-    queryKey: ['dwg-compare', drawingId, fromId, toId],
-    queryFn: () => compareDrawings(drawingId, fromId, toId),
+    queryKey:
+      mode === 'pair'
+        ? ['dwg-compare-pair', projectId, drawingId, targetDrawingId]
+        : ['dwg-compare', drawingId, fromId, toId],
+    queryFn: () =>
+      mode === 'pair'
+        ? compareDrawingPair(projectId, drawingId, targetDrawingId)
+        : compareDrawings(drawingId, fromId, toId),
     enabled: open && canCompare,
   });
 
   const diff = diffQuery.data;
-
-  const navigate = useNavigate();
-  const addToast = useToastStore((s) => s.addToast);
 
   // The diff has a real change when any tally bucket other than "unchanged"
   // is non-zero across entities and annotations. With no changes there is
@@ -174,7 +265,11 @@ export function DwgDrawingCompareDrawer({
 
   const createVariationMutation = useMutation({
     mutationFn: () => {
-      if (!canCompare) throw new Error('no comparison selected');
+      if (mode === 'pair') {
+        if (!canComparePair) throw new Error('no comparison selected');
+        return createVariationFromDrawingPair(projectId, drawingId, targetDrawingId);
+      }
+      if (!canCompareVersion) throw new Error('no comparison selected');
       return createVariationFromDiff(drawingId, fromId, toId);
     },
     onSuccess: (result) => {
@@ -256,61 +351,169 @@ export function DwgDrawingCompareDrawer({
       subtitle={drawingName}
     >
       <div className="flex flex-col gap-4 p-5">
-        {/* Version pickers */}
+        {/* Compare-against picker: this drawing's revisions, or another
+            drawing in the project (or a freshly uploaded one). */}
         <div className="flex items-end gap-2">
           <label className="flex-1 min-w-0">
             <span className="block text-[11px] font-medium text-content-tertiary mb-1">
-              {t('dwg_compare.from_version', { defaultValue: 'Baseline (before)' })}
+              {t('dwg_compare.compare_against', { defaultValue: 'Compare against' })}
             </span>
             <select
-              value={fromId}
-              onChange={(e) => setFromId(e.target.value)}
-              disabled={versions.length === 0}
-              data-testid="dwg-compare-from"
+              value={targetDrawingId}
+              onChange={(e) => setTargetDrawingId(e.target.value)}
+              data-testid="dwg-compare-target"
               className="w-full rounded-md border border-border-light bg-surface-primary px-2 py-1.5 text-xs text-content-primary focus:outline-none focus:ring-2 focus:ring-oe-blue"
             >
-              {versions.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {versionLabel(v, t)}
+              <option value="">
+                {t('dwg_compare.this_drawing_revisions', {
+                  defaultValue: 'Revisions of this drawing',
+                })}
+              </option>
+              {otherDrawings.length > 0 && (
+                <optgroup
+                  label={t('dwg_compare.other_drawings', { defaultValue: 'Other drawings' })}
+                >
+                  {otherDrawings.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name || d.filename}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {/* Keep a just-uploaded, still-converting target selectable even
+                  though it is filtered out of the "ready" list above. */}
+              {targetDrawing && targetDrawing.status !== 'ready' && (
+                <option value={targetDrawing.id}>
+                  {targetDrawing.name || targetDrawing.filename}
                 </option>
-              ))}
+              )}
             </select>
           </label>
-          <ArrowRight size={16} className="mb-2 shrink-0 text-content-tertiary" />
-          <label className="flex-1 min-w-0">
-            <span className="block text-[11px] font-medium text-content-tertiary mb-1">
-              {t('dwg_compare.to_version', { defaultValue: 'Target (after)' })}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploadMutation.isPending || !projectId}
+            data-testid="dwg-compare-upload"
+            className="mb-0.5 inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border-light px-2.5 py-1.5 text-xs font-medium text-content-secondary transition hover:bg-surface-secondary disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {uploadMutation.isPending ? (
+              <Loader2 size={13} className="animate-spin" />
+            ) : (
+              <Upload size={13} />
+            )}
+            <span className="truncate">
+              {t('dwg_compare.upload_revision', {
+                defaultValue: 'Upload a revision to compare',
+              })}
             </span>
-            <select
-              value={toId}
-              onChange={(e) => setToId(e.target.value)}
-              disabled={versions.length === 0}
-              data-testid="dwg-compare-to"
-              className="w-full rounded-md border border-border-light bg-surface-primary px-2 py-1.5 text-xs text-content-primary focus:outline-none focus:ring-2 focus:ring-oe-blue"
-            >
-              {versions.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {versionLabel(v, t)}
-                </option>
-              ))}
-            </select>
-          </label>
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".dwg,.dxf"
+            className="hidden"
+            data-testid="dwg-compare-upload-input"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) uploadMutation.mutate(file);
+              e.target.value = '';
+            }}
+          />
         </div>
 
-        {versions.length < 2 && !versionsQuery.isLoading && (
-          <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-content-secondary">
-            {t('dwg_compare.need_two_versions', {
+        {/* Version-vs-version pickers (revisions of the same drawing). */}
+        {mode === 'version' && (
+          <div className="flex items-end gap-2">
+            <label className="flex-1 min-w-0">
+              <span className="block text-[11px] font-medium text-content-tertiary mb-1">
+                {t('dwg_compare.from_version', { defaultValue: 'Baseline (before)' })}
+              </span>
+              <select
+                value={fromId}
+                onChange={(e) => setFromId(e.target.value)}
+                disabled={versions.length === 0}
+                data-testid="dwg-compare-from"
+                className="w-full rounded-md border border-border-light bg-surface-primary px-2 py-1.5 text-xs text-content-primary focus:outline-none focus:ring-2 focus:ring-oe-blue"
+              >
+                {versions.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {versionLabel(v, t)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <ArrowRight size={16} className="mb-2 shrink-0 text-content-tertiary" />
+            <label className="flex-1 min-w-0">
+              <span className="block text-[11px] font-medium text-content-tertiary mb-1">
+                {t('dwg_compare.to_version', { defaultValue: 'Target (after)' })}
+              </span>
+              <select
+                value={toId}
+                onChange={(e) => setToId(e.target.value)}
+                disabled={versions.length === 0}
+                data-testid="dwg-compare-to"
+                className="w-full rounded-md border border-border-light bg-surface-primary px-2 py-1.5 text-xs text-content-primary focus:outline-none focus:ring-2 focus:ring-oe-blue"
+              >
+                {versions.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {versionLabel(v, t)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )}
+
+        {/* Drawing-vs-drawing sides (baseline = this drawing, target = picked). */}
+        {mode === 'pair' && (
+          <div className="flex items-center gap-2 rounded-md border border-border-light bg-surface-secondary px-3 py-2 text-xs">
+            <span
+              className="min-w-0 flex-1 truncate font-medium text-content-primary"
+              title={drawingName}
+            >
+              {drawingName}
+            </span>
+            <ArrowRight size={13} className="shrink-0 text-content-tertiary" />
+            <span
+              className="min-w-0 flex-1 truncate text-right font-medium text-content-primary"
+              title={targetDrawing?.name || targetDrawing?.filename || ''}
+            >
+              {targetDrawing?.name || targetDrawing?.filename || ''}
+            </span>
+          </div>
+        )}
+
+        {/* Helper notes. */}
+        {mode === 'version' && versions.length < 2 && !versionsQuery.isLoading && (
+          <p className="rounded-md border border-border-light bg-surface-secondary px-3 py-2 text-xs text-content-secondary">
+            {t('dwg_compare.single_revision_hint', {
               defaultValue:
-                'This drawing has only one revision. Re-upload an updated DWG/DXF to create a second version to compare.',
+                'This drawing has only one revision. Pick another drawing above, or upload one, to compare.',
             })}
           </p>
         )}
 
-        {fromId === toId && versions.length >= 2 && (
+        {mode === 'version' && fromId === toId && versions.length >= 2 && (
           <p className="text-xs text-content-tertiary">
             {t('dwg_compare.pick_two', {
               defaultValue: 'Pick two different revisions to compare.',
             })}
+          </p>
+        )}
+
+        {mode === 'pair' && targetDrawing && !targetReady && (
+          <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-content-secondary">
+            {targetDrawing.status === 'error' ||
+            targetDrawing.status === 'empty' ||
+            targetDrawing.status === 'needs_conversion'
+              ? t('dwg_compare.target_not_ready', {
+                  defaultValue:
+                    'The comparison drawing could not be prepared. Pick another drawing or upload again.',
+                })
+              : t('dwg_compare.target_preparing', {
+                  defaultValue:
+                    'Preparing the comparison drawing. The diff runs automatically once it is ready.',
+                })}
           </p>
         )}
 
@@ -381,7 +584,8 @@ export function DwgDrawingCompareDrawer({
         </div>
 
         {/* Loading / error / empty states */}
-        {(versionsQuery.isLoading || (canCompare && diffQuery.isLoading)) && (
+        {((mode === 'version' && versionsQuery.isLoading) ||
+          (canCompare && diffQuery.isLoading)) && (
           <div className="flex items-center justify-center gap-2 py-10 text-sm text-content-tertiary">
             <Loader2 size={16} className="animate-spin" />
             {t('dwg_compare.loading', { defaultValue: 'Computing diff…' })}

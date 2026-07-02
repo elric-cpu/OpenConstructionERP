@@ -489,6 +489,11 @@ export interface DwgAnnotationDiffRow {
 
 export interface DwgDrawingDiffResponse {
   drawing_id: string;
+  /** Present only on a drawing-vs-drawing compare (two independent drawings):
+   *  identifies each side so the UI can label both. Absent on the
+   *  version-vs-version compare of a single drawing. */
+  from_drawing_id?: string | null;
+  to_drawing_id?: string | null;
   from_version_id: string;
   from_version_number: number;
   to_version_id: string;
@@ -526,6 +531,28 @@ export async function compareDrawings(
   );
 }
 
+/** Compare two INDEPENDENT drawings in a project (drawing-vs-drawing).
+ *
+ * Unlike {@link compareDrawings} (two versions of ONE drawing), this diffs
+ * the latest version of two separately uploaded drawings - the user picks
+ * (or uploads) a second drawing as the comparison target. ``fromDrawingId``
+ * is the baseline ('before'); ``toDrawingId`` is the target ('after').
+ * Mirrors the PDF module's two-document compare. */
+export async function compareDrawingPair(
+  projectId: string,
+  fromDrawingId: string,
+  toDrawingId: string,
+): Promise<DwgDrawingDiffResponse> {
+  const params = new URLSearchParams({
+    project_id: projectId,
+    from_drawing_id: fromDrawingId,
+    to_drawing_id: toDrawingId,
+  });
+  return apiPost<DwgDrawingDiffResponse>(
+    `/v1/dwg_takeoff/drawings/compare/?${params.toString()}`,
+  );
+}
+
 /** The draft variation request minted from a revision-compare delta. */
 export interface CreateVariationFromDiffResult {
   variation_request_id: string;
@@ -551,6 +578,29 @@ export async function createVariationFromDiff(
     {
       from_version_id: fromVersionId,
       to_version_id: toVersionId,
+      ...(title ? { title } : {}),
+    },
+  );
+}
+
+/** Turn a drawing-vs-drawing delta into a DRAFT variation request.
+ *
+ * Mirrors {@link createVariationFromDiff} for the drawing-pair path: the
+ * backend recomputes the deterministic pair-compare and shapes its net cost
+ * impact into a draft VariationRequest (never submitted - a human confirms
+ * it). Requires both ``dwg_takeoff.read`` and ``variations.create``. */
+export async function createVariationFromDrawingPair(
+  projectId: string,
+  fromDrawingId: string,
+  toDrawingId: string,
+  title?: string,
+): Promise<CreateVariationFromDiffResult> {
+  return apiPost<CreateVariationFromDiffResult>(
+    '/v1/dwg_takeoff/drawings/compare/create-variation',
+    {
+      project_id: projectId,
+      from_drawing_id: fromDrawingId,
+      to_drawing_id: toDrawingId,
       ...(title ? { title } : {}),
     },
   );

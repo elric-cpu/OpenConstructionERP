@@ -635,6 +635,52 @@ def _compute_entity_diff(
     return rows
 
 
+def _summarize_diff(
+    entity_rows: list[dict[str, Any]],
+    annotation_rows: list[dict[str, Any]],
+    *,
+    from_entity_count: int,
+    to_entity_count: int,
+) -> dict[str, Any]:
+    """Roll entity + annotation diff rows into the compare summary block.
+
+    Shared by the single-drawing version compare and the drawing-pair
+    compare so both emit an identical summary shape: per-bucket
+    traffic-light tallies for entities and annotations, plus the net cost
+    impact in a single base currency (never blended across currencies).
+    ``unchanged`` is excluded from the headline change tallies but still
+    returned in the rows for the "show all" view.
+    """
+
+    def _tally(rows: list[dict[str, Any]]) -> dict[str, int]:
+        tally = {"added": 0, "removed": 0, "modified": 0, "unchanged": 0}
+        for row in rows:
+            tally[row["change_type"]] = tally.get(row["change_type"], 0) + 1
+        return tally
+
+    # Net cost impact across all linked annotations whose value changed.
+    net_impact = Decimal("0")
+    cost_currency: str | None = None
+    has_cost = False
+    for row in annotation_rows:
+        if row.get("cost_impact") is not None:
+            has_cost = True
+            cost_currency = row.get("cost_currency") or cost_currency
+            try:
+                net_impact += Decimal(str(row["cost_impact"]))
+            except (InvalidOperation, ValueError, TypeError):
+                continue
+
+    return {
+        "entities": _tally(entity_rows),
+        "annotations": _tally(annotation_rows),
+        "net_cost_impact": (str(net_impact.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if has_cost else None),
+        "cost_currency": cost_currency,
+        "from_entity_count": from_entity_count,
+        "to_entity_count": to_entity_count,
+    }
+
+
 def _to_float(value: Any) -> float | None:
     """Coerce a ``Decimal``/number/string measurement to ``float`` or None.
 
@@ -1776,40 +1822,93 @@ class DwgTakeoffService:
             from_version_id,
             to_version_id,
         )
-
-        # Summary counts - split entity vs annotation so the UI can show
-        # two traffic-light rows. ``unchanged`` is excluded from the headline
-        # change tallies but still returned in the rows for the "show all" view.
-        def _tally(rows: list[dict[str, Any]]) -> dict[str, int]:
-            tally = {"added": 0, "removed": 0, "modified": 0, "unchanged": 0}
-            for row in rows:
-                tally[row["change_type"]] = tally.get(row["change_type"], 0) + 1
-            return tally
-
-        # Net cost impact across all linked annotations whose value changed.
-        net_impact = Decimal("0")
-        cost_currency: str | None = None
-        has_cost = False
-        for row in annotation_rows:
-            if row.get("cost_impact") is not None:
-                has_cost = True
-                cost_currency = row.get("cost_currency") or cost_currency
-                try:
-                    net_impact += Decimal(str(row["cost_impact"]))
-                except (InvalidOperation, ValueError, TypeError):
-                    continue
-
-        summary = {
-            "entities": _tally(entity_rows),
-            "annotations": _tally(annotation_rows),
-            "net_cost_impact": str(net_impact.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if has_cost else None,
-            "cost_currency": cost_currency,
-            "from_entity_count": from_version.entity_count,
-            "to_entity_count": to_version.entity_count,
-        }
+        summary = _summarize_diff(
+            entity_rows,
+            annotation_rows,
+            from_entity_count=from_version.entity_count,
+            to_entity_count=to_version.entity_count,
+        )
 
         return {
             "drawing_id": drawing_id,
+            "from_version_id": from_version.id,
+            "from_version_number": from_version.version_number,
+            "to_version_id": to_version.id,
+            "to_version_number": to_version.version_number,
+            "entity_rows": entity_rows,
+            "annotation_rows": annotation_rows,
+            "summary": summary,
+        }
+
+    async def compare_drawing_pair(
+        self,
+        project_id: uuid.UUID,
+        from_drawing_id: uuid.UUID,
+        to_drawing_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        """Compare two INDEPENDENT drawings in a project and return the diff.
+
+        Where :meth:`compare_drawing_versions` diffs two parsed versions of
+        ONE drawing, this diffs the LATEST version of two separately
+        uploaded drawings - the user picks (or uploads) a second drawing as
+        the comparison target. The diff core (:func:`_compute_entity_diff`
+        plus :meth:`_compute_annotation_delta`) is identical; only the two
+        sides are resolved from different drawings, so there is no
+        same-drawing guard.
+
+        Both drawings must belong to ``project_id`` (a missing or
+        foreign-project drawing 404s the same way) so a compare never
+        crosses tenants or blends two base currencies. Each drawing must
+        have at least one parsed version (404 otherwise).
+
+        Note on annotation matching: annotations are matched by
+        ``metadata.compare_key``; two independently uploaded drawings rarely
+        share keys, so annotation rows mostly read as added/removed and the
+        per-layer entity diff is the primary signal - identical to how the
+        PDF two-document compare behaves.
+
+        Returns the same payload shape as :meth:`compare_drawing_versions`,
+        additionally carrying ``from_drawing_id`` / ``to_drawing_id`` so the
+        UI can label both sides. ``drawing_id`` stays populated (the
+        baseline drawing) for back-compat.
+        """
+        from_drawing = await self.get_drawing(from_drawing_id)
+        to_drawing = await self.get_drawing(to_drawing_id)
+        for drawing in (from_drawing, to_drawing):
+            if drawing.project_id != project_id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Drawing not found",
+                )
+
+        from_version = await self.get_latest_version(from_drawing_id)
+        to_version = await self.get_latest_version(to_drawing_id)
+        for version in (from_version, to_version):
+            if version is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Drawing has no parsed version to compare",
+                )
+        assert from_version is not None  # noqa: S101 - narrowed by the loop above
+        assert to_version is not None  # noqa: S101
+
+        entity_rows = _compute_entity_diff(from_version.layers, to_version.layers)
+        annotation_rows = await self._compute_annotation_delta(
+            project_id,
+            from_version.id,
+            to_version.id,
+        )
+        summary = _summarize_diff(
+            entity_rows,
+            annotation_rows,
+            from_entity_count=from_version.entity_count,
+            to_entity_count=to_version.entity_count,
+        )
+
+        return {
+            "drawing_id": from_drawing_id,
+            "from_drawing_id": from_drawing_id,
+            "to_drawing_id": to_drawing_id,
             "from_version_id": from_version.id,
             "from_version_number": from_version.version_number,
             "to_version_id": to_version.id,
@@ -2055,6 +2154,98 @@ class DwgTakeoffService:
                 "drawing_id": str(drawing_id),
                 "from_version_id": str(from_version_id),
                 "to_version_id": str(to_version_id),
+                "changed_annotation_ids": changed_annotation_ids,
+                "net_cost_impact": str(estimated_cost_impact),
+            },
+        )
+        variations_service = VariationsService(self.session)
+        vr = await variations_service.create_request(vr_create, user_id=user_id)
+
+        return {
+            "variation_request_id": vr.id,
+            "code": vr.code,
+            "estimated_cost_impact": str(estimated_cost_impact),
+            "currency": currency,
+        }
+
+    async def create_variation_from_drawing_pair(
+        self,
+        project_id: uuid.UUID,
+        from_drawing_id: uuid.UUID,
+        to_drawing_id: uuid.UUID,
+        *,
+        title: str | None = None,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Turn a drawing-vs-drawing delta into a draft VariationRequest.
+
+        Mirrors :meth:`create_variation_from_versions` for the drawing-pair
+        path: the deterministic :meth:`compare_drawing_pair` is the single
+        source of truth (the diff is not recomputed here), and a *draft*
+        VariationRequest is created (never submitted) so a human confirms it
+        in the variations workflow. The variation is classified
+        ``scope_change`` and carries the net cost impact in the project's
+        base currency.
+
+        Provenance is stamped into
+        ``metadata.source = "dwg_drawing_pair_compare"`` with both drawing
+        ids and the changed linked-annotation ids so the handoff is
+        traceable.
+
+        Returns ``{variation_request_id, code, estimated_cost_impact,
+        currency}``.
+        """
+        diff = await self.compare_drawing_pair(project_id, from_drawing_id, to_drawing_id)
+        from_drawing = await self.get_drawing(from_drawing_id)
+        to_drawing = await self.get_drawing(to_drawing_id)
+
+        summary = diff.get("summary") or {}
+        entity_tally = summary.get("entities") or {}
+        annotation_tally = summary.get("annotations") or {}
+        net_impact_raw = summary.get("net_cost_impact")
+        currency = summary.get("cost_currency") or ""
+
+        changed_annotation_ids = [
+            row["annotation_id"] for row in diff.get("annotation_rows", []) if row.get("change_type") == "modified"
+        ]
+
+        try:
+            estimated_cost_impact = Decimal(str(net_impact_raw)) if net_impact_raw not in (None, "") else Decimal("0")
+        except (InvalidOperation, ValueError, TypeError):
+            estimated_cost_impact = Decimal("0")
+
+        resolved_title = title or f"Drawing compare {from_drawing.name} -> {to_drawing.name}"
+        description = _build_revision_narrative(
+            entity_tally=entity_tally,
+            annotation_tally=annotation_tally,
+            changed_linked_count=len(
+                [
+                    row
+                    for row in diff.get("annotation_rows", [])
+                    if row.get("change_type") == "modified" and row.get("linked_boq_position_id")
+                ]
+            ),
+        )
+
+        # Lazy import (mirrors create_variation_from_versions) so the
+        # dwg_takeoff module load never depends on the variations module
+        # being importable at import time.
+        from app.modules.variations.schemas import VariationRequestCreate
+        from app.modules.variations.service import VariationsService
+
+        vr_create = VariationRequestCreate(
+            project_id=project_id,
+            title=resolved_title[:500],
+            description=description[:20000],
+            classification="scope_change",
+            estimated_cost_impact=estimated_cost_impact,
+            estimated_schedule_days=0,
+            currency=currency[:10],
+            status="draft",
+            metadata={
+                "source": "dwg_drawing_pair_compare",
+                "from_drawing_id": str(from_drawing_id),
+                "to_drawing_id": str(to_drawing_id),
                 "changed_annotation_ids": changed_annotation_ids,
                 "net_cost_impact": str(estimated_cost_impact),
             },
