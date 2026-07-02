@@ -1156,6 +1156,14 @@ export function BOQEditorPage() {
   const [excelPasteOpen, setExcelPasteOpen] = useState(false);
   const [customColumnsOpen, setCustomColumnsOpen] = useState(false);
   const [variablesOpen, setVariablesOpen] = useState(false);
+  // Issue #292 - one-shot seed for the variables dialog when a position
+  // quantity is captured from the grid context menu. A fresh object per
+  // capture doubles as the dialog's apply-once token.
+  const [variableSeed, setVariableSeed] = useState<{ value: number; label?: string } | null>(null);
+  const handleSaveQuantityAsVariable = useCallback((quantity: number, label: string) => {
+    setVariableSeed({ value: quantity, label });
+    setVariablesOpen(true);
+  }, []);
   const [isExcelPasteImporting, setIsExcelPasteImporting] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   /** When set, the cost DB modal adds a resource to this position instead of creating a new position. */
@@ -4828,6 +4836,7 @@ export function BOQEditorPage() {
           anomalyMap={anomalyMap}
           onApplyAnomalySuggestion={handleApplyAnomalySuggestion}
           onSaveAsAssembly={handleSaveAsAssembly}
+          onSaveQuantityAsVariable={handleSaveQuantityAsVariable}
           customColumns={boqCustomColumns}
           showResourceSplit={showResourceSplit}
           showResourceSplitPill={showResourceSplitPill}
@@ -5249,8 +5258,9 @@ export function BOQEditorPage() {
       {boqId && (
         <BOQVariablesDialog
           open={variablesOpen}
-          onClose={() => setVariablesOpen(false)}
+          onClose={() => { setVariablesOpen(false); setVariableSeed(null); }}
           boqId={boqId}
+          seed={variableSeed}
         />
       )}
 

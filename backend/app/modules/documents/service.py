@@ -183,7 +183,7 @@ PHOTO_THUMB_QUALITY = 82
 MAX_FILE_SIZE = 500 * 1024 * 1024  # 500MB
 MAX_PHOTO_SIZE = 200 * 1024 * 1024  # 200MB
 VALID_CATEGORIES = {"drawing", "contract", "specification", "photo", "correspondence", "other"}
-VALID_PHOTO_CATEGORIES = {"site", "progress", "defect", "delivery", "safety", "other"}
+VALID_PHOTO_CATEGORIES = {"site", "progress", "defect", "delivery", "safety", "aerial", "other"}
 ALLOWED_IMAGE_TYPES = {
     "image/jpeg",
     "image/png",

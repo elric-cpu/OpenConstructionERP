@@ -64,7 +64,7 @@ import {
 /* ── Constants ────────────────────────────────────────────────────────── */
 
 const PHOTO_CATEGORIES: PhotoCategory[] = [
-  'site', 'progress', 'defect', 'delivery', 'safety', 'other',
+  'site', 'progress', 'defect', 'delivery', 'safety', 'aerial', 'other',
 ];
 
 const CATEGORY_COLORS: Record<PhotoCategory, string> = {
@@ -73,6 +73,7 @@ const CATEGORY_COLORS: Record<PhotoCategory, string> = {
   defect: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
   delivery: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
   safety: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
+  aerial: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
   other: 'bg-gray-100 text-gray-700 dark:bg-gray-800/60 dark:text-gray-300',
 };
 

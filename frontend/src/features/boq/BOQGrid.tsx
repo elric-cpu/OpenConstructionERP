@@ -44,6 +44,7 @@ import {
   Link2,
   Link2Off,
   Banknote,
+  Variable,
 } from 'lucide-react';
 
 import {
@@ -479,6 +480,14 @@ export interface BOQGridProps {
   onApplyAnomalySuggestion?: (positionId: string, suggestedRate: number) => void;
   /** Save a BOQ position as a reusable assembly */
   onSaveAsAssembly?: (positionId: string) => void;
+  /**
+   * Issue #292 - capture this position's quantity as a reusable named BOQ
+   * variable. The quantity is metric-canonical (the same convention the
+   * formula engine and variables share), so it is handed over as-is; the
+   * variables dialog seeds a pre-filled row. ``label`` is a human hint
+   * (ordinal + description) stored as the variable description.
+   */
+  onSaveQuantityAsVariable?: (quantity: number, label: string) => void;
   /** Custom column definitions from BOQ metadata */
   customColumns?: import('./grid/columnDefs').CustomColumnDef[];
   /**
@@ -563,6 +572,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
   onLookupResourceByCode,
   onDuplicatePosition,
   onReuseCode,
+  onSaveQuantityAsVariable,
   onAddChildPosition,
   onAddSubSection,
   maxNestingDepth = DEFAULT_MAX_NESTING_DEPTH,
@@ -2913,6 +2923,17 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
                     onClick={() => { onSaveAsAssembly(d.id as string); closeContextMenu(); }}
                   />
                 )}
+                {onSaveQuantityAsVariable && (() => {
+                  const qty = Number(d.quantity);
+                  if (!Number.isFinite(qty)) return null;
+                  const label = `${String(d.ordinal ?? '')} ${String(d.description ?? '')}`.trim().slice(0, 80);
+                  return (
+                    <CtxItem icon={<Variable size={14} className="text-oe-blue"/>}
+                      label={t('boq.save_qty_as_variable', { defaultValue: 'Save quantity as variable…' })}
+                      onClick={() => { onSaveQuantityAsVariable(qty, label); closeContextMenu(); }}
+                    />
+                  );
+                })()}
                 {costItemId && (
                   <CtxItem icon={<ExternalLink size={14}/>}
                     label={t('boq.view_in_cost_db', { defaultValue: 'View in Cost Database' })}

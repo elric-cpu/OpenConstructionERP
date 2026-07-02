@@ -285,10 +285,19 @@ export function GeoEmptyState({
   }
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-6">
+    <div
+      className={
+        // The no-anchor prompt docks to the top-left as a side panel so the map
+        // stays visible behind it (#288: the centred card used to cover the
+        // whole map). Other empty states stay centred.
+        collapsible
+          ? 'pointer-events-none absolute left-3 top-3 z-10 w-full max-w-xs sm:max-w-sm'
+          : 'pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-6'
+      }
+    >
       <div
         className={[
-          'pointer-events-auto relative w-full max-w-md overflow-hidden',
+          `pointer-events-auto relative w-full overflow-hidden ${collapsible ? '' : 'max-w-md'}`,
           'rounded-xl border border-white/10 bg-slate-900/70 p-6 text-slate-100',
           'shadow-xl backdrop-blur-md ring-1 ring-white/5',
         ].join(' ')}

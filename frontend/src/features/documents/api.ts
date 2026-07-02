@@ -9,7 +9,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
-export type PhotoCategory = 'site' | 'progress' | 'defect' | 'delivery' | 'safety' | 'other';
+export type PhotoCategory = 'site' | 'progress' | 'defect' | 'delivery' | 'safety' | 'aerial' | 'other';
 
 export interface PhotoItem {
   id: string;
@@ -60,7 +60,7 @@ export function getCategorySuggestion(photo: PhotoItem): PhotoCategorySuggestion
   if (!raw || typeof raw !== 'object') return null;
   const rec = raw as Record<string, unknown>;
   const cat = rec['suggested_category'];
-  const validCats: readonly string[] = ['site', 'progress', 'defect', 'delivery', 'safety', 'other'];
+  const validCats: readonly string[] = ['site', 'progress', 'defect', 'delivery', 'safety', 'aerial', 'other'];
   if (typeof cat !== 'string' || !validCats.includes(cat)) return null;
   const conf = rec['confidence'];
   const src = rec['source'];

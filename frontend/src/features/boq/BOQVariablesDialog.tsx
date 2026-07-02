@@ -9,7 +9,7 @@
  * the entire array round-trips. This keeps state simple and matches the
  * backend `PUT /v1/boq/boqs/{id}/variables/` endpoint.
  */
-import { useEffect, useMemo, useState, type FormEvent, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ChangeEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, AlertCircle } from 'lucide-react';
@@ -23,6 +23,13 @@ interface BOQVariablesDialogProps {
   open: boolean;
   onClose: () => void;
   boqId: string;
+  /**
+   * One-shot seed (#292): when the dialog opens with this set, a pre-filled
+   * `number` row is appended once for the captured value. The value is
+   * metric-canonical (positions and variables share that convention), so it
+   * is stored as-is. The object identity is the apply-once token.
+   */
+  seed?: { value: number; label?: string } | null;
 }
 
 const NAME_RE = /^[A-Z][A-Z0-9_]{0,31}$/;
@@ -119,7 +126,7 @@ function rowErrorMessage(
   }
 }
 
-export function BOQVariablesDialog({ open, onClose, boqId }: BOQVariablesDialogProps) {
+export function BOQVariablesDialog({ open, onClose, boqId, seed }: BOQVariablesDialogProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const addToast = useToastStore((s) => s.addToast);
@@ -133,14 +140,32 @@ export function BOQVariablesDialog({ open, onClose, boqId }: BOQVariablesDialogP
     staleTime: 0,
   });
 
+  const appliedSeedRef = useRef<object | null>(null);
+
   // Hydrate drafts whenever fresh server data arrives or the dialog opens.
+  // When the caller passes a one-shot `seed` (a position quantity captured
+  // from the grid, #292), append a pre-filled row exactly once per seed: the
+  // seed object identity is the apply-once token, so a later refetch does not
+  // duplicate it and reopening without a seed leaves the list untouched.
   useEffect(() => {
-    if (!open) return;
-    if (variablesQuery.data) {
-      setDrafts(variablesQuery.data.map(fromServer));
-      setServerError(null);
+    if (!open) {
+      appliedSeedRef.current = null;
+      return;
     }
-  }, [open, variablesQuery.data]);
+    if (!variablesQuery.data) return;
+    const base = variablesQuery.data.map(fromServer);
+    if (seed && appliedSeedRef.current !== seed) {
+      base.push({
+        ...blankRow(),
+        type: 'number',
+        value: String(seed.value),
+        description: seed.label ?? '',
+      });
+      appliedSeedRef.current = seed;
+    }
+    setDrafts(base);
+    setServerError(null);
+  }, [open, variablesQuery.data, seed]);
 
   const replaceMutation = useMutation({
     mutationFn: (vars: BOQVariable[]) => boqApi.replaceBoqVariables(boqId, vars),
