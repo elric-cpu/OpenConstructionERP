@@ -305,10 +305,16 @@ const TAG_VARIANT: Record<Tag, 'success' | 'blue' | 'warning' | 'error' | 'neutr
   MILESTONE: 'blue',
 };
 
-export function Changelog() {
+export function Changelog({ maxEntries }: { maxEntries?: number } = {}) {
   const { t } = useTranslation();
 
-  const entries = [...CHANGELOG].sort(compareVersionsDesc);
+  const sorted = [...CHANGELOG].sort(compareVersionsDesc);
+  const total = sorted.length;
+  // When collapsed (maxEntries set) we render only the newest few cards but
+  // still report the full release count so the "Show full changelog" toggle
+  // reads as an invitation rather than the whole list.
+  const entries =
+    typeof maxEntries === 'number' ? sorted.slice(0, Math.max(0, maxEntries)) : sorted;
   // Latest 7 versions get visible tag chips; older ones drop the tag to keep
   // the card list calm. The tag is still encoded in the data, just not shown.
   const FRESH_TAG_COUNT = 7;
@@ -332,7 +338,7 @@ export function Changelog() {
         <span className="text-2xs text-content-tertiary tabular-nums">
           {t('about.changelog_count', {
             defaultValue: '{{count}} releases',
-            count: entries.length,
+            count: total,
           })}
         </span>
       </div>

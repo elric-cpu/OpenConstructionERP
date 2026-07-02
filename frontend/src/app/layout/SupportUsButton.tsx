@@ -8,6 +8,7 @@ import {
   Twitter,
   Linkedin,
   Heart,
+  HandCoins,
   X,
   ExternalLink,
   Copy,
@@ -20,6 +21,8 @@ import clsx from 'clsx';
 import { copyToClipboard } from '@/shared/lib/browser';
 
 const REPO_URL = 'https://github.com/datadrivenconstruction/OpenConstructionERP';
+const PAYPAL_DONATE_URL = 'https://www.paypal.com/donate/?hosted_button_id=DWBCLNLY2VWAA';
+const GITHUB_SPONSORS_URL = 'https://github.com/sponsors/datadrivenconstruction';
 const CASE_STUDY_EMAIL = 'info@datadrivenconstruction.io';
 const CASE_STUDY_MAILTO = `mailto:${CASE_STUDY_EMAIL}?subject=${encodeURIComponent(
   'Case study / article - OpenConstructionERP',
@@ -463,6 +466,54 @@ function SupportUsModal({ onClose, copied, setCopied }: ModalProps) {
               aria-hidden
             />
           </a>
+
+          {/* 4. Fund development - donations keep the platform free */}
+          <div
+            className={clsx(
+              'group rounded-xl border-2 p-4',
+              'border-emerald-300/50 bg-gradient-to-br from-emerald-50/60 to-green-50/30',
+              'dark:border-emerald-500/30 dark:from-emerald-950/30 dark:to-green-950/20',
+            )}
+          >
+            <div className="flex items-start gap-3 mb-2">
+              <div className="shrink-0 h-11 w-11 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 flex items-center justify-center">
+                <HandCoins size={20} strokeWidth={1.75} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-sm sm:text-base font-semibold text-content-primary">
+                  {t('support.action_donate_title', {
+                    defaultValue: 'Fund development',
+                  })}
+                </h3>
+                <p className="mt-0.5 text-xs text-content-secondary leading-relaxed">
+                  {t('support.action_donate_body', {
+                    defaultValue:
+                      'Donations keep OpenConstructionERP free and open for everyone. They fund new regional cost data, AI estimation and support for more CAD and file formats.',
+                  })}
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 ml-14">
+              <a
+                href={PAYPAL_DONATE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-md border border-border-light bg-surface-primary px-3 py-1.5 text-xs font-medium text-content-primary hover:bg-emerald-50 hover:border-emerald-400 dark:hover:bg-emerald-950/40 transition-colors"
+              >
+                <Heart size={12} />
+                {t('support.donate_paypal', { defaultValue: 'Donate with PayPal' })}
+              </a>
+              <a
+                href={GITHUB_SPONSORS_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-md border border-border-light bg-surface-primary px-3 py-1.5 text-xs font-medium text-content-primary hover:bg-emerald-50 hover:border-emerald-400 dark:hover:bg-emerald-950/40 transition-colors"
+              >
+                <Github size={12} />
+                {t('support.donate_github', { defaultValue: 'Sponsor on GitHub' })}
+              </a>
+            </div>
+          </div>
         </div>
 
         {/* Thank-you footer */}

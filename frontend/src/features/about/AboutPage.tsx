@@ -2,25 +2,125 @@
  * AboutPage — Application info, author, license, consulting services.
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Mail, Shield, BookOpen, Users, Award,
   Briefcase, Globe, ExternalLink,
   Linkedin, Youtube, Star, Coffee, Rocket, ArrowRight, Handshake,
-  Github, MessageCircle,
+  Github, MessageCircle, Heart, HandCoins, ChevronDown,
 } from 'lucide-react';
+import clsx from 'clsx';
 import { Card, Button, Badge, Breadcrumb, DismissibleInfo, IntroRichText } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { APP_VERSION } from '@/shared/lib/version';
 import { UpdateNotification } from '@/shared/ui/UpdateChecker';
 import { Changelog, getRecentReleases } from './Changelog';
+import { CONTRIBUTORS, SPONSORS, acknowledgedUrl, type Acknowledged } from './acknowledgments';
+
+const REPO_URL = 'https://github.com/datadrivenconstruction/OpenConstructionERP';
+const PAYPAL_DONATE_URL = 'https://www.paypal.com/donate/?hosted_button_id=DWBCLNLY2VWAA';
+const GITHUB_SPONSORS_URL = 'https://github.com/sponsors/datadrivenconstruction';
+
+// Warm palette for avatar monograms - a deterministic pick keeps each person's
+// fallback color stable across renders while staying varied across the wall.
+const MONOGRAM_COLORS = [
+  'bg-rose-500',
+  'bg-amber-500',
+  'bg-emerald-500',
+  'bg-sky-500',
+  'bg-violet-500',
+  'bg-orange-500',
+  'bg-teal-500',
+  'bg-fuchsia-500',
+];
+
+function monogramColor(seed: string): string {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  }
+  return MONOGRAM_COLORS[hash % MONOGRAM_COLORS.length] ?? 'bg-slate-500';
+}
+
+function monogramInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase();
+  return name.trim().slice(0, 2).toUpperCase();
+}
+
+/**
+ * One acknowledgment tile: the person's GitHub avatar above their name, linking
+ * to their profile. When the avatar image cannot load (no account image, network
+ * block) it falls back to a colored initials monogram so every tile still reads
+ * cleanly. Sponsors render slightly larger via the `prominent` flag.
+ */
+function AckAvatar({ entry, prominent = false }: { entry: Acknowledged; prominent?: boolean }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const url = acknowledgedUrl(entry);
+  const avatarSrc = entry.handle ? `https://github.com/${entry.handle}.png?size=80` : undefined;
+  const showImg = Boolean(avatarSrc) && !imgFailed;
+
+  const body = (
+    <>
+      <span
+        className={clsx(
+          'relative flex items-center justify-center overflow-hidden rounded-full shadow-sm transition-transform group-hover:scale-105',
+          prominent ? 'h-16 w-16 ring-2 ring-emerald-400/60' : 'h-14 w-14 ring-1 ring-border-light',
+        )}
+      >
+        {showImg ? (
+          <img
+            src={avatarSrc}
+            alt={entry.name}
+            loading="lazy"
+            onError={() => setImgFailed(true)}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <span
+            className={clsx(
+              'flex h-full w-full items-center justify-center font-bold text-white',
+              prominent ? 'text-base' : 'text-sm',
+              monogramColor(entry.name),
+            )}
+          >
+            {monogramInitials(entry.name)}
+          </span>
+        )}
+      </span>
+      <span className="mt-1.5 w-full truncate text-center text-2xs text-content-secondary group-hover:text-content-primary transition-colors">
+        {entry.name}
+      </span>
+    </>
+  );
+
+  const cls = clsx(
+    'group flex flex-col items-center rounded-lg p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-2',
+    prominent ? 'w-20' : 'w-[4.5rem]',
+  );
+
+  return url ? (
+    <a href={url} target="_blank" rel="noopener noreferrer" title={entry.name} className={cls}>
+      {body}
+    </a>
+  ) : (
+    <span className={cls} title={entry.name}>
+      {body}
+    </span>
+  );
+}
 
 export function AboutPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { hash, key } = useLocation();
+
+  // The changelog is long, so on the About page it starts collapsed to a
+  // single latest release with a toggle to reveal the full history. Deep
+  // links (the header "View all" and /about#changelog) expand it on arrival.
+  const [changelogExpanded, setChangelogExpanded] = useState(false);
 
   // When arriving via /about#changelog (from the header News button or the
   // sidebar What's-new card) scroll the changelog section into view. We key the
@@ -30,6 +130,9 @@ export function AboutPage() {
   // away) still re-fires the scroll instead of silently doing nothing.
   useEffect(() => {
     if (hash !== '#changelog') return;
+    // A deep link to the changelog should reveal the full list, not the
+    // collapsed single-release preview.
+    setChangelogExpanded(true);
     // Defer to the next frame so the changelog section is laid out first.
     const frame = window.requestAnimationFrame(() => {
       const changelog = document.querySelector('[data-changelog-anchor]');
@@ -126,6 +229,7 @@ export function AboutPage() {
                 className="text-2xs text-oe-blue hover:underline"
                 onClick={(e) => {
                   e.preventDefault();
+                  setChangelogExpanded(true);
                   const changelog = document.querySelector('[data-changelog-anchor]');
                   if (changelog) changelog.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }}
@@ -736,7 +840,7 @@ export function AboutPage() {
                 </a>
 
                 <a
-                  href="https://github.com/sponsors/datadrivenconstruction"
+                  href={GITHUB_SPONSORS_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="group flex items-center gap-3 rounded-lg border border-border-light bg-surface-primary/80 backdrop-blur-sm px-3.5 py-3 hover:border-rose-400/60 hover:bg-rose-50/60 dark:hover:bg-rose-900/15 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-1"
@@ -751,6 +855,24 @@ export function AboutPage() {
                     </p>
                   </div>
                   <ArrowRight size={14} className="shrink-0 text-content-quaternary group-hover:text-rose-500 group-hover:translate-x-0.5 transition-all" />
+                </a>
+
+                <a
+                  href={PAYPAL_DONATE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group flex items-center gap-3 rounded-lg border border-border-light bg-surface-primary/80 backdrop-blur-sm px-3.5 py-3 hover:border-emerald-400/60 hover:bg-emerald-50/60 dark:hover:bg-emerald-900/15 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-1"
+                >
+                  <HandCoins size={22} className="shrink-0 text-emerald-500 group-hover:scale-110 transition-transform" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-content-primary leading-tight">
+                      {t('about.support_paypal', { defaultValue: 'Donate via PayPal' })}
+                    </p>
+                    <p className="text-2xs text-content-tertiary leading-snug mt-0.5">
+                      {t('about.support_paypal_desc', { defaultValue: 'A one-time donation of any size keeps the platform free and moving forward' })}
+                    </p>
+                  </div>
+                  <ArrowRight size={14} className="shrink-0 text-content-quaternary group-hover:text-emerald-500 group-hover:translate-x-0.5 transition-all" />
                 </a>
 
                 <a
@@ -1067,11 +1189,138 @@ export function AboutPage() {
 
       </div>
 
-      {/* Changelog — anchored so the header's "View all" jump target lands
-          on the section heading instead of mid-scroll. */}
+      {/* Thanks to our community - a warm wall of GitHub avatars for the
+          people who report issues, ask questions and fund the work. Placed
+          right before the Changelog so the page moves from gratitude into the
+          release history. Sponsors and donors lead the wall when present;
+          otherwise a single inviting line asks for the first backer. Kept in
+          sync with /ACKNOWLEDGMENTS.md via acknowledgments.ts. */}
+      <Card className="animate-card-in" style={{ animationDelay: '280ms' }}>
+        <div className="p-6">
+          <div className="flex items-center gap-2.5 mb-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-rose-500/10 ring-1 ring-rose-500/20">
+              <Heart size={18} className="text-rose-500" fill="currentColor" />
+            </div>
+            <h2 className="text-lg font-semibold text-content-primary">
+              {t('about.thanks_title', { defaultValue: 'Built with our community' })}
+            </h2>
+          </div>
+          <p className="text-sm text-content-secondary leading-relaxed mb-6 max-w-3xl">
+            {t('about.thanks_subtitle', {
+              defaultValue:
+                'OpenConstructionERP keeps growing thanks to its community. Every question, bug report and feature idea shapes what we build next, and every star, share and contribution keeps the platform free and open for everyone. Thank you to the people below.',
+            })}
+          </p>
+
+          {/* Sponsors and donors lead the wall when we have any; otherwise a
+              single inviting line stands in for an empty group. */}
+          {SPONSORS.length > 0 ? (
+            <div className="mb-6">
+              <p className="mb-3 text-2xs font-semibold uppercase tracking-wider text-content-tertiary">
+                {t('about.thanks_sponsors_label', { defaultValue: 'Sponsors and donors' })}
+              </p>
+              <div className="flex flex-wrap gap-3">
+                {SPONSORS.map(s => (
+                  <AckAvatar key={s.handle ?? s.name} entry={s} prominent />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="mb-6 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-emerald-300/50 bg-emerald-50/50 dark:border-emerald-500/25 dark:bg-emerald-900/10 px-3.5 py-2.5">
+              <span className="text-xs text-content-secondary">
+                {t('about.thanks_be_first', { defaultValue: 'No sponsors yet - be the first to back the project.' })}
+              </span>
+              <a
+                href={GITHUB_SPONSORS_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
+              >
+                <Github size={12} />
+                {t('about.thanks_be_first_github', { defaultValue: 'Sponsor on GitHub' })}
+              </a>
+              <span aria-hidden className="text-content-quaternary">&middot;</span>
+              <a
+                href={PAYPAL_DONATE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
+              >
+                <HandCoins size={12} />
+                {t('about.thanks_be_first_paypal', { defaultValue: 'Donate via PayPal' })}
+              </a>
+            </div>
+          )}
+
+          {/* Contributors and reporters - everyone tracked in ACKNOWLEDGMENTS.md. */}
+          <p className="mb-3 text-2xs font-semibold uppercase tracking-wider text-content-tertiary">
+            {t('about.thanks_contributors_label', { defaultValue: 'Contributors and reporters' })}
+          </p>
+          <div className="flex flex-wrap gap-3">
+            {CONTRIBUTORS.map(c => (
+              <AckAvatar key={c.handle ?? c.name} entry={c} />
+            ))}
+          </div>
+
+          {/* Closing CTA - invites the reader onto the wall. */}
+          <p className="mt-6 pt-4 border-t border-border-light text-xs text-content-secondary">
+            <Trans
+              i18nKey="about.thanks_cta"
+              defaults="Want to see your name here? <star>Star the project</star>, <sponsor>become a sponsor</sponsor> or <donate>donate</donate>."
+              components={{
+                star: (
+                  <a
+                    href={REPO_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-oe-blue hover:underline"
+                  />
+                ),
+                sponsor: (
+                  <a
+                    href={GITHUB_SPONSORS_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-oe-blue hover:underline"
+                  />
+                ),
+                donate: (
+                  <a
+                    href={PAYPAL_DONATE_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-oe-blue hover:underline"
+                  />
+                ),
+              }}
+            />
+          </p>
+        </div>
+      </Card>
+
+      {/* Changelog - collapsed to the latest release by default with a toggle
+          to reveal the full history. Anchored so the header's "View all" jump
+          target lands on the section heading instead of mid-scroll. */}
       <Card>
         <div className="p-6" data-changelog-anchor>
-          <Changelog />
+          <Changelog maxEntries={changelogExpanded ? undefined : 1} />
+          <div className="mt-4 flex justify-center">
+            <button
+              type="button"
+              onClick={() => setChangelogExpanded(v => !v)}
+              aria-expanded={changelogExpanded}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border-light bg-surface-secondary/40 px-3.5 py-2 text-xs font-semibold text-oe-blue hover:border-oe-blue/40 hover:bg-oe-blue/[0.04] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-1"
+            >
+              {changelogExpanded
+                ? t('about.changelog_show_less', { defaultValue: 'Show less' })
+                : t('about.changelog_show_all', { defaultValue: 'Show full changelog' })}
+              <ChevronDown
+                size={14}
+                className={clsx('transition-transform', changelogExpanded && 'rotate-180')}
+                aria-hidden
+              />
+            </button>
+          </div>
         </div>
       </Card>
 
