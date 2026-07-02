@@ -780,6 +780,7 @@ export interface WholeLifeCostBreakdown {
   opex_pv: number | string;
   replacement_pv: number | string;
   eol_pv: number | string;
+  residual_value_pv: number | string;
   whole_life_cost: number | string;
   entry_count: number;
 }

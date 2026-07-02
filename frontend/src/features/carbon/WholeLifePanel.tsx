@@ -509,6 +509,20 @@ function CostBreakdownCard({ cost }: { cost: WholeLifeCostBreakdown }) {
               })}
               value={<MoneyDisplay amount={cost.eol_pv} currency={currency} showCode />}
             />
+            {Number(cost.residual_value_pv) > 0 && (
+              <BreakdownRow
+                label={t('carbon.sixd.wl_cost_residual', {
+                  defaultValue: 'Less residual value (present value)',
+                })}
+                value={
+                  <MoneyDisplay
+                    amount={`-${cost.residual_value_pv}`}
+                    currency={currency}
+                    showCode
+                  />
+                }
+              />
+            )}
           </ul>
           <p className="mt-2 text-xs text-content-tertiary">
             {t('carbon.sixd.wl_cost_entries', {
