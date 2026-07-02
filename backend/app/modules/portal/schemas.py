@@ -27,6 +27,27 @@ NOTIFICATION_KINDS = (
 )
 
 
+# ── Shared documents (portal-user facing) ─────────────────────────────────
+
+
+class PortalSharedDocument(BaseModel):
+    """A document shared with the portal user through a ``document`` access
+    rule. Metadata only - the bytes are streamed by the content endpoint."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    file_size: int = 0
+    mime_type: str = ""
+    project_id: UUID
+
+
+class PortalSharedDocumentList(BaseModel):
+    items: list[PortalSharedDocument]
+    total: int
+
+
 # ── Users ─────────────────────────────────────────────────────────────────
 
 

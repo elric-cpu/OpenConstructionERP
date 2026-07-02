@@ -570,6 +570,26 @@ class PortalService:
         stmt = _select(Project).where(Project.id.in_(accessible)).order_by(Project.name)
         return list((await self.session.execute(stmt)).scalars().all())
 
+    async def list_accessible_documents(
+        self,
+        portal_user_id: uuid.UUID,
+    ) -> list[Any]:
+        """Return the documents the caller can currently see.
+
+        Resolves the caller's non-expired ``document`` access rules to real
+        :class:`Document` rows so the portal can list what was shared. A rule
+        pointing at a document that no longer exists is silently skipped.
+        """
+        from sqlalchemy import select as _select
+
+        from app.modules.documents.models import Document
+
+        accessible = await self.list_accessible_resources(portal_user_id, "document")
+        if not accessible:
+            return []
+        stmt = _select(Document).where(Document.id.in_(accessible)).order_by(Document.name)
+        return list((await self.session.execute(stmt)).scalars().all())
+
     async def enforce_rls(
         self,
         portal_user_id: uuid.UUID,

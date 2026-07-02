@@ -33,7 +33,7 @@ import logging
 import uuid
 
 from fastapi import APIRouter, Depends, Query, Request, status
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep
 from app.modules.portal.dependencies import (
@@ -65,6 +65,8 @@ from app.modules.portal.schemas import (
     PortalProjectSummary,
     PortalProjectSummaryList,
     PortalSelfPatch,
+    PortalSharedDocument,
+    PortalSharedDocumentList,
     PortalTicketCreate,
     PortalTicketList,
     PortalTicketResponse,
@@ -443,6 +445,78 @@ async def portal_me_document_access(
         ip_address=_client_ip(request),
     )
     return DocumentAccessLogEntry.model_validate(entry)
+
+
+@router.get("/me/documents", response_model=PortalSharedDocumentList)
+async def portal_me_documents(
+    user: RequirePortalSession,
+    service: PortalService = Depends(_get_service),
+) -> PortalSharedDocumentList:
+    """List the documents shared with the caller through document access rules.
+
+    Only documents the caller was explicitly granted (a non-expired
+    ``document`` access rule) are returned; a rule whose document has since
+    been deleted is silently skipped.
+    """
+    docs = await service.list_accessible_documents(user.id)
+    items = [PortalSharedDocument.model_validate(d) for d in docs]
+    return PortalSharedDocumentList(items=items, total=len(items))
+
+
+@router.get("/me/documents/{document_id}/content")
+async def portal_me_document_content(
+    document_id: uuid.UUID,
+    request: Request,
+    user: RequirePortalSession,
+    service: PortalService = Depends(_get_service),
+) -> FileResponse:
+    """Stream a document shared with the caller.
+
+    RLS is enforced BEFORE the document is looked up, so the client-supplied id
+    is never used to read anything until the grant is proven, and an ungranted
+    caller gets an identical 403 whether or not the id exists (no existence
+    oracle). The file is served with a Range-capable FileResponse so a PDF or
+    video seeks without buffering the whole file.
+    """
+    import mimetypes
+    import os
+
+    from fastapi import HTTPException
+    from sqlalchemy import select
+
+    from app.modules.documents.models import Document
+
+    if not await service.enforce_rls(user.id, "document", document_id, required="view"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No access to this document",
+        )
+
+    row = (
+        await service.session.execute(select(Document).where(Document.id == document_id))
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="File no longer exists")
+    path = row.file_path
+    if not path or not os.path.exists(path):
+        raise HTTPException(status_code=410, detail="File is no longer on disk")
+
+    await service.record_document_access(
+        portal_user_id=user.id,
+        document_type="document",
+        document_id=document_id,
+        action="view",
+        ip_address=_client_ip(request),
+    )
+
+    media_type = row.mime_type or mimetypes.guess_type(row.name)[0] or "application/octet-stream"
+    inline = media_type.split("/", 1)[0] in {"video", "audio", "image"}
+    return FileResponse(
+        path,
+        media_type=media_type,
+        filename=row.name,
+        content_disposition_type="inline" if inline else "attachment",
+    )
 
 
 @router.patch("/me", response_model=PortalUserResponse)
