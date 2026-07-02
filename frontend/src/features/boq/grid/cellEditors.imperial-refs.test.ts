@@ -103,7 +103,7 @@ describe('imperial BOQ quantity formulas store metric-canonical, identical in bo
     expect(stores[0]).toBeCloseTo(225, 6); // metric
     // The bug this guards: the imperial store must not diverge (was ~20.9 m2).
     expect(stores[1]).toBeCloseTo(225, 6); // imperial
-    expect(stores[1]).toBeCloseTo(stores[0], 9);
+    expect(stores[1]).toBeCloseTo(stores[0] as number, 9);
   });
 
   it('H2: a mixed formula =pos().qty + $GFA stays canonical and identical across systems', () => {
