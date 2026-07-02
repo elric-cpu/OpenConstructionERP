@@ -299,7 +299,11 @@ def _detect_walls(gray: Any, to_pt, scale: float) -> list[dict[str, Any]]:
 
     segments: list[tuple[float, Point, Point]] = []
     for line in lines:
-        x1, y1, x2, y2 = (float(v) for v in line[0])
+        # HoughLinesP rows are normally shaped (1, 4); some OpenCV/numpy
+        # builds return a flat (4,) row instead, which makes line[0] a
+        # scalar. Take the four coordinates regardless of that nesting.
+        row = line[0] if hasattr(line[0], "__len__") else line
+        x1, y1, x2, y2 = (float(v) for v in row)
         a, b = (x1, y1), (x2, y2)
         length_px = _seg_length(a, b)
         if length_px >= min_len_px:
