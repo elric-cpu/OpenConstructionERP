@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.6.1] - 2026-07-02
+
+A fix and hardening release. A photo uploaded from a project's Photos tab now becomes a real site picture and shows up everywhere site pictures appear, a shared video streams and seeks in the file viewer instead of getting stuck, a field report can no longer link a document that belongs to another project, and the whole-life cost engine now models ISO 15686-5 residual value. It also completes the Spanish and Mexican Spanish translations on the newest screens.
+
+### Added
+
+- ISO 15686-5 residual value in the whole-life cost engine, so an asset that outlives the study period is credited at its unexpired service life rather than written off as scrap.
+- Spanish (es) and Mexican Spanish (es-MX) translations for the newest screens (the 6D whole-life dashboard, the Bill of Quantities resource split, the client portal and cost benchmarks) that had been falling back to English, along with a few setup-screen strings that only existed as English defaults in the code.
+
+### Fixed
+
+- A photo uploaded from a project's Photos tab was stored as a generic document, so it never appeared as a site picture. Such an upload now goes through the photo pipeline and shows in the Photos tab, the Site Photos gallery, the site diary, the dashboard and the photo strip.
+- A shared video in the file viewer downloaded the whole file before playing and often stalled on the loading spinner. Shared media now streams with HTTP range requests, so a video plays and seeks right away.
+- A field report could link a document that belonged to another project, exposing that document's metadata. The link now rejects a foreign-project document and the linked-documents read is scoped to the report's own project.
+
 ## [9.6.0] - 2026-07-01
 
 A change intelligence and 6D lifecycle release. Change Intelligence gains a contractual notice and time-bar register that tracks every claim and extension-of-time notice against the project's contract standard so an entitlement is not lost to a missed deadline, a cross-source register of who owes the next action, a change-driver Pareto that ranks change cost by cause and by responsible party, and a change run-rate with a burn-rate forecast. The 6D carbon module adds a whole-life dashboard that reports embodied and operational carbon by EN 15978 stage alongside ISO 15686-5 whole-life cost and computes both from your BIM model with a dry-run preview you accept or reject line by line. It also closes a cross-project read gap on shared saved views and tightens who may edit workspace-level ledger accounts.
