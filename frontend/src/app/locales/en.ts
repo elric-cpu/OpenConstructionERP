@@ -3,6 +3,11 @@
 
 const resource = {
   "translation": {
+    "boq.filter_no_price": "No price",
+    "setup.resource_catalog": "Resource Catalog",
+    "setup.resource_catalog_desc": "Materials, equipment, and labor resources are loaded together with each cost database region above.",
+    "setup.demo_projects": "Demo Projects",
+    "setup.demo_projects_desc": "Install example projects to explore all features of the platform.",
     "howto.bcf.how.1": "Open Clash Detection for the project, pick a clash run and triage the issues by status, severity and assignee.",
     "howto.bcf.how.2": "Export to BCF: use Export open to send every unresolved clash, tick rows to send a subset, or the row action to send a single clash; you get a .bcfzip download with a viewpoint at each clash location.",
     "howto.bcf.how.3": "Hand the .bcfzip to the responsible designer; they open it in their own BIM tool, see each issue in its viewpoint and reply with a comment or a status change.",
