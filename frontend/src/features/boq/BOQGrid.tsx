@@ -1104,6 +1104,22 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
   // when the user flips metric <-> imperial.
   const displayQuantity = useDisplayQuantity();
 
+  // Issue #292: project the BOQ-scoped variables into the formula engine's
+  // FormulaVariable shape (UPPER_SNAKE keyed), memoised on the raw prop so its
+  // identity is stable across renders. Shared by the calculated-column defs
+  // AND the Quantity formula cell editor (threaded through gridContext) so
+  // $GFA-style references resolve when the user types them into a quantity
+  // cell, not just in calculated columns.
+  const boqVariablesMap = useMemo(() => {
+    const m = new Map<string, FormulaVariable>();
+    if (boqVariables) {
+      for (const v of boqVariables) {
+        m.set(v.name.toUpperCase(), { type: v.type, value: v.value });
+      }
+    }
+    return m;
+  }, [boqVariables]);
+
   /* ── Context for column formatters + section group + resources + actions */
   const gridContext = useMemo(
     () => ({
@@ -1173,6 +1189,9 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
       // `positions` lets the renderer surface per-resource custom_fields
       // values without a network round-trip.
       positions,
+      // Issue #292: the BOQ variables map ($GFA etc.), consumed by the
+      // Quantity FormulaCellEditor so typed $VAR / pos(...) references resolve.
+      boqVariablesMap,
       customColumns,
       descDensity,
       // Issue #285: imperial-units display seam consumed by the Qty / Unit /
@@ -1186,7 +1205,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
      onDeletePosition, onSaveToDatabase, onAddComment,
      onDuplicatePosition, showContextMenu, anomalyMap, onApplyAnomalySuggestion, bimModelId,
      onUpdatePosition, onHighlightBIMElements, onDeleteSection, onReorderSections, onFormulaApplied,
-     positions, customColumns, showResourceSplit, showResourceSplitPill, renderInlineCopilot, displayQuantity],
+     positions, boqVariablesMap, customColumns, showResourceSplit, showResourceSplitPill, renderInlineCopilot, displayQuantity],
   );
 
   /* ── Column defs (standard + custom) ─────────────────────────────── */
@@ -1205,21 +1224,15 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
     if (customColumns && customColumns.length > 0) {
       const actionsIdx = defs.findIndex((c) => c.field === '_actions');
       // v2.7.0/E — `calculated` columns evaluate user-authored formulas
-      // against the live positions list + BOQ variables. We project the
-      // BOQ-level variables map (UPPER_SNAKE keyed) into the engine's
-      // FormulaVariable shape on every column-defs rebuild; AG Grid then
+      // against the live positions list + BOQ variables. Reuse the shared
+      // `boqVariablesMap` (UPPER_SNAKE keyed) so the calculated columns and
+      // the Quantity formula editor project variables identically; AG Grid
       // calls our valueGetter on every refresh, so changing a position
       // automatically re-runs the calculation (we trigger refreshes via
       // the effect below).
-      const variablesMap = new Map<string, FormulaVariable>();
-      if (boqVariables) {
-        for (const v of boqVariables) {
-          variablesMap.set(v.name.toUpperCase(), { type: v.type, value: v.value });
-        }
-      }
       const customDefs = getCustomColumnDefs(customColumns, {
         positions,
-        variables: variablesMap,
+        variables: boqVariablesMap,
       });
       if (actionsIdx >= 0) {
         defs.splice(actionsIdx, 0, ...customDefs);
@@ -1228,7 +1241,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
       }
     }
     return defs;
-  }, [currencySymbol, currencyCode, locale, fmt, i18n.language, customColumns, positions, boqVariables, displayCurrency, showResourceSplit, displayQuantity]);
+  }, [currencySymbol, currencyCode, locale, fmt, i18n.language, customColumns, positions, boqVariablesMap, displayCurrency, showResourceSplit, displayQuantity]);
 
   /* ── Calculated-column refresh on positions change ──────────────────
    * AG Grid re-runs `valueGetter` on every refresh; for cross-position

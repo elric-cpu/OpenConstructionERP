@@ -13,14 +13,16 @@ import { useTranslation } from 'react-i18next';
 import { AlertTriangle, X as XIcon } from 'lucide-react';
 import type { ICellEditorParams } from 'ag-grid-community';
 import { AutocompleteInput } from '../AutocompleteInput';
-import type { CostAutocompleteItem } from '../api';
+import type { CostAutocompleteItem, Position } from '../api';
 import { getUnitsForLocale, saveCustomUnit } from '../boqHelpers';
 import type { DisplayQuantityApi } from '@/shared/hooks/useDisplayQuantity';
 import {
   evaluateFormula as evalFormulaImpl,
   isFormula as isFormulaImpl,
   normaliseFormula as normaliseFormulaImpl,
+  buildFormulaContext,
   type FormulaContext,
+  type FormulaVariable,
 } from './formula';
 
 /* ── Formula Cell Editor ──────────────────────────────────────────── */
@@ -119,6 +121,125 @@ export function isFormula(input: string): boolean {
   return isFormulaImpl(input);
 }
 
+/* ── Feet-and-inches input (Issue #290) ─────────────────────────────── */
+
+/**
+ * Vulgar-fraction glyphs mapped to a plain "numerator/denominator" string.
+ * US estimators paste dimensions using these single-character fractions
+ * (e.g. `3/4"` written as `¾"`); expanding them to `3/4` lets the same
+ * inch parser handle both notations.
+ */
+const VULGAR_FRACTIONS: Record<string, string> = {
+  '¼': '1/4', // vulgar one quarter
+  '½': '1/2', // vulgar one half
+  '¾': '3/4', // vulgar three quarters
+  '⅓': '1/3', // vulgar one third
+  '⅔': '2/3', // vulgar two thirds
+  '⅕': '1/5', // vulgar one fifth
+  '⅖': '2/5', // vulgar two fifths
+  '⅗': '3/5', // vulgar three fifths
+  '⅘': '4/5', // vulgar four fifths
+  '⅙': '1/6', // vulgar one sixth
+  '⅚': '5/6', // vulgar five sixths
+  '⅛': '1/8', // vulgar one eighth
+  '⅜': '3/8', // vulgar three eighths
+  '⅝': '5/8', // vulgar five eighths
+  '⅞': '7/8', // vulgar seven eighths
+};
+
+/**
+ * Parse the inches portion of a feet-and-inches string into a number of
+ * inches. Accepts a whole number (`6`), a decimal (`6.5`), a fraction
+ * (`3/4`, `11/16`) or a whole-plus-fraction (`6 3/4`). Returns `null` when a
+ * token is not a non-negative number / fraction, or a denominator is 0.
+ */
+function parseInchValue(str: string): number | null {
+  const s = str.trim();
+  if (s === '') return null;
+  let total = 0;
+  for (const part of s.split(/\s+/)) {
+    const frac = /^(\d+)\/(\d+)$/.exec(part);
+    if (frac) {
+      const den = Number(frac[2]);
+      if (den === 0) return null;
+      total += Number(frac[1]) / den;
+      continue;
+    }
+    if (/^\d+(?:\.\d+)?$/.test(part)) {
+      total += Number(part);
+      continue;
+    }
+    return null;
+  }
+  return total;
+}
+
+/**
+ * Parse a feet-and-inches string into DECIMAL FEET, or `null` when the input
+ * is not feet-and-inches notation (Issue #290).
+ *
+ * An explicit foot (`'`) or inch (`"`) mark is required - smart quotes and
+ * primes are accepted too - so a bare number or a real formula is never
+ * misread as ft-in. Accepts: `10'6"`, `10' 6"`, `10'-6"`, `10'`, `6"`,
+ * `10' 3/4"`, `11/16"` and vulgar-fraction glyphs (`¾"`). Feet contribute
+ * directly, inches divide by 12, a bare fraction is inches. Negatives and
+ * zero denominators are rejected.
+ */
+export function parseFeetInches(raw: string): number | null {
+  if (!raw) return null;
+  let s = raw.trim();
+  if (s === '') return null;
+  // Normalise smart single/double quotes and primes to ASCII ' and ".
+  s = s.replace(/[‘’′]/g, "'").replace(/[“”″]/g, '"');
+  // Expand vulgar-fraction glyphs to " 3/4" (leading space detaches them
+  // from any preceding whole number or foot mark).
+  s = s.replace(/[¼-¾⅓-⅞]/g, (m) =>
+    m in VULGAR_FRACTIONS ? ` ${VULGAR_FRACTIONS[m]}` : m,
+  );
+  // Require an explicit foot or inch mark.
+  if (!s.includes("'") && !s.includes('"')) return null;
+
+  let feet = 0;
+  let inchPart: string;
+  const footIdx = s.indexOf("'");
+  if (footIdx >= 0) {
+    const feetStr = s.slice(0, footIdx).trim();
+    if (feetStr === '' || !/^\d+(?:\.\d+)?$/.test(feetStr)) return null;
+    feet = Number(feetStr);
+    // The remainder holds the inches; drop a single "-" separator (10'-6").
+    inchPart = s.slice(footIdx + 1).trim().replace(/^-\s*/, '').trim();
+  } else {
+    inchPart = s.trim();
+  }
+
+  let inches = 0;
+  if (inchPart !== '') {
+    // When inches are present they must be closed by an inch mark.
+    if (!inchPart.endsWith('"')) return null;
+    const parsed = parseInchValue(inchPart.slice(0, -1).trim());
+    if (parsed === null) return null;
+    inches = parsed;
+  }
+
+  const totalFeet = feet + inches / 12;
+  if (!Number.isFinite(totalFeet) || totalFeet < 0) return null;
+  return totalFeet;
+}
+
+/**
+ * Strict plain-number parse: the ENTIRE trimmed string must be a finite
+ * number (comma accepted as a decimal point for es/de locales). Unlike
+ * `parseFloat` this returns `null` - not a truncated value - for `"abc"` /
+ * `"10.5x"` / a malformed ft-in string, so those never commit silently as
+ * garbage (Issue #290).
+ */
+function parsePlainNumber(raw: string): number | null {
+  const t = raw.trim();
+  if (t === '') return null;
+  const n = Number(t.replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+
 /**
  * Compute a live preview state for the formula editor. Returns one of:
  *   { kind: 'idle' }     — empty input, nothing to show
@@ -132,18 +253,36 @@ type FormulaPreview =
   | { kind: 'ok'; v: number }
   | { kind: 'err'; m: string };
 
-function previewFor(input: string): FormulaPreview {
+/**
+ * Discriminated result of parsing the editor's raw text (Issue #290).
+ * `ok:false` means the input is neither a plain finite number, nor a valid
+ * feet-and-inches value (in imperial foot cells), nor a formula that
+ * evaluates - so the commit path must refuse to write instead of coercing to
+ * `parseFloat || 0` and silently storing garbage.
+ */
+type ParseResult =
+  | { ok: true; parsed: number; formulaSrc: string }
+  | { ok: false };
+
+function previewFor(input: string, ctx?: FormulaContext, ftInActive = false): FormulaPreview {
   const t = input.trim();
   if (!t) return { kind: 'idle' };
-  if (!isFormula(t)) {
-    const n = parseFloat(t.replace(',', '.'));
-    return isFinite(n) ? { kind: 'number', v: n } : { kind: 'err', m: 'Not a number' };
+  // Issue #290: in imperial foot cells a feet-and-inches entry (10'6") is a
+  // valid numeric input; show it as a number, not a formula error.
+  if (ftInActive) {
+    const ft = parseFeetInches(t);
+    if (ft !== null) return { kind: 'number', v: ft };
   }
-  // The grid editor preview operates without a FormulaContext (the
-  // editor is mounted inside a single cell and doesn't have access to
-  // the full positions list), so $VAR / pos(...) preview as a parser
-  // error here. Live evaluation with a context happens elsewhere.
-  const r = evalFormulaImpl(t);
+  if (!isFormula(t)) {
+    // Strict numeric check (matches parseInput) so "abc" / a malformed ft-in
+    // surfaces as an error instead of a silently truncated number.
+    const n = parsePlainNumber(t);
+    return n !== null ? { kind: 'number', v: n } : { kind: 'err', m: 'Not a number' };
+  }
+  // Issue #292: evaluate with the FormulaContext threaded from the grid so
+  // $VAR / pos(...) / section(...) resolve in the live preview instead of
+  // always erroring for a lack of context.
+  const r = evalFormulaImpl(t, ctx);
   if (r === null) return { kind: 'err', m: 'Syntax error or unresolved reference' };
   return { kind: 'ok', v: r };
 }
@@ -175,7 +314,35 @@ export const FormulaCellEditor = forwardRef(
     const lastParsedRef = useRef<number | null>(null);
     const lastFormulaRef = useRef<string>('');
 
-    const preview = useMemo(() => previewFor(value), [value]);
+    // Issue #292: build a FormulaContext from the grid context so $VAR /
+    // pos(...) / section(...) resolve in this cell's parse + live preview.
+    // props.context is BOQGrid's gridContext; every field is optional so plain
+    // numeric editing still works when the grid doesn't supply them (e.g. an
+    // isolated unit test that only passes displayQuantity).
+    const gridCtx = props.context as
+      | { positions?: Position[]; boqVariablesMap?: Map<string, FormulaVariable> }
+      | undefined;
+    const ctxPositions = gridCtx?.positions;
+    const ctxVariables = gridCtx?.boqVariablesMap;
+    const formulaCtx = useMemo(
+      () =>
+        buildFormulaContext({
+          positions: ctxPositions ?? [],
+          variables: ctxVariables ?? new Map<string, FormulaVariable>(),
+          currentPositionId: props.data?.id,
+        }),
+      [ctxPositions, ctxVariables, props.data?.id],
+    );
+
+    // Issue #290: engage feet-and-inches parsing ONLY in imperial cells whose
+    // unit displays as feet (metric users and every other unit are untouched).
+    const dq = (props.context as { displayQuantity?: DisplayQuantityApi } | undefined)?.displayQuantity;
+    const ftInActive = dq?.system === 'imperial' && dq.unitFor(props.data?.unit ?? '') === 'ft';
+
+    const preview = useMemo(
+      () => previewFor(value, formulaCtx, ftInActive),
+      [value, formulaCtx, ftInActive],
+    );
 
     useEffect(() => {
       inputRef.current?.focus();
@@ -215,22 +382,25 @@ export const FormulaCellEditor = forwardRef(
     // result, one with the editor's raw text after the parser fell back
     // to oldValue). Single source of truth via ``lastParsedRef`` keeps it
     // to one PATCH per commit.
-    const parseInput = (live: string): { parsed: number; formulaSrc: string } => {
+    const parseInput = (live: string): ParseResult => {
       const trimmed = live.trim();
-      let parsed: number;
-      let formulaSrc = '';
-      if (isFormula(trimmed)) {
-        const result = evaluateFormula(trimmed);
-        if (result !== null) {
-          parsed = result;
-          formulaSrc = trimmed;
-        } else {
-          parsed = parseFloat(trimmed.replace(',', '.')) || 0;
-        }
-      } else {
-        parsed = parseFloat(trimmed.replace(',', '.')) || 0;
+      // Issue #290: feet-and-inches, imperial foot cells only. The result is a
+      // DISPLAY quantity in feet; the commit path (toMetricQty) converts it to
+      // metres, so we must NOT convert here - just hand back the decimal feet.
+      if (ftInActive) {
+        const ft = parseFeetInches(trimmed);
+        if (ft !== null) return { ok: true, parsed: ft, formulaSrc: '' };
       }
-      return { parsed, formulaSrc };
+      // Plain finite number (strict - never truncate "abc" / "10.5x" to a
+      // partial value the way parseFloat did).
+      const plain = parsePlainNumber(trimmed);
+      if (plain !== null) return { ok: true, parsed: plain, formulaSrc: '' };
+      // Formula - now context-aware so $VAR / pos(...) resolve (Issue #292).
+      if (isFormula(trimmed)) {
+        const result = evaluateFormula(trimmed, formulaCtx);
+        if (result !== null) return { ok: true, parsed: result, formulaSrc: trimmed };
+      }
+      return { ok: false };
     };
 
     // Idempotency guard: Enter→commitFromInput→stopEditing destroys the
@@ -239,12 +409,30 @@ export const FormulaCellEditor = forwardRef(
     // already committed and short-circuit subsequent calls.
     const committedRef = useRef(false);
 
-    const commitFromInput = (cancelNavigation: boolean) => {
-      if (committedRef.current) return;
+    const commitFromInput = (cancelNavigation: boolean, fromBlur = false): boolean => {
+      if (committedRef.current) return true;
       committedRef.current = true;
 
       const live = inputRef.current?.value ?? value;
-      const { parsed, formulaSrc } = parseInput(live);
+      const res = parseInput(live);
+      // Issue #290: refuse to commit garbage. Never fall back to
+      // ``parseFloat || 0`` - that silently stored 0 (or a truncated number)
+      // for "abc" / a malformed ft-in / an unresolved formula. When the input
+      // can't be classified as a plain number, a valid ft-in value or a
+      // formula that evaluates, keep the user's text so they can fix it
+      // (Enter/Tab) or revert to the stored value (blur = Escape-cancel).
+      if (!res.ok) {
+        if (fromBlur) {
+          // Cancel: preserve the previously stored value.
+          props.api.stopEditing(true);
+          return true;
+        }
+        // Keep the editor open so the user can correct the entry, and clear
+        // the idempotency guard so a corrected retry still commits.
+        committedRef.current = false;
+        return false;
+      }
+      const { parsed, formulaSrc } = res;
       // Issue #285: the Qty cell DISPLAYS the value converted into the user's
       // measurement system, so a formula typed here resolves in the displayed
       // unit. Convert the resolved value back to metric-canonical storage
@@ -300,6 +488,7 @@ export const FormulaCellEditor = forwardRef(
       // If we already wrote the value, cancel AG Grid's secondary commit
       // path; otherwise honour the caller's intent (commit-then-navigate).
       props.api.stopEditing(wroteViaSetDataValue ? true : cancelNavigation);
+      return true;
     };
 
     useEffect(() => {
@@ -328,14 +517,18 @@ export const FormulaCellEditor = forwardRef(
         if (ev.key === 'Tab') {
           ev.preventDefault();
           ev.stopPropagation();
-          commitFromInput(false);
-          props.api.tabToNextCell();
+          // Only advance the focus when the value actually committed; on an
+          // invalid entry commitFromInput keeps the editor open (Issue #290).
+          if (commitFromInput(false)) {
+            props.api.tabToNextCell();
+          }
         }
       };
       const handleBlur = () => {
-        // Blur (clicking outside the popup) should also commit, matching
-        // how AG Grid's native editors behave.
-        commitFromInput(false);
+        // Blur (clicking outside the popup) should also commit, matching how
+        // AG Grid's native editors behave. On an invalid entry this cancels
+        // the edit so the previously stored value is preserved (Issue #290).
+        commitFromInput(false, true);
       };
 
       el.addEventListener('input', handleInput);
@@ -370,7 +563,12 @@ export const FormulaCellEditor = forwardRef(
         // back to metric-canonical storage so getValue() can never leak an
         // imperial number into the quantity field.
         const live = inputRef.current?.value ?? value;
-        return toMetricQty(props, parseInput(live).parsed);
+        const res = parseInput(live);
+        // Issue #290: on invalid input never coerce to 0 - hand AG Grid back
+        // the original stored (metric) value so a stray cold-path getValue
+        // can't corrupt it.
+        if (!res.ok) return props.value;
+        return toMetricQty(props, res.parsed);
       },
       isCancelAfterEnd() {
         return false;
