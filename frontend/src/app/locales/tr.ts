@@ -3,6 +3,15 @@
 
 const resource = {
   "translation": {
+    "homeportal.documents_tab": "Belgeler",
+    "homeportal.documents_load_failed": "Belgeler yüklenemedi",
+    "homeportal.documents_empty": "Sizinle henüz belge paylaşılmadı",
+    "homeportal.documents_empty_desc": "Sizinle paylaşılan belgeler burada görünür.",
+    "homeportal.documents_type_file": "Dosya",
+    "homeportal.documents_gone": "Bu belge artık kullanılamıyor.",
+    "homeportal.documents_open_failed": "Belge açılamadı.",
+    "homeportal.documents_open": "Aç",
+    "homeportal.documents_download": "İndir",
     "dashboard.map_section_title": "Proje konumları ve hava durumu",
     "dashboard.sites_title": "Şantiyeler ve hava durumu",
     "dashboard.sites_other": "Diğer konumlar",

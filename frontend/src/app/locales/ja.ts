@@ -3,6 +3,15 @@
 
 const resource = {
   "translation": {
+    "homeportal.documents_tab": "ドキュメント",
+    "homeportal.documents_load_failed": "ドキュメントを読み込めませんでした",
+    "homeportal.documents_empty": "まだ共有されているドキュメントはありません",
+    "homeportal.documents_empty_desc": "あなたと共有されたドキュメントがここに表示されます。",
+    "homeportal.documents_type_file": "ファイル",
+    "homeportal.documents_gone": "このドキュメントは利用できなくなりました。",
+    "homeportal.documents_open_failed": "ドキュメントを開けませんでした。",
+    "homeportal.documents_open": "開く",
+    "homeportal.documents_download": "ダウンロード",
     "dashboard.map_section_title": "プロジェクトの所在地と天気",
     "dashboard.sites_title": "現場と天気",
     "dashboard.sites_other": "その他の所在地",

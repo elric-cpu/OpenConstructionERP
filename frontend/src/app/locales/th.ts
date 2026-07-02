@@ -3,6 +3,15 @@
 
 const resource = {
   "translation": {
+    "homeportal.documents_tab": "เอกสาร",
+    "homeportal.documents_load_failed": "ไม่สามารถโหลดเอกสารได้",
+    "homeportal.documents_empty": "ยังไม่มีเอกสารที่แชร์กับคุณ",
+    "homeportal.documents_empty_desc": "เอกสารที่แชร์กับคุณจะแสดงที่นี่",
+    "homeportal.documents_type_file": "ไฟล์",
+    "homeportal.documents_gone": "เอกสารนี้ไม่พร้อมใช้งานอีกต่อไป",
+    "homeportal.documents_open_failed": "ไม่สามารถเปิดเอกสารได้",
+    "homeportal.documents_open": "เปิด",
+    "homeportal.documents_download": "ดาวน์โหลด",
     "dashboard.map_section_title": "ตำแหน่งโครงการและสภาพอากาศ",
     "dashboard.sites_title": "ไซต์งานและสภาพอากาศ",
     "dashboard.sites_other": "ตำแหน่งอื่น ๆ",

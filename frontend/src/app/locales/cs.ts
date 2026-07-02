@@ -3,6 +3,15 @@
 
 const resource = {
   "translation": {
+    "homeportal.documents_tab": "Dokumenty",
+    "homeportal.documents_load_failed": "Dokumenty se nepodařilo načíst",
+    "homeportal.documents_empty": "Zatím s vámi nebyly sdíleny žádné dokumenty",
+    "homeportal.documents_empty_desc": "Dokumenty sdílené s vámi se zobrazí zde.",
+    "homeportal.documents_type_file": "Soubor",
+    "homeportal.documents_gone": "Tento dokument již není k dispozici.",
+    "homeportal.documents_open_failed": "Dokument se nepodařilo otevřít.",
+    "homeportal.documents_open": "Otevřít",
+    "homeportal.documents_download": "Stáhnout",
     "dashboard.map_section_title": "Umístění projektů a počasí",
     "dashboard.sites_title": "Lokality a počasí",
     "dashboard.sites_other": "Ostatní umístění",

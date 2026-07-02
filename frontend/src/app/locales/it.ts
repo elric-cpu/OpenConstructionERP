@@ -3,6 +3,15 @@
 
 const resource = {
   "translation": {
+    "homeportal.documents_tab": "Documenti",
+    "homeportal.documents_load_failed": "Impossibile caricare i documenti",
+    "homeportal.documents_empty": "Nessun documento è stato ancora condiviso con te",
+    "homeportal.documents_empty_desc": "I documenti condivisi con te appariranno qui.",
+    "homeportal.documents_type_file": "File",
+    "homeportal.documents_gone": "Questo documento non è più disponibile.",
+    "homeportal.documents_open_failed": "Impossibile aprire il documento.",
+    "homeportal.documents_open": "Apri",
+    "homeportal.documents_download": "Scarica",
     "dashboard.map_section_title": "Località del progetto e meteo",
     "dashboard.sites_title": "Cantieri e meteo",
     "dashboard.sites_other": "Altre località",

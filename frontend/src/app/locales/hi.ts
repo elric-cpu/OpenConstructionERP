@@ -3,6 +3,15 @@
 
 const resource = {
   "translation": {
+    "homeportal.documents_tab": "दस्तावेज़",
+    "homeportal.documents_load_failed": "दस्तावेज़ लोड नहीं हो सके",
+    "homeportal.documents_empty": "अभी तक आपके साथ कोई दस्तावेज़ साझा नहीं किया गया है",
+    "homeportal.documents_empty_desc": "आपके साथ साझा किए गए दस्तावेज़ यहाँ दिखाई देंगे।",
+    "homeportal.documents_type_file": "फ़ाइल",
+    "homeportal.documents_gone": "यह दस्तावेज़ अब उपलब्ध नहीं है।",
+    "homeportal.documents_open_failed": "दस्तावेज़ नहीं खोला जा सका।",
+    "homeportal.documents_open": "खोलें",
+    "homeportal.documents_download": "डाउनलोड करें",
     "dashboard.map_section_title": "परियोजना स्थान और मौसम",
     "dashboard.sites_title": "साइट और मौसम",
     "dashboard.sites_other": "अन्य स्थान",

@@ -3,6 +3,15 @@
 
 const resource = {
   "translation": {
+    "homeportal.documents_tab": "Dokumenti",
+    "homeportal.documents_load_failed": "Dokumente nije moguće učitati",
+    "homeportal.documents_empty": "Zasad s vama nije podijeljen nijedan dokument",
+    "homeportal.documents_empty_desc": "Dokumenti podijeljeni s vama prikazat će se ovdje.",
+    "homeportal.documents_type_file": "Datoteka",
+    "homeportal.documents_gone": "Ovaj dokument više nije dostupan.",
+    "homeportal.documents_open_failed": "Dokument nije moguće otvoriti.",
+    "homeportal.documents_open": "Otvori",
+    "homeportal.documents_download": "Preuzmi",
     "dashboard.map_section_title": "Lokacije projekata i vrijeme",
     "dashboard.sites_title": "Gradilišta i vrijeme",
     "dashboard.sites_other": "Ostale lokacije",

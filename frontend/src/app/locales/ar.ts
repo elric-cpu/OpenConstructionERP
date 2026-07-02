@@ -3,6 +3,15 @@
 
 const resource = {
   "translation": {
+    "homeportal.documents_tab": "المستندات",
+    "homeportal.documents_load_failed": "تعذّر تحميل المستندات",
+    "homeportal.documents_empty": "لم تتم مشاركة أي مستندات معك بعد",
+    "homeportal.documents_empty_desc": "ستظهر هنا المستندات التي تتم مشاركتها معك.",
+    "homeportal.documents_type_file": "ملف",
+    "homeportal.documents_gone": "لم يعد هذا المستند متاحًا.",
+    "homeportal.documents_open_failed": "تعذّر فتح المستند.",
+    "homeportal.documents_open": "فتح",
+    "homeportal.documents_download": "تنزيل",
     "dashboard.map_section_title": "مواقع المشاريع والطقس",
     "dashboard.sites_title": "المواقع والطقس",
     "dashboard.sites_other": "مواقع أخرى",

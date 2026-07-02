@@ -3,6 +3,15 @@
 
 const resource = {
   "translation": {
+    "homeportal.documents_tab": "Dokumenter",
+    "homeportal.documents_load_failed": "Kunne ikke laste inn dokumenter",
+    "homeportal.documents_empty": "Ingen dokumenter er delt med deg ennå",
+    "homeportal.documents_empty_desc": "Dokumenter som deles med deg, vises her.",
+    "homeportal.documents_type_file": "Fil",
+    "homeportal.documents_gone": "Dette dokumentet er ikke lenger tilgjengelig.",
+    "homeportal.documents_open_failed": "Kunne ikke åpne dokumentet.",
+    "homeportal.documents_open": "Åpne",
+    "homeportal.documents_download": "Last ned",
     "dashboard.map_section_title": "Prosjektsteder og vær",
     "dashboard.sites_title": "Byggeplasser og vær",
     "dashboard.sites_other": "Andre steder",

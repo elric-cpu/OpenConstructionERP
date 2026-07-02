@@ -3,6 +3,15 @@
 
 const resource = {
   "translation": {
+    "homeportal.documents_tab": "文档",
+    "homeportal.documents_load_failed": "无法加载文档",
+    "homeportal.documents_empty": "尚未有文档与您共享",
+    "homeportal.documents_empty_desc": "与您共享的文档将显示在此处。",
+    "homeportal.documents_type_file": "文件",
+    "homeportal.documents_gone": "此文档已不再可用。",
+    "homeportal.documents_open_failed": "无法打开文档。",
+    "homeportal.documents_open": "打开",
+    "homeportal.documents_download": "下载",
     "dashboard.map_section_title": "项目位置与天气",
     "dashboard.sites_title": "工地与天气",
     "dashboard.sites_other": "其他位置",

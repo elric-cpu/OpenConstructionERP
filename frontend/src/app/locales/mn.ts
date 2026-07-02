@@ -3,6 +3,15 @@
 
 const resource = {
   "translation": {
+    "homeportal.documents_tab": "Баримт бичиг",
+    "homeportal.documents_load_failed": "Баримт бичгийг ачаалж чадсангүй",
+    "homeportal.documents_empty": "Танд одоогоор хуваалцсан баримт бичиг алга",
+    "homeportal.documents_empty_desc": "Танд хуваалцсан баримт бичиг энд харагдана.",
+    "homeportal.documents_type_file": "Файл",
+    "homeportal.documents_gone": "Энэ баримт бичиг цаашид боломжгүй болсон.",
+    "homeportal.documents_open_failed": "Баримт бичгийг нээж чадсангүй.",
+    "homeportal.documents_open": "Нээх",
+    "homeportal.documents_download": "Татаж авах",
     "dashboard.map_section_title": "Төслийн байршил ба цаг агаар",
     "dashboard.sites_title": "Талбай ба цаг агаар",
     "dashboard.sites_other": "Бусад байршил",

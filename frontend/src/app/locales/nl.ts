@@ -3,6 +3,15 @@
 
 const resource = {
   "translation": {
+    "homeportal.documents_tab": "Documenten",
+    "homeportal.documents_load_failed": "Kan documenten niet laden",
+    "homeportal.documents_empty": "Er zijn nog geen documenten met u gedeeld",
+    "homeportal.documents_empty_desc": "Documenten die met u worden gedeeld, verschijnen hier.",
+    "homeportal.documents_type_file": "Bestand",
+    "homeportal.documents_gone": "Dit document is niet meer beschikbaar.",
+    "homeportal.documents_open_failed": "Kan het document niet openen.",
+    "homeportal.documents_open": "Openen",
+    "homeportal.documents_download": "Downloaden",
     "dashboard.map_section_title": "Projectlocaties en weer",
     "dashboard.sites_title": "Locaties en weer",
     "dashboard.sites_other": "Overige locaties",

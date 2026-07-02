@@ -3,6 +3,15 @@
 
 const resource = {
   "translation": {
+    "homeportal.documents_tab": "Asiakirjat",
+    "homeportal.documents_load_failed": "Asiakirjoja ei voitu ladata",
+    "homeportal.documents_empty": "Sinulle ei ole vielä jaettu asiakirjoja",
+    "homeportal.documents_empty_desc": "Sinulle jaetut asiakirjat näkyvät tässä.",
+    "homeportal.documents_type_file": "Tiedosto",
+    "homeportal.documents_gone": "Tämä asiakirja ei ole enää saatavilla.",
+    "homeportal.documents_open_failed": "Asiakirjaa ei voitu avata.",
+    "homeportal.documents_open": "Avaa",
+    "homeportal.documents_download": "Lataa",
     "dashboard.map_section_title": "Projektien sijainnit ja sää",
     "dashboard.sites_title": "Työmaat ja sää",
     "dashboard.sites_other": "Muut sijainnit",

@@ -3,6 +3,15 @@
 
 const resource = {
   "translation": {
+    "homeportal.documents_tab": "Документы",
+    "homeportal.documents_load_failed": "Не удалось загрузить документы",
+    "homeportal.documents_empty": "С вами пока не поделились документами",
+    "homeportal.documents_empty_desc": "Документы, которыми с вами поделятся, появятся здесь.",
+    "homeportal.documents_type_file": "Файл",
+    "homeportal.documents_gone": "Этот документ больше недоступен.",
+    "homeportal.documents_open_failed": "Не удалось открыть документ.",
+    "homeportal.documents_open": "Открыть",
+    "homeportal.documents_download": "Скачать",
     "dashboard.map_section_title": "Расположение проектов и погода",
     "dashboard.sites_title": "Площадки и погода",
     "dashboard.sites_other": "Другие локации",

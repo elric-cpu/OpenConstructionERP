@@ -3,6 +3,15 @@
 
 const resource = {
   "translation": {
+    "homeportal.documents_tab": "Документи",
+    "homeportal.documents_load_failed": "Документите не можаха да се заредят",
+    "homeportal.documents_empty": "Все още няма споделени с вас документи",
+    "homeportal.documents_empty_desc": "Документите, споделени с вас, ще се показват тук.",
+    "homeportal.documents_type_file": "Файл",
+    "homeportal.documents_gone": "Този документ вече не е наличен.",
+    "homeportal.documents_open_failed": "Документът не можа да се отвори.",
+    "homeportal.documents_open": "Отваряне",
+    "homeportal.documents_download": "Изтегляне",
     "dashboard.map_section_title": "Локации на проектите и време",
     "dashboard.sites_title": "Обекти и време",
     "dashboard.sites_other": "Други локации",

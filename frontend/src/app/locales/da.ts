@@ -3,6 +3,15 @@
 
 const resource = {
   "translation": {
+    "homeportal.documents_tab": "Dokumenter",
+    "homeportal.documents_load_failed": "Kunne ikke indlæse dokumenter",
+    "homeportal.documents_empty": "Der er endnu ikke delt nogen dokumenter med dig",
+    "homeportal.documents_empty_desc": "Dokumenter, der deles med dig, vises her.",
+    "homeportal.documents_type_file": "Fil",
+    "homeportal.documents_gone": "Dette dokument er ikke længere tilgængeligt.",
+    "homeportal.documents_open_failed": "Kunne ikke åbne dokumentet.",
+    "homeportal.documents_open": "Åbn",
+    "homeportal.documents_download": "Download",
     "dashboard.map_section_title": "Projektlokationer og vejr",
     "dashboard.sites_title": "Byggepladser og vejr",
     "dashboard.sites_other": "Andre lokationer",

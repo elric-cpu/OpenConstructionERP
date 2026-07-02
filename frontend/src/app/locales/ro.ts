@@ -3,6 +3,15 @@
 
 const resource = {
   "translation": {
+    "homeportal.documents_tab": "Documente",
+    "homeportal.documents_load_failed": "Documentele nu au putut fi încărcate",
+    "homeportal.documents_empty": "Încă nu ți-a fost partajat niciun document",
+    "homeportal.documents_empty_desc": "Documentele partajate cu tine vor apărea aici.",
+    "homeportal.documents_type_file": "Fișier",
+    "homeportal.documents_gone": "Acest document nu mai este disponibil.",
+    "homeportal.documents_open_failed": "Documentul nu a putut fi deschis.",
+    "homeportal.documents_open": "Deschide",
+    "homeportal.documents_download": "Descarcă",
     "dashboard.map_section_title": "Locațiile proiectelor și vremea",
     "dashboard.sites_title": "Șantiere și vreme",
     "dashboard.sites_other": "Alte locații",

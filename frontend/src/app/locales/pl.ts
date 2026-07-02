@@ -3,6 +3,15 @@
 
 const resource = {
   "translation": {
+    "homeportal.documents_tab": "Dokumenty",
+    "homeportal.documents_load_failed": "Nie udało się załadować dokumentów",
+    "homeportal.documents_empty": "Nie udostępniono Ci jeszcze żadnych dokumentów",
+    "homeportal.documents_empty_desc": "Dokumenty udostępnione Tobie pojawią się tutaj.",
+    "homeportal.documents_type_file": "Plik",
+    "homeportal.documents_gone": "Ten dokument nie jest już dostępny.",
+    "homeportal.documents_open_failed": "Nie udało się otworzyć dokumentu.",
+    "homeportal.documents_open": "Otwórz",
+    "homeportal.documents_download": "Pobierz",
     "dashboard.map_section_title": "Lokalizacje projektów i pogoda",
     "dashboard.sites_title": "Lokalizacje i pogoda",
     "dashboard.sites_other": "Pozostałe lokalizacje",

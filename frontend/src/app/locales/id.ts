@@ -3,6 +3,15 @@
 
 const resource = {
   "translation": {
+    "homeportal.documents_tab": "Dokumen",
+    "homeportal.documents_load_failed": "Tidak dapat memuat dokumen",
+    "homeportal.documents_empty": "Belum ada dokumen yang dibagikan kepada Anda",
+    "homeportal.documents_empty_desc": "Dokumen yang dibagikan kepada Anda akan muncul di sini.",
+    "homeportal.documents_type_file": "Berkas",
+    "homeportal.documents_gone": "Dokumen ini tidak lagi tersedia.",
+    "homeportal.documents_open_failed": "Tidak dapat membuka dokumen.",
+    "homeportal.documents_open": "Buka",
+    "homeportal.documents_download": "Unduh",
     "dashboard.map_section_title": "Lokasi proyek & cuaca",
     "dashboard.sites_title": "Lokasi & cuaca",
     "dashboard.sites_other": "Lokasi lainnya",

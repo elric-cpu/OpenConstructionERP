@@ -3,6 +3,15 @@
 
 const resource = {
   "translation": {
+    "homeportal.documents_tab": "문서",
+    "homeportal.documents_load_failed": "문서를 불러오지 못했습니다",
+    "homeportal.documents_empty": "아직 공유된 문서가 없습니다",
+    "homeportal.documents_empty_desc": "회원님과 공유된 문서가 여기에 표시됩니다.",
+    "homeportal.documents_type_file": "파일",
+    "homeportal.documents_gone": "이 문서는 더 이상 사용할 수 없습니다.",
+    "homeportal.documents_open_failed": "문서를 열 수 없습니다.",
+    "homeportal.documents_open": "열기",
+    "homeportal.documents_download": "다운로드",
     "dashboard.map_section_title": "프로젝트 위치 및 날씨",
     "dashboard.sites_title": "현장 및 날씨",
     "dashboard.sites_other": "기타 위치",

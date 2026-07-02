@@ -3,6 +3,15 @@
 
 const resource = {
   "translation": {
+    "homeportal.documents_tab": "Tài liệu",
+    "homeportal.documents_load_failed": "Không thể tải tài liệu",
+    "homeportal.documents_empty": "Chưa có tài liệu nào được chia sẻ với bạn",
+    "homeportal.documents_empty_desc": "Tài liệu được chia sẻ với bạn sẽ xuất hiện ở đây.",
+    "homeportal.documents_type_file": "Tệp",
+    "homeportal.documents_gone": "Tài liệu này không còn khả dụng.",
+    "homeportal.documents_open_failed": "Không thể mở tài liệu.",
+    "homeportal.documents_open": "Mở",
+    "homeportal.documents_download": "Tải xuống",
     "dashboard.map_section_title": "Vị trí dự án và thời tiết",
     "dashboard.sites_title": "Công trường và thời tiết",
     "dashboard.sites_other": "Vị trí khác",
