@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.9.0] - 2026-07-03
+
+A features release. It adds Cost Explorer, a search-first workspace over the cost and resource databases. You can start from the resources you have, a material, a trade or a piece of plant, and find the priced work that uses them, ranked by how well each work is covered by what you named. You can search the catalogs for a work by description across every loaded price base, compare the same rate code across regional price bases side by side with a clear warning when the currencies differ, and substitute one resource inside a work to see the effect on its rate, with a read-out of where that resource is priced across your data. It is built on a resource-to-work reverse index over each cost item's resource composition that stays in sync as cost items change.
+
+### Added
+
+- Cost Explorer, a search-first workspace over the cost and resource databases, reachable from the sidebar under Cost Data.
+- By resources, find priced work from the materials, labour and plant it consumes, ranked by coverage with a per-work breakdown of what matched and what is missing.
+- Find work, search every loaded price base for a work by description.
+- Compare bases, the same rate code priced across regions side by side, with a warning when the regions price in different currencies so the amounts are not misread as directly comparable.
+- Substitute, re-price a single resource line inside a work and see the effect on the rate, with a read-out of where that resource is priced across the loaded bases.
+- Translations for the Cost Explorer across all locales.
+
 ## [9.8.0] - 2026-07-03
 
 A features and fixes release. It adds a Field Time and Daywork module for capturing labour and plant time on site against a project, its resources and its equipment, with cost-code assist, an approval workflow, and a feed into payroll and earned value. It brings a wave of PDF takeoff improvements, so measurements survive a page change or zoom, keep their own colour on screen and in the export, can snap to the corners of existing measurements, and can be duplicated in one step. The About page now shows contributors' photos on the community thank-you wall, saved and served from the platform itself. It also fixes a header and photo-filter overlap, a date that could shift a day at negative time zones, a project photos tab that did not open from a link, and database migrations that assumed SQLite syntax and could fail on PostgreSQL.

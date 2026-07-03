@@ -35,6 +35,7 @@ export function ResourceSearchInput({
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const boxRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const listboxId = useId();
   const optionId = (i: number) => `${listboxId}-opt-${i}`;
 
@@ -81,6 +82,9 @@ export function ResourceSearchInput({
     setQuery('');
     setDebounced('');
     setOpen(false);
+    // Keep focus on the field so a few resources can be added in a row without
+    // having to click back into the input after each pick.
+    inputRef.current?.focus();
   }
 
   // Advance the highlight to the next non-excluded option, wrapping around.
@@ -89,7 +93,8 @@ export function ResourceSearchInput({
     let i = from;
     for (let step = 0; step < results.length; step++) {
       i = (i + dir + results.length) % results.length;
-      if (!excluded.has(results[i].resource_code)) return i;
+      const r = results[i];
+      if (r && !excluded.has(r.resource_code)) return i;
     }
     return from;
   }
@@ -118,6 +123,7 @@ export function ResourceSearchInput({
   return (
     <div ref={boxRef} className="relative">
       <Input
+        ref={inputRef}
         value={query}
         onChange={(e) => {
           setQuery(e.target.value);
