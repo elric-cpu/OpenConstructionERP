@@ -87,7 +87,7 @@ async def _seed_cost_items(session: AsyncSession, rows: list[dict]) -> int:
             currency=row.get("currency", "EUR"),
             source=_SOURCE,
             classification={},
-            components=[],
+            components=row.get("components", []),
             tags=row.get("tags", []),
             region=_REGION,
             is_active=True,

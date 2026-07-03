@@ -18,6 +18,7 @@ A features release. It adds Cost Explorer, a search-first workspace over the cos
 - Find work, search every loaded price base for a work by description.
 - Compare bases, the same rate code priced across regions side by side, with a warning when the regions price in different currencies so the amounts are not misread as directly comparable.
 - Substitute, re-price a single resource line inside a work and see the effect on the rate, with a read-out of where that resource is priced across the loaded bases.
+- The starter cost items shipped on a fresh install now carry resource recipes, so By resources and Substitute return real results out of the box before any regional catalogue is imported.
 - Translations for the Cost Explorer across all locales.
 
 ## [9.8.0] - 2026-07-03
