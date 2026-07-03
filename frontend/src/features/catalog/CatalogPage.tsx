@@ -1717,6 +1717,7 @@ export function CatalogPage() {
         title={t('catalog.intro_title', { defaultValue: 'Keep the building blocks priced right' })}
         more={t('catalog.intro_more', { defaultValue: '' }) ? <IntroRichText text={t('catalog.intro_more')} /> : undefined}
         links={[
+          { label: t('nav.cost_explorer', { defaultValue: 'Cost Explorer' }), onClick: () => navigate('/cost-explorer') },
           { label: t('nav.assemblies', { defaultValue: 'Assemblies' }), onClick: () => navigate('/assemblies') },
           { label: t('nav.costs', { defaultValue: 'Cost Database' }), onClick: () => navigate('/costs') },
           { label: t('nav.boq', { defaultValue: 'Bill of Quantities' }), onClick: () => navigate('/boq') },

@@ -1136,6 +1136,7 @@ export function CostsPage() {
         title={t('costs.intro_title', { defaultValue: 'One source of truth for unit rates' })}
         more={t('costs.intro_more', { defaultValue: '' }) ? <IntroRichText text={t('costs.intro_more')} /> : undefined}
         links={[
+          { label: t('nav.cost_explorer', { defaultValue: 'Cost Explorer' }), onClick: () => navigate('/cost-explorer') },
           { label: t('nav.costs_import', { defaultValue: 'Import Cost Database' }), onClick: () => navigate('/costs/import') },
           { label: t('nav.catalog', { defaultValue: 'Resource Catalog' }), onClick: () => navigate('/catalog') },
           { label: t('nav.boq', { defaultValue: 'Bill of Quantities' }), onClick: () => navigate('/boq') },
