@@ -63,3 +63,5 @@ while making sure community input is recognized.
 | [darkleono](https://github.com/darkleono) | [#294](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/294) |
 | [darkleono](https://github.com/darkleono) | [#295](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/295) |
 | [serviteur](https://github.com/serviteur) | [#296](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/296) |
+| [cosanostratr](https://github.com/cosanostratr) | [#97](https://github.com/datadrivenconstruction/OpenConstructionERP/pull/97) |
+| [hibohsuc-svg](https://github.com/hibohsuc-svg) | [#289](https://github.com/datadrivenconstruction/OpenConstructionERP/discussions/289) |
