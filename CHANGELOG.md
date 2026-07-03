@@ -15,6 +15,7 @@ A features and fixes release. It adds a Field Time and Daywork module for captur
 
 - Field Time and Daywork module, capture labour and plant time on site against a project, its resources and its equipment, with labour-or-plant lines, cost-code assist, an approval workflow, and a feed into payroll and earned value.
 - Contributor photos on the About page community thank-you wall, saved and served from the platform rather than fetched from an outside site.
+- Import LWO (LightWave) mesh files in the in-browser 3D importer, completing the mesh-format set alongside glTF, GLB, OBJ, DAE, 3DS, FBX, STL, PLY and USD (#296).
 
 ### Fixed
 

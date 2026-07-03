@@ -123,7 +123,7 @@ const DATA_EXTENSIONS = new Set(['.csv', '.xlsx', '.xls']);
 /** Extensions handled by the DWG Takeoff module - not accepted in BIM Hub. */
 const DWG_EXTENSIONS = new Set(['.dwg', '.dxf']);
 /** Mesh geometry formats parsed in-browser by the mesh importer. */
-const MESH_IMPORT_ACCEPT = '.obj,.3ds,.dae,.gltf,.glb,.fbx,.stl,.ply,.usd,.usdz';
+const MESH_IMPORT_ACCEPT = '.obj,.3ds,.dae,.gltf,.glb,.fbx,.lwo,.stl,.ply,.usd,.usdz';
 /** Geometry formats the backend accepts raw alongside a data file (advanced
  *  mode). Anything else in the geometry slot is routed to the mesh importer. */
 const RAW_GEOMETRY_EXTENSIONS = new Set(['.dae', '.glb', '.gltf']);
@@ -525,7 +525,7 @@ function UploadPanel({
       navigate('/dwg-takeoff');
       return;
     }
-    // Common mesh formats (glTF/GLB/OBJ/DAE/3DS/FBX/STL/PLY/USD) are parsed
+    // Common mesh formats (glTF/GLB/OBJ/DAE/3DS/FBX/LWO/STL/PLY/USD) are parsed
     // in-browser by the mesh importer, which extracts quantities and hands a
     // normalized GLB + element table to the same bim_hub upload.
     if (isMeshImportFile(f.name)) {
@@ -813,7 +813,7 @@ function UploadPanel({
             htmlFor="bim-upload-file-input"
             role="button"
             tabIndex={0}
-            aria-label={t('bim.upload_dropzone_aria_mesh', { defaultValue: 'Upload BIM or 3D mesh file (RVT, IFC, DWG, glTF, GLB, OBJ, DAE, 3DS, FBX, STL, PLY, USD)' })}
+            aria-label={t('bim.upload_dropzone_aria_mesh', { defaultValue: 'Upload BIM or 3D mesh file (RVT, IFC, DWG, glTF, GLB, OBJ, DAE, 3DS, FBX, LWO, STL, PLY, USD)' })}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();

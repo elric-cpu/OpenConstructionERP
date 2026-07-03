@@ -6,7 +6,7 @@
  * the browser - no backend conversion, no extra dependency (three@0.184 already
  * ships every loader used here).
  *
- * Fully wired: glTF, GLB, OBJ, DAE/Collada, 3DS, FBX, STL, PLY.
+ * Fully wired: glTF, GLB, OBJ, DAE/Collada, 3DS, FBX, LWO, STL, PLY.
  * Best-effort: USD / USDZ (parsed with USDLoader inside a try/catch; a failure
  * surfaces a friendly note instead of crashing the import).
  */
@@ -16,6 +16,7 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { TDSLoader } from 'three/addons/loaders/TDSLoader.js';
 import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { LWOLoader } from 'three/addons/loaders/LWOLoader.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -27,6 +28,7 @@ export type MeshFormat =
   | '3ds'
   | 'dae'
   | 'fbx'
+  | 'lwo'
   | 'stl'
   | 'ply'
   | 'gltf'
@@ -40,6 +42,7 @@ export const MESH_IMPORT_EXTENSIONS = [
   '.3ds',
   '.dae',
   '.fbx',
+  '.lwo',
   '.stl',
   '.ply',
   '.gltf',
@@ -177,6 +180,18 @@ export async function loadMeshFile(file: File): Promise<LoadResult> {
       case 'fbx': {
         const buffer = await file.arrayBuffer();
         return { object: new FBXLoader().parse(buffer, ''), format, experimental };
+      }
+      case 'lwo': {
+        // LWOLoader returns { meshes, materials } rather than a scene, so wrap
+        // the parsed meshes in a Group to match the shape the pipeline expects.
+        const buffer = await file.arrayBuffer();
+        const { meshes } = new LWOLoader().parse(buffer, '', '');
+        if (!meshes || meshes.length === 0) {
+          throw new Error('The LWO file contained no meshes.');
+        }
+        const group = new THREE.Group();
+        for (const mesh of meshes) group.add(mesh);
+        return { object: group, format, experimental };
       }
       case '3ds': {
         const buffer = await file.arrayBuffer();
