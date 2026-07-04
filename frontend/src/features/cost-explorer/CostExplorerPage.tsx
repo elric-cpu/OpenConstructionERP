@@ -66,16 +66,23 @@ export function CostExplorerPage() {
           idPrefix="cost-explorer"
           ariaLabel={t('costExplorer.title', { defaultValue: 'Cost Explorer' })}
         />
-        <div
-          role="tabpanel"
-          id={ids.panelId(tab)}
-          aria-labelledby={ids.tabId(tab)}
-          className="pt-4"
-        >
-          {tab === 'by-resources' && <ByResourcesPanel nav={nav} />}
-          {tab === 'find-work' && <FindWorkPanel nav={nav} />}
-          {tab === 'compare' && <ComparePanel code={compareCode} onCodeChange={setCompareCode} />}
-          {tab === 'substitute' && <SubstitutePanel seed={subSeed} />}
+        {/* All four panels stay mounted; only the active one is shown. Keeping
+            them mounted preserves each panel's in-progress input (picked
+            resources, a typed query, its results) when the user switches tabs
+            and comes back, instead of resetting it on every switch. Every
+            panel's data fetch is gated (mutation or an enabled query), so the
+            hidden panels issue no requests until acted on. */}
+        <div role="tabpanel" id={ids.panelId('by-resources')} aria-labelledby={ids.tabId('by-resources')} hidden={tab !== 'by-resources'} className="pt-4">
+          <ByResourcesPanel nav={nav} />
+        </div>
+        <div role="tabpanel" id={ids.panelId('find-work')} aria-labelledby={ids.tabId('find-work')} hidden={tab !== 'find-work'} className="pt-4">
+          <FindWorkPanel nav={nav} />
+        </div>
+        <div role="tabpanel" id={ids.panelId('compare')} aria-labelledby={ids.tabId('compare')} hidden={tab !== 'compare'} className="pt-4">
+          <ComparePanel code={compareCode} onCodeChange={setCompareCode} />
+        </div>
+        <div role="tabpanel" id={ids.panelId('substitute')} aria-labelledby={ids.tabId('substitute')} hidden={tab !== 'substitute'} className="pt-4">
+          <SubstitutePanel seed={subSeed} />
         </div>
       </div>
     </div>

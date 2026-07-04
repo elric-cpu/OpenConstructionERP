@@ -85,6 +85,7 @@ const resource = {
     "costExplorer.substitute.startTitle": "자원 교체 테스트",
     "costExplorer.substitute.swapPlaceholder": "교체해 넣을 자원 검색",
     "costExplorer.substitute.swapSelected": "교체 대상:",
+    "costExplorer.substitute.unitMismatch": "대체 자원은 {{sub}} 단위로 가격이 책정되지만 이 항목은 {{orig}} 단위로 측정됩니다. 수량은 그대로 유지되었으므로 새 단가를 신뢰하기 전에 단위 기준을 확인하세요.",
     "costExplorer.substitute.usage": "사용처",
     "costExplorer.substitute.usageWorks": "{{count}}개 공사 항목",
     "costExplorer.subtitle": "공사가 사용하는 자원으로 단가 산정된 공사를 찾고, 카탈로그를 검색하고, 가격 기준을 비교하고, 대체를 테스트하세요.",

@@ -85,6 +85,7 @@ const resource = {
     "costExplorer.substitute.startTitle": "Проверьте замену ресурса",
     "costExplorer.substitute.swapPlaceholder": "Поиск ресурса для замены",
     "costExplorer.substitute.swapSelected": "Заменить на:",
+    "costExplorer.substitute.unitMismatch": "Замена оценена за {{sub}}, но эта позиция измеряется в {{orig}}. Количество оставлено как есть, поэтому проверьте единицу измерения, прежде чем доверять новой расценке.",
     "costExplorer.substitute.usage": "Используется в",
     "costExplorer.substitute.usageWorks": "{{count}} работах",
     "costExplorer.subtitle": "Находите оценённые работы по используемым ресурсам, ищите по каталогам, сравнивайте ценовые базы и проверяйте замены.",

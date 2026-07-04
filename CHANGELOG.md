@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.9.2] - 2026-07-04
+
+A short follow-up that polishes the Cost Explorer and closes a compliance gap. The workspace now keeps what you were doing on each tab when you move between By resources, Find work, Compare bases and Substitute, so a quick look at another tab no longer clears your input and results. Substitute warns you when the resource you swap in is priced per a different unit than the line it replaces, since the kept quantity may not line up with that price. Projects in Mexico now resolve their contract compliance rules through a dedicated Mexico pack.
+
+### Added
+
+- A Mexico contract-compliance pack covering APU unit-price completeness, IVA and CFDI invoicing and subcontract retention for LOPSRM public works, selected by default for a project in Mexico.
+- A warning in Substitute when the replacement resource is priced per a different unit than the line being re-priced.
+
+### Fixed
+
+- Cost Explorer keeps each tab's input and results when you switch tabs instead of resetting them.
+
 ## [9.9.1] - 2026-07-04
 
 A quality release that sharpens the Cost Explorer. Search now understands construction vocabulary, so looking for "rebar" also finds work priced against "reinforcement", and the same applies to the catalog search and to finding work by description. A descriptive, multi-word search returns the closest partial matches instead of dead-ending on zero results when no single line carries every word. Substitute is steadier: it will not blend in a replacement that is only priced in another currency, it treats a blank replacement rate as a request to use the catalog price, and it stays well-behaved on extreme catalog figures. The workspace now tells you when a loaded price base is not yet in the resource index and offers to rebuild it, and it keeps that index in step base by base as you import.

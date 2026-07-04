@@ -85,6 +85,7 @@ const resource = {
     "costExplorer.substitute.startTitle": "اختبر تبديل مورد",
     "costExplorer.substitute.swapPlaceholder": "ابحث عن مورد لإدخاله بديلاً",
     "costExplorer.substitute.swapSelected": "إدخال بديل:",
+    "costExplorer.substitute.unitMismatch": "The replacement is priced per {{sub}}, but this line is measured in {{orig}}. The quantity was kept as-is, so check the unit basis before trusting the new rate.",
     "costExplorer.substitute.usage": "مُستخدَم في",
     "costExplorer.substitute.usageWorks": "{{count}} عمل",
     "costExplorer.subtitle": "ابحث عن الأعمال المسعّرة حسب الموارد التي تستخدمها، وابحث في الكتالوجات، وقارن قواعد الأسعار واختبر عمليات الاستبدال.",

@@ -57,6 +57,8 @@ def test_suggest_pack_for_region() -> None:
     assert suggest_pack_for_region("DACH") == "de_compliance"
     assert suggest_pack_for_region("United Kingdom") == "uk_compliance"
     assert suggest_pack_for_region("USA") == "us_compliance"
+    assert suggest_pack_for_region("Mexico") == "mx_compliance"
+    assert suggest_pack_for_region("MX") == "mx_compliance"
     # Unknown / empty → default.
     assert suggest_pack_for_region("Mars") == DEFAULT_PACK_ID
     assert suggest_pack_for_region(None) == DEFAULT_PACK_ID

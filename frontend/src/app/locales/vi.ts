@@ -85,6 +85,7 @@ const resource = {
     "costExplorer.substitute.startTitle": "Thử đổi tài nguyên",
     "costExplorer.substitute.swapPlaceholder": "Tìm tài nguyên để đổi sang",
     "costExplorer.substitute.swapSelected": "Đổi sang:",
+    "costExplorer.substitute.unitMismatch": "The replacement is priced per {{sub}}, but this line is measured in {{orig}}. The quantity was kept as-is, so check the unit basis before trusting the new rate.",
     "costExplorer.substitute.usage": "Dùng trong",
     "costExplorer.substitute.usageWorks": "{{count}} công tác",
     "costExplorer.subtitle": "Tìm công tác đã có đơn giá theo tài nguyên mà nó sử dụng, tìm kiếm danh mục, so sánh các bộ đơn giá và thử các phương án thay thế.",

@@ -85,6 +85,7 @@ const resource = {
     "costExplorer.substitute.startTitle": "Testează o înlocuire de resursă",
     "costExplorer.substitute.swapPlaceholder": "Caută o resursă de introdus",
     "costExplorer.substitute.swapSelected": "Înlocuiește cu:",
+    "costExplorer.substitute.unitMismatch": "The replacement is priced per {{sub}}, but this line is measured in {{orig}}. The quantity was kept as-is, so check the unit basis before trusting the new rate.",
     "costExplorer.substitute.usage": "Folosită în",
     "costExplorer.substitute.usageWorks": "{{count}} lucrări",
     "costExplorer.subtitle": "Găsește lucrări cu preț după resursele pe care le folosesc, caută în cataloage, compară baze de prețuri și testează substituții.",

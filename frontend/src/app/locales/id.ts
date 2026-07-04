@@ -85,6 +85,7 @@ const resource = {
     "costExplorer.substitute.startTitle": "Uji pertukaran sumber daya",
     "costExplorer.substitute.swapPlaceholder": "Cari sumber daya untuk dimasukkan sebagai pengganti",
     "costExplorer.substitute.swapSelected": "Masukkan sebagai pengganti:",
+    "costExplorer.substitute.unitMismatch": "The replacement is priced per {{sub}}, but this line is measured in {{orig}}. The quantity was kept as-is, so check the unit basis before trusting the new rate.",
     "costExplorer.substitute.usage": "Digunakan dalam",
     "costExplorer.substitute.usageWorks": "{{count}} pekerjaan",
     "costExplorer.subtitle": "Temukan pekerjaan yang telah diberi harga berdasarkan sumber daya yang digunakannya, telusuri katalog, bandingkan basis harga, dan uji substitusi.",

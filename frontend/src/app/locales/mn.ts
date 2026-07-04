@@ -85,6 +85,7 @@ const resource = {
     "costExplorer.substitute.startTitle": "Нөөц солихыг туршиж үзэх",
     "costExplorer.substitute.swapPlaceholder": "Орлуулан оруулах нөөц хайх",
     "costExplorer.substitute.swapSelected": "Орлуулан оруулах:",
+    "costExplorer.substitute.unitMismatch": "The replacement is priced per {{sub}}, but this line is measured in {{orig}}. The quantity was kept as-is, so check the unit basis before trusting the new rate.",
     "costExplorer.substitute.usage": "Хэрэглээ",
     "costExplorer.substitute.usageWorks": "{{count}} ажил",
     "costExplorer.subtitle": "Ашигладаг нөөцөөр нь үнэлэгдсэн ажлыг олох, каталогуудаас хайх, үнийн суурьуудыг харьцуулах, орлуулалтыг туршина уу.",

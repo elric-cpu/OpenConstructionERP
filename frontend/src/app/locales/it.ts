@@ -85,6 +85,7 @@ const resource = {
     "costExplorer.substitute.startTitle": "Prova una sostituzione di risorsa",
     "costExplorer.substitute.swapPlaceholder": "Cerca una risorsa da inserire",
     "costExplorer.substitute.swapSelected": "Sostituisci con:",
+    "costExplorer.substitute.unitMismatch": "Il sostituto è quotato per {{sub}}, ma questa voce è misurata in {{orig}}. La quantità è stata mantenuta invariata, quindi verifica la base di unità prima di fidarti del nuovo prezzo.",
     "costExplorer.substitute.usage": "Usata in",
     "costExplorer.substitute.usageWorks": "{{count}} lavorazioni",
     "costExplorer.subtitle": "Trova le lavorazioni prezzate in base alle risorse che utilizzano, cerca nei cataloghi, confronta i prezzari e prova le sostituzioni.",

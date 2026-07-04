@@ -75,6 +75,16 @@ RULE_PACKS: dict[str, dict[str, Any]] = {
         "enforced_workflows": [WORKFLOW_CONTRACT_SIGNATURE],
         "rule_sets": ["boq_quality", "masterformat"],
     },
+    "mx_compliance": {
+        "id": "mx_compliance",
+        "name": "Mexico Compliance",
+        "description": "APU unit-price completeness, IVA and CFDI invoicing, and "
+        "subcontract retencion checks for LOPSRM public works plus the "
+        "universal quality baseline.",
+        "jurisdiction": "MX",
+        "enforced_workflows": [WORKFLOW_CONTRACT_SIGNATURE],
+        "rule_sets": ["boq_quality", "mexico"],
+    },
 }
 
 #: Default pack every project falls back to when nothing else matches.
@@ -97,6 +107,9 @@ _REGION_PACK_HINTS: tuple[tuple[str, str], ...] = (
     ("usa", "us_compliance"),
     ("united states", "us_compliance"),
     ("america", "us_compliance"),
+    ("mx", "mx_compliance"),
+    ("mexico", "mx_compliance"),
+    ("méxico", "mx_compliance"),
 )
 
 

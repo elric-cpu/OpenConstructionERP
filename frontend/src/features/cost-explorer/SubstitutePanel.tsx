@@ -88,7 +88,7 @@ export function SubstitutePanel({ seed }: { seed: SubstituteSeed | null }) {
   return (
     <div className="space-y-4">
       {/* Target work */}
-      <div className="rounded-lg border border-border-light p-3">
+      <div className="rounded-lg border border-border-light bg-surface-primary p-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-medium text-content-primary">{work.code}</span>
           {work.region && <Badge>{work.region}</Badge>}
@@ -239,7 +239,7 @@ export function SubstitutePanel({ seed }: { seed: SubstituteSeed | null }) {
       {sub.isError && <ErrorState title={getErrorMessage(sub.error)} onRetry={() => sub.mutate()} />}
 
       {result && (
-        <div className="rounded-lg border border-border-light p-4">
+        <div className="rounded-lg border border-border-light bg-surface-primary p-4">
           <div className="flex flex-wrap items-center gap-4">
             <div>
               <div className="text-xs text-content-tertiary">{t('costExplorer.substitute.oldRate', { defaultValue: 'Current rate' })}</div>
@@ -272,6 +272,20 @@ export function SubstitutePanel({ seed }: { seed: SubstituteSeed | null }) {
               qty: fmtMoney(result.quantity),
             })}
           </p>
+
+          {result.unit_mismatch && (
+            <div className="mt-2 flex items-start gap-2 rounded-md border border-semantic-warning/30 bg-semantic-warning/10 px-3 py-2 text-xs text-content-secondary">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-semantic-warning" aria-hidden />
+              <span>
+                {t('costExplorer.substitute.unitMismatch', {
+                  defaultValue:
+                    'The replacement is priced per {{sub}}, but this line is measured in {{orig}}. The quantity was kept as-is, so check the unit basis before trusting the new rate.',
+                  sub: result.substitute_unit,
+                  orig: result.original_unit,
+                })}
+              </span>
+            </div>
+          )}
 
           {result.clamped && (
             <div className="mt-2 flex items-start gap-2 rounded-md border border-semantic-warning/30 bg-semantic-warning/10 px-3 py-2 text-xs text-content-secondary">

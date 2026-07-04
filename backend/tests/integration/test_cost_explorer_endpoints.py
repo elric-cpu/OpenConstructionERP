@@ -15,6 +15,8 @@ Covered:
 * compare lists one rate code across regions and flags mixed currencies.
 * substitute re-prices a line by an explicit rate, and refuses a substitute
   priced only in a foreign currency instead of silently blending it.
+* substitute flags a swap to a resource priced per a different unit, and stays
+  silent when the units match.
 * index_status reports a component-bearing region that was never indexed as
   stale, and reports nothing stale once every region is indexed.
 """
@@ -124,9 +126,20 @@ async def _add_catalog(
         await s.commit()
 
 
-def _line(code: str, *, name: str = "", qty: str = "1", unit_rate: str = "10", rtype: str = "material") -> dict:
+def _line(
+    code: str,
+    *,
+    name: str = "",
+    qty: str = "1",
+    unit_rate: str = "10",
+    rtype: str = "material",
+    unit: str = "",
+) -> dict:
     """A components entry (the reindex source for one resource line)."""
-    return {"code": code, "name": name or code, "type": rtype, "quantity": qty, "unit_rate": unit_rate}
+    comp = {"code": code, "name": name or code, "type": rtype, "quantity": qty, "unit_rate": unit_rate}
+    if unit:
+        comp["unit"] = unit
+    return comp
 
 
 # ── Tests ────────────────────────────────────────────────────────────────
@@ -287,6 +300,64 @@ async def test_substitute_refuses_foreign_currency_price(factory) -> None:
                     substitute_resource_code="CEM-B",
                 )
             )
+
+
+@pytest.mark.asyncio
+async def test_substitute_flags_unit_mismatch_only_when_units_differ(factory) -> None:
+    """A swap to a resource priced per a different unit is flagged; same unit is not."""
+    from app.modules.cost_explorer.schemas import SubstituteRequest
+
+    work_id = await _add_work(
+        factory,
+        code="W-UNIT",
+        description="Rebar in slab",
+        region="TR_ANKARA",
+        currency="TRY",
+        components=[_line("STL-KG", name="Rebar", qty="80", unit_rate="12", unit="kg")],
+    )
+    # Same currency (TRY) but priced per tonne, not per kg: the kept quantity no
+    # longer lines up with the price basis, so the swap must warn.
+    await _add_catalog(
+        factory,
+        resource_code="STL-T",
+        name="Rebar bundle",
+        region="TR_ANKARA",
+        currency="TRY",
+        base_price="12000",
+        unit="t",
+    )
+    # A same-unit (kg) replacement in the same currency must NOT warn.
+    await _add_catalog(
+        factory,
+        resource_code="STL-KG2",
+        name="Alt rebar",
+        region="TR_ANKARA",
+        currency="TRY",
+        base_price="13",
+        unit="kg",
+    )
+
+    async with factory() as s:
+        svc = _svc(s)
+        mismatch = await svc.substitute(
+            SubstituteRequest(
+                cost_item_id=work_id,
+                resource_code="STL-KG",
+                substitute_resource_code="STL-T",
+            )
+        )
+        assert mismatch.unit_mismatch is True
+        assert mismatch.original_unit == "kg"
+        assert mismatch.substitute_unit == "t"
+
+        same = await svc.substitute(
+            SubstituteRequest(
+                cost_item_id=work_id,
+                resource_code="STL-KG",
+                substitute_resource_code="STL-KG2",
+            )
+        )
+        assert same.unit_mismatch is False
 
 
 @pytest.mark.asyncio

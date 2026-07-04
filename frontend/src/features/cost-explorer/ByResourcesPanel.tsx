@@ -203,7 +203,7 @@ function ResultRow({
   const matched = row.matched ?? [];
   const missing = row.missing_codes ?? [];
   return (
-    <div className="rounded-lg border border-border-light">
+    <div className="rounded-lg border border-border-light bg-surface-primary">
       <div className="flex items-start gap-3 p-3">
         <div className="w-5 shrink-0 pt-0.5 text-xs tabular-nums text-content-tertiary">{rank}</div>
         <div className="min-w-0 flex-1">

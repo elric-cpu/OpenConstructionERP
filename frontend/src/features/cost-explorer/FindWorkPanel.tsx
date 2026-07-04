@@ -86,7 +86,7 @@ export function FindWorkPanel({ nav }: { nav: CrossNav }) {
             {t('costExplorer.findWork.count', { defaultValue: '{{count}} works', count: results.length })}
           </div>
           {results.map((row) => (
-            <div key={row.cost_item_id} className="flex items-start gap-3 rounded-lg border border-border-light p-3">
+            <div key={row.cost_item_id} className="flex items-start gap-3 rounded-lg border border-border-light bg-surface-primary p-3">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium text-content-primary">{row.code}</span>

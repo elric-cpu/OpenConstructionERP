@@ -114,6 +114,9 @@ export interface SubstituteResponse {
   new_unit_rate: string;
   substitute_resource_code: string | null;
   substitute_resource_name: string | null;
+  original_unit: string | null;
+  substitute_unit: string | null;
+  unit_mismatch: boolean;
   old_rate: string;
   new_rate: string;
   delta: string;

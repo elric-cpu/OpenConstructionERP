@@ -85,6 +85,7 @@ const resource = {
     "costExplorer.substitute.startTitle": "Testa ett resursbyte",
     "costExplorer.substitute.swapPlaceholder": "Sök en resurs att byta in",
     "costExplorer.substitute.swapSelected": "Byt in:",
+    "costExplorer.substitute.unitMismatch": "The replacement is priced per {{sub}}, but this line is measured in {{orig}}. The quantity was kept as-is, so check the unit basis before trusting the new rate.",
     "costExplorer.substitute.usage": "Används i",
     "costExplorer.substitute.usageWorks": "{{count}} arbeten",
     "costExplorer.subtitle": "Hitta prissatta arbeten utifrån de resurser de använder, sök i katalogerna, jämför prisbaser och testa ersättningar.",

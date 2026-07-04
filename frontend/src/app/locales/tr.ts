@@ -85,6 +85,7 @@ const resource = {
     "costExplorer.substitute.startTitle": "Kaynak değişimini test et",
     "costExplorer.substitute.swapPlaceholder": "Yerine koyulacak bir kaynak arayın",
     "costExplorer.substitute.swapSelected": "Yerine koy:",
+    "costExplorer.substitute.unitMismatch": "İkame {{sub}} başına fiyatlandırılıyor, ancak bu kalem {{orig}} cinsinden ölçülüyor. Miktar olduğu gibi korundu, bu yüzden yeni birim fiyata güvenmeden önce birim tabanını kontrol edin.",
     "costExplorer.substitute.usage": "Kullanım",
     "costExplorer.substitute.usageWorks": "{{count}} iş kalemi",
     "costExplorer.subtitle": "Kullandığı kaynaklara göre fiyatlandırılmış işleri bulun, kataloglarda arayın, fiyat tabanlarını karşılaştırın ve ikameleri test edin.",

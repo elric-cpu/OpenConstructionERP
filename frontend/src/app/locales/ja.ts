@@ -85,6 +85,7 @@ const resource = {
     "costExplorer.substitute.startTitle": "資源の置換をテスト",
     "costExplorer.substitute.swapPlaceholder": "差し替える資源を検索",
     "costExplorer.substitute.swapSelected": "差し替え先：",
+    "costExplorer.substitute.unitMismatch": "代替材は{{sub}}あたりで価格設定されていますが、この項目は{{orig}}で計測されています。数量はそのまま保持されているため、新しい単価を信頼する前に単位の基準を確認してください。",
     "costExplorer.substitute.usage": "使用箇所",
     "costExplorer.substitute.usageWorks": "{{count}} 件の工事項目",
     "costExplorer.subtitle": "工事が使用する資源から計価済みの工事を検索し、カタログを検索し、価格ベースを比較し、置換をテストします。",

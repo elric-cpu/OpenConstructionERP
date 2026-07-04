@@ -85,6 +85,7 @@ const resource = {
     "costExplorer.substitute.startTitle": "Przetestuj zamianę zasobu",
     "costExplorer.substitute.swapPlaceholder": "Szukaj zasobu do wstawienia",
     "costExplorer.substitute.swapSelected": "Zamień na:",
+    "costExplorer.substitute.unitMismatch": "Zamiennik jest wyceniany za {{sub}}, ale ta pozycja jest mierzona w {{orig}}. Ilość pozostała bez zmian, więc sprawdź podstawę jednostki, zanim zaufasz nowej stawce.",
     "costExplorer.substitute.usage": "Używany w",
     "costExplorer.substitute.usageWorks": "{{count}} robotach",
     "costExplorer.subtitle": "Znajduj wycenione roboty według używanych zasobów, przeszukuj katalogi, porównuj bazy cenowe i testuj zamiany.",

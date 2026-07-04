@@ -85,6 +85,7 @@ const resource = {
     "costExplorer.substitute.startTitle": "Vyzkoušejte výměnu zdroje",
     "costExplorer.substitute.swapPlaceholder": "Hledat zdroj k nahrazení",
     "costExplorer.substitute.swapSelected": "Nahradit za:",
+    "costExplorer.substitute.unitMismatch": "The replacement is priced per {{sub}}, but this line is measured in {{orig}}. The quantity was kept as-is, so check the unit basis before trusting the new rate.",
     "costExplorer.substitute.usage": "Používá se v",
     "costExplorer.substitute.usageWorks": "{{count}} pracích",
     "costExplorer.subtitle": "Najděte oceněné práce podle zdrojů, které používají, prohledávejte katalogy, porovnávejte cenové základny a testujte náhrady.",

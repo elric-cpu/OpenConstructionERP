@@ -85,6 +85,7 @@ const resource = {
     "costExplorer.substitute.startTitle": "Tester un remplacement de ressource",
     "costExplorer.substitute.swapPlaceholder": "Rechercher une ressource à substituer",
     "costExplorer.substitute.swapSelected": "Substituer par :",
+    "costExplorer.substitute.unitMismatch": "Le remplacement est chiffré par {{sub}}, mais cette ligne est mesurée en {{orig}}. La quantité a été conservée telle quelle, vérifiez donc la base d'unité avant de vous fier au nouveau prix.",
     "costExplorer.substitute.usage": "Utilisée dans",
     "costExplorer.substitute.usageWorks": "{{count}} ouvrages",
     "costExplorer.subtitle": "Trouvez les ouvrages chiffrés d'après les ressources qu'ils utilisent, recherchez dans les catalogues, comparez les bases de prix et testez des substitutions.",

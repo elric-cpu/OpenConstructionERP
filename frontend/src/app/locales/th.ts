@@ -85,6 +85,7 @@ const resource = {
     "costExplorer.substitute.startTitle": "ทดสอบการสลับทรัพยากร",
     "costExplorer.substitute.swapPlaceholder": "ค้นหาทรัพยากรที่จะนำมาสลับ",
     "costExplorer.substitute.swapSelected": "สลับเข้ามา:",
+    "costExplorer.substitute.unitMismatch": "The replacement is priced per {{sub}}, but this line is measured in {{orig}}. The quantity was kept as-is, so check the unit basis before trusting the new rate.",
     "costExplorer.substitute.usage": "ใช้ใน",
     "costExplorer.substitute.usageWorks": "{{count}} รายการงาน",
     "costExplorer.subtitle": "ค้นหารายการงานที่มีราคาจากทรัพยากรที่ใช้ ค้นหาในแคตตาล็อก เปรียบเทียบฐานราคา และทดสอบการทดแทน",

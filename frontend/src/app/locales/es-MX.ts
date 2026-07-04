@@ -87,6 +87,7 @@ const resource = {
     "costExplorer.substitute.startTitle": "Probar un cambio de insumo",
     "costExplorer.substitute.swapPlaceholder": "Busca un insumo para sustituir",
     "costExplorer.substitute.swapSelected": "Cambiar por:",
+    "costExplorer.substitute.unitMismatch": "El reemplazo se cotiza por {{sub}}, pero esta partida se mide en {{orig}}. La cantidad se mantuvo igual, así que revisa la base de unidad antes de confiar en el nuevo precio.",
     "costExplorer.substitute.usage": "Usado en",
     "costExplorer.substitute.usageWorks": "{{count}} conceptos",
     "costExplorer.subtitle": "Encuentra conceptos con precio por los insumos que usan, busca en los catálogos, compara bases de precios y prueba sustituciones.",

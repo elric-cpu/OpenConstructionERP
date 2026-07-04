@@ -113,7 +113,7 @@ export function ComparePanel({ code, onCodeChange }: { code: string; onCodeChang
             </div>
           )}
 
-          <div className="overflow-x-auto rounded-lg border border-border-light">
+          <div className="overflow-x-auto rounded-lg border border-border-light bg-surface-primary">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border-light bg-surface-secondary text-left text-xs text-content-tertiary">

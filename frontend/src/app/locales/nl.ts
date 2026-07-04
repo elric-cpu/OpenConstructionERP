@@ -85,6 +85,7 @@ const resource = {
     "costExplorer.substitute.startTitle": "Een middelwissel testen",
     "costExplorer.substitute.swapPlaceholder": "Zoek een middel om in te wisselen",
     "costExplorer.substitute.swapSelected": "Inwisselen:",
+    "costExplorer.substitute.unitMismatch": "De vervanging is geprijsd per {{sub}}, maar deze regel wordt gemeten in {{orig}}. De hoeveelheid is ongewijzigd overgenomen, controleer dus de eenheidsbasis voordat u op het nieuwe tarief vertrouwt.",
     "costExplorer.substitute.usage": "Gebruikt in",
     "costExplorer.substitute.usageWorks": "{{count}} werken",
     "costExplorer.subtitle": "Vind geprijsde werken op basis van de gebruikte middelen, doorzoek de catalogi, vergelijk prijsbases en test vervangingen.",

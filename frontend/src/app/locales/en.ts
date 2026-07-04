@@ -4111,6 +4111,7 @@ const resource = {
     "costExplorer.substitute.startTitle": "Test a resource swap",
     "costExplorer.substitute.swapPlaceholder": "Search a resource to swap in",
     "costExplorer.substitute.swapSelected": "Swap in:",
+    "costExplorer.substitute.unitMismatch": "The replacement is priced per {{sub}}, but this line is measured in {{orig}}. The quantity was kept as-is, so check the unit basis before trusting the new rate.",
     "costExplorer.substitute.usage": "Used in",
     "costExplorer.substitute.usageWorks": "{{count}} works",
     "costExplorer.subtitle": "Find priced work by the resources it uses, search the catalogs, compare price bases and test substitutions.",

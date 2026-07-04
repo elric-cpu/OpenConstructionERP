@@ -85,6 +85,7 @@ const resource = {
     "costExplorer.substitute.startTitle": "Probar un cambio de recurso",
     "costExplorer.substitute.swapPlaceholder": "Busca un recurso para sustituir",
     "costExplorer.substitute.swapSelected": "Cambiar por:",
+    "costExplorer.substitute.unitMismatch": "El reemplazo se cotiza por {{sub}}, pero esta partida se mide en {{orig}}. Se mantuvo la cantidad tal cual, así que revise la base de unidad antes de confiar en el nuevo precio.",
     "costExplorer.substitute.usage": "Usado en",
     "costExplorer.substitute.usageWorks": "{{count}} partidas",
     "costExplorer.subtitle": "Encuentra partidas con precio por los recursos que usan, busca en los catálogos, compara bases de precios y prueba sustituciones.",

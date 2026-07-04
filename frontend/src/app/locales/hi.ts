@@ -85,6 +85,7 @@ const resource = {
     "costExplorer.substitute.startTitle": "संसाधन अदला-बदली आज़माएँ",
     "costExplorer.substitute.swapPlaceholder": "बदलकर लाने हेतु कोई संसाधन खोजें",
     "costExplorer.substitute.swapSelected": "बदलकर लाएँ:",
+    "costExplorer.substitute.unitMismatch": "The replacement is priced per {{sub}}, but this line is measured in {{orig}}. The quantity was kept as-is, so check the unit basis before trusting the new rate.",
     "costExplorer.substitute.usage": "उपयोग",
     "costExplorer.substitute.usageWorks": "{{count}} कार्य",
     "costExplorer.subtitle": "जिन संसाधनों का उपयोग होता है उनके आधार पर मूल्यांकित कार्य खोजें, कैटलॉग खोजें, मूल्य आधारों की तुलना करें और प्रतिस्थापन आज़माएँ।",

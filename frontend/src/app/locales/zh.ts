@@ -85,6 +85,7 @@ const resource = {
     "costExplorer.substitute.startTitle": "测试资源替换",
     "costExplorer.substitute.swapPlaceholder": "搜索要替换入的资源",
     "costExplorer.substitute.swapSelected": "替换为：",
+    "costExplorer.substitute.unitMismatch": "替代资源按每 {{sub}} 计价，但此项按 {{orig}} 计量。数量保持不变，因此在采用新单价前请核对单位基准。",
     "costExplorer.substitute.usage": "使用于",
     "costExplorer.substitute.usageWorks": "{{count}} 个工作项",
     "costExplorer.subtitle": "按工作所用资源查找已计价工作项，搜索目录，比较价格库并测试替换方案。",

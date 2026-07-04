@@ -85,6 +85,7 @@ const resource = {
     "costExplorer.substitute.startTitle": "Testaa panoksen vaihtoa",
     "costExplorer.substitute.swapPlaceholder": "Hae tilalle vaihdettava panos",
     "costExplorer.substitute.swapSelected": "Vaihda tilalle:",
+    "costExplorer.substitute.unitMismatch": "The replacement is priced per {{sub}}, but this line is measured in {{orig}}. The quantity was kept as-is, so check the unit basis before trusting the new rate.",
     "costExplorer.substitute.usage": "Käytössä",
     "costExplorer.substitute.usageWorks": "{{count}} työssä",
     "costExplorer.subtitle": "Löydä hinnoiteltua työtä sen käyttämien panosten perusteella, hae luetteloista, vertaa hinnastoja ja testaa korvauksia.",

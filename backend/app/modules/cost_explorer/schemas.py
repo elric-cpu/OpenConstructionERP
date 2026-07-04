@@ -245,6 +245,13 @@ class SubstituteResponse(BaseModel):
     substitute_resource_code: str | None = None
     substitute_resource_name: str | None = None
 
+    # Unit basis of the line vs the swapped-in resource. ``unit_mismatch`` is
+    # True only when both are known and differ, so the UI can warn that the
+    # kept quantity may not line up with the replacement's price basis.
+    original_unit: str | None = None
+    substitute_unit: str | None = None
+    unit_mismatch: bool = False
+
     old_rate: str = ""
     new_rate: str = ""
     delta: str = ""

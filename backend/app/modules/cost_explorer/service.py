@@ -128,6 +128,7 @@ def parse_components(raw: object) -> list[dict]:
                 "resource_code": code[:100],
                 "resource_name": str(comp.get("name") or "")[:500],
                 "resource_type": str(comp.get("type") or "")[:20],
+                "unit": str(comp.get("unit") or "")[:20],
                 "quantity": _fmt(qty)[:50],
                 "unit_rate": _fmt(unit_rate)[:50],
                 "cost": _fmt(cost)[:50],
@@ -329,6 +330,7 @@ class CostExplorerService:
         old_unit_rate = ranking.to_decimal(target["unit_rate"])
 
         sub_name: str | None = None
+        sub_unit: str | None = None
         if req.new_unit_rate is not None:
             new_unit_rate = ranking.to_decimal(req.new_unit_rate)
         else:
@@ -346,6 +348,16 @@ class CostExplorerService:
                 raise CostExplorerNotFound("substitute resource is not priced in this work's region or currency")
             new_unit_rate = ranking.to_decimal(sub.base_price)
             sub_name = sub.name
+            sub_unit = (sub.unit or "").strip() or None
+
+        # A swap re-prices the line but keeps the recipe's quantity for it. If
+        # the replacement is priced per a different unit than the line is
+        # measured in, that quantity no longer lines up and the new rate can be
+        # off by the unit ratio. Flag it (only when both units are known, so an
+        # unlabelled recipe never raises a false alarm) so the user re-checks
+        # the basis instead of trusting a silently skewed number.
+        original_unit = (str(target.get("unit") or "")).strip() or None
+        unit_mismatch = bool(sub_unit and original_unit and sub_unit.casefold() != original_unit.casefold())
 
         result = pricing.substitute(item.rate, quantity, old_unit_rate, new_unit_rate)
         return SubstituteResponse(
@@ -362,6 +374,9 @@ class CostExplorerService:
             new_unit_rate=_fmt(new_unit_rate),
             substitute_resource_code=req.substitute_resource_code,
             substitute_resource_name=sub_name,
+            original_unit=original_unit,
+            substitute_unit=sub_unit,
+            unit_mismatch=unit_mismatch,
             old_rate=_fmt(result.old_rate),
             new_rate=_fmt(result.new_rate),
             delta=_fmt(result.delta),
