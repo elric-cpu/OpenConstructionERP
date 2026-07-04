@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.9.3] - 2026-07-04
+
+Cost Benchmarks grew a lot. It now covers eleven markets, adding France, Netherlands, Spain, Italy, Australia and Canada next to Germany, Austria, Switzerland, the United Kingdom and the United States, each with its own named public source and currency. Five more building types come with it: data center, laboratory, car park, sports and leisure, and senior care home, so more of a real portfolio maps onto a reference. Every region carries a short plain-language note on what drives its cost, and a new on-page "How these benchmarks work" section explains what the figures mean, how the percentile and quartiles read, what the DIN 276 split shows and how confidence is judged, with the full list of sources per region.
+
 ## [9.9.2] - 2026-07-04
 
 A short follow-up that polishes the Cost Explorer and closes a compliance gap. The workspace now keeps what you were doing on each tab when you move between By resources, Find work, Compare bases and Substitute, so a quick look at another tab no longer clears your input and results. Substitute warns you when the resource you swap in is priced per a different unit than the line it replaces, since the kept quantity may not line up with that price. Projects in Mexico now resolve their contract compliance rules through a dedicated Mexico pack.

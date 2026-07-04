@@ -7,6 +7,12 @@
  * - SIA / BFS Schweiz 2024 (Switzerland)
  * - BCIS Building Cost Information Service 2024 (United Kingdom)
  * - ENR Construction Cost Index 2024 (United States)
+ * - Batiprix / UNTEC 2024 (France)
+ * - Bouwkosten Kompas 2024 (Netherlands)
+ * - ITeC BEDEC 2024 (Spain)
+ * - DEI Tipologie Edilizie 2024 (Italy)
+ * - Rawlinsons Construction Handbook 2024 (Australia)
+ * - Altus Construction Cost Guide 2024 (Canada)
  *
  * All values are cost per m2 GFA (gross floor area) for DIN 276 KG300+400
  * (construction works plus technical building systems). The KG300 vs KG400
@@ -24,11 +30,16 @@ export type BuildingType =
   | 'industrial'
   | 'retail'
   | 'hotel'
-  | 'warehouse';
+  | 'warehouse'
+  | 'data_center'
+  | 'laboratory'
+  | 'car_park'
+  | 'sports_facility'
+  | 'senior_care';
 
-export type BenchmarkRegion = 'DE' | 'AT' | 'CH' | 'UK' | 'US';
+export type BenchmarkRegion = 'DE' | 'AT' | 'CH' | 'UK' | 'US' | 'FR' | 'NL' | 'ES' | 'IT' | 'AU' | 'CA';
 
-export type CurrencyCode = 'EUR' | 'CHF' | 'GBP' | 'USD';
+export type CurrencyCode = 'EUR' | 'CHF' | 'GBP' | 'USD' | 'AUD' | 'CAD';
 
 /** DIN 276 KG300 (construction) vs KG400 (technical systems) split of the median. */
 export interface CostGroupSplit {
@@ -159,6 +170,45 @@ export const BUILDING_TYPES: BuildingTypeInfo[] = [
     description: 'Storage, distribution center',
     scopeNote: 'Storage or distribution shed. Mostly structure and envelope, minimal technical systems.',
   },
+  {
+    id: 'data_center',
+    label: 'Data Center',
+    description: 'Colocation / hyperscale',
+    scopeNote:
+      'Colocation or hyperscale data center. Power and cooling dominate the cost, so the technical share (KG400) is the highest of any type. Per m2 GFA of white space plus support areas.',
+  },
+  {
+    id: 'laboratory',
+    label: 'Laboratory / Research',
+    description: 'Wet & dry labs, cleanrooms',
+    scopeNote:
+      'Research or teaching laboratory with fume extraction, gas and process services. Services-heavy; excludes movable lab equipment.',
+  },
+  {
+    id: 'car_park',
+    label: 'Car Park',
+    description: 'Multi-storey / underground',
+    scopeNote:
+      'Multi-storey or underground parking structure. Mostly frame, deck and ramps with minimal services. Per space assumes about 30 m2 GFA per bay incl. circulation.',
+    secondaryUnitId: 'space',
+    secondaryUnit: 'per space',
+  },
+  {
+    id: 'sports_facility',
+    label: 'Sports & Leisure',
+    description: 'Sports hall, pool, gym',
+    scopeNote:
+      'Indoor sports hall, pool or leisure center. Long spans and, for pools, heavy ventilation and water treatment lift the technical share.',
+  },
+  {
+    id: 'senior_care',
+    label: 'Senior Care Home',
+    description: 'Assisted living, nursing',
+    scopeNote:
+      'Residential care or nursing home. Residential in form but with nurse call, higher servicing and accessibility. Per bed assumes about 55 m2 GFA per resident room incl. common areas.',
+    secondaryUnitId: 'bed',
+    secondaryUnit: 'per bed',
+  },
 ];
 
 export const BENCHMARK_REGIONS: { id: BenchmarkRegion; label: string; currency: CurrencyCode }[] = [
@@ -167,6 +217,12 @@ export const BENCHMARK_REGIONS: { id: BenchmarkRegion; label: string; currency: 
   { id: 'CH', label: 'Switzerland', currency: 'CHF' },
   { id: 'UK', label: 'United Kingdom', currency: 'GBP' },
   { id: 'US', label: 'United States', currency: 'USD' },
+  { id: 'FR', label: 'France', currency: 'EUR' },
+  { id: 'NL', label: 'Netherlands', currency: 'EUR' },
+  { id: 'ES', label: 'Spain', currency: 'EUR' },
+  { id: 'IT', label: 'Italy', currency: 'EUR' },
+  { id: 'AU', label: 'Australia', currency: 'AUD' },
+  { id: 'CA', label: 'Canada', currency: 'CAD' },
 ];
 
 /* ── Modeling constants ─────────────────────────────────────────────────
@@ -190,6 +246,11 @@ const QUARTILES: Record<BenchmarkRegion, Record<BuildingType, [number, number, n
     retail: [1200, 1600, 2000, 2500, 3500],
     hotel: [2200, 2800, 3400, 4200, 6000],
     warehouse: [500, 700, 950, 1300, 2000],
+    data_center: [4500, 5800, 7000, 8800, 12000],
+    laboratory: [2800, 3500, 4200, 5200, 7000],
+    car_park: [500, 650, 800, 1050, 1500],
+    sports_facility: [1700, 2100, 2600, 3300, 4600],
+    senior_care: [2000, 2450, 2900, 3600, 4800],
   },
   AT: {
     office: [1900, 2350, 2800, 3400, 4800],
@@ -201,6 +262,11 @@ const QUARTILES: Record<BenchmarkRegion, Record<BuildingType, [number, number, n
     retail: [1300, 1700, 2100, 2650, 3700],
     hotel: [2400, 3000, 3600, 4400, 6300],
     warehouse: [550, 750, 1000, 1350, 2100],
+    data_center: [4700, 6000, 7300, 9100, 12500],
+    laboratory: [2950, 3650, 4400, 5450, 7300],
+    car_park: [530, 690, 850, 1100, 1600],
+    sports_facility: [1800, 2200, 2750, 3450, 4800],
+    senior_care: [2100, 2600, 3050, 3800, 5000],
   },
   CH: {
     office: [3200, 3900, 4600, 5500, 7500],
@@ -212,6 +278,11 @@ const QUARTILES: Record<BenchmarkRegion, Record<BuildingType, [number, number, n
     retail: [2200, 2800, 3400, 4200, 5800],
     hotel: [3800, 4600, 5600, 6800, 9500],
     warehouse: [900, 1200, 1600, 2100, 3200],
+    data_center: [7500, 9500, 11500, 14000, 19000],
+    laboratory: [4800, 6000, 7200, 8800, 11500],
+    car_park: [900, 1150, 1450, 1850, 2700],
+    sports_facility: [3000, 3700, 4500, 5500, 7500],
+    senior_care: [3400, 4200, 5000, 6100, 8200],
   },
   UK: {
     office: [1500, 1850, 2200, 2700, 3800],
@@ -223,6 +294,11 @@ const QUARTILES: Record<BenchmarkRegion, Record<BuildingType, [number, number, n
     retail: [1000, 1350, 1700, 2150, 3000],
     hotel: [1900, 2400, 2900, 3600, 5100],
     warehouse: [400, 600, 800, 1100, 1700],
+    data_center: [4000, 5100, 6200, 7800, 10500],
+    laboratory: [2500, 3100, 3800, 4700, 6300],
+    car_park: [450, 580, 720, 950, 1400],
+    sports_facility: [1500, 1850, 2300, 2900, 4100],
+    senior_care: [1750, 2150, 2600, 3200, 4300],
   },
   US: {
     office: [1800, 2300, 2800, 3500, 5000],
@@ -234,6 +310,107 @@ const QUARTILES: Record<BenchmarkRegion, Record<BuildingType, [number, number, n
     retail: [1100, 1500, 1900, 2400, 3400],
     hotel: [2200, 2800, 3500, 4300, 6200],
     warehouse: [500, 700, 1000, 1400, 2200],
+    data_center: [5000, 6500, 8000, 10000, 14000],
+    laboratory: [3000, 3800, 4700, 5800, 7800],
+    car_park: [500, 680, 850, 1150, 1700],
+    sports_facility: [1700, 2150, 2700, 3400, 4800],
+    senior_care: [2000, 2500, 3050, 3800, 5200],
+  },
+  FR: {
+    office: [1650, 2050, 2450, 3000, 4200],
+    hospital: [3000, 3600, 4300, 5200, 7200],
+    school: [1900, 2300, 2750, 3300, 4100],
+    residential_single: [1500, 1900, 2300, 2800, 3900],
+    residential_multi: [1700, 2000, 2400, 2900, 3700],
+    industrial: [750, 1050, 1400, 1850, 2700],
+    retail: [1150, 1550, 1950, 2450, 3400],
+    hotel: [2100, 2700, 3300, 4100, 5800],
+    warehouse: [480, 680, 920, 1250, 1950],
+    data_center: [4300, 5500, 6700, 8400, 11500],
+    laboratory: [2700, 3350, 4050, 5000, 6800],
+    car_park: [480, 620, 770, 1000, 1450],
+    sports_facility: [1650, 2050, 2500, 3200, 4500],
+    senior_care: [1900, 2350, 2800, 3500, 4700],
+  },
+  NL: {
+    office: [1750, 2150, 2550, 3100, 4300],
+    hospital: [3100, 3700, 4400, 5300, 7300],
+    school: [1950, 2350, 2800, 3400, 4200],
+    residential_single: [1550, 1950, 2350, 2850, 3950],
+    residential_multi: [1750, 2050, 2450, 2950, 3750],
+    industrial: [780, 1080, 1420, 1880, 2750],
+    retail: [1200, 1600, 2000, 2500, 3450],
+    hotel: [2150, 2750, 3350, 4150, 5850],
+    warehouse: [500, 700, 950, 1300, 2000],
+    data_center: [4400, 5600, 6800, 8500, 11700],
+    laboratory: [2750, 3400, 4100, 5100, 6900],
+    car_park: [500, 640, 800, 1050, 1500],
+    sports_facility: [1700, 2100, 2600, 3300, 4600],
+    senior_care: [1950, 2400, 2900, 3600, 4800],
+  },
+  ES: {
+    office: [1150, 1400, 1700, 2150, 3000],
+    hospital: [2100, 2550, 3050, 3700, 5200],
+    school: [1300, 1600, 1950, 2400, 3100],
+    residential_single: [1050, 1300, 1600, 2000, 2800],
+    residential_multi: [1150, 1400, 1700, 2100, 2700],
+    industrial: [550, 750, 1000, 1350, 2000],
+    retail: [800, 1100, 1400, 1800, 2500],
+    hotel: [1500, 1950, 2400, 3000, 4300],
+    warehouse: [350, 480, 660, 920, 1450],
+    data_center: [3200, 4100, 5000, 6300, 8700],
+    laboratory: [1900, 2400, 2950, 3650, 5000],
+    car_park: [350, 460, 580, 770, 1150],
+    sports_facility: [1150, 1450, 1800, 2300, 3300],
+    senior_care: [1350, 1700, 2050, 2600, 3500],
+  },
+  IT: {
+    office: [1300, 1600, 1900, 2400, 3300],
+    hospital: [2400, 2900, 3450, 4200, 5800],
+    school: [1450, 1800, 2150, 2650, 3400],
+    residential_single: [1150, 1450, 1750, 2200, 3050],
+    residential_multi: [1300, 1600, 1900, 2350, 3000],
+    industrial: [600, 850, 1150, 1500, 2250],
+    retail: [900, 1250, 1600, 2050, 2850],
+    hotel: [1700, 2200, 2700, 3400, 4800],
+    warehouse: [400, 560, 760, 1050, 1650],
+    data_center: [3600, 4600, 5600, 7000, 9600],
+    laboratory: [2200, 2750, 3350, 4150, 5650],
+    car_park: [400, 520, 660, 870, 1300],
+    sports_facility: [1300, 1650, 2050, 2600, 3700],
+    senior_care: [1550, 1950, 2350, 2950, 3950],
+  },
+  AU: {
+    office: [2400, 2950, 3500, 4300, 5800],
+    hospital: [4200, 5100, 6100, 7400, 10000],
+    school: [2600, 3200, 3850, 4650, 5900],
+    residential_single: [2000, 2500, 3050, 3750, 5100],
+    residential_multi: [2300, 2800, 3350, 4050, 5200],
+    industrial: [1050, 1450, 1900, 2500, 3600],
+    retail: [1600, 2100, 2650, 3350, 4600],
+    hotel: [2900, 3700, 4500, 5600, 7900],
+    warehouse: [650, 900, 1250, 1700, 2600],
+    data_center: [6000, 7700, 9400, 11800, 16000],
+    laboratory: [3700, 4600, 5600, 6900, 9400],
+    car_park: [650, 850, 1050, 1400, 2000],
+    sports_facility: [2250, 2800, 3450, 4400, 6100],
+    senior_care: [2600, 3250, 3900, 4850, 6500],
+  },
+  CA: {
+    office: [2200, 2650, 3150, 3900, 5300],
+    hospital: [3800, 4600, 5500, 6700, 9200],
+    school: [2350, 2900, 3450, 4200, 5300],
+    residential_single: [1800, 2250, 2750, 3400, 4700],
+    residential_multi: [2050, 2500, 3000, 3650, 4700],
+    industrial: [950, 1300, 1700, 2250, 3300],
+    retail: [1450, 1900, 2400, 3000, 4200],
+    hotel: [2600, 3300, 4050, 5000, 7100],
+    warehouse: [580, 800, 1100, 1500, 2350],
+    data_center: [5400, 6900, 8400, 10500, 14500],
+    laboratory: [3300, 4100, 5000, 6200, 8400],
+    car_park: [580, 760, 950, 1250, 1850],
+    sports_facility: [2000, 2500, 3100, 3950, 5500],
+    senior_care: [2300, 2900, 3500, 4350, 5850],
   },
 };
 
@@ -254,6 +431,11 @@ const KG400_SHARE: Record<BuildingType, number> = {
   retail: 0.24,
   hotel: 0.32,
   warehouse: 0.13,
+  data_center: 0.55,
+  laboratory: 0.42,
+  car_park: 0.1,
+  sports_facility: 0.3,
+  senior_care: 0.3,
 };
 
 /** Typical m2 GFA per secondary unit, used to derive the per-unit median. */
@@ -263,6 +445,8 @@ const AREA_PER_UNIT: Partial<Record<BuildingType, { unitId: string; label: strin
   school: { unitId: 'pupil', label: 'per pupil place', area: 10, typicalCount: 600 },
   residential_single: { unitId: 'dwelling', label: 'per dwelling', area: 140, typicalCount: 1 },
   residential_multi: { unitId: 'dwelling', label: 'per dwelling', area: 75, typicalCount: 24 },
+  car_park: { unitId: 'space', label: 'per space', area: 30, typicalCount: 400 },
+  senior_care: { unitId: 'bed', label: 'per bed', area: 55, typicalCount: 80 },
 };
 
 /** Provenance per region (source string, year, currency). */
@@ -272,6 +456,32 @@ const PROVENANCE: Record<BenchmarkRegion, { source: string; sourceYear: number; 
   CH: { source: 'SIA / BFS Schweiz 2024', sourceYear: 2024, currency: 'CHF' },
   UK: { source: 'BCIS Building Cost Information Service 2024', sourceYear: 2024, currency: 'GBP' },
   US: { source: 'ENR Construction Cost Index 2024', sourceYear: 2024, currency: 'USD' },
+  FR: { source: 'Batiprix / UNTEC 2024', sourceYear: 2024, currency: 'EUR' },
+  NL: { source: 'Bouwkosten Kompas 2024', sourceYear: 2024, currency: 'EUR' },
+  ES: { source: 'ITeC BEDEC 2024', sourceYear: 2024, currency: 'EUR' },
+  IT: { source: 'DEI Tipologie Edilizie 2024', sourceYear: 2024, currency: 'EUR' },
+  AU: { source: 'Rawlinsons Construction Handbook 2024', sourceYear: 2024, currency: 'AUD' },
+  CA: { source: 'Altus Construction Cost Guide 2024', sourceYear: 2024, currency: 'CAD' },
+};
+
+/**
+ * Plain-language cost drivers per region: why the numbers sit where they do.
+ * Rendered as t() defaultValues. Not survey output, just orientation for a
+ * reader comparing one market against another, referencing the standards and
+ * conditions that actually move the numbers.
+ */
+export const REGION_DRIVERS: Record<BenchmarkRegion, string> = {
+  DE: 'High labour cost and strict energy standards (GEG) hold the mid-band firm, while strong prefabrication and trade competition cap the top.',
+  AT: 'Tracks Germany a little higher, with alpine logistics and high finishing standards in the western provinces.',
+  CH: 'The most expensive market here: very high wages, a strong currency, seismic and comfort standards, and a small high-spec supplier base.',
+  UK: 'A wide spread driven by London against the regions; labour availability and Part L energy upgrades push the technical share.',
+  US: 'A large regional swing between coastal metros and inland; union versus open-shop labour and code (IBC) differences dominate.',
+  FR: 'RE2020 low-carbon rules lift the technical band; costs sit a touch below Germany outside Paris.',
+  NL: 'High ground and foundation costs (piling, high water table) and strict energy rules (BENG), plus dense-market logistics.',
+  ES: 'Lower labour cost sets a lower base; seismic zones in the south and coastal exposure raise structural cost locally.',
+  IT: 'Seismic design across much of the country and heritage constraints widen the range; labour below the north-European band.',
+  AU: 'High wages, long supply lines and cyclone provisions in the north; a strong swing between metro and remote sites.',
+  CA: 'Cold-climate envelope and mechanical loads, plus remoteness in the north; metro Toronto and Vancouver sit at the top.',
 };
 
 /**
@@ -289,6 +499,11 @@ const SAMPLE_BASE: Record<BuildingType, number> = {
   retail: 110,
   hotel: 60,
   warehouse: 120,
+  data_center: 35,
+  laboratory: 45,
+  car_park: 95,
+  sports_facility: 70,
+  senior_care: 85,
 };
 
 /** Market-size factor on the sample base (bigger datasets in larger markets). */
@@ -298,6 +513,12 @@ const SAMPLE_REGION_FACTOR: Record<BenchmarkRegion, number> = {
   UK: 0.85,
   AT: 0.55,
   CH: 0.45,
+  FR: 0.8,
+  NL: 0.6,
+  ES: 0.65,
+  IT: 0.7,
+  AU: 0.6,
+  CA: 0.6,
 };
 
 /* ── Derived helpers ────────────────────────────────────────────────── */
@@ -479,6 +700,11 @@ const TYPE_ELEMENT_PROFILE: Record<BuildingType, ElementProfile> = {
   retail: 'default',
   hotel: 'services_dense',
   warehouse: 'shed',
+  data_center: 'services_dense',
+  laboratory: 'services_dense',
+  car_park: 'shed',
+  sports_facility: 'default',
+  senior_care: 'residential',
 };
 
 /**
@@ -573,7 +799,7 @@ function buildRange(region: BenchmarkRegion, type: BuildingType): BenchmarkRange
   return range;
 }
 
-const REGION_IDS: BenchmarkRegion[] = ['DE', 'AT', 'CH', 'UK', 'US'];
+const REGION_IDS: BenchmarkRegion[] = ['DE', 'AT', 'CH', 'UK', 'US', 'FR', 'NL', 'ES', 'IT', 'AU', 'CA'];
 const TYPE_IDS: BuildingType[] = [
   'office',
   'hospital',
@@ -584,6 +810,11 @@ const TYPE_IDS: BuildingType[] = [
   'retail',
   'hotel',
   'warehouse',
+  'data_center',
+  'laboratory',
+  'car_park',
+  'sports_facility',
+  'senior_care',
 ];
 
 /**

@@ -107,7 +107,7 @@ describe('BenchmarkModule', () => {
 
   it('should show disclaimer', () => {
     renderModule();
-    expect(screen.getByText(/Benchmark data from BKI/)).toBeInTheDocument();
+    expect(screen.getByText(/compiled from recognised public cost sources/)).toBeInTheDocument();
   });
 
   it('should show benchmark range details (Min, Q1, Median, Q3, Max)', () => {

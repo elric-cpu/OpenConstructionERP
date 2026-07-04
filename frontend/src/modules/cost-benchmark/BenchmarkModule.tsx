@@ -9,6 +9,7 @@ import {
   BUILDING_TYPES,
   BENCHMARK_REGIONS,
   BENCHMARKS,
+  REGION_DRIVERS,
   calculatePercentile,
   splitByCostGroup,
   breakdownByElement,
@@ -276,6 +277,12 @@ export default function BenchmarkModule() {
           </span>{' '}
           {benchmarkRange.source} ({benchmarkRange.sourceYear}), {regionInfo.label}, {regionInfo.currency}
         </p>
+        <p className="mt-1.5 text-xs text-content-secondary">
+          <span className="font-medium">
+            {t('benchmarks.why_region', { defaultValue: 'Why {{region}}', region: regionInfo.label })}:
+          </span>{' '}
+          {t(`benchmarks.driver.${region}`, { defaultValue: REGION_DRIVERS[region] })}
+        </p>
         <p className="mt-1 text-xs text-content-quaternary">
           {t('benchmarks.data_basis', {
             defaultValue:
@@ -283,6 +290,60 @@ export default function BenchmarkModule() {
           })}
         </p>
       </div>
+
+      {/* How these benchmarks work - on-page methodology, collapsed by default.
+          The module also has a full guide behind the header button; this makes
+          the essentials readable without leaving the page. */}
+      <details className="rounded-xl border border-border bg-surface-secondary/40">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-content-primary">
+          {t('benchmarks.how.title', { defaultValue: 'How these benchmarks work' })}
+        </summary>
+        <div className="space-y-3 border-t border-border px-4 py-3 text-xs leading-relaxed text-content-secondary">
+          <p>
+            {t('benchmarks.how.what', {
+              defaultValue:
+                'Each figure is a construction cost per m2 of gross floor area (GFA), covering DIN 276 KG300 (building construction) plus KG400 (technical building systems). It is a planning reference, not a live market feed.',
+            })}
+          </p>
+          <p>
+            {t('benchmarks.how.read', {
+              defaultValue:
+                'Enter your floor area and total cost. The module places your cost per m2 on the reference band and reads off a percentile: below the 25th is cost-effective, near the 50th is typical, above the 75th is premium.',
+            })}
+          </p>
+          <p>
+            {t('benchmarks.how.quartiles', {
+              defaultValue:
+                'The band shows five points: the minimum, lower quartile (Q1), median, upper quartile (Q3) and maximum across reference projects. Half of projects sit between Q1 and Q3.',
+            })}
+          </p>
+          <p>
+            {t('benchmarks.how.split', {
+              defaultValue:
+                'The KG300 vs KG400 split and the deeper DIN 276 element breakdown (facade, slabs, HVAC, electrical and so on) show roughly where the money sits for this building type.',
+            })}
+          </p>
+          <p>
+            {t('benchmarks.how.confidence', {
+              defaultValue:
+                'Confidence is high, medium or low, derived from how large the planning sample is, how tight the range is and how recent the source is.',
+            })}
+          </p>
+          <div>
+            <p className="mb-1 font-medium text-content-primary">
+              {t('benchmarks.how.sources_title', { defaultValue: 'Sources by region' })}
+            </p>
+            <ul className="space-y-0.5">
+              {BENCHMARK_REGIONS.map((r) => (
+                <li key={r.id}>
+                  <span className="font-medium text-content-primary">{r.label}</span>:{' '}
+                  {BENCHMARKS[r.id].office.source} ({r.currency})
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </details>
 
       {/* Input controls */}
       <div data-guide="benchmarks-inputs" className="rounded-xl border border-border bg-surface-primary p-5">
@@ -924,9 +985,9 @@ export default function BenchmarkModule() {
         <div className="mt-3 flex items-start gap-2 text-xs text-content-quaternary">
           <Info className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
-            {t('benchmarks.disclaimer', {
+            {t('benchmarks.disclaimer_v2', {
               defaultValue:
-                'Benchmark data from BKI (DE), Statistik Austria (AT), SIA / BFS (CH), BCIS (UK) and ENR (US). Values represent KG 300+400 (construction plus technical systems) costs per m2 GFA. Actual costs vary by location, specification and market conditions.',
+                'Values represent DIN 276 KG 300+400 (construction plus technical systems) costs per m2 GFA, compiled from recognised public cost sources per region (listed under How these benchmarks work). Actual costs vary by location, specification and market conditions.',
             })}
           </p>
         </div>
