@@ -21,6 +21,7 @@ import type { Playbook } from '../types';
 const playbook: Playbook = {
   id: 'tender-from-boq',
   order: 20,
+  category: 'tendering',
   icon: 'Handshake',
   titleKey: 'cases.tender_from_boq.title',
   titleDefault: 'Run a tender from a BOQ',

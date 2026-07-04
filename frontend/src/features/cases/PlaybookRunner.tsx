@@ -212,7 +212,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
   });
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5 animate-fade-in">
+    <div className="space-y-5 animate-fade-in">
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <div>
         <button

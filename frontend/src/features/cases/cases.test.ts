@@ -26,6 +26,7 @@ function makePlaybook(stepIds: string[]): Playbook {
   return {
     id: 'test-pb',
     order: 1,
+    category: 'estimating',
     titleKey: 'x.title',
     titleDefault: 'Test',
     descKey: 'x.desc',

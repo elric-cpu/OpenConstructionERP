@@ -18,6 +18,7 @@ import type { Playbook } from '../types';
 const playbook: Playbook = {
   id: 'price-from-pdf',
   order: 10,
+  category: 'estimating',
   icon: 'FileSpreadsheet',
   titleKey: 'cases.price_from_pdf.title',
   titleDefault: 'Price a building from a PDF',

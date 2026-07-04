@@ -63,6 +63,21 @@ export interface PlaybookStep {
 }
 
 /**
+ * The construction discipline a case belongs to. Drives the category filter
+ * on the Cases hub so a user can narrow the list to the kind of work they do.
+ * Keep this list aligned with the chips rendered in `CasesPage`.
+ */
+export type CaseCategory =
+  | 'estimating'
+  | 'tendering'
+  | 'planning'
+  | 'bim'
+  | 'site'
+  | 'quality'
+  | 'commercial'
+  | 'handover';
+
+/**
  * A complete case: an ordered set of steps spanning several modules.
  *
  * Drop a new one into `features/cases/data/<slug>.playbook.ts` as the file's
@@ -74,6 +89,8 @@ export interface Playbook {
   id: string;
   /** Sort order in the case list (ascending). Lower shows first. */
   order: number;
+  /** Discipline bucket for the category filter on the Cases hub. */
+  category: CaseCategory;
   /** i18n key for the case title. */
   titleKey: string;
   /** Inline English default for the case title. */

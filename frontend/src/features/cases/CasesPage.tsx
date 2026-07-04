@@ -8,7 +8,7 @@
 // PlaybookRunner stepper. One component serves both so the route stays a single
 // lazy chunk.
 
-import { useMemo, type ComponentType } from 'react';
+import { useMemo, useState, type ComponentType } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
@@ -23,6 +23,14 @@ import {
   Handshake,
   Layers,
   Sparkles,
+  Search,
+  Calculator,
+  CalendarClock,
+  Box,
+  HardHat,
+  BadgeCheck,
+  FileSignature,
+  PackageCheck,
   type LucideProps,
 } from 'lucide-react';
 import { Badge, EmptyState } from '@/shared/ui';
@@ -30,7 +38,7 @@ import { PLAYBOOKS, getPlaybook } from './playbooks';
 import { PlaybookRunner } from './PlaybookRunner';
 import { useCasesStore } from './useCasesStore';
 import { completedCount } from './progress';
-import type { Playbook } from './types';
+import type { Playbook, CaseCategory } from './types';
 
 const ICON_MAP: Record<string, ComponentType<LucideProps>> = {
   FileSpreadsheet,
@@ -40,12 +48,38 @@ const ICON_MAP: Record<string, ComponentType<LucideProps>> = {
   Layers,
   Sparkles,
   GraduationCap,
+  Calculator,
+  CalendarClock,
+  Box,
+  HardHat,
+  BadgeCheck,
+  FileSignature,
+  PackageCheck,
 };
 
 function iconFor(name: string | undefined): ComponentType<LucideProps> {
   if (name && name in ICON_MAP) return ICON_MAP[name]!;
   return Sparkles;
 }
+
+/** Category filter metadata: display order, label default and chip icon.
+ *  Labels are i18n keys with an inline English default (same pattern as the
+ *  case content). Keep the keys in step with the `CaseCategory` union. */
+const CATEGORY_META: {
+  id: CaseCategory;
+  labelKey: string;
+  labelDefault: string;
+  icon: ComponentType<LucideProps>;
+}[] = [
+  { id: 'estimating', labelKey: 'cases.cat.estimating', labelDefault: 'Estimating & costing', icon: Calculator },
+  { id: 'tendering', labelKey: 'cases.cat.tendering', labelDefault: 'Tendering & procurement', icon: PackageCheck },
+  { id: 'planning', labelKey: 'cases.cat.planning', labelDefault: 'Planning & controls', icon: CalendarClock },
+  { id: 'bim', labelKey: 'cases.cat.bim', labelDefault: 'BIM & takeoff', icon: Box },
+  { id: 'site', labelKey: 'cases.cat.site', labelDefault: 'Site & field', icon: HardHat },
+  { id: 'quality', labelKey: 'cases.cat.quality', labelDefault: 'Quality & safety', icon: BadgeCheck },
+  { id: 'commercial', labelKey: 'cases.cat.commercial', labelDefault: 'Commercial & contracts', icon: FileSignature },
+  { id: 'handover', labelKey: 'cases.cat.handover', labelDefault: 'Handover & lifecycle', icon: ShieldCheck },
+];
 
 export function CasesPage() {
   const { playbookId } = useParams<{ playbookId?: string }>();
@@ -57,7 +91,7 @@ export function CasesPage() {
     const playbook = getPlaybook(playbookId);
     if (!playbook) {
       return (
-        <div className="mx-auto max-w-3xl py-8">
+        <div className="py-8 animate-fade-in">
           <EmptyState
             icon={<GraduationCap size={28} />}
             title={t('cases.not_found_title', { defaultValue: 'Case not found' })}
@@ -83,6 +117,8 @@ function CasesList() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const runs = useCasesStore((s) => s.runs);
+  const [query, setQuery] = useState('');
+  const [activeCategory, setActiveCategory] = useState<CaseCategory | 'all'>('all');
 
   // Best progress for a card = the furthest a user got on this case across any
   // run (unscoped or scoped to a sample project).
@@ -98,8 +134,29 @@ function CasesList() {
     };
   }, [runs]);
 
+  // Only surface category chips that actually have at least one case, so the
+  // filter never offers an empty bucket.
+  const availableCategories = useMemo(() => {
+    const present = new Set(PLAYBOOKS.map((p) => p.category));
+    return CATEGORY_META.filter((c) => present.has(c.id));
+  }, []);
+
+  // Filter by category chip and by a plain title/description text search. Both
+  // narrow the same list, so a search inside a category still works.
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return PLAYBOOKS.filter((pb) => {
+      if (activeCategory !== 'all' && pb.category !== activeCategory) return false;
+      if (!q) return true;
+      const haystack = `${t(pb.titleKey, { defaultValue: pb.titleDefault })} ${t(pb.descKey, {
+        defaultValue: pb.descDefault,
+      })}`.toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [query, activeCategory, t]);
+
   return (
-    <div className="mx-auto max-w-5xl space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in">
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="flex items-start gap-3">
         <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-oe-blue/10 text-oe-blue ring-1 ring-inset ring-oe-blue/20">
@@ -118,6 +175,49 @@ function CasesList() {
         </div>
       </div>
 
+      {/* ── Filter bar: search + category chips ─────────────────────────── */}
+      {PLAYBOOKS.length > 0 && (
+        <div className="space-y-3">
+          <div className="relative max-w-md">
+            <Search
+              size={15}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-content-tertiary"
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t('cases.search_placeholder', { defaultValue: 'Search cases...' })}
+              aria-label={t('cases.search_placeholder', { defaultValue: 'Search cases...' })}
+              className="w-full rounded-lg border border-border-light bg-surface-primary py-2 pl-9 pr-3 text-sm text-content-primary placeholder:text-content-tertiary focus:border-oe-blue/50 focus:outline-none focus:ring-2 focus:ring-oe-blue/20"
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <CategoryChip
+              active={activeCategory === 'all'}
+              onClick={() => setActiveCategory('all')}
+              label={t('cases.cat.all', { defaultValue: 'All' })}
+              count={PLAYBOOKS.length}
+              icon={Layers}
+            />
+            {availableCategories.map((c) => {
+              const count = PLAYBOOKS.filter((p) => p.category === c.id).length;
+              return (
+                <CategoryChip
+                  key={c.id}
+                  active={activeCategory === c.id}
+                  onClick={() => setActiveCategory(c.id)}
+                  label={t(c.labelKey, { defaultValue: c.labelDefault })}
+                  count={count}
+                  icon={c.icon}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ── Cards ───────────────────────────────────────────────────────── */}
       {PLAYBOOKS.length === 0 ? (
         <EmptyState
@@ -127,9 +227,17 @@ function CasesList() {
             defaultValue: 'Guided playbooks will appear here as they are added.',
           })}
         />
+      ) : visible.length === 0 ? (
+        <EmptyState
+          icon={<Search size={28} />}
+          title={t('cases.no_matches_title', { defaultValue: 'No matching cases' })}
+          description={t('cases.no_matches_body', {
+            defaultValue: 'Try a different search or category.',
+          })}
+        />
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {PLAYBOOKS.map((pb) => {
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {visible.map((pb) => {
             const Icon = iconFor(pb.icon);
             const total = pb.steps.length;
             const done = bestDoneFor(pb);
@@ -235,5 +343,45 @@ function CasesList() {
         </div>
       )}
     </div>
+  );
+}
+
+/** A single category filter chip with an icon, label and case count. */
+function CategoryChip({
+  active,
+  onClick,
+  label,
+  count,
+  icon: Icon,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  count: number;
+  icon: ComponentType<LucideProps>;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={clsx(
+        'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+        active
+          ? 'border-oe-blue/40 bg-oe-blue/10 text-oe-blue'
+          : 'border-border-light bg-surface-primary text-content-secondary hover:border-oe-blue/30 hover:text-content-primary',
+      )}
+    >
+      <Icon size={13} strokeWidth={2} aria-hidden="true" />
+      {label}
+      <span
+        className={clsx(
+          'ml-0.5 tabular-nums',
+          active ? 'text-oe-blue/70' : 'text-content-tertiary',
+        )}
+      >
+        {count}
+      </span>
+    </button>
   );
 }

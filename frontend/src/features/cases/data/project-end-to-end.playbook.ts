@@ -21,6 +21,7 @@ import type { Playbook } from '../types';
 const playbook: Playbook = {
   id: 'project-end-to-end',
   order: 5,
+  category: 'planning',
   icon: 'Layers',
   titleKey: 'cases.project_end_to_end.title',
   titleDefault: 'Set up a project and hand it over',
