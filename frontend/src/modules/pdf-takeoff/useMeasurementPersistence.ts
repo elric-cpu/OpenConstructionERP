@@ -33,6 +33,12 @@ interface Measurement {
   color?: string;
   width?: number;
   height?: number;
+  /** Per-measurement fill opacity override (issue #311, 0..1). Round-trips via
+   *  metadata; falls back to the per-type default alpha when unset. */
+  fillAlpha?: number;
+  /** Per-measurement stroke width override in CSS px (issue #312). Round-trips
+   *  via metadata; falls back to the 2px hairline when unset. */
+  strokeWidth?: number;
   /** Opening deduction (area void). Stored as positive gross area; the
    *  rollup subtracts it. Round-trips so a void survives a server sync. */
   isDeduction?: boolean;
@@ -287,6 +293,10 @@ function toApiFormat(
       text: m.text,
       width: m.width,
       height: m.height,
+      // Per-measurement appearance overrides (issues #311/#312); round-trip so
+      // a re-styled measurement survives a server sync.
+      fill_alpha: m.fillAlpha,
+      stroke_width: m.strokeWidth,
       area: areaValue ?? undefined,
       frontend_id: m.id,
       // Per-page calibration intent (issue #277): distinguishes a real
@@ -327,6 +337,10 @@ function syncSignature(m: Measurement): string {
     // group / colour / annotation / notes edit re-syncs.
     g: m.group || 'General',
     col: m.color || '#3B82F6',
+    // Appearance overrides (issues #311/#312): an opacity or stroke-width edit
+    // must re-sync so the server copy carries it.
+    fa: m.fillAlpha ?? null,
+    sw: m.strokeWidth ?? null,
     a: m.annotation || m.label || null,
     n: m.text ?? null,
   });
@@ -367,6 +381,10 @@ function toApiUpdate(
       text: m.text,
       width: m.width,
       height: m.height,
+      // Per-measurement appearance overrides (issues #311/#312); re-sent on
+      // PATCH because the server replaces the metadata blob wholesale.
+      fill_alpha: m.fillAlpha,
+      stroke_width: m.strokeWidth,
       area: areaValue ?? undefined,
       frontend_id: m.id,
       // Preserve the per-page calibration intent (issue #277): the server
@@ -404,6 +422,8 @@ function fromApiFormat(r: MeasurementResponse): Measurement {
     color: r.group_color || undefined,
     width: (meta.width as number) ?? undefined,
     height: (meta.height as number) ?? undefined,
+    fillAlpha: (meta.fill_alpha as number) ?? undefined,
+    strokeWidth: (meta.stroke_width as number) ?? undefined,
     isDeduction: r.is_deduction ?? undefined,
     linkedPositionId: r.linked_boq_position_id ?? undefined,
     linkedBoqId: (meta.linked_boq_id as string) ?? undefined,

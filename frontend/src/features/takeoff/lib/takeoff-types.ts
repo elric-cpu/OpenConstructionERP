@@ -55,6 +55,10 @@ export interface Measurement {
   color?: string;
   width?: number;
   height?: number;
+  /** Per-measurement fill opacity override (issue #311, 0..1). */
+  fillAlpha?: number;
+  /** Per-measurement stroke width override in CSS px (issue #312). */
+  strokeWidth?: number;
   /** Free-form notes entered via the properties panel. */
   notes?: string;
   /** Opening deduction: an `area` measurement representing a void (door,

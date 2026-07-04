@@ -53,6 +53,7 @@ import {
   Sparkles,
   Layers,
   List,
+  PanelRight,
   X,
   Check,
   AlertTriangle,
@@ -253,6 +254,8 @@ interface Measurement {
   color?: string; // Color for annotation tools
   width?: number; // Width for rectangle/highlight
   height?: number; // Height for rectangle/highlight
+  fillAlpha?: number; // Per-measurement fill opacity 0..1 (issue #311)
+  strokeWidth?: number; // Per-measurement stroke width in CSS px (issue #312)
   /** Free-form notes entered via the properties panel. */
   notes?: string;
   /** Opening deduction: an `area` measurement that represents a void
@@ -321,7 +324,9 @@ const MEASUREMENT_GROUPS: MeasurementGroup[] = [
   { name: 'Concrete', color: '#6B7280' },
 ];
 
-const GROUP_COLOR_MAP: Record<string, string> = Object.fromEntries(
+/** Built-in group colours. Custom groups add their colours at runtime via the
+ *  component's `groupColorMap` memo (issue #313). */
+const BASE_GROUP_COLORS: Record<string, string> = Object.fromEntries(
   MEASUREMENT_GROUPS.map((g) => [g.name, g.color]),
 );
 
@@ -404,6 +409,41 @@ export default function TakeoffViewerModule({
   useEffect(() => {
     try { localStorage.setItem('takeoff.showThumbnails', String(showThumbnails)); } catch { /* ignore */ }
   }, [showThumbnails]);
+  /** Collapse the right Properties/Ledger sidebar for a near-full-viewport
+   *  measuring mode, mirroring the Pages strip toggle (#315). Persisted. */
+  const [showSidebar, setShowSidebar] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('takeoff.showSidebar') !== 'false';
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('takeoff.showSidebar', String(showSidebar)); } catch { /* ignore */ }
+  }, [showSidebar]);
+  /** Independently hide the on-canvas measurement name badges and the dimension
+   *  values, so a dense sheet can be decluttered without hiding geometry; the
+   *  numbers stay in the Ledger and hover tooltip either way (#314). Persisted. */
+  const [showLabels, setShowLabels] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('takeoff.showLabels') !== 'false';
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('takeoff.showLabels', String(showLabels)); } catch { /* ignore */ }
+  }, [showLabels]);
+  const [showDimensions, setShowDimensions] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('takeoff.showDimensions') !== 'false';
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('takeoff.showDimensions', String(showDimensions)); } catch { /* ignore */ }
+  }, [showDimensions]);
   /** page number -> data-URL of a small rendered preview, lazily filled and
    *  LRU-capped (see capThumbCache) so a 300-page set never holds 300 bitmaps. */
   const [thumbs, setThumbs] = useState<Record<number, string>>({});
@@ -435,6 +475,9 @@ export default function TakeoffViewerModule({
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
   const [activePoints, setActivePoints] = useState<Point[]>([]);
   const [countLabel, setCountLabel] = useState(t('takeoff_viewer.default_count_label', { defaultValue: 'Element' }));
+  // Focused/selected by Enter while the Count tool is armed, so the user can
+  // rename the group and start a fresh count without hunting for the field (#308).
+  const countLabelRef = useRef<HTMLInputElement | null>(null);
 
   // Scale - PER PAGE (per sheet). A multi-sheet drawing set has a different
   // scale per page (floor plan 1:50, site plan 1:500, ...), so the calibration
@@ -546,6 +589,15 @@ export default function TakeoffViewerModule({
    *  shows the grab cursor. Cleared on keyup / blur. */
   const [spaceHeld, setSpaceHeld] = useState(false);
   const spaceHeldRef = useRef(false);
+  /** Hand / pan mode armed from the toolbar (#316). Unlike Space it is a sticky
+   *  toggle: left-drag pans until the user clicks the toolbar button again or
+   *  presses Escape. Helps trackpad users who find Space-drag awkward. A ref
+   *  mirrors it for the pointer handlers that must not re-subscribe. */
+  const [panLock, setPanLock] = useState(false);
+  const panLockRef = useRef(false);
+  useEffect(() => {
+    panLockRef.current = panLock;
+  }, [panLock]);
 
   /** Live pointer position in PDF units while a measure tool is active,
    *  drives the running-length HUD. Null when the pointer is off-canvas. */
@@ -578,6 +630,18 @@ export default function TakeoffViewerModule({
   const [activeGroup, setActiveGroup] = useState('General');
   const [hiddenGroups, setHiddenGroups] = useState<Set<string>>(new Set());
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  // Custom per-group colours (issue #313). Merged over the built-in colours so a
+  // user-defined group paints in its chosen colour on the canvas, in the legend
+  // and in exports. Loaded/saved per document below.
+  const [customGroupColors, setCustomGroupColors] = useState<Record<string, string>>({});
+  const groupColorMap = useMemo(
+    () => ({ ...BASE_GROUP_COLORS, ...customGroupColors }),
+    [customGroupColors],
+  );
+  /** Set a group's colour (issue #313). */
+  const setGroupColor = useCallback((group: string, color: string) => {
+    setCustomGroupColors((prev) => ({ ...prev, [group]: color }));
+  }, []);
 
   // Volume depth input
   const [showVolumeDepthInput, setShowVolumeDepthInput] = useState(false);
@@ -937,6 +1001,30 @@ export default function TakeoffViewerModule({
     setDocumentId(null);
   }, [initialDocumentId, initialPdfUrl]);
 
+  /* Custom group colours (issue #313) persist per document so a colour scheme
+   * survives a reload. A still-local file (documentId null) keeps them for the
+   * session only. */
+  useEffect(() => {
+    if (!documentId) return;
+    try {
+      const raw = localStorage.getItem(`takeoff.groupColors.${documentId}`);
+      setCustomGroupColors(raw ? (JSON.parse(raw) as Record<string, string>) : {});
+    } catch {
+      setCustomGroupColors({});
+    }
+  }, [documentId]);
+  useEffect(() => {
+    if (!documentId) return;
+    try {
+      localStorage.setItem(
+        `takeoff.groupColors.${documentId}`,
+        JSON.stringify(customGroupColors),
+      );
+    } catch {
+      /* ignore quota / private-mode failures */
+    }
+  }, [documentId, customGroupColors]);
+
   /* ── Reset per-document caches when the open PDF changes ──────────────
    * Thumbnails and extracted text layers are keyed by page number, so they
    * MUST be dropped when a different document is opened or they would show
@@ -1161,6 +1249,9 @@ export default function TakeoffViewerModule({
      */
     const isDark = document.documentElement.classList.contains('dark');
     const drawAnnotationLabel = (text: string, lx: number, ly: number, color: string) => {
+      // Names view toggle: the name badges (and the count badge, which carries
+      // the running total) are the names layer and hide together (#314).
+      if (!showLabels) return;
       const fontSize = 11 * dpr;
       ctx.font = `bold ${fontSize}px sans-serif`;
       const metrics = ctx.measureText(text);
@@ -1191,9 +1282,13 @@ export default function TakeoffViewerModule({
       // A per-measurement colour (set via the properties swatch) wins over the
       // group default so a recoloured measurement paints in its chosen colour
       // (issue #299); annotation markups already resolve `m.color` below.
-      const color = m.color || GROUP_COLOR_MAP[m.group] || '#3B82F6';
+      const color = m.color || groupColorMap[m.group] || '#3B82F6';
       ctx.strokeStyle = color;
       ctx.fillStyle = color;
+      // Optional per-measurement stroke width (issue #312). Linear types honour
+      // it directly; annotation markups reset their own width below. Defaults
+      // to the 2px hairline so unset measurements render exactly as before.
+      ctx.lineWidth = (m.strokeWidth ?? 2) * dpr;
       // AI suggestions (#194) render translucent + dashed until the user
       // confirms them, so they read as proposals rather than committed work.
       ctx.globalAlpha = m.suggested ? 0.5 : 1.0;
@@ -1211,7 +1306,9 @@ export default function TakeoffViewerModule({
         const mx = ((p0.x + p1.x) / 2) * dpr * zoom;
         const my = ((p0.y + p1.y) / 2) * dpr * zoom - 8 * dpr;
         ctx.font = `${12 * dpr}px sans-serif`;
-        ctx.fillText(measurementLabel(m, scale, measurementSystem), mx, my);
+        // Values view toggle: the computed dimension text is the values layer,
+        // hidden independently of the name badges (#314).
+        if (showDimensions) ctx.fillText(measurementLabel(m, scale, measurementSystem), mx, my);
         // Annotation near midpoint (offset above the value label)
         drawAnnotationLabel(m.annotation, mx, my - 14 * dpr, color);
       }
@@ -1226,16 +1323,19 @@ export default function TakeoffViewerModule({
           ctx.lineTo(pt.x * dpr * zoom, pt.y * dpr * zoom);
         }
         ctx.stroke();
-        // Draw segment midpoint labels
-        for (let i = 0; i < m.points.length - 1; i++) {
-          const pa = m.points[i]!;
-          const pb = m.points[i + 1]!;
-          const segDist = pixelDistance(pa.x, pa.y, pb.x, pb.y);
-          const segReal = toRealDistance(segDist, scale);
-          const smx = ((pa.x + pb.x) / 2) * dpr * zoom;
-          const smy = ((pa.y + pb.y) / 2) * dpr * zoom - 6 * dpr;
-          ctx.font = `${10 * dpr}px sans-serif`;
-          ctx.fillText(formatQuantity(segReal, 'm', measurementSystem), smx, smy);
+        // Draw segment midpoint labels (values layer, #314). On a traced
+        // foundation these per-segment lengths are the densest text of all.
+        if (showDimensions) {
+          for (let i = 0; i < m.points.length - 1; i++) {
+            const pa = m.points[i]!;
+            const pb = m.points[i + 1]!;
+            const segDist = pixelDistance(pa.x, pa.y, pb.x, pb.y);
+            const segReal = toRealDistance(segDist, scale);
+            const smx = ((pa.x + pb.x) / 2) * dpr * zoom;
+            const smy = ((pa.y + pb.y) / 2) * dpr * zoom - 6 * dpr;
+            ctx.font = `${10 * dpr}px sans-serif`;
+            ctx.fillText(formatQuantity(segReal, 'm', measurementSystem), smx, smy);
+          }
         }
         // Draw points
         for (const p of m.points) {
@@ -1248,7 +1348,7 @@ export default function TakeoffViewerModule({
         const totalLx = fp.x * dpr * zoom;
         const totalLy = fp.y * dpr * zoom - 12 * dpr;
         ctx.font = `${12 * dpr}px sans-serif`;
-        ctx.fillText(measurementLabel(m, scale, measurementSystem), totalLx, totalLy);
+        if (showDimensions) ctx.fillText(measurementLabel(m, scale, measurementSystem), totalLx, totalLy);
         drawAnnotationLabel(m.annotation, totalLx, totalLy - 14 * dpr, color);
       }
 
@@ -1269,14 +1369,14 @@ export default function TakeoffViewerModule({
           ctx.save();
           ctx.fillStyle = '#ef4444';
           ctx.strokeStyle = '#ef4444';
-          ctx.globalAlpha = 0.18;
+          ctx.globalAlpha = m.fillAlpha ?? 0.18;
           ctx.fill();
           ctx.globalAlpha = 1;
           ctx.setLineDash([6 * dpr, 4 * dpr]);
           ctx.stroke();
           ctx.restore();
         } else {
-          ctx.globalAlpha = 0.15;
+          ctx.globalAlpha = m.fillAlpha ?? 0.15;
           ctx.fill();
           ctx.globalAlpha = 1;
           ctx.stroke();
@@ -1288,7 +1388,7 @@ export default function TakeoffViewerModule({
         ctx.font = `${12 * dpr}px sans-serif`;
         // Prefix a minus so the on-canvas number reads as a subtraction.
         const areaLabel = measurementLabel(m, scale, measurementSystem);
-        ctx.fillText(isVoid ? `- ${areaLabel}` : areaLabel, cx, cy);
+        if (showDimensions) ctx.fillText(isVoid ? `- ${areaLabel}` : areaLabel, cx, cy);
         // Annotation above centroid
         drawAnnotationLabel(m.annotation, cx, cy - 14 * dpr, color);
       }
@@ -1297,7 +1397,7 @@ export default function TakeoffViewerModule({
         for (const p of m.points) {
           ctx.beginPath();
           ctx.arc(p.x * dpr * zoom, p.y * dpr * zoom, 8 * dpr, 0, Math.PI * 2);
-          ctx.globalAlpha = 0.3;
+          ctx.globalAlpha = m.fillAlpha ?? 0.3;
           ctx.fill();
           ctx.globalAlpha = 1;
           ctx.stroke();
@@ -1459,6 +1559,9 @@ export default function TakeoffViewerModule({
     // Reset any AI-suggestion styling before drawing in-progress shapes.
     ctx.globalAlpha = 1.0;
     ctx.setLineDash([]);
+    // Reset the per-measurement stroke width (issue #312) so it does not leak
+    // into the in-progress drawing below.
+    ctx.lineWidth = 2 * dpr;
 
     // Draw active points (in-progress measurement)
     if (activePoints.length > 0) {
@@ -1755,7 +1858,7 @@ export default function TakeoffViewerModule({
       ctx.stroke();
       ctx.restore();
     }
-  }, [measurements, activePoints, currentPage, zoom, settingScale, scalePoints, activeTool, hiddenGroups, scale, annotationColor, rectStartPoint, isDraggingRect, selectedMeasurementId, dragPreview, liveCursor, panning, searchMatches, activeMatchIdx, measurementSystem, snapPoint, renderNonce]);
+  }, [measurements, activePoints, currentPage, zoom, settingScale, scalePoints, activeTool, hiddenGroups, scale, annotationColor, rectStartPoint, isDraggingRect, selectedMeasurementId, dragPreview, liveCursor, panning, searchMatches, activeMatchIdx, measurementSystem, snapPoint, showLabels, showDimensions, renderNonce, groupColorMap]);
 
   /* ── Canvas click handler ────────────────────────────────────────── */
 
@@ -1913,11 +2016,17 @@ export default function TakeoffViewerModule({
   }, [measurements, currentPage, hiddenGroups]);
   const snapVerticesRef = useRef(snapVertices);
   snapVerticesRef.current = snapVertices;
+  // handleCanvasDblClick is defined below handleCanvasClick, so the click path
+  // reaches the shared finish routine through a ref (avoids a declaration cycle),
+  // used by close-on-first-vertex for polygons (#309). Assigned just after the
+  // callback is defined.
+  const handleCanvasDblClickRef = useRef<(() => void) | null>(null);
 
   const handleCanvasClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
-      // A pan gesture that ended on this element must not also place a point.
-      if (panRef.current || spaceHeldRef.current) return;
+      // A pan gesture that ended on this element must not also place a point,
+      // and in sticky pan mode (#316) a click never places one either.
+      if (panRef.current || spaceHeldRef.current || panLockRef.current) return;
       const rect = overlayRef.current?.getBoundingClientRect();
       if (!rect) return;
       const x = (e.clientX - rect.left) / zoom;
@@ -1935,11 +2044,35 @@ export default function TakeoffViewerModule({
         activeTool === 'polyline' ||
         activeTool === 'area' ||
         activeTool === 'volume';
+      // While drawing, the shape's own placed vertices (all but the immediately
+      // preceding one, which the ortho lock already anchors) join the committed
+      // snap pool, so a run can connect back to its own corners, above all its
+      // first vertex (#309).
+      const snapPool =
+        canVertexSnap && activePoints.length > 1
+          ? [...snapVerticesRef.current, ...activePoints.slice(0, -1)]
+          : snapVerticesRef.current;
       const vsnap = vertexSnapRef.current && canVertexSnap
-        ? snapToVertex(point, snapVerticesRef.current, zoom, VERTEX_SNAP_SCREEN_PX)
+        ? snapToVertex(point, snapPool, zoom, VERTEX_SNAP_SCREEN_PX)
         : null;
       if (vsnap) {
         point = vsnap;
+        // Close-on-first-vertex: for the polygon tools, a snapped click on the
+        // first vertex with 3+ points finishes the shape, as in common CAD and
+        // takeoff tools. Requiring the snap hit keeps it deliberate and never
+        // adds a stray vertex. Polylines are excluded, since revisiting a start
+        // vertex without closing is legitimate there (#309).
+        const first = activePoints[0];
+        if (
+          (activeTool === 'area' || activeTool === 'volume') &&
+          activePoints.length >= 3 &&
+          first &&
+          point.x === first.x &&
+          point.y === first.y
+        ) {
+          handleCanvasDblClickRef.current?.();
+          return;
+        }
       } else if (
         (orthoLock || shiftHeldRef.current) &&
         activePoints.length > 0 &&
@@ -2275,6 +2408,9 @@ export default function TakeoffViewerModule({
       return;
     }
   }, [activeTool, activePoints, zoom, scale, currentPage, pushUndo, nextAnnotation, activeGroup, annotationColor]);
+  // Expose the finish routine to the earlier-defined click handler so
+  // close-on-first-vertex can reuse it without a declaration cycle (#309).
+  handleCanvasDblClickRef.current = handleCanvasDblClick;
 
   /** Confirm volume depth and create the volume measurement */
   const handleVolumeDepthConfirm = useCallback(() => {
@@ -2460,7 +2596,7 @@ export default function TakeoffViewerModule({
       // Space bar is held. Works in any tool and is captured before tool logic
       // so it never places a measurement. The actual move + release are driven
       // by window listeners so a pan that leaves the canvas still tracks.
-      if (e.button === 1 || (e.button === 0 && spaceHeldRef.current)) {
+      if (e.button === 1 || (e.button === 0 && (spaceHeldRef.current || panLockRef.current))) {
         const c = containerRef.current;
         if (c) {
           panRef.current = {
@@ -2616,9 +2752,15 @@ export default function TakeoffViewerModule({
           activeTool === 'volume')
       ) {
         // Vertex snap wins over ortho (issue #303): connecting to an existing
-        // corner is a stronger intent than an angle constraint.
+        // corner is a stronger intent than an angle constraint. The shape's own
+        // placed vertices (minus the immediately preceding point) join the pool
+        // so the snap ring shows on the first vertex too, cueing a close (#309).
+        const hoverSnapPool =
+          activePoints.length > 1
+            ? [...snapVerticesRef.current, ...activePoints.slice(0, -1)]
+            : snapVerticesRef.current;
         const vsnap = vertexSnapRef.current
-          ? snapToVertex(pt, snapVerticesRef.current, zoomRef.current || 1, VERTEX_SNAP_SCREEN_PX)
+          ? snapToVertex(pt, hoverSnapPool, zoomRef.current || 1, VERTEX_SNAP_SCREEN_PX)
           : null;
         if (vsnap) {
           setSnapPoint(vsnap);
@@ -3178,9 +3320,9 @@ export default function TakeoffViewerModule({
   const legendSummaries = useMemo(
     () => computeGroupSummaries(
       pageMeasurements.filter((m) => !hiddenGroups.has(m.group)),
-      GROUP_COLOR_MAP,
+      groupColorMap,
     ),
-    [pageMeasurements, hiddenGroups],
+    [pageMeasurements, hiddenGroups, groupColorMap],
   );
 
   /** Currently-selected measurement object (null if nothing selected / target deleted). */
@@ -3207,6 +3349,32 @@ export default function TakeoffViewerModule({
     },
     [selectedMeasurementId],
   );
+
+  /** Rename the active custom group (issue #313): move its measurements and its
+   *  colour onto the new name. Built-in preset groups are not renameable. */
+  const renameActiveGroup = useCallback(() => {
+    if (MEASUREMENT_GROUPS.some((g) => g.name === activeGroup)) return;
+    const raw = window.prompt(
+      t('takeoff_viewer.rename_group_prompt', { defaultValue: 'Rename group' }),
+      activeGroup,
+    );
+    const name = raw?.trim();
+    if (!name || name === activeGroup) return;
+    setMeasurements((prev) =>
+      prev.map((m) => (m.group === activeGroup ? { ...m, group: name } : m)),
+    );
+    setCustomGroupColors((prev) => {
+      const moved = prev[activeGroup];
+      if (moved == null) return prev;
+      const next: Record<string, string> = {};
+      for (const [k, v] of Object.entries(prev)) {
+        if (k !== activeGroup) next[k] = v;
+      }
+      next[name] = moved;
+      return next;
+    });
+    setActiveGroup(name);
+  }, [activeGroup, t]);
 
   /** Toggle visibility of a measurement group */
   const toggleGroupVisibility = useCallback((groupName: string) => {
@@ -3352,7 +3520,7 @@ export default function TakeoffViewerModule({
         measurements,
         hiddenGroups,
         scale,
-        groupColorMap: GROUP_COLOR_MAP,
+        groupColorMap,
         projectName: exportProjectName,
         measurementSystem,
       });
@@ -3376,7 +3544,7 @@ export default function TakeoffViewerModule({
     } finally {
       setIsExportingPdf(false);
     }
-  }, [pdfDoc, measurements, hiddenGroups, scale, exportProjectName, addToast, t, measurementSystem]);
+  }, [pdfDoc, measurements, hiddenGroups, scale, exportProjectName, addToast, t, measurementSystem, groupColorMap]);
 
   /** Export measurements + summary to an .xlsx workbook. */
   const handleExportExcel = useCallback(async () => {
@@ -3400,7 +3568,7 @@ export default function TakeoffViewerModule({
       const wb = await buildTakeoffWorkbook({
         measurements,
         scale,
-        groupColorMap: GROUP_COLOR_MAP,
+        groupColorMap,
         projectName: exportProjectName,
         measurementSystem,
       });
@@ -3427,7 +3595,7 @@ export default function TakeoffViewerModule({
     } finally {
       setIsExportingXlsx(false);
     }
-  }, [measurements, scale, exportProjectName, addToast, t, measurementSystem]);
+  }, [measurements, scale, exportProjectName, addToast, t, measurementSystem, groupColorMap]);
 
   const deleteMeasurement = useCallback((id: string) => {
     // Capture the target up front so we can both push an undo frame and queue
@@ -4785,17 +4953,62 @@ export default function TakeoffViewerModule({
           setScalePoints([]);
           return;
         }
+        // Leave sticky pan mode (#316), mirroring a second click on the toggle.
+        if (panLockRef.current) {
+          setPanLock(false);
+          return;
+        }
         if (activePoints.length > 0 || rectStartPoint !== null || showTextInput || showScaleDialog || showVolumeDepthInput) {
+          // First Esc on a drawing tool cancels the in-progress shape.
           setActivePoints([]);
           setRectStartPoint(null);
           setIsDraggingRect(false);
           setShowTextInput(false);
           setTextInputValue('');
-          // Don't close dialogs here — they have their own handlers
-        } else if (selectedMeasurementId) {
+          // Don't close dialogs here - they have their own handlers.
+          return;
+        }
+        if (selectedMeasurementId) {
           setSelectedMeasurementId(null);
+          return;
+        }
+        // Nothing in progress and nothing selected: disarm the active drawing
+        // or markup tool back to Select. This gives every tool a uniform
+        // two-step bail-out (Esc cancels the shape, a second Esc disarms) and
+        // delivers what the Count hint already promises: Count commits on every
+        // click and has no in-progress shape, so its first Esc lands here (#307).
+        if (activeTool !== 'select') {
+          selectTool('select');
         }
         return;
+      }
+
+      // Enter: finish an in-progress multi-point measurement (polyline, area,
+      // volume, cloud) under the same minimum-point rules as a double-click or
+      // right-click, so committing never depends on pointer precision or
+      // double-click timing (#308). Handled before the focus guard is applied
+      // to the tool letters, but only when focus is not in a field (guarded
+      // just below), so typing a label or depth still gets a normal Enter.
+      if (e.key === 'Enter' && shouldHandleShortcut(e.target)) {
+        if (
+          (activeTool === 'polyline' && activePoints.length >= 2) ||
+          ((activeTool === 'area' || activeTool === 'volume' || activeTool === 'cloud') &&
+            activePoints.length >= 3)
+        ) {
+          e.preventDefault();
+          handleCanvasDblClick();
+          return;
+        }
+        // Count commits per click and has no in-progress shape, so Enter instead
+        // moves focus to the Count Label field and selects it, so the next label
+        // can be typed and the following clicks start a fresh count group instead
+        // of appending to the one just finished (#307/#308).
+        if (activeTool === 'count') {
+          e.preventDefault();
+          countLabelRef.current?.focus();
+          countLabelRef.current?.select();
+          return;
+        }
       }
 
       // Tool letters — only when focus isn't in an input / textarea / etc.
@@ -4889,7 +5102,7 @@ export default function TakeoffViewerModule({
       window.removeEventListener('keyup', upHandler);
       window.removeEventListener('blur', blurHandler);
     };
-  }, [handleUndo, handleRedo, selectTool, activePoints.length, rectStartPoint, showTextInput, showScaleDialog, showVolumeDepthInput, selectedMeasurementId, calibrationMode, settingScale, measurements, finishDrag, commitGeometryEdit, pushUndo, fitToViewport, zoomToSelection, duplicateMeasurement]);
+  }, [handleUndo, handleRedo, selectTool, activeTool, activePoints.length, rectStartPoint, showTextInput, showScaleDialog, showVolumeDepthInput, selectedMeasurementId, calibrationMode, settingScale, measurements, finishDrag, commitGeometryEdit, pushUndo, fitToViewport, zoomToSelection, duplicateMeasurement, handleCanvasDblClick]);
 
   /* ── Render ──────────────────────────────────────────────────────── */
 
@@ -5507,13 +5720,16 @@ export default function TakeoffViewerModule({
                 >
                   <Magnet size={16} />
                 </button>
-                <span
-                  className={`inline-flex h-7 items-center justify-center rounded-md px-1.5 transition-colors ${spaceHeld || panning ? 'bg-oe-blue text-white shadow-sm' : 'text-content-tertiary'}`}
-                  title={t('takeoff_viewer.pan_hint', { defaultValue: 'Drag to pan. Hold Space or use the middle mouse button while any tool is active.' })}
+                <button
+                  onClick={() => setPanLock((v) => !v)}
+                  className={tbBtn(panLock || spaceHeld || panning, 'blue')}
+                  title={t('takeoff_viewer.pan_hint', { defaultValue: 'Hand tool: click to pan by dragging. You can also hold Space or use the middle mouse button. Click again or press Esc to leave.' })}
                   aria-label={t('takeoff_viewer.pan', { defaultValue: 'Pan' })}
+                  aria-pressed={panLock}
+                  data-testid="pan-toggle"
                 >
                   <Hand size={16} />
-                </span>
+                </button>
               </div>
 
               {/* Right cluster - view toggles, history and document actions,
@@ -5544,6 +5760,43 @@ export default function TakeoffViewerModule({
                   >
                     <List size={15} />
                     <span className="hidden sm:inline">{t('takeoff_viewer.legend', { defaultValue: 'Legend' })}</span>
+                  </button>
+                  {/* Declutter toggles: hide the on-canvas name badges and the
+                      dimension values independently; geometry stays visible and
+                      the numbers stay in the Ledger and hover tooltip (#314). */}
+                  <button
+                    onClick={() => setShowLabels((v) => !v)}
+                    className={tbBtn(showLabels)}
+                    title={t('takeoff_viewer.toggle_names', { defaultValue: 'Show measurement names' })}
+                    aria-label={t('takeoff_viewer.toggle_names', { defaultValue: 'Show measurement names' })}
+                    aria-pressed={showLabels}
+                    data-testid="names-toggle"
+                  >
+                    <Type size={15} />
+                    <span className="hidden sm:inline">{t('takeoff_viewer.names', { defaultValue: 'Names' })}</span>
+                  </button>
+                  <button
+                    onClick={() => setShowDimensions((v) => !v)}
+                    className={tbBtn(showDimensions)}
+                    title={t('takeoff_viewer.toggle_values', { defaultValue: 'Show dimension values' })}
+                    aria-label={t('takeoff_viewer.toggle_values', { defaultValue: 'Show dimension values' })}
+                    aria-pressed={showDimensions}
+                    data-testid="values-toggle"
+                  >
+                    <Hash size={15} />
+                    <span className="hidden sm:inline">{t('takeoff_viewer.values', { defaultValue: 'Values' })}</span>
+                  </button>
+                  {/* Collapse the right sidebar for a larger drawing viewport (#315). */}
+                  <button
+                    onClick={() => setShowSidebar((v) => !v)}
+                    className={tbBtn(showSidebar)}
+                    title={t('takeoff_viewer.toggle_sidebar', { defaultValue: 'Toggle the properties panel' })}
+                    aria-label={t('takeoff_viewer.toggle_sidebar', { defaultValue: 'Toggle the properties panel' })}
+                    aria-pressed={showSidebar}
+                    data-testid="sidebar-toggle"
+                  >
+                    <PanelRight size={15} />
+                    <span className="hidden sm:inline">{t('takeoff_viewer.panel', { defaultValue: 'Panel' })}</span>
                   </button>
                 </div>
 
@@ -5842,11 +6095,16 @@ export default function TakeoffViewerModule({
                 spacing + toolbar (~80, two rows) + bottom Documents
                 filmstrip (~175). The old `100vh - 280px` under-reserved by
                 ~80px, so the canvas + right sidebar pushed the workspace past
-                the fixed-height column and forced a second scrollbar. */}
+                the fixed-height column and forced a second scrollbar. This is a
+                definite height, not a max-height: fit-to-page reads the
+                container clientHeight, so a content-sized box let every fit
+                measure the height the previous fit had just produced and zoom
+                out again on each click (#306). A minHeight keeps it usable on
+                very short viewports. */}
             <div
               ref={containerRef}
               className="relative rounded-lg border border-border overflow-auto bg-gray-100 dark:bg-gray-900"
-              style={{ maxHeight: 'calc(100vh - 396px)', maxWidth: '100%' }}
+              style={{ height: 'calc(100vh - 396px)', minHeight: '320px', maxWidth: '100%' }}
             >
               <canvas ref={canvasRef} className="block" />
               <canvas
@@ -5855,7 +6113,7 @@ export default function TakeoffViewerModule({
                 style={{
                   cursor: panning
                     ? 'grabbing'
-                    : spaceHeld
+                    : spaceHeld || panLock
                       ? 'grab'
                       : activeTool === 'select'
                         ? (dragPreview ? 'grabbing' : 'default')
@@ -6022,11 +6280,11 @@ export default function TakeoffViewerModule({
                     {activeTool === 'highlight' && t('takeoff_viewer.hint_highlight', { defaultValue: 'Drag to highlight a region.' })}
                     {activeTool === 'text' && t('takeoff_viewer.hint_text', { defaultValue: 'Click to place a text pin.' })}
                   </span>
-                  {(activeTool === 'count' || activeTool === 'polyline' || activeTool === 'area' || activeTool === 'cloud') && (
+                  {(activeTool === 'count' || activeTool === 'polyline' || activeTool === 'area' || activeTool === 'volume' || activeTool === 'cloud') && (
                     <span className="opacity-80 border-l border-white/30 pl-2">
                       {activeTool === 'count'
-                        ? t('takeoff_viewer.hint_esc_to_finish', { defaultValue: 'Esc: switch tool · Del: undo last' })
-                        : t('takeoff_viewer.hint_dblclick_close', { defaultValue: 'Double-click: close shape · Esc: cancel' })}
+                        ? t('takeoff_viewer.hint_esc_to_finish', { defaultValue: 'Enter: new count group · Esc: switch tool' })
+                        : t('takeoff_viewer.hint_dblclick_close', { defaultValue: 'Enter or double-click: close shape · Esc: cancel' })}
                     </span>
                   )}
                 </div>
@@ -6114,7 +6372,7 @@ export default function TakeoffViewerModule({
                           const items = pageMeasurements.filter((m) => (m.group || 'General') === name);
                           rows.push({
                             name,
-                            color: GROUP_COLOR_MAP[name] || '#3B82F6',
+                            color: groupColorMap[name] || '#3B82F6',
                             count: items.length,
                             total: items.reduce((s, it) => s + it.value, 0),
                             unit: items.find((it) => it.unit)?.unit ?? '',
@@ -6168,8 +6426,10 @@ export default function TakeoffViewerModule({
             </div>
           </div>
 
-          {/* Left-visually / DOM-first: Measurements panel */}
-          <div className="w-72 shrink-0 space-y-2">
+          {/* Left-visually / DOM-first: Measurements panel. Collapsible for a
+              larger drawing viewport; hiding it lets the flex-1 canvas column
+              take the full width (#315). */}
+          <div className={clsx('w-72 shrink-0 space-y-2', !showSidebar && 'hidden')}>
             {/* Scale info */}
             <div className="rounded-md border border-border/80 bg-surface-primary/80 backdrop-blur-sm p-3 shadow-sm">
               <p className="text-[10px] font-bold uppercase tracking-widest text-content-tertiary mb-1">
@@ -6206,19 +6466,57 @@ export default function TakeoffViewerModule({
                 {t('takeoff_viewer.active_group', { defaultValue: 'Active Group' })}
               </label>
               <div className="flex items-center gap-2">
-                <span
-                  className="h-3 w-3 rounded-full shrink-0 ring-2 ring-white dark:ring-gray-900"
-                  style={{ backgroundColor: GROUP_COLOR_MAP[activeGroup] || '#3B82F6' }}
+                {/* Editable group colour (issue #313): the swatch is a colour
+                    input, so a custom or preset group can be recoloured and the
+                    change flows to the canvas, legend and exports. */}
+                <input
+                  type="color"
+                  value={groupColorMap[activeGroup] || '#3B82F6'}
+                  onChange={(e) => setGroupColor(activeGroup, e.target.value)}
+                  className="h-5 w-6 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0"
+                  title={t('takeoff_viewer.group_color', { defaultValue: 'Group color' })}
+                  aria-label={t('takeoff_viewer.group_color', { defaultValue: 'Group color' })}
+                  data-testid="active-group-color"
                 />
+                {/* Any existing group (built-in or user-defined) plus a New group
+                    entry, so a custom group can be chosen BEFORE drawing (#313)
+                    instead of drawing into a preset and reassigning afterwards. */}
                 <select
                   value={activeGroup}
-                  onChange={(e) => setActiveGroup(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '__new__') {
+                      const raw = window.prompt(
+                        t('takeoff_viewer.new_group_prompt', { defaultValue: 'New group name' }),
+                      );
+                      const name = raw?.trim();
+                      if (name) setActiveGroup(name);
+                      return;
+                    }
+                    setActiveGroup(val);
+                  }}
                   className="flex-1 rounded-sm border border-border bg-surface-secondary px-2 py-1 text-xs text-content-primary"
+                  data-testid="active-group-select"
                 >
-                  {MEASUREMENT_GROUPS.map((g) => (
-                    <option key={g.name} value={g.name}>{g.name}</option>
+                  {Array.from(new Set([...availableGroups, activeGroup])).map((g) => (
+                    <option key={g} value={g}>{g}</option>
                   ))}
+                  <option value="__new__">
+                    {t('takeoff_viewer.new_group', { defaultValue: '+ New group' })}
+                  </option>
                 </select>
+                {!MEASUREMENT_GROUPS.some((g) => g.name === activeGroup) && (
+                  <button
+                    type="button"
+                    onClick={renameActiveGroup}
+                    className="shrink-0 rounded-sm border border-border p-1 text-content-tertiary hover:text-content-primary"
+                    title={t('takeoff_viewer.rename_group', { defaultValue: 'Rename group' })}
+                    aria-label={t('takeoff_viewer.rename_group', { defaultValue: 'Rename group' })}
+                    data-testid="active-group-rename"
+                  >
+                    <Pencil size={12} />
+                  </button>
+                )}
               </div>
             </div>
 
@@ -6229,6 +6527,7 @@ export default function TakeoffViewerModule({
                   {t('takeoff_viewer.count_label', { defaultValue: 'Count Label' })}
                 </label>
                 <input
+                  ref={countLabelRef}
                   type="text"
                   value={countLabel}
                   onChange={(e) => setCountLabel(e.target.value)}
@@ -6384,7 +6683,7 @@ export default function TakeoffViewerModule({
                 )}
                 <MeasurementLedger
                   measurements={measurements}
-                  groupColorMap={GROUP_COLOR_MAP}
+                  groupColorMap={groupColorMap}
                   onRowClick={handleLedgerRowClick}
                   selectedMeasurementId={selectedMeasurementId}
                   onAddToBoq={handleLedgerAddToBoq}
@@ -6441,7 +6740,10 @@ export default function TakeoffViewerModule({
                   </select>
                 </div>
 
-                {/* Color picker (6-color palette matching DWG module) */}
+                {/* Color: 6 quick swatches plus a native picker for any hex, so
+                    a busy sheet with many measurement types is not limited to
+                    six colors (#310). The chosen color persists round-trip and
+                    both renderers honor it over the group color. */}
                 <div>
                   <label className="text-[10px] font-semibold text-content-tertiary block mb-0.5">
                     {t('takeoff_viewer.prop_color', { defaultValue: 'Color' })}
@@ -6464,8 +6766,102 @@ export default function TakeoffViewerModule({
                         data-testid={`prop-color-${c.name.toLowerCase()}`}
                       />
                     ))}
+                    <input
+                      type="color"
+                      value={selectedMeasurement.color || groupColorMap[selectedMeasurement.group] || '#3B82F6'}
+                      onChange={(e) => updateSelectedMeasurement({ color: e.target.value })}
+                      className="h-5 w-6 cursor-pointer rounded border border-border bg-transparent p-0"
+                      title={t('takeoff_viewer.prop_color_custom', { defaultValue: 'Custom color' })}
+                      aria-label={t('takeoff_viewer.prop_color_custom', { defaultValue: 'Custom color' })}
+                      data-testid="prop-color-custom"
+                    />
                   </div>
                 </div>
+
+                {/* Fill opacity (issue #311): area, volume and count carry a
+                    tinted fill; let the estimator raise it when hatching under an
+                    area hides the tint, or lower it to read overlapping areas.
+                    Unset uses the per-type default (15% area/volume, 30% count). */}
+                {(selectedMeasurement.type === 'area' ||
+                  selectedMeasurement.type === 'volume' ||
+                  selectedMeasurement.type === 'count') && (
+                  <div>
+                    <label className="text-[10px] font-semibold text-content-tertiary flex items-center justify-between mb-0.5">
+                      <span>{t('takeoff_viewer.prop_fill_opacity', { defaultValue: 'Fill opacity' })}</span>
+                      <span className="tabular-nums">
+                        {Math.round(
+                          (selectedMeasurement.fillAlpha ??
+                            (selectedMeasurement.type === 'count' ? 0.3 : 0.15)) * 100,
+                        )}
+                        %
+                      </span>
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={5}
+                        value={Math.round(
+                          (selectedMeasurement.fillAlpha ??
+                            (selectedMeasurement.type === 'count' ? 0.3 : 0.15)) * 100,
+                        )}
+                        onChange={(e) =>
+                          updateSelectedMeasurement({ fillAlpha: Number(e.target.value) / 100 })
+                        }
+                        className="flex-1"
+                        data-testid="prop-fill-opacity"
+                      />
+                      {selectedMeasurement.fillAlpha != null && (
+                        <button
+                          type="button"
+                          onClick={() => updateSelectedMeasurement({ fillAlpha: undefined })}
+                          className="text-[10px] text-content-tertiary hover:text-content-primary underline"
+                          data-testid="prop-fill-opacity-reset"
+                        >
+                          {t('takeoff_viewer.reset', { defaultValue: 'Reset' })}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Line width (issue #312): distance and polyline runs render at a
+                    2px hairline; raise it so two near-identical lines (a footing
+                    and the stem wall above it) can be told apart. Unset = 2px. */}
+                {(selectedMeasurement.type === 'distance' ||
+                  selectedMeasurement.type === 'polyline') && (
+                  <div>
+                    <label className="text-[10px] font-semibold text-content-tertiary flex items-center justify-between mb-0.5">
+                      <span>{t('takeoff_viewer.prop_stroke_width', { defaultValue: 'Line width' })}</span>
+                      <span className="tabular-nums">{selectedMeasurement.strokeWidth ?? 2}px</span>
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min={1}
+                        max={10}
+                        step={1}
+                        value={selectedMeasurement.strokeWidth ?? 2}
+                        onChange={(e) =>
+                          updateSelectedMeasurement({ strokeWidth: Number(e.target.value) })
+                        }
+                        className="flex-1"
+                        data-testid="prop-stroke-width"
+                      />
+                      {selectedMeasurement.strokeWidth != null && (
+                        <button
+                          type="button"
+                          onClick={() => updateSelectedMeasurement({ strokeWidth: undefined })}
+                          className="text-[10px] text-content-tertiary hover:text-content-primary underline"
+                          data-testid="prop-stroke-width-reset"
+                        >
+                          {t('takeoff_viewer.reset', { defaultValue: 'Reset' })}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Value + Unit (read-only for computed types) */}
                 <div className="grid grid-cols-[1fr_auto] gap-2">
@@ -6642,7 +7038,7 @@ export default function TakeoffViewerModule({
                 {Object.entries(groupedPageMeasurements).map(([groupName, groupMs]) => {
                   const measurementOnly = groupMs.filter((m) => !isAnnotationType(m.type));
                   if (measurementOnly.length === 0) return null;
-                  const groupColor = GROUP_COLOR_MAP[groupName] || '#3B82F6';
+                  const groupColor = groupColorMap[groupName] || '#3B82F6';
                   const isHidden = hiddenGroups.has(groupName);
                   const isCollapsed = collapsedGroups.has(groupName);
                   return (
