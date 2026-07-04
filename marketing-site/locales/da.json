@@ -217,6 +217,24 @@
     "stargazer_meta": "Se dem på GitHub →",
     "many_more": "+ mange flere"
   },
+  "assurance": {
+    "eyebrow": "<span class=\"num\">Tillid</span> · standarder &amp; garantier",
+    "title": "Mærker vi ærligt kan stå bag.",
+    "lede": "Ingen lånte segl. Hvert mærke her er enten en simpel kendsgerning om softwaren eller et offentligt mærke, du selv kan tjekke: åbne standarder, som vi læser og skriver, en OSI-godkendt licens, du kan læse linje for linje, og dine data på din egen server.",
+    "oss_name": "Åben kildekode, AGPL-3.0",
+    "oss_desc": "En OSI-godkendt licens. Hele platformen er offentlig på GitHub. Læs hver linje, fork den, kør den, behold den.",
+    "selfhost_name": "Selv-hostet, dine data forbliver dine",
+    "selfhost_desc": "Kører på din server. Projekter, tegninger og omkostningsdata ligger i din database. Intet forlader din infrastruktur.",
+    "telemetry_name": "Ingen telemetri som standard",
+    "telemetry_desc": "Intet sendes tilbage til os, ingen sporing. Hostet AI slår du selv til pr. arbejdsområde, og du kan rette den mod dine egne modeller.",
+    "standards_name": "Åbne standarder, læst og skrevet",
+    "standards_desc": "GAEB XML, DIN 276, NRM, MasterFormat, ISO 15686-5 og BCF. Indbygget import og eksport, så ingen fastlåsning.",
+    "gdpr_name": "GDPR-klar fra bunden",
+    "gdpr_desc": "Selv-hosting holder personoplysninger på din egen infrastruktur, med indbygget dataeksport og sletning. Du forbliver dataansvarlig.",
+    "langs_name": "20 sprog indbygget",
+    "langs_desc": "Grænsefladen og omkostningsdataene leveres på 20 sprog. At tilføje et mere er en enkelt JSON-fil, uden ny bygning.",
+    "foot": "<b>Hvad der bevidst ikke er her.</b> Certificeringer, der kræver en betalt revision af tredjepart (et certificeret EU-GDPR-segl, GoBD efter IDW PS 880, ISO 27001), vises ikke. Vi viser først et certifikat, når det virkelig er fortjent."
+  },
   "numbers": {
     "eyebrow": "<span class=\"num\">03</span> · i tal",
     "lede": "Tal fra den aktuelle udgivelse. Nogle af dem vil være forældede, når du læser dette - repoet bevæger sig hurtigt.",

@@ -217,6 +217,24 @@
     "stargazer_meta": "Veja-os no GitHub →",
     "many_more": "+ muitos mais"
   },
+  "assurance": {
+    "eyebrow": "<span class=\"num\">Confiança</span> · normas &amp; garantias",
+    "title": "Selos que podemos defender com honestidade.",
+    "lede": "Sem selos emprestados. Cada selo aqui é ou um simples facto sobre o software ou um emblema público que você mesmo pode verificar: normas abertas que lemos e escrevemos, uma licença aprovada pela OSI que pode ler linha a linha, e os seus dados no seu próprio servidor.",
+    "oss_name": "Código aberto, AGPL-3.0",
+    "oss_desc": "Uma licença aprovada pela OSI. Toda a plataforma é pública no GitHub. Leia cada linha, faça um fork, execute-a, guarde-a.",
+    "selfhost_name": "Auto-hospedado, os seus dados continuam seus",
+    "selfhost_desc": "Corre no seu servidor. Projetos, desenhos e dados de custo ficam na sua base de dados. Nada sai da sua infraestrutura.",
+    "telemetry_name": "Sem telemetria por predefinição",
+    "telemetry_desc": "Nada é enviado de volta para nós, sem rastreio. A AI alojada é ativada por opção em cada espaço de trabalho, e pode apontá-la para os seus próprios modelos.",
+    "standards_name": "Normas abertas, lidas e escritas",
+    "standards_desc": "GAEB XML, DIN 276, NRM, MasterFormat, ISO 15686-5 e BCF. Importação e exportação nativas, por isso não há dependência forçada.",
+    "gdpr_name": "Preparado para o GDPR desde a conceção",
+    "gdpr_desc": "A auto-hospedagem mantém os dados pessoais na sua própria infraestrutura, com exportação e eliminação de dados integradas. Você continua a ser o responsável pelo tratamento.",
+    "langs_name": "20 idiomas integrados",
+    "langs_desc": "A interface e os dados de custo são fornecidos em 20 idiomas. Adicionar outro é um único ficheiro JSON, sem recompilar.",
+    "foot": "<b>O que não está aqui, de propósito.</b> As certificações que exigem uma auditoria paga por terceiros (um selo GDPR da UE certificado, GoBD segundo IDW PS 880, ISO 27001) não são mostradas. Só mostraremos um certificado quando ele for realmente merecido."
+  },
   "numbers": {
     "eyebrow": "<span class=\"num\">03</span> · em números",
     "lede": "Números da versão atual. Alguns já estarão desatualizados quando ler isto - o repositório evolui depressa.",

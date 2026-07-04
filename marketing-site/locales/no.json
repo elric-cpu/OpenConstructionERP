@@ -217,6 +217,24 @@
     "stargazer_meta": "Se dem på GitHub →",
     "many_more": "+ mange flere"
   },
+  "assurance": {
+    "eyebrow": "<span class=\"num\">Tillit</span> · standarder &amp; garantier",
+    "title": "Merker vi ærlig kan stå bak.",
+    "lede": "Ingen lånte segl. Hvert merke her er enten et enkelt faktum om programvaren eller et offentlig merke du selv kan sjekke: åpne standarder som vi leser og skriver, en OSI-godkjent lisens du kan lese linje for linje, og dine data på din egen server.",
+    "oss_name": "Åpen kildekode, AGPL-3.0",
+    "oss_desc": "En OSI-godkjent lisens. Hele plattformen er offentlig på GitHub. Les hver linje, fork den, kjør den, behold den.",
+    "selfhost_name": "Selvhostet, dataene dine forblir dine",
+    "selfhost_desc": "Kjører på din server. Prosjekter, tegninger og kostnadsdata ligger i din database. Ingenting forlater infrastrukturen din.",
+    "telemetry_name": "Ingen telemetri som standard",
+    "telemetry_desc": "Ingenting sendes tilbake til oss, ingen sporing. Hostet AI slår du på selv per arbeidsområde, og du kan rette den mot dine egne modeller.",
+    "standards_name": "Åpne standarder, lest og skrevet",
+    "standards_desc": "GAEB XML, DIN 276, NRM, MasterFormat, ISO 15686-5 og BCF. Innebygd import og eksport, så ingen innlåsing.",
+    "gdpr_name": "GDPR-klar fra bunnen av",
+    "gdpr_desc": "Selvhosting holder personopplysninger på din egen infrastruktur, med innebygd dataeksport og sletting. Du forblir behandlingsansvarlig.",
+    "langs_name": "20 språk innebygd",
+    "langs_desc": "Grensesnittet og kostnadsdataene leveres på 20 språk. Å legge til ett til er en enkelt JSON-fil, uten ny bygging.",
+    "foot": "<b>Hva som bevisst ikke er her.</b> Sertifiseringer som krever en betalt revisjon av tredjepart (et sertifisert EU-GDPR-segl, GoBD etter IDW PS 880, ISO 27001) vises ikke. Vi viser et sertifikat først når det er virkelig fortjent."
+  },
   "numbers": {
     "eyebrow": "<span class=\"num\">03</span> · i tall",
     "lede": "Tall fra nåværende versjon. Noen av disse vil være utdaterte når du leser dette - repoet beveger seg raskt.",

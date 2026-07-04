@@ -217,6 +217,24 @@
     "stargazer_meta": "Voyez-les sur GitHub →",
     "many_more": "+ beaucoup d'autres"
   },
+  "assurance": {
+    "eyebrow": "<span class=\"num\">Confiance</span> · normes &amp; garanties",
+    "title": "Des marques que nous pouvons assumer en toute honnêteté.",
+    "lede": "Aucun sceau emprunté. Chaque marque ici est soit un simple fait au sujet du logiciel, soit un badge public que vous pouvez vérifier vous-même : des normes ouvertes que nous lisons et écrivons, une licence approuvée par l'OSI que vous pouvez lire ligne par ligne, et vos données sur votre propre serveur.",
+    "oss_name": "Open source, AGPL-3.0",
+    "oss_desc": "Une licence approuvée par l'OSI. Toute la plateforme est publique sur GitHub. Lisez chaque ligne, forkez-la, exécutez-la, gardez-la.",
+    "selfhost_name": "Auto-hébergé, vos données restent les vôtres",
+    "selfhost_desc": "Fonctionne sur votre serveur. Les projets, les plans et les données de coûts vivent dans votre base de données. Rien ne quitte votre infrastructure.",
+    "telemetry_name": "Aucune télémétrie par défaut",
+    "telemetry_desc": "Rien n'est renvoyé chez nous, aucun pistage. L'AI hébergée s'active au choix pour chaque espace de travail, et vous pouvez la diriger vers vos propres modèles.",
+    "standards_name": "Normes ouvertes, lues et écrites",
+    "standards_desc": "GAEB XML, DIN 276, NRM, MasterFormat, ISO 15686-5 et BCF. Import et export natifs, donc aucune dépendance.",
+    "gdpr_name": "Prêt pour le GDPR par conception",
+    "gdpr_desc": "L'auto-hébergement garde les données personnelles sur votre propre infrastructure, avec export et suppression des données intégrés. Vous restez le responsable du traitement.",
+    "langs_name": "20 langues intégrées",
+    "langs_desc": "L'interface et les données de coûts sont livrées en 20 langues. En ajouter une autre, c'est un seul fichier JSON, sans recompilation.",
+    "foot": "<b>Ce qui n'est pas ici, volontairement.</b> Les certifications qui exigent un audit payant par un tiers (un sceau GDPR européen certifié, GoBD selon IDW PS 880, ISO 27001) ne sont pas affichées. Nous n'afficherons un certificat que lorsqu'il sera réellement mérité."
+  },
   "numbers": {
     "eyebrow": "<span class=\"num\">03</span> · en chiffres",
     "lede": "Chiffres de la version actuelle. Certains seront déjà obsolètes quand vous lirez ceci - le dépôt avance vite.",

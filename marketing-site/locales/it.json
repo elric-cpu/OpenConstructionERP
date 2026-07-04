@@ -217,6 +217,24 @@
     "stargazer_meta": "Vedili su GitHub →",
     "many_more": "+ molti altri"
   },
+  "assurance": {
+    "eyebrow": "<span class=\"num\">Fiducia</span> · standard &amp; garanzie",
+    "title": "Marchi che possiamo sostenere con onestà.",
+    "lede": "Nessun sigillo preso in prestito. Ogni marchio qui è o un semplice dato di fatto sul software o un distintivo pubblico che potete verificare voi stessi: standard aperti che leggiamo e scriviamo, una licenza approvata da OSI che potete leggere riga per riga, e i vostri dati sul vostro server.",
+    "oss_name": "Open source, AGPL-3.0",
+    "oss_desc": "Una licenza approvata da OSI. L'intera piattaforma è pubblica su GitHub. Leggete ogni riga, fatene un fork, eseguitela, tenetela.",
+    "selfhost_name": "Self-hosted, i vostri dati restano vostri",
+    "selfhost_desc": "Gira sul vostro server. Progetti, disegni e dati di costo risiedono nel vostro database. Nulla lascia la vostra infrastruttura.",
+    "telemetry_name": "Nessuna telemetria per impostazione predefinita",
+    "telemetry_desc": "Nulla viene rimandato a noi, nessun tracciamento. L'AI ospitata si attiva a scelta per ogni area di lavoro e potete indirizzarla verso i vostri modelli.",
+    "standards_name": "Standard aperti, letti e scritti",
+    "standards_desc": "GAEB XML, DIN 276, NRM, MasterFormat, ISO 15686-5 e BCF. Importazione ed esportazione native, quindi nessun vincolo.",
+    "gdpr_name": "Pronto per il GDPR fin dalla progettazione",
+    "gdpr_desc": "Il self-hosting mantiene i dati personali sulla vostra infrastruttura, con esportazione e cancellazione dei dati integrate. Restate voi il titolare del trattamento.",
+    "langs_name": "20 lingue integrate",
+    "langs_desc": "L'interfaccia e i dati di costo sono forniti in 20 lingue. Aggiungerne un'altra è un singolo file JSON, senza ricompilare.",
+    "foot": "<b>Ciò che non c'è, di proposito.</b> Le certificazioni che richiedono un audit a pagamento da parte di terzi (un sigillo GDPR UE certificato, GoBD secondo IDW PS 880, ISO 27001) non sono mostrate. Mostreremo un certificato solo quando sarà davvero meritato."
+  },
   "numbers": {
     "eyebrow": "<span class=\"num\">03</span> · in numeri",
     "lede": "Numeri della release attuale. Alcuni saranno già superati quando li legge - il repository corre veloce.",

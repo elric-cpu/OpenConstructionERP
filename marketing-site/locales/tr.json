@@ -217,6 +217,24 @@
     "stargazer_meta": "Onları GitHub'da görün →",
     "many_more": "+ çok daha fazlası"
   },
+  "assurance": {
+    "eyebrow": "<span class=\"num\">Güven</span> · standartlar &amp; güvenceler",
+    "title": "Arkasında dürüstçe durabileceğimiz işaretler.",
+    "lede": "Ödünç alınmış mühürler yok. Buradaki her işaret ya yazılımla ilgili sade bir gerçektir ya da kendiniz doğrulayabileceğiniz herkese açık bir rozettir: okuyup yazdığımız açık standartlar, satır satır okuyabileceğiniz OSI onaylı bir lisans ve kendi sunucunuzdaki verileriniz.",
+    "oss_name": "Açık kaynak, AGPL-3.0",
+    "oss_desc": "OSI onaylı bir lisans. Tüm platform GitHub üzerinde herkese açık. Her satırı okuyun, fork edin, çalıştırın, sizde kalsın.",
+    "selfhost_name": "Kendi sunucunuzda, verileriniz sizin kalır",
+    "selfhost_desc": "Kendi sunucunuzda çalışır. Projeler, çizimler ve maliyet verileri sizin veritabanınızda durur. Hiçbir şey altyapınızdan çıkmaz.",
+    "telemetry_name": "Varsayılan olarak telemetri yok",
+    "telemetry_desc": "Bize hiçbir şey geri gönderilmez, takip yok. Barındırılan AI her çalışma alanı için isteğe bağlı olarak açılır ve onu kendi modellerinize yönlendirebilirsiniz.",
+    "standards_name": "Açık standartlar, okunan ve yazılan",
+    "standards_desc": "GAEB XML, DIN 276, NRM, MasterFormat, ISO 15686-5 ve BCF. Yerel içe ve dışa aktarma, yani bağımlılık yok.",
+    "gdpr_name": "Tasarımdan GDPR uyumlu",
+    "gdpr_desc": "Kendi sunucunuzda barındırmak kişisel verileri kendi altyapınızda tutar, veri dışa aktarma ve silme yerleşik gelir. Veri sorumlusu siz kalırsınız.",
+    "langs_name": "20 dil yerleşik",
+    "langs_desc": "Arayüz ve maliyet verileri 20 dilde gelir. Bir yenisini eklemek tek bir JSON dosyasıdır, yeniden derleme yok.",
+    "foot": "<b>Burada bilerek yer almayanlar.</b> Ücretli üçüncü taraf denetimi gerektiren sertifikalar (sertifikalı bir AB GDPR mührü, IDW PS 880 uyarınca GoBD, ISO 27001) gösterilmez. Bir sertifikayı ancak gerçekten hak edildiğinde göstereceğiz."
+  },
   "numbers": {
     "eyebrow": "<span class=\"num\">03</span> · rakamlarla",
     "lede": "Mevcut sürümden rakamlar. Bunları okuduğunuzda bazıları güncelliğini yitirmiş olacak - repo hızlı ilerliyor.",

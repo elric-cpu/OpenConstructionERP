@@ -217,6 +217,24 @@
     "stargazer_meta": "Auf GitHub ansehen →",
     "many_more": "+ viele mehr"
   },
+  "assurance": {
+    "eyebrow": "<span class=\"num\">Vertrauen</span> · Standards &amp; Sicherheit",
+    "title": "Zeichen, hinter denen wir ehrlich stehen können.",
+    "lede": "Keine geliehenen Siegel. Jedes Zeichen hier ist entweder eine schlichte Tatsache über die Software oder ein öffentliches Abzeichen, das Sie selbst prüfen können: offene Standards, die wir lesen und schreiben, eine OSI-anerkannte Lizenz, die Sie Zeile für Zeile nachlesen können, und Ihre Daten auf Ihrem eigenen Server.",
+    "oss_name": "Open Source, AGPL-3.0",
+    "oss_desc": "Eine OSI-anerkannte Lizenz. Die gesamte Plattform ist öffentlich auf GitHub. Lesen Sie jede Zeile, forken Sie sie, betreiben Sie sie, behalten Sie sie.",
+    "selfhost_name": "Selbst gehostet, Ihre Daten bleiben bei Ihnen",
+    "selfhost_desc": "Läuft auf Ihrem Server. Projekte, Pläne und Kostendaten liegen in Ihrer Datenbank. Nichts verlässt Ihre Infrastruktur.",
+    "telemetry_name": "Keine Telemetrie ab Werk",
+    "telemetry_desc": "Nichts wird nach Hause gefunkt, kein Tracking. Gehostete AI wird pro Arbeitsbereich bewusst aktiviert, und Sie können sie auf Ihre eigenen Modelle richten.",
+    "standards_name": "Offene Standards, gelesen und geschrieben",
+    "standards_desc": "GAEB XML, DIN 276, NRM, MasterFormat, ISO 15686-5 und BCF. Nativer Import und Export, damit es keine Abhängigkeit gibt.",
+    "gdpr_name": "GDPR-fähig von Grund auf",
+    "gdpr_desc": "Durch das Selbst-Hosting bleiben personenbezogene Daten auf Ihrer eigenen Infrastruktur, mit eingebautem Datenexport und Löschung. Sie bleiben der Verantwortliche.",
+    "langs_name": "20 Sprachen von Haus aus",
+    "langs_desc": "Die Oberfläche und die Kostendaten kommen in 20 Sprachen. Eine weitere hinzuzufügen ist eine einzige JSON-Datei, kein Neubau.",
+    "foot": "<b>Was hier bewusst fehlt.</b> Zertifizierungen, die ein kostenpflichtiges Audit durch Dritte erfordern (ein zertifiziertes EU-GDPR-Siegel, GoBD nach IDW PS 880, ISO 27001), zeigen wir nicht. Ein Zertifikat zeigen wir erst, wenn es wirklich verdient ist."
+  },
   "numbers": {
     "eyebrow": "<span class=\"num\">03</span> · in Zahlen",
     "lede": "Zahlen aus dem aktuellen Release. Einige davon werden bereits veraltet sein, wenn Sie das lesen - das Repo entwickelt sich schnell.",

@@ -217,6 +217,24 @@
     "stargazer_meta": "Míralos en GitHub →",
     "many_more": "+ muchos más"
   },
+  "assurance": {
+    "eyebrow": "<span class=\"num\">Confianza</span> · normas &amp; garantías",
+    "title": "Sellos que podemos defender con honestidad.",
+    "lede": "Sin sellos prestados. Cada sello aquí es o bien un hecho simple sobre el software o una insignia pública que usted mismo puede comprobar: normas abiertas que leemos y escribimos, una licencia aprobada por la OSI que puede leer línea por línea, y sus datos en su propio servidor.",
+    "oss_name": "Código abierto, AGPL-3.0",
+    "oss_desc": "Una licencia aprobada por la OSI. Toda la plataforma es pública en GitHub. Lea cada línea, haga un fork, ejecútela, consérvela.",
+    "selfhost_name": "Autoalojado, sus datos siguen siendo suyos",
+    "selfhost_desc": "Funciona en su servidor. Los proyectos, los planos y los datos de costes residen en su base de datos. Nada sale de su infraestructura.",
+    "telemetry_name": "Sin telemetría de forma predeterminada",
+    "telemetry_desc": "Nada se envía de vuelta a nosotros, sin rastreo. La AI alojada se activa de forma opcional en cada espacio de trabajo, y puede dirigirla a sus propios modelos.",
+    "standards_name": "Normas abiertas, leídas y escritas",
+    "standards_desc": "GAEB XML, DIN 276, NRM, MasterFormat, ISO 15686-5 y BCF. Importación y exportación nativas, así que no hay dependencia forzada.",
+    "gdpr_name": "Preparado para el GDPR desde el diseño",
+    "gdpr_desc": "El autoalojamiento mantiene los datos personales en su propia infraestructura, con exportación y borrado de datos integrados. Usted sigue siendo el responsable del tratamiento.",
+    "langs_name": "20 idiomas integrados",
+    "langs_desc": "La interfaz y los datos de costes se entregan en 20 idiomas. Añadir otro es un único archivo JSON, sin recompilar.",
+    "foot": "<b>Lo que no está aquí, a propósito.</b> Las certificaciones que requieren una auditoría de pago por parte de un tercero (un sello GDPR de la UE certificado, GoBD según IDW PS 880, ISO 27001) no se muestran. Solo mostraremos un certificado cuando esté realmente ganado."
+  },
   "numbers": {
     "eyebrow": "<span class=\"num\">03</span> · en cifras",
     "lede": "Cifras de la versión actual. Algunas estarán desactualizadas cuando leas esto - el repo avanza rápido.",

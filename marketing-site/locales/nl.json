@@ -217,6 +217,24 @@
     "stargazer_meta": "Bekijk ze op GitHub →",
     "many_more": "+ veel meer"
   },
+  "assurance": {
+    "eyebrow": "<span class=\"num\">Vertrouwen</span> · standaarden &amp; waarborgen",
+    "title": "Keurmerken waar we eerlijk achter kunnen staan.",
+    "lede": "Geen geleende zegels. Elk keurmerk hier is ofwel een simpel feit over de software of een openbaar label dat u zelf kunt controleren: open standaarden die we lezen en schrijven, een door OSI goedgekeurde licentie die u regel voor regel kunt nalezen, en uw gegevens op uw eigen server.",
+    "oss_name": "Open source, AGPL-3.0",
+    "oss_desc": "Een door OSI goedgekeurde licentie. Het hele platform is openbaar op GitHub. Lees elke regel, fork het, draai het, houd het.",
+    "selfhost_name": "Zelf gehost, uw gegevens blijven van u",
+    "selfhost_desc": "Draait op uw server. Projecten, tekeningen en kostendata staan in uw database. Niets verlaat uw infrastructuur.",
+    "telemetry_name": "Geen telemetrie standaard",
+    "telemetry_desc": "Er wordt niets naar ons teruggestuurd, geen tracking. Gehoste AI zet u per werkruimte zelf aan, en u kunt die op uw eigen modellen richten.",
+    "standards_name": "Open standaarden, gelezen en geschreven",
+    "standards_desc": "GAEB XML, DIN 276, NRM, MasterFormat, ISO 15686-5 en BCF. Native import en export, dus geen lock-in.",
+    "gdpr_name": "GDPR-klaar vanuit het ontwerp",
+    "gdpr_desc": "Door zelf te hosten blijven persoonsgegevens op uw eigen infrastructuur, met ingebouwde data-export en verwijdering. U blijft de verwerkingsverantwoordelijke.",
+    "langs_name": "20 talen ingebouwd",
+    "langs_desc": "De interface en de kostendata worden in 20 talen geleverd. Er een toevoegen is een enkel JSON-bestand, geen herbouw.",
+    "foot": "<b>Wat hier bewust niet staat.</b> Certificeringen die een betaalde audit door derden vereisen (een gecertificeerd EU-GDPR-zegel, GoBD volgens IDW PS 880, ISO 27001) tonen we niet. We tonen een certificaat pas als het echt verdiend is."
+  },
   "numbers": {
     "eyebrow": "<span class=\"num\">03</span> · in cijfers",
     "lede": "Cijfers uit de huidige release. Sommige hiervan zijn al verouderd tegen de tijd dat je dit leest - de repo gaat snel.",

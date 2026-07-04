@@ -217,6 +217,24 @@
     "stargazer_meta": "Katso heidät GitHubissa →",
     "many_more": "+ monia muita"
   },
+  "assurance": {
+    "eyebrow": "<span class=\"num\">Luottamus</span> · standardit &amp; takeet",
+    "title": "Merkkejä, joiden takana voimme rehellisesti seistä.",
+    "lede": "Ei lainattuja sinettejä. Jokainen merkki tässä on joko yksinkertainen tosiasia ohjelmistosta tai julkinen merkki, jonka voit itse tarkistaa: avoimet standardit, joita luemme ja kirjoitamme, OSI:n hyväksymä lisenssi, jonka voit lukea rivi riviltä, ja tietosi omalla palvelimellasi.",
+    "oss_name": "Avoin lähdekoodi, AGPL-3.0",
+    "oss_desc": "OSI:n hyväksymä lisenssi. Koko alusta on julkisesti GitHub-palvelussa. Lue jokainen rivi, haaroita se, aja se, pidä se.",
+    "selfhost_name": "Itse isännöity, tietosi pysyvät sinun",
+    "selfhost_desc": "Toimii omalla palvelimellasi. Projektit, piirustukset ja kustannustiedot ovat sinun tietokannassasi. Mikään ei poistu infrastruktuuristasi.",
+    "telemetry_name": "Ei telemetriaa oletuksena",
+    "telemetry_desc": "Mitään ei lähetetä takaisin meille, ei seurantaa. Isännöity AI otetaan käyttöön valinnan mukaan työtilakohtaisesti, ja voit ohjata sen omiin malleihisi.",
+    "standards_name": "Avoimet standardit, luettuina ja kirjoitettuina",
+    "standards_desc": "GAEB XML, DIN 276, NRM, MasterFormat, ISO 15686-5 ja BCF. Natiivi tuonti ja vienti, joten ei sitoutumista toimittajaan.",
+    "gdpr_name": "GDPR-valmis jo suunnittelusta",
+    "gdpr_desc": "Itse isännöinti pitää henkilötiedot omassa infrastruktuurissasi, ja tietojen vienti ja poisto ovat sisäänrakennettuja. Pysyt rekisterinpitäjänä.",
+    "langs_name": "20 kieltä sisäänrakennettuna",
+    "langs_desc": "Käyttöliittymä ja kustannustiedot toimitetaan 20 kielellä. Uuden lisääminen on yksi JSON-tiedosto, ei uudelleenkäännöstä.",
+    "foot": "<b>Mitä täällä ei tarkoituksella ole.</b> Sertifiointeja, jotka vaativat maksullisen kolmannen osapuolen auditoinnin (sertifioitu EU:n GDPR-sinetti, GoBD IDW PS 880:n mukaan, ISO 27001), ei näytetä. Näytämme sertifikaatin vasta, kun se on todella ansaittu."
+  },
   "numbers": {
     "eyebrow": "<span class=\"num\">03</span> · numeroina",
     "lede": "Luvut nykyisestä julkaisusta. Osa näistä on vanhentunut siihen mennessä, kun luet tätä - repo liikkuu nopeasti.",

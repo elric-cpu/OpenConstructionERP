@@ -226,6 +226,24 @@
     "stargazer_meta": "See them on GitHub →",
     "many_more": "+ many more"
   },
+  "assurance": {
+    "eyebrow": "<span class=\"num\">Trust</span> · standards &amp; assurance",
+    "title": "Marks we can honestly stand behind.",
+    "lede": "No borrowed seals. Every mark here is either a plain fact about the software or a public badge you can check yourself: open standards we read and write, an OSI-approved licence you can read line by line, and your data on your own server.",
+    "oss_name": "Open source, AGPL-3.0",
+    "oss_desc": "An OSI-approved licence. The whole platform is public on GitHub. Read every line, fork it, run it, keep it.",
+    "selfhost_name": "Self-hosted, your data stays yours",
+    "selfhost_desc": "Runs on your server. Projects, drawings and cost data live in your database. Nothing leaves your infrastructure.",
+    "telemetry_name": "No telemetry by default",
+    "telemetry_desc": "Nothing is phoned home, no tracking. Hosted AI is opt-in per workspace, and you can point it at your own models.",
+    "standards_name": "Open standards, read and written",
+    "standards_desc": "GAEB XML, DIN 276, NRM, MasterFormat, ISO 15686-5 and BCF. Native import and export, so there is no lock-in.",
+    "gdpr_name": "GDPR-ready by design",
+    "gdpr_desc": "Self-hosting keeps personal data on your own infrastructure, with data export and deletion built in. You stay the data controller.",
+    "langs_name": "20 languages built in",
+    "langs_desc": "The interface and the cost data ship in 20 languages. Adding another is a single JSON file, no rebuild.",
+    "foot": "<b>What is not here, on purpose.</b> Certifications that need a paid third-party audit (a certified EU GDPR seal, GoBD per IDW PS 880, ISO 27001) are not shown. We will only ever display a certificate once it is genuinely earned."
+  },
   "numbers": {
     "eyebrow": "<span class=\"num\">03</span> · by the numbers",
     "lede": "What ships in the box on the current release. Cost data, CAD formats, modules and licensing, with the headline figures in one place.",

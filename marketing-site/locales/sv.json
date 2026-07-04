@@ -217,6 +217,24 @@
     "stargazer_meta": "Se dem på GitHub →",
     "many_more": "+ många fler"
   },
+  "assurance": {
+    "eyebrow": "<span class=\"num\">Förtroende</span> · standarder &amp; garantier",
+    "title": "Märken vi ärligt kan stå bakom.",
+    "lede": "Inga lånade sigill. Varje märke här är antingen ett enkelt faktum om programvaran eller en offentlig märkning som du själv kan kontrollera: öppna standarder som vi läser och skriver, en OSI-godkänd licens som du kan läsa rad för rad, och dina data på din egen server.",
+    "oss_name": "Öppen källkod, AGPL-3.0",
+    "oss_desc": "En OSI-godkänd licens. Hela plattformen är offentlig på GitHub. Läs varje rad, forka den, kör den, behåll den.",
+    "selfhost_name": "Egen drift, dina data förblir dina",
+    "selfhost_desc": "Körs på din server. Projekt, ritningar och kostnadsdata ligger i din databas. Ingenting lämnar din infrastruktur.",
+    "telemetry_name": "Ingen telemetri som standard",
+    "telemetry_desc": "Ingenting skickas tillbaka till oss, ingen spårning. Värdbaserad AI aktiverar du själv per arbetsyta, och du kan rikta den mot dina egna modeller.",
+    "standards_name": "Öppna standarder, lästa och skrivna",
+    "standards_desc": "GAEB XML, DIN 276, NRM, MasterFormat, ISO 15686-5 och BCF. Inbyggd import och export, så ingen inlåsning.",
+    "gdpr_name": "GDPR-redo från grunden",
+    "gdpr_desc": "Egen drift håller personuppgifter på din egen infrastruktur, med inbyggd dataexport och radering. Du förblir personuppgiftsansvarig.",
+    "langs_name": "20 språk inbyggda",
+    "langs_desc": "Gränssnittet och kostnadsdatan levereras på 20 språk. Att lägga till ett till är en enda JSON-fil, ingen ombyggnad.",
+    "foot": "<b>Vad som medvetet inte finns här.</b> Certifieringar som kräver en betald revision av tredje part (ett certifierat EU-GDPR-sigill, GoBD enligt IDW PS 880, ISO 27001) visas inte. Vi visar ett certifikat först när det verkligen är förtjänat."
+  },
   "numbers": {
     "eyebrow": "<span class=\"num\">03</span> · siffrorna",
     "lede": "Siffror från aktuell version. En del kommer vara inaktuella när du läser detta - repot rör sig snabbt.",

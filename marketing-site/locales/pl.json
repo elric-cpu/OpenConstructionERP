@@ -217,6 +217,24 @@
     "stargazer_meta": "Zobacz ich na GitHubie →",
     "many_more": "+ wiele więcej"
   },
+  "assurance": {
+    "eyebrow": "<span class=\"num\">Zaufanie</span> · standardy &amp; gwarancje",
+    "title": "Znaki, za którymi możemy uczciwie stać.",
+    "lede": "Żadnych pożyczonych pieczęci. Każdy znak tutaj to albo zwykły fakt o oprogramowaniu, albo publiczna odznaka, którą możesz sprawdzić sam: otwarte standardy, które czytamy i zapisujemy, zatwierdzona przez OSI licencja, którą przeczytasz linijka po linijce, oraz twoje dane na twoim własnym serwerze.",
+    "oss_name": "Otwarty kod, AGPL-3.0",
+    "oss_desc": "Licencja zatwierdzona przez OSI. Cała platforma jest publiczna na GitHub. Przeczytaj każdą linijkę, sforkuj ją, uruchom, zatrzymaj u siebie.",
+    "selfhost_name": "Hostowane u ciebie, twoje dane pozostają twoje",
+    "selfhost_desc": "Działa na twoim serwerze. Projekty, rysunki i dane kosztowe leżą w twojej bazie danych. Nic nie opuszcza twojej infrastruktury.",
+    "telemetry_name": "Brak telemetrii domyślnie",
+    "telemetry_desc": "Nic nie jest odsyłane do nas, żadnego śledzenia. Hostowane AI włączasz z wyboru dla każdego obszaru roboczego i możesz je skierować na własne modele.",
+    "standards_name": "Otwarte standardy, czytane i zapisywane",
+    "standards_desc": "GAEB XML, DIN 276, NRM, MasterFormat, ISO 15686-5 i BCF. Natywny import i eksport, więc nie ma uzależnienia od dostawcy.",
+    "gdpr_name": "Gotowe na GDPR z założenia",
+    "gdpr_desc": "Hostowanie u siebie trzyma dane osobowe na twojej własnej infrastrukturze, z wbudowanym eksportem i usuwaniem danych. Pozostajesz administratorem danych.",
+    "langs_name": "20 języków wbudowanych",
+    "langs_desc": "Interfejs i dane kosztowe dostarczane są w 20 językach. Dodanie kolejnego to pojedynczy plik JSON, bez przebudowy.",
+    "foot": "<b>Czego tu nie ma, celowo.</b> Certyfikatów wymagających płatnego audytu przez stronę trzecią (certyfikowana unijna pieczęć GDPR, GoBD wg IDW PS 880, ISO 27001) nie pokazujemy. Certyfikat pokażemy dopiero wtedy, gdy zostanie naprawdę zasłużony."
+  },
   "numbers": {
     "eyebrow": "<span class=\"num\">03</span> · w liczbach",
     "lede": "Liczby z obecnego wydania. Część z nich będzie nieaktualna, zanim to przeczytasz - repo szybko się zmienia.",

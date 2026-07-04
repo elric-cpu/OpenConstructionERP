@@ -217,6 +217,24 @@
     "stargazer_meta": "Vidět je na GitHubu →",
     "many_more": "+ mnoho dalších"
   },
+  "assurance": {
+    "eyebrow": "<span class=\"num\">Důvěra</span> · standardy &amp; záruky",
+    "title": "Značky, za kterými si můžeme čestně stát.",
+    "lede": "Žádné vypůjčené pečeti. Každá značka zde je buď prostý fakt o softwaru, nebo veřejný odznak, který si můžete ověřit sami: otevřené standardy, které čteme a zapisujeme, licence schválená OSI, kterou si přečtete řádek po řádku, a vaše data na vašem vlastním serveru.",
+    "oss_name": "Otevřený kód, AGPL-3.0",
+    "oss_desc": "Licence schválená OSI. Celá platforma je veřejná na GitHub. Přečtěte si každý řádek, forkněte ji, spusťte ji, nechte si ji.",
+    "selfhost_name": "Hostováno u vás, vaše data zůstávají vaše",
+    "selfhost_desc": "Běží na vašem serveru. Projekty, výkresy a data o nákladech leží ve vaší databázi. Nic neopouští vaši infrastrukturu.",
+    "telemetry_name": "Žádná telemetrie ve výchozím nastavení",
+    "telemetry_desc": "Nic se nám neposílá zpět, žádné sledování. Hostovanou AI zapínáte podle volby pro každý pracovní prostor a můžete ji nasměrovat na vlastní modely.",
+    "standards_name": "Otevřené standardy, čtené i zapisované",
+    "standards_desc": "GAEB XML, DIN 276, NRM, MasterFormat, ISO 15686-5 a BCF. Nativní import a export, takže žádná závislost na dodavateli.",
+    "gdpr_name": "Připraveno na GDPR již od návrhu",
+    "gdpr_desc": "Hostování u vás udržuje osobní údaje na vaší vlastní infrastruktuře, s vestavěným exportem a mazáním dat. Zůstáváte správcem údajů.",
+    "langs_name": "20 jazyků v základu",
+    "langs_desc": "Rozhraní i data o nákladech se dodávají ve 20 jazycích. Přidat další znamená jediný soubor JSON, bez opětovného sestavení.",
+    "foot": "<b>Co zde záměrně není.</b> Certifikace, které vyžadují placený audit třetí stranou (certifikovaná pečeť EU GDPR, GoBD podle IDW PS 880, ISO 27001), nezobrazujeme. Certifikát zobrazíme teprve tehdy, až bude skutečně zasloužený."
+  },
   "numbers": {
     "eyebrow": "<span class=\"num\">03</span> · v číslech",
     "lede": "Čísla z aktuálního vydání. Některá budou do doby, než si to přečtete, zastaralá - repozitář se rychle mění.",
