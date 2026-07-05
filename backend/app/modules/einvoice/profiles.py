@@ -24,6 +24,13 @@ XRECHNUNG = "urn:cen.eu:en16931:2017#compliant#urn:xoev-de:kosit:standard:xrechn
 PEPPOL_CUSTOMIZATION = "urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0"
 PEPPOL_PROFILE = "urn:fdc:peppol.eu:2017:poacc:billing:01:1.0"
 
+# National CIUS (country-specific specifications) that stay EN 16931 compliant
+# and travel on the Peppol network. Each has its own CustomizationID (BT-24) but
+# reuses the Peppol billing ProfileID (BT-23).
+NLCIUS = "urn:cen.eu:en16931:2017#compliant#urn:fdc:nen.nl:nlcius:v1.0"  # Netherlands
+PEPPOL_AUNZ = "urn:cen.eu:en16931:2017#conformant#urn:fdc:peppol.eu:2017:poacc:billing:international:aunz:3.0"  # Australia / New Zealand
+PEPPOL_SG = "urn:cen.eu:en16931:2017#conformant#urn:fdc:peppol.eu:2017:poacc:billing:international:sg:3.0"  # Singapore
+
 
 @dataclass(frozen=True)
 class Profile:
@@ -64,6 +71,47 @@ PROFILES: dict[str, Profile] = {
         buyer_ref_required=True,
         region="DE",
         label="XRechnung 3.0",
+    ),
+    # --- national Peppol CIUS (same EN 16931 model, own CustomizationID) ---
+    "nlcius": Profile(
+        "nlcius",
+        "ubl",
+        NLCIUS,
+        profile_id=PEPPOL_PROFILE,
+        buyer_ref_required=True,
+        order_ref_alternative=True,
+        region="NL",
+        label="NLCIUS (Netherlands)",
+    ),
+    "ehf": Profile(
+        "ehf",
+        "ubl",
+        PEPPOL_CUSTOMIZATION,
+        profile_id=PEPPOL_PROFILE,
+        buyer_ref_required=True,
+        order_ref_alternative=True,
+        region="NO",
+        label="EHF Billing 3.0 (Norway)",
+    ),
+    "peppol_aunz": Profile(
+        "peppol_aunz",
+        "ubl",
+        PEPPOL_AUNZ,
+        profile_id=PEPPOL_PROFILE,
+        buyer_ref_required=True,
+        order_ref_alternative=True,
+        region="AU/NZ",
+        label="Peppol A-NZ Billing 3.0 (Australia / New Zealand)",
+    ),
+    "peppol_sg": Profile(
+        "peppol_sg",
+        "ubl",
+        PEPPOL_SG,
+        profile_id=PEPPOL_PROFILE,
+        buyer_ref_required=True,
+        order_ref_alternative=True,
+        region="SG",
+        label="Peppol SG Billing 3.0 (Singapore)",
     ),
 }
 

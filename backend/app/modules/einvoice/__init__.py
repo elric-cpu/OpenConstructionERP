@@ -34,7 +34,7 @@ from app.modules.einvoice.service import (
     render_einvoice,
     render_einvoice_pdf,
 )
-from app.modules.einvoice.ubl import build_ubl_xml
+from app.modules.einvoice.ubl import build_ubl_xml, is_credit_note
 
 __all__ = [
     "PROFILES",
@@ -49,6 +49,7 @@ __all__ = [
     "build_einvoice",
     "build_ubl_xml",
     "get_profile",
+    "is_credit_note",
     "problems_for",
     "profile_problems",
     "render_einvoice",

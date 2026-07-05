@@ -43,6 +43,42 @@ def _dec(value: Any, default: str = "0") -> Decimal:
         return Decimal(default)
 
 
+def _is_true(value: Any) -> bool:
+    """Read a permissive boolean flag (True / "true" / "yes" / "1")."""
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"true", "yes", "1", "y"}
+
+
+# BT-3 document type codes: 380 commercial invoice, 381 credit note.
+_INVOICE_TYPE_CODE = "380"
+_CREDIT_NOTE_TYPE_CODE = "381"
+
+
+def _resolve_type_code(invoice: dict[str, Any], ei: dict[str, Any]) -> str:
+    """Decide the BT-3 document type code from the invoice data.
+
+    An explicit ``metadata.einvoice.type_code`` (or top-level ``type_code``)
+    wins. Otherwise a credit flag (``credit_note`` / ``is_credit_note`` /
+    ``invoice_direction == "credit_note"``) selects the credit note code 381,
+    and everything else is a commercial invoice (380).
+    """
+    explicit = str(ei.get("type_code") or invoice.get("type_code") or "").strip()
+    if explicit:
+        return explicit
+    flags = (
+        ei.get("credit_note"),
+        ei.get("is_credit_note"),
+        invoice.get("credit_note"),
+        invoice.get("is_credit_note"),
+    )
+    if any(_is_true(flag) for flag in flags):
+        return _CREDIT_NOTE_TYPE_CODE
+    if str(invoice.get("invoice_direction") or "").strip().lower() == "credit_note":
+        return _CREDIT_NOTE_TYPE_CODE
+    return _INVOICE_TYPE_CODE
+
+
 def _coerce_party(value: Party | dict | None, *, fallback_name: str = "") -> Party:
     if isinstance(value, Party):
         return value
@@ -135,8 +171,7 @@ def build_einvoice(
         )
     ]
 
-    direction = str(invoice.get("invoice_direction") or "receivable")
-    type_code = "380"  # commercial invoice
+    type_code = _resolve_type_code(invoice, ei)
 
     return EInvoice(
         profile=profile,

@@ -228,28 +228,32 @@ def validate_semantics(inv: EInvoice) -> list[str]:
     """
     problems: list[str] = []
     if not inv.invoice_number:
-        problems.append("missing invoice number (BT-1)")
+        problems.append("Add an invoice number in the invoice header (BT-1).")
     if not inv.issue_date:
-        problems.append("missing issue date (BT-2)")
+        problems.append("Add the invoice date in the invoice header (BT-2).")
     if not inv.currency:
-        problems.append("missing currency (BT-5)")
+        problems.append("Set the invoice currency, for example EUR or USD (BT-5).")
     if not inv.lines:
-        problems.append("invoice has no lines (BR-16)")
+        problems.append("Add at least one invoice line before sending (BR-16).")
     for who, p in (("seller", inv.seller), ("buyer", inv.buyer)):
         if not p.name:
-            problems.append(f"missing {who} name")
+            problems.append(f"Add the {who} name in the e-invoice settings.")
         if not p.country_code:
-            problems.append(f"missing {who} country code (BR-08/BR-11)")
+            problems.append(
+                f"Add the {who} country code, two letters such as DE or FR, in the e-invoice settings (BR-08/BR-11)."
+            )
     if not (inv.seller.vat_id or inv.seller.tax_number):
-        problems.append("seller needs a VAT id (BT-31) or tax number (BT-32)")
+        problems.append(
+            "Add the seller VAT id (BT-31) or, if there is none, a tax number (BT-32) in the e-invoice settings."
+        )
     # Totals must reconcile (BR-CO-*).
     if inv.line_total != sum((line.line_net_amount for line in inv.lines), Decimal("0")):
-        problems.append("sum of line net amounts != document line total (BR-CO-10)")
+        problems.append("The line net amounts do not add up to the document net total (BR-CO-10).")
     expected_grand = inv.tax_basis_total + inv.tax_total
     if inv.grand_total != expected_grand:
-        problems.append("grand total != tax basis + tax total (BR-CO-15)")
+        problems.append("The grand total must equal the net total plus the VAT total (BR-CO-15).")
     if inv.due_payable != inv.grand_total - inv.prepaid_amount:
-        problems.append("amount due != grand total - prepaid (BR-CO-16)")
+        problems.append("The amount due must equal the grand total minus any prepaid or retained amount (BR-CO-16).")
     return problems
 
 
@@ -260,14 +264,18 @@ def profile_problems(inv: EInvoice, profile: Profile) -> list[str]:
         has_buyer_ref = bool(inv.buyer_reference)
         has_order_ref = bool(inv.order_reference)
         if not has_buyer_ref and not (profile.order_ref_alternative and has_order_ref):
+            label = profile.label or profile.name
             if profile.name == "xrechnung":
-                problems.append("XRechnung requires a Buyer reference / Leitweg-ID (BT-10)")
+                problems.append(
+                    "Add the Buyer reference / Leitweg-ID (BT-10) in the e-invoice settings; XRechnung requires it."
+                )
             elif profile.order_ref_alternative:
                 problems.append(
-                    f"{profile.label or profile.name} requires a Buyer reference (BT-10) or an Order reference (BT-13)"
+                    f"Add a Buyer reference (BT-10) or an Order reference (BT-13) in the e-invoice settings; "
+                    f"{label} requires one of them."
                 )
             else:
-                problems.append(f"{profile.label or profile.name} requires a Buyer reference (BT-10)")
+                problems.append(f"Add a Buyer reference (BT-10) in the e-invoice settings; {label} requires it.")
     return problems
 
 

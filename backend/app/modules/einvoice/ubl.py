@@ -12,6 +12,7 @@ stdlib ``xml.etree``, money kept as ``Decimal``, no new dependency.
 
 from __future__ import annotations
 
+import threading
 from xml.etree import ElementTree as ET  # noqa: N817 - trusted, we build not parse
 
 from app.modules.einvoice.cii import (
@@ -27,14 +28,46 @@ from app.modules.einvoice.cii import (
 )
 from app.modules.einvoice.profiles import PROFILES, get_profile
 
-# UBL 2.1 namespaces (same URIs as the peppol parser).
+# UBL 2.1 namespaces (same URIs as the peppol parser). An EN 16931 invoice and
+# an EN 16931 credit note are two different UBL root documents that share the
+# same CommonAggregate (cac) and CommonBasic (cbc) component namespaces.
 INV = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+CN = "urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"
 CAC = "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
 CBC = "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
 
-_NS = {"": INV, "cac": CAC, "cbc": CBC}
+# The shared component prefixes plus the invoice root as the default namespace.
+# ElementTree can bind only one URI to the empty prefix at a time, so the credit
+# note root (CreditNote-2) is swapped in as the default only while its own
+# document is serialised (see :func:`_tostring`), under a lock so a concurrent
+# invoice render is never affected.
+_NS = {"cac": CAC, "cbc": CBC}
 for _p, _u in _NS.items():
     ET.register_namespace(_p, _u)
+ET.register_namespace("", INV)
+
+_serialize_lock = threading.Lock()
+
+
+def _tostring(root: ET.Element, doc_ns: str) -> bytes:
+    """Serialise ``root`` with ``doc_ns`` as the default (unprefixed) namespace."""
+    with _serialize_lock:
+        ET.register_namespace("", doc_ns)
+        try:
+            return ET.tostring(root, encoding="utf-8")
+        finally:
+            # Restore the invoice root as the default for the next caller.
+            ET.register_namespace("", INV)
+
+
+# UN/CEFACT document type codes (BT-3) that must be rendered as a UBL CreditNote
+# document rather than an Invoice document. 381 is the standard credit note.
+_CREDIT_NOTE_TYPE_CODES = frozenset({"381"})
+
+
+def is_credit_note(type_code: str | None) -> bool:
+    """True when the given BT-3 type code must render as a UBL CreditNote."""
+    return (type_code or "").strip() in _CREDIT_NOTE_TYPE_CODES
 
 
 def _c(prefix: str, local: str) -> str:
@@ -95,7 +128,13 @@ def _party(parent: ET.Element, wrapper_local: str, p: Party) -> None:
 
 
 def build_ubl_xml(inv: EInvoice, *, strict: bool = True) -> bytes:
-    """Render an :class:`EInvoice` as EN 16931 UBL (Peppol BIS) XML bytes."""
+    """Render an :class:`EInvoice` as EN 16931 UBL (Peppol BIS) XML bytes.
+
+    Branches on the document type code (BT-3): 380 renders a UBL Invoice, 381
+    renders a UBL CreditNote (a different root document, with
+    ``cbc:CreditNoteTypeCode`` and ``cbc:CreditedQuantity`` on the lines). Both
+    share the same EN 16931 semantics and validate the same way.
+    """
     profile = get_profile(inv.profile)
     if profile is None or profile.syntax != "ubl":
         raise EInvoiceError(
@@ -107,17 +146,25 @@ def build_ubl_xml(inv: EInvoice, *, strict: bool = True) -> bytes:
         if problems:
             raise EInvoiceError("; ".join(problems))
 
+    credit = is_credit_note(inv.type_code)
+    doc_ns = CN if credit else INV
+    root_local = "CreditNote" if credit else "Invoice"
+    type_code_tag = "CreditNoteTypeCode" if credit else "InvoiceTypeCode"
+    line_wrapper = "CreditNoteLine" if credit else "InvoiceLine"
+    qty_tag = "CreditedQuantity" if credit else "InvoicedQuantity"
+
     cur = inv.currency
-    root = ET.Element(_c("", "Invoice"))
+    root = ET.Element(f"{{{doc_ns}}}{root_local}")
 
     _sub(root, "cbc", "CustomizationID", profile.guideline)
     if profile.profile_id:
         _sub(root, "cbc", "ProfileID", profile.profile_id)
     _sub(root, "cbc", "ID", inv.invoice_number)
     _sub(root, "cbc", "IssueDate", _iso_date(inv.issue_date))
-    if inv.due_date:
+    # A UBL CreditNote has no document-level DueDate; only the Invoice does.
+    if inv.due_date and not credit:
         _sub(root, "cbc", "DueDate", _iso_date(inv.due_date))
-    _sub(root, "cbc", "InvoiceTypeCode", inv.type_code)
+    _sub(root, "cbc", type_code_tag, inv.type_code)
     if inv.note:
         _sub(root, "cbc", "Note", inv.note)
     _sub(root, "cbc", "DocumentCurrencyCode", cur)
@@ -159,11 +206,11 @@ def build_ubl_xml(inv: EInvoice, *, strict: bool = True) -> bytes:
         _amt(lmt, "PrepaidAmount", _money(inv.prepaid_amount), cur)
     _amt(lmt, "PayableAmount", _money(inv.due_payable), cur)
 
-    # Lines.
+    # Lines (InvoiceLine / InvoicedQuantity, or CreditNoteLine / CreditedQuantity).
     for line in inv.lines:
-        il = _sub(root, "cac", "InvoiceLine")
+        il = _sub(root, "cac", line_wrapper)
         _sub(il, "cbc", "ID", line.line_id)
-        _sub(il, "cbc", "InvoicedQuantity", _qty(line.quantity)).set("unitCode", unece_unit(line.unit))
+        _sub(il, "cbc", qty_tag, _qty(line.quantity)).set("unitCode", unece_unit(line.unit))
         _amt(il, "LineExtensionAmount", _money(line.line_net_amount), cur)
         item = _sub(il, "cac", "Item")
         _sub(item, "cbc", "Name", line.name or "-")
@@ -176,4 +223,4 @@ def build_ubl_xml(inv: EInvoice, *, strict: bool = True) -> bytes:
         _amt(price, "PriceAmount", _price(line.net_unit_price), cur)
 
     ET.indent(root, space="  ")
-    return b'<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding="utf-8")
+    return b'<?xml version="1.0" encoding="UTF-8"?>\n' + _tostring(root, doc_ns)
