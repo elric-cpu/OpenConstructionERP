@@ -334,6 +334,64 @@ export function needsPrice(d: Record<string, unknown> | undefined): boolean {
 /** Faint amber tint marking a cell that needs a value. Subtle, not alarming. */
 const NEEDS_VALUE_CLASS = 'bg-amber-50/70 dark:bg-amber-950/30';
 
+/** Localised resource-type labels for the unit-rate build-up tooltip. */
+const RATE_BUILDUP_TYPES: ReadonlyArray<readonly [string, string, string]> = [
+  ['labor', 'boq.res_labor', 'Labour'],
+  ['material', 'boq.res_material', 'Material'],
+  ['equipment', 'boq.res_equipment', 'Equipment'],
+  ['operator', 'boq.res_operator', 'Operator'],
+  ['subcontractor', 'boq.res_subcontractor', 'Subcontractor'],
+  ['other', 'boq.res_other', 'Other'],
+];
+
+/**
+ * Plain-language build-up of a resource-priced unit rate, shown as the Unit
+ * Rate cell tooltip so the rate stops being a magic number: the estimator
+ * sees exactly how much of it is labour, material, plant and so on. Each
+ * line is `share(type) x unit_rate`, so the parts sum to the rate by
+ * construction and reconcile with the split pill. The money is shown in the
+ * position's own currency. Returns undefined when there is nothing to break
+ * down, so the caller can fall back to the generic hint.
+ */
+function rateBuildupTooltip(
+  d: Record<string, unknown>,
+  ctx: BOQColumnContext,
+): string | undefined {
+  const meta = (d.metadata || d.metadata_ || {}) as Record<string, unknown>;
+  const resources = meta.resources;
+  if (!Array.isArray(resources) || resources.length === 0) return undefined;
+  const rate = typeof d.unit_rate === 'number' ? d.unit_rate : parseFloat(String(d.unit_rate));
+  if (!Number.isFinite(rate) || rate === 0) return undefined;
+
+  const t = ctx.t;
+  const locale = ctx.locale ?? 'de-DE';
+  const currency = (meta.currency as string | undefined) || ctx.currencyCode || 'EUR';
+
+  const entries: Array<[string, number, number]> = [];
+  for (const [type, key, fallback] of RATE_BUILDUP_TYPES) {
+    const frac = resourceSplitFraction(meta, type);
+    if (frac == null || frac <= 0) continue;
+    const label = t(key, { defaultValue: fallback });
+    entries.push([label, frac * rate, frac]);
+  }
+  if (entries.length === 0) return undefined;
+  entries.sort((a, b) => b[1] - a[1]);
+
+  const lines: string[] = [
+    t('boq.rate_buildup_header', { defaultValue: 'Unit rate is built from:' }),
+  ];
+  for (const [label, money, frac] of entries) {
+    lines.push(`${label}: ${fmtWithCurrency(money, locale, currency)} (${Math.round(frac * 100)}%)`);
+  }
+  lines.push(
+    t('boq.rate_buildup_total', {
+      defaultValue: '= {{total}} per unit',
+      total: fmtWithCurrency(rate, locale, currency),
+    }),
+  );
+  return lines.join('\n');
+}
+
 export function getColumnDefs(context: BOQColumnContext): ColDef[] {
   const { t } = context;
 
@@ -661,7 +719,16 @@ export function getColumnDefs(context: BOQColumnContext): ColDef[] {
       tooltipValueGetter: (params) => {
         const res = params.data?.metadata?.resources;
         if (Array.isArray(res) && res.length > 0) {
-          return t('boq.rate_from_resources', { defaultValue: 'Rate is calculated from resources. Edit individual resources to change.' });
+          const buildup = rateBuildupTooltip(
+            params.data as Record<string, unknown>,
+            params.context as BOQColumnContext,
+          );
+          return (
+            buildup ??
+            t('boq.rate_from_resources', {
+              defaultValue: 'Rate is calculated from resources. Edit individual resources to change.',
+            })
+          );
         }
         if (needsPrice(params.data as Record<string, unknown> | undefined)) {
           return t('boq.flag_no_price', {
