@@ -82,19 +82,24 @@ _MATERIAL_LOCKED_STATUSES = {"accepted", "rejected", "superseded"}
 
 
 def _is_date_past(value: str | None) -> bool:
-    """True when ``value`` (an ISO-ish date string) is strictly before today.
+    """True when ``value`` (an ISO date string) is strictly before today in UTC.
 
     Returns False for empty or unparseable values - an unknown date is never treated
     as expired. Only the leading ``YYYY-MM-DD`` is read, so a datetime string works too.
+
+    The comparison is against the current UTC date, not the server's local date, so a
+    certificate expires on the same calendar day for every user regardless of where the
+    server runs. This matches the module's UTC signing convention.
     """
     if not value:
         return False
-    from datetime import date
+    from datetime import UTC, date, datetime
 
     try:
-        return date.fromisoformat(value.strip()[:10]) < date.today()
+        parsed = date.fromisoformat(value.strip()[:10])
     except ValueError:
         return False
+    return parsed < datetime.now(UTC).date()
 
 
 def is_material_expired(material: MaterialRecord) -> bool:
@@ -243,7 +248,10 @@ class ConstructionControlService:
         if inspection.status in ("closed", "void"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot edit an inspection with status '{inspection.status}'",
+                detail=(
+                    f"This inspection is {inspection.status} and can no longer be edited. "
+                    "Create a new inspection to record any further work."
+                ),
             )
         fields = data.model_dump(exclude_unset=True)
         if "criterion_id" in fields and fields["criterion_id"] is not None:
@@ -484,7 +492,10 @@ class ConstructionControlService:
         if material.status in _MATERIAL_LOCKED_STATUSES:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot edit a material record with status '{material.status}'",
+                detail=(
+                    f"This material record is {material.status} and can no longer be edited. "
+                    "Create a new record if the material or its certificate changed."
+                ),
             )
         fields = data.model_dump(exclude_unset=True)
         if fields.get("criterion_id") is not None:
@@ -606,7 +617,10 @@ class ConstructionControlService:
         if test.status in ("recorded", "void"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot edit a test result with status '{test.status}'",
+                detail=(
+                    f"This test result is {test.status} and can no longer be edited. "
+                    "Create a new test result to capture a re-test."
+                ),
             )
         fields = data.model_dump(exclude_unset=True)
         if fields.get("criterion_id") is not None:

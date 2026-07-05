@@ -2,11 +2,12 @@
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Construction-control Pydantic schemas - request/response models."""
 
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # Shared regex fragments for the discriminators (kept here so router, service and
 # tests reference one source of truth).
@@ -45,6 +46,40 @@ GATE_ATTACHED_KIND_PATTERN = r"^(activity|handover_package|inspection)$"
 COMPLETION_REGIME_PATTERN = r"^(taking_over|substantial|practical)$"
 # Whole / sectional / partial handover.
 COMPLETION_TYPE_PATTERN = r"^(whole|sectional|partial)$"
+
+
+# ── Small parse helpers for cross-field validation (locale-independent) ────────
+# Numeric bounds and calendar dates are stored as strings across the module (the
+# platform money/quantity convention). These helpers let the request schemas catch an
+# obviously self-contradictory entry (an inverted tolerance range, a validity window
+# that ends before it starts) at the edge, in plain terms, without ever guessing at a
+# locale-specific number or date format: only ISO-8601 dates and plain decimals parse,
+# anything else is left untouched so a free-text bound is never rejected by mistake.
+
+
+def _try_decimal(value: str | None) -> Decimal | None:
+    """Parse a plain numeric string to ``Decimal``; ``None`` for empty / non-numeric input."""
+    if value is None or value == "":
+        return None
+    try:
+        return Decimal(str(value).strip())
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+
+def _try_iso_date(value: str | None) -> date | None:
+    """Parse the leading ``YYYY-MM-DD`` of an ISO-8601 string; ``None`` if it does not parse.
+
+    ISO-8601 is the one calendar format that is unambiguous worldwide (unlike a bare
+    day/month order), so only it is accepted here. A datetime string works too - only the
+    date part is read.
+    """
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value.strip()[:10])
+    except ValueError:
+        return None
 
 
 # ── Universal Element Reference (UER) ─────────────────────────────────────────
@@ -122,6 +157,11 @@ class AcceptanceCriterionCreate(BaseModel):
     is_active: bool = True
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def _check_range_bounds(self) -> "AcceptanceCriterionCreate":
+        _assert_range_bounds_ordered(self.acceptance_rule, self.tolerance_lower, self.tolerance_upper)
+        return self
+
 
 class AcceptanceCriterionUpdate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -141,6 +181,35 @@ class AcceptanceCriterionUpdate(BaseModel):
     tolerance_upper: str | None = Field(default=None, max_length=80)
     is_active: bool | None = None
     metadata: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def _check_range_bounds(self) -> "AcceptanceCriterionUpdate":
+        # Only checkable when this patch itself declares a range rule with both bounds;
+        # a patch that touches one bound alone cannot know the stored rule, so it is left
+        # to pass and the create-time guard remains the backstop.
+        if self.acceptance_rule == "range":
+            _assert_range_bounds_ordered(self.acceptance_rule, self.tolerance_lower, self.tolerance_upper)
+        return self
+
+
+def _assert_range_bounds_ordered(
+    acceptance_rule: str | None, tolerance_lower: str | None, tolerance_upper: str | None
+) -> None:
+    """Reject a range criterion whose lower bound is above its upper bound.
+
+    Only fires for a ``range`` rule when both bounds are plain numbers; a non-numeric or
+    partial bound is left alone. An inverted range can never accept any measurement, so
+    catching it here saves a criterion that would silently fail every survey.
+    """
+    if acceptance_rule != "range":
+        return
+    lower = _try_decimal(tolerance_lower)
+    upper = _try_decimal(tolerance_upper)
+    if lower is not None and upper is not None and lower > upper:
+        raise ValueError(
+            "tolerance_lower must be less than or equal to tolerance_upper for a range criterion. "
+            "Swap the two values so the lower limit comes first."
+        )
 
 
 class AcceptanceCriterionResponse(BaseModel):
@@ -292,6 +361,27 @@ class MaterialRecordCreate(BaseModel):
     element: ElementRefIn | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def _check_validity_window(self) -> "MaterialRecordCreate":
+        _assert_validity_window_ordered(self.valid_from, self.valid_until)
+        return self
+
+
+def _assert_validity_window_ordered(valid_from: str | None, valid_until: str | None) -> None:
+    """Reject a certificate whose validity ends before it starts.
+
+    Only fires when both dates parse as ISO-8601; a free-text or single date is left
+    alone. Catches a transposed pair of dates at entry rather than surfacing the
+    certificate as already expired later on.
+    """
+    start = _try_iso_date(valid_from)
+    end = _try_iso_date(valid_until)
+    if start is not None and end is not None and end < start:
+        raise ValueError(
+            "valid_until cannot be earlier than valid_from. "
+            "Check the certificate dates; the validity window must start before it ends."
+        )
+
 
 class MaterialRecordUpdate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -325,6 +415,14 @@ class MaterialRecordUpdate(BaseModel):
     status: str | None = Field(default=None, pattern=MATERIAL_UPDATE_STATUS_PATTERN)
     received_at: str | None = Field(default=None, max_length=40)
     metadata: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def _check_validity_window(self) -> "MaterialRecordUpdate":
+        # Checkable only when the patch carries both dates; a one-sided patch cannot be
+        # compared against the stored counterpart here, so the create-time guard backs it.
+        if self.valid_from is not None and self.valid_until is not None:
+            _assert_validity_window_ordered(self.valid_from, self.valid_until)
+        return self
 
 
 class MaterialReviewIn(BaseModel):
@@ -646,6 +744,19 @@ class HoldGateCreate(BaseModel):
     # witness/surveillance/review do not).
     blocks_progress: bool | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _check_attachment_pair(self) -> "HoldGateCreate":
+        # A gate is found for enforcement by (attached_kind, attached_id) together. One
+        # without the other can never match that lookup, so the gate would silently never
+        # block anything. Require both or neither and say so plainly.
+        if bool(self.attached_kind) != bool(self.attached_id):
+            raise ValueError(
+                "attached_kind and attached_id must be set together. "
+                "Provide both to attach the gate to an activity, handover package or "
+                "inspection, or leave both empty for an unattached gate."
+            )
+        return self
 
 
 class HoldGateUpdate(BaseModel):

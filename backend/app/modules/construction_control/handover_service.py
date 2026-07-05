@@ -146,7 +146,10 @@ class HandoverService:
         if package.status in _HANDOVER_LOCKED_STATUSES:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot edit a handover package with status '{package.status}'",
+                detail=(
+                    f"This handover package is {package.status} and can no longer be edited. "
+                    "Revoke the certificate first if it was issued in error, or create a new package."
+                ),
             )
         fields = data.model_dump(exclude_unset=True)
         fields = self._merge_metadata_patch(fields, package)

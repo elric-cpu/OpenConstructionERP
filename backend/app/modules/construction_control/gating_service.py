@@ -157,7 +157,10 @@ class GatingService:
         if gate.status != "pending":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot edit a gate with status '{gate.status}'; only a pending gate is editable",
+                detail=(
+                    f"This gate is {gate.status} and can no longer be edited; only a pending gate is editable. "
+                    "Create a new gate if a further check is needed."
+                ),
             )
         fields = data.model_dump(exclude_unset=True)
         if fields.get("criterion_id") is not None:

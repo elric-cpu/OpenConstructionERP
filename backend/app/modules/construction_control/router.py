@@ -187,6 +187,8 @@ async def list_criteria(
     is_active: bool | None = Query(default=None),
     service: ConstructionControlService = Depends(_get_service),
 ) -> list[AcceptanceCriterionResponse]:
+    """List the acceptance criteria for a project: the pass/fail rules every inspection,
+    test and survey is judged against (what is measured, the standard, and the tolerance)."""
     await verify_project_access(project_id, user_id, session)
     items, _ = await service.list_criteria(
         project_id, offset=offset, limit=limit, category=category, is_active=is_active
@@ -202,6 +204,8 @@ async def create_criterion(
     _perm: None = Depends(RequirePermission("cc.criterion.create")),
     service: ConstructionControlService = Depends(_get_service),
 ) -> AcceptanceCriterionResponse:
+    """Create an acceptance criterion: a reusable pass/fail rule (characteristic, standard,
+    tolerance) that inspections, tests and as-built surveys are then checked against."""
     await verify_project_access(data.project_id, user_id, session)
     criterion = await service.create_criterion(data, user_id=user_id)
     return _criterion_response(criterion)
@@ -262,6 +266,8 @@ async def list_inspections(
     party_role: str | None = Query(default=None),
     service: ConstructionControlService = Depends(_get_service),
 ) -> list[InspectionResponse]:
+    """List inspection and acceptance records for a project, with their model links and
+    recorded pass/fail result. Filter by type, status or the party who carried them out."""
     await verify_project_access(project_id, user_id, session)
     items, _ = await service.list_inspections(
         project_id,
@@ -363,6 +369,8 @@ async def list_materials(
     gr_id: str | None = Query(default=None),
     service: ConstructionControlService = Depends(_get_service),
 ) -> list[MaterialRecordResponse]:
+    """List material records (the digital material passport) for a project: certificate,
+    traceability and review status. Each record flags whether its certificate has expired."""
     await verify_project_access(project_id, user_id, session)
     items, _ = await service.list_materials(
         project_id, offset=offset, limit=limit, status_filter=status_filter, material_type=material_type, gr_id=gr_id
@@ -459,6 +467,8 @@ async def list_test_results(
     material_record_id: str | None = Query(default=None),
     service: ConstructionControlService = Depends(_get_service),
 ) -> list[TestResultResponse]:
+    """List material and field test results for a project, each judged against a criterion
+    and carrying its laboratory and accreditation. Filter by status, outcome or material."""
     await verify_project_access(project_id, user_id, session)
     items, _ = await service.list_test_results(
         project_id,

@@ -183,7 +183,10 @@ class AsBuiltService:
         if record.status in _ASBUILT_LOCKED_STATUSES:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot edit an as-built record with status '{record.status}'",
+                detail=(
+                    f"This as-built record is {record.status} and can no longer be edited. "
+                    "A recorded record is part of the legal record; create a new as-built for any change."
+                ),
             )
         fields = data.model_dump(exclude_unset=True)
         if fields.get("criterion_id") is not None:
