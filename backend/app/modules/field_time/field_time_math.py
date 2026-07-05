@@ -24,13 +24,32 @@ Vocabulary:
 
 Money is ``Decimal`` throughout - never ``float`` - and serialised to a string by
 the caller, matching the platform-wide money convention.
+
+International by design. Nothing here hard-codes one country's working day, week
+start, overtime threshold, break rule, rounding step or currency:
+
+* Hours are computed from timezone-aware (or consistently naive) ``datetime``
+  values, never from a locale-formatted date string, so day / month order never
+  matters. Night shifts that cross midnight are handled explicitly.
+* Overtime is OFF by default. Overtime rules differ by country and contract, so
+  hours are only split into regular / overtime when a project supplies a daily
+  threshold. With no threshold every hour is ordinary time.
+* Rounding is OFF by default. When a project supplies a rounding step (for
+  example a quarter hour) each entry is rounded to it; otherwise hours are kept
+  to two decimals as booked.
+* The week can start on any weekday. The default is Monday (ISO 8601), but a
+  project may set Sunday or Saturday.
+
+These knobs are read from a timesheet's ``metadata`` by :func:`read_hours_config`
+so no database column or schema change is needed to configure them per project.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from decimal import Decimal, InvalidOperation
+from datetime import date, datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from difflib import SequenceMatcher
 from typing import Any
 
@@ -38,6 +57,11 @@ from typing import Any
 # day. A day has 24 hours; anything above is a data-entry error (a decimal typo,
 # a double entry, or two crews booked under one person).
 MAX_HOURS_PER_DAY: Decimal = Decimal("24")
+
+# Minutes in an hour and the default first day of the week (0 = Monday, the
+# ISO 8601 international standard). A project may override the week start.
+_MINUTES_PER_HOUR: Decimal = Decimal("60")
+DEFAULT_WEEK_STARTS_ON: int = 0
 
 # Quantisation quanta - hours to 2 dp, money to 2 dp.
 _HOURS_Q: Decimal = Decimal("0.01")
@@ -446,17 +470,26 @@ def rollup(
     *,
     labour_rates: Mapping[str, Decimal] | None = None,
     plant_rates: Mapping[str, Decimal] | None = None,
+    rounding_increment: Decimal | None = None,
 ) -> CostRollup:
     """Roll a timesheet's lines up into labour/plant hours and cost.
 
-    Hours are always counted; cost is ``hours * rate`` where a rate is known and
-    0 where it is not (so an unpriced resource still surfaces its hours without
-    silently inventing a rate).
+    How the totals are derived, so a user is never surprised by them:
+
+    * Every line's hours are counted, split by whether the line books a worker
+      (labour) or a machine (plant).
+    * Cost is ``hours * hourly_rate``. When a rate is not known the line still
+      contributes its hours but zero cost, so an unpriced worker or machine is
+      visible rather than silently dropped or given an invented rate.
+    * When ``rounding_increment`` is given (for example a quarter hour) each
+      line's hours are first rounded to that step, matching the project's
+      timekeeping rule. With no step, hours are summed as booked.
 
     Args:
         lines: The timesheet lines.
         labour_rates: ``{resource_id: hourly_rate}``.
         plant_rates: ``{equipment_id: hourly_rate}``.
+        rounding_increment: Optional per-entry rounding step in hours.
 
     Returns:
         A :class:`CostRollup`.
@@ -469,6 +502,8 @@ def rollup(
     plant_cost = Decimal("0")
     for line in lines:
         hours = to_decimal(_get(line, "hours"))
+        if rounding_increment is not None:
+            hours = round_to_increment(hours, rounding_increment)
         kind = resolve_line_kind(line)
         if kind == KIND_PLANT:
             equipment_id = _clean_str(_get(line, "equipment_id"))
@@ -557,6 +592,349 @@ def reverse_lines(lines: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     return mirrored
 
 
+# ── Rounding, worked-interval hours and overtime (international) ──────────────
+
+
+def round_to_increment(
+    value: object,
+    increment: object,
+    *,
+    rounding: str = ROUND_HALF_UP,
+) -> Decimal:
+    """Round a number of hours to the nearest ``increment`` step.
+
+    Timekeeping rules round to different steps around the world (a quarter hour,
+    a tenth of an hour, six minutes). This applies whichever step the project
+    uses. A zero, negative or unparseable ``increment`` means "do not round" and
+    the value is returned to two decimals as booked.
+
+    Args:
+        value: The hours to round.
+        increment: The step to round to, e.g. ``Decimal("0.25")``.
+        rounding: A ``decimal`` rounding mode (default round half up).
+
+    Returns:
+        The rounded hours as a 2 dp ``Decimal``.
+    """
+    hours = to_decimal(value)
+    step = to_decimal(increment)
+    if step <= 0:
+        return hours.quantize(_HOURS_Q)
+    steps = (hours / step).quantize(Decimal("1"), rounding=rounding)
+    return (steps * step).quantize(_HOURS_Q)
+
+
+# Reason codes a worked interval can fail with (empty when it is valid).
+INTERVAL_OK = ""
+INTERVAL_TIMES_REQUIRED = "times_required"
+INTERVAL_TIMEZONE_MISMATCH = "timezone_mismatch"
+INTERVAL_END_BEFORE_START = "end_before_start"
+INTERVAL_ZERO_LENGTH = "zero_length"
+INTERVAL_OVER_24H = "over_24h"
+INTERVAL_BREAK_NEGATIVE = "break_negative"
+INTERVAL_BREAK_EXCEEDS_SHIFT = "break_exceeds_shift"
+
+
+@dataclass(frozen=True)
+class WorkedInterval:
+    """Net worked hours derived from a start time, an end time and a break.
+
+    Attributes:
+        net_hours: Paid hours = gross shift minus the unpaid break.
+        gross_hours: End minus start (after any overnight adjustment).
+        break_hours: The unpaid break, converted from minutes.
+        valid: True when the interval is well formed.
+        reason: A machine-readable reason code when ``valid`` is False, one of
+            the ``INTERVAL_*`` constants (empty when valid).
+    """
+
+    net_hours: Decimal
+    gross_hours: Decimal
+    break_hours: Decimal
+    valid: bool
+    reason: str = INTERVAL_OK
+
+
+def worked_hours(
+    start: object,
+    end: object,
+    break_minutes: object = 0,
+    *,
+    allow_overnight: bool = True,
+) -> WorkedInterval:
+    """Compute net worked hours from a start / end time and an unpaid break.
+
+    Timezone-safe and locale-independent: it works on ``datetime`` objects, not
+    formatted strings, so no day / month order is ever assumed. Both times must
+    be either timezone-aware or both naive; mixing the two is rejected rather
+    than guessed. A shift that ends at or before it starts is read as crossing
+    midnight (a night shift) when ``allow_overnight`` is set, otherwise it is an
+    error.
+
+    Guards, each with a clear reason code:
+
+    * ``times_required``   - start or end is not a datetime.
+    * ``timezone_mismatch``- one time is timezone-aware and the other is not.
+    * ``end_before_start`` - end is before start and overnight is not allowed.
+    * ``zero_length``      - start and end are the same instant.
+    * ``over_24h``         - a single continuous shift longer than 24 hours.
+    * ``break_negative``   - the break is a negative number of minutes.
+    * ``break_exceeds_shift`` - the break is as long as, or longer than, the shift.
+
+    Args:
+        start: Shift start ``datetime``.
+        end: Shift end ``datetime``.
+        break_minutes: Unpaid break length in minutes (default 0).
+        allow_overnight: Treat ``end <= start`` as a night shift (default True).
+
+    Returns:
+        A :class:`WorkedInterval`. On any failure ``net_hours`` is the best
+        available estimate (0 when it cannot be computed) and ``valid`` is False.
+    """
+    zero = Decimal("0")
+    if not isinstance(start, datetime) or not isinstance(end, datetime):
+        return WorkedInterval(zero, zero, zero, valid=False, reason=INTERVAL_TIMES_REQUIRED)
+    if (start.tzinfo is None) != (end.tzinfo is None):
+        return WorkedInterval(zero, zero, zero, valid=False, reason=INTERVAL_TIMEZONE_MISMATCH)
+
+    minutes = to_decimal(break_minutes)
+    break_hours = (minutes / _MINUTES_PER_HOUR).quantize(_HOURS_Q)
+    if minutes < 0:
+        return WorkedInterval(zero, zero, break_hours, valid=False, reason=INTERVAL_BREAK_NEGATIVE)
+
+    end_effective = end
+    if allow_overnight and end < start:
+        end_effective = end + timedelta(days=1)
+    gross_seconds = Decimal(str((end_effective - start).total_seconds()))
+    gross_hours = (gross_seconds / Decimal("3600")).quantize(_HOURS_Q)
+
+    if gross_hours == 0:
+        return WorkedInterval(zero, gross_hours, break_hours, valid=False, reason=INTERVAL_ZERO_LENGTH)
+    if gross_hours < 0:
+        return WorkedInterval(zero, gross_hours, break_hours, valid=False, reason=INTERVAL_END_BEFORE_START)
+    if gross_hours > MAX_HOURS_PER_DAY:
+        net = (gross_hours - break_hours).quantize(_HOURS_Q)
+        return WorkedInterval(net, gross_hours, break_hours, valid=False, reason=INTERVAL_OVER_24H)
+    if break_hours >= gross_hours:
+        return WorkedInterval(zero, gross_hours, break_hours, valid=False, reason=INTERVAL_BREAK_EXCEEDS_SHIFT)
+
+    net = (gross_hours - break_hours).quantize(_HOURS_Q)
+    return WorkedInterval(net, gross_hours, break_hours, valid=True, reason=INTERVAL_OK)
+
+
+def _interval_bounds(entry: Mapping[str, Any]) -> tuple[datetime, datetime] | None:
+    """Return ``(start, end)`` datetimes for an entry, or None when not usable."""
+    start = _get(entry, "start")
+    end = _get(entry, "end")
+    if not isinstance(start, datetime) or not isinstance(end, datetime):
+        return None
+    return start, end
+
+
+def overlapping_worker_intervals(
+    entries: Sequence[Mapping[str, Any]],
+) -> list[tuple[int, int]]:
+    """Find pairs of entries for the same worker whose clock times overlap.
+
+    A worker cannot be in two places at once, so two started-and-ended intervals
+    for the same ``resource_id`` (or explicit ``worker_key``) that overlap in
+    time are almost always a double booking. Entries without both a start and an
+    end, or without a worker, are skipped (there is nothing to compare). Times
+    that cannot be compared (one aware, one naive) are skipped rather than
+    guessed.
+
+    Args:
+        entries: Mappings carrying ``resource_id`` / ``worker_key`` plus
+            ``start`` and ``end`` datetimes.
+
+    Returns:
+        Sorted, de-duplicated ``(index_a, index_b)`` pairs that overlap.
+    """
+    by_worker: dict[str, list[int]] = {}
+    for index, entry in enumerate(entries):
+        worker = worker_key(entry) or (_clean_str(_get(entry, "worker_key")) or None)
+        if worker is None or _interval_bounds(entry) is None:
+            continue
+        by_worker.setdefault(worker, []).append(index)
+
+    pairs: set[tuple[int, int]] = set()
+    for indices in by_worker.values():
+        # Order by an ISO string key so mixing tz-aware and naive starts (which
+        # cannot be compared directly) only affects ordering, never raises. The
+        # actual overlap test below still skips any pair that is not comparable.
+        ordered = sorted(indices, key=lambda i: entries[i]["start"].isoformat())
+        for pos_a in range(len(ordered)):
+            bounds_a = _interval_bounds(entries[ordered[pos_a]])
+            if bounds_a is None:
+                continue
+            start_a, end_a = bounds_a
+            for pos_b in range(pos_a + 1, len(ordered)):
+                bounds_b = _interval_bounds(entries[ordered[pos_b]])
+                if bounds_b is None:
+                    continue
+                start_b, end_b = bounds_b
+                try:
+                    overlaps = start_a < end_b and start_b < end_a
+                except TypeError:
+                    continue  # not comparable (mixed tz-awareness) - skip
+                if overlaps:
+                    pairs.add(tuple(sorted((ordered[pos_a], ordered[pos_b]))))
+    return sorted(pairs)
+
+
+@dataclass(frozen=True)
+class OvertimeSplit:
+    """Regular vs overtime hours for a single value, against a daily threshold."""
+
+    regular_hours: Decimal
+    overtime_hours: Decimal
+
+
+def split_overtime(hours: object, *, daily_threshold: object = None) -> OvertimeSplit:
+    """Split a number of hours into regular and overtime against a threshold.
+
+    Overtime is only computed when a project supplies ``daily_threshold``. With
+    no threshold (the worldwide default), every hour is regular time and no
+    country-specific rule is assumed. Hours below zero are clamped to zero so a
+    stray negative never invents overtime.
+
+    Args:
+        hours: The hours worked.
+        daily_threshold: Hours above which the rest is overtime, or None.
+
+    Returns:
+        An :class:`OvertimeSplit`.
+    """
+    worked = to_decimal(hours)
+    if worked < 0:
+        worked = Decimal("0")
+    threshold = to_decimal(daily_threshold) if daily_threshold is not None else None
+    if threshold is None or threshold <= 0 or worked <= threshold:
+        return OvertimeSplit(worked.quantize(_HOURS_Q), Decimal("0.00"))
+    return OvertimeSplit(
+        threshold.quantize(_HOURS_Q),
+        (worked - threshold).quantize(_HOURS_Q),
+    )
+
+
+def daily_overtime(
+    lines: Sequence[Mapping[str, Any]],
+    *,
+    daily_threshold: object,
+) -> Decimal:
+    """Total overtime hours across all workers on a day, above ``daily_threshold``.
+
+    Sums each worker's day (see :func:`sum_hours_by_worker`) and counts only the
+    hours above the threshold. Returns zero when no threshold is set, so a
+    project that does not define overtime simply reports none.
+
+    Args:
+        lines: The day's timesheet lines.
+        daily_threshold: Per-worker daily overtime threshold, or a falsy value.
+
+    Returns:
+        The total overtime hours as a 2 dp ``Decimal``.
+    """
+    threshold = to_decimal(daily_threshold)
+    if threshold <= 0:
+        return Decimal("0.00")
+    total = Decimal("0")
+    for hours in sum_hours_by_worker(lines).values():
+        if hours > threshold:
+            total += hours - threshold
+    return total.quantize(_HOURS_Q)
+
+
+def week_start(day: date, *, week_starts_on: int = DEFAULT_WEEK_STARTS_ON) -> date:
+    """Return the first day of the week containing ``day``.
+
+    The week can start on any weekday so weekly hour totals line up with local
+    practice: 0 is Monday (ISO 8601, the default), 6 is Sunday. An out-of-range
+    value falls back to Monday.
+
+    Args:
+        day: Any date within the week.
+        week_starts_on: Weekday the week starts on, 0 (Monday) to 6 (Sunday).
+
+    Returns:
+        The date of the first day of that week.
+    """
+    if week_starts_on not in range(7):
+        week_starts_on = DEFAULT_WEEK_STARTS_ON
+    offset = (day.weekday() - week_starts_on) % 7
+    return day - timedelta(days=offset)
+
+
+# ── Per-project hours configuration (read from timesheet metadata) ───────────
+
+
+@dataclass(frozen=True)
+class HoursConfig:
+    """A project's timekeeping rules, with worldwide-safe defaults.
+
+    All fields default to "no local assumption": a full 24 hour day ceiling, no
+    overtime, no rounding, and a Monday week start (ISO 8601). A project tunes
+    these by writing them into a timesheet's ``metadata`` - no schema change.
+    """
+
+    max_hours_per_day: Decimal = MAX_HOURS_PER_DAY
+    overtime_daily_threshold: Decimal | None = None
+    rounding_increment: Decimal | None = None
+    week_starts_on: int = DEFAULT_WEEK_STARTS_ON
+
+
+def read_hours_config(metadata: Mapping[str, Any] | None) -> HoursConfig:
+    """Parse a :class:`HoursConfig` from a timesheet's metadata mapping.
+
+    Recognised keys (all optional):
+
+    * ``max_hours_per_day``       - per-worker daily ceiling, 0 < x <= 24.
+    * ``overtime_daily_threshold``- hours above which time is overtime.
+    * ``hours_rounding_increment``- rounding step in hours (e.g. 0.25).
+    * ``week_starts_on``          - 0 (Monday) to 6 (Sunday).
+
+    Any missing, malformed or out-of-range value falls back to the safe default
+    so bad metadata can never break a timesheet - it just uses the default rule.
+
+    Args:
+        metadata: The timesheet ``metadata`` mapping, or None.
+
+    Returns:
+        A :class:`HoursConfig`.
+    """
+    meta = metadata if isinstance(metadata, Mapping) else {}
+
+    max_hours = to_decimal(meta.get("max_hours_per_day"), default=MAX_HOURS_PER_DAY)
+    if not (Decimal("0") < max_hours <= MAX_HOURS_PER_DAY):
+        max_hours = MAX_HOURS_PER_DAY
+
+    overtime: Decimal | None = None
+    raw_overtime = meta.get("overtime_daily_threshold")
+    if raw_overtime is not None:
+        parsed = to_decimal(raw_overtime)
+        if parsed > 0:
+            overtime = parsed
+
+    rounding: Decimal | None = None
+    raw_rounding = meta.get("hours_rounding_increment")
+    if raw_rounding is not None:
+        parsed_round = to_decimal(raw_rounding)
+        if parsed_round > 0:
+            rounding = parsed_round
+
+    week_starts_on = DEFAULT_WEEK_STARTS_ON
+    raw_week = meta.get("week_starts_on")
+    if isinstance(raw_week, int) and raw_week in range(7):
+        week_starts_on = raw_week
+
+    return HoursConfig(
+        max_hours_per_day=max_hours,
+        overtime_daily_threshold=overtime,
+        rounding_increment=rounding,
+        week_starts_on=week_starts_on,
+    )
+
+
 # ── Cost-code suggestions (AI-augmented, human-confirmed) ────────────────────
 
 
@@ -640,6 +1018,9 @@ class TimesheetChecks:
     unresolved_cost_code_indices: list[int] = field(default_factory=list)
     daywork_incomplete_indices: list[int] = field(default_factory=list)
     plant_missing_equipment_indices: list[int] = field(default_factory=list)
+    # Pairs of line indices that book the same worker over overlapping clock
+    # times (a double booking). Only populated when lines carry start / end.
+    overlapping_worker_line_pairs: list[tuple[int, int]] = field(default_factory=list)
 
     @property
     def has_blocking_errors(self) -> bool:
@@ -649,6 +1030,7 @@ class TimesheetChecks:
                 self.incomplete_line_indices,
                 self.hours_cap_exceedances,
                 self.unresolved_cost_code_indices,
+                self.overlapping_worker_line_pairs,
             ),
         )
 
@@ -687,4 +1069,5 @@ def check_timesheet(
             open_variation_ids=open_variation_ids,
         ),
         plant_missing_equipment_indices=plant_missing_equipment_indices(lines),
+        overlapping_worker_line_pairs=overlapping_worker_intervals(lines),
     )

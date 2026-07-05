@@ -85,7 +85,10 @@ def _timesheet_to_response(timesheet: FieldTimesheet) -> FieldTimesheetResponse:
         }
         for line in timesheet.lines
     ]
-    roll = ft.rollup(line_dicts)
+    # Honour the project's rounding step (from metadata) so the header totals
+    # match the summary and the payroll figures.
+    config = ft.read_hours_config(getattr(timesheet, "metadata_", None))
+    roll = ft.rollup(line_dicts, rounding_increment=config.rounding_increment)
     return FieldTimesheetResponse(
         id=timesheet.id,
         project_id=timesheet.project_id,
@@ -138,6 +141,7 @@ async def get_summary(
         by_status=data["by_status"],
         labour_hours=str(data["labour_hours"]),
         plant_hours=str(data["plant_hours"]),
+        overtime_hours=str(data.get("overtime_hours", "0")),
     )
 
 

@@ -130,7 +130,7 @@ class FieldTimeService:
         if timesheet is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Field timesheet not found",
+                detail="This field timesheet does not exist or has been removed. Refresh the list and try again.",
             )
         return timesheet
 
@@ -155,24 +155,37 @@ class FieldTimeService:
         )
 
     async def get_summary(self, project_id: uuid.UUID) -> dict[str, Any]:
-        """Project-level rollup: counts by status + labour / plant hours."""
+        """Project rollup: counts by status plus labour / plant / overtime hours.
+
+        The hour totals count only live approved timesheets (an approved sheet
+        that has not been reversed). Each timesheet's own timekeeping rules from
+        its metadata are honoured: hours are rounded to the project step if one
+        is set, and overtime is the sum, per worker per day, of hours above the
+        project's daily threshold (zero when no threshold is configured).
+        """
         counts = await self.repo.status_counts(project_id)
         # Hours over live (approved, non-reversal) timesheets - the authoritative
         # actuals a manager cares about at a glance.
         timesheets, _total = await self.repo.list_for_project(project_id, limit=100000)
         labour = Decimal("0")
         plant = Decimal("0")
+        overtime = Decimal("0")
         for ts in timesheets:
             if ts.status != _APPROVED or ts.reverses_id is not None:
                 continue
-            roll = ft.rollup(self._line_dicts(ts))
+            config = ft.read_hours_config(getattr(ts, "metadata_", None))
+            lines = self._line_dicts(ts)
+            roll = ft.rollup(lines, rounding_increment=config.rounding_increment)
             labour += roll.labour_hours
             plant += roll.plant_hours
+            if config.overtime_daily_threshold is not None:
+                overtime += ft.daily_overtime(lines, daily_threshold=config.overtime_daily_threshold)
         return {
             "total": sum(counts.values()),
             "by_status": counts,
             "labour_hours": ft.quantize_hours(labour),
             "plant_hours": ft.quantize_hours(plant),
+            "overtime_hours": ft.quantize_hours(overtime),
         }
 
     # ── Update (draft only) ──────────────────────────────────────────────────
@@ -227,7 +240,7 @@ class FieldTimeService:
         if line is None or line.timesheet_id != timesheet_id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Timesheet line not found on this timesheet",
+                detail="That line is not part of this timesheet. Reload the timesheet and try again.",
             )
 
         fields = data.model_dump(exclude_unset=True)
@@ -250,7 +263,7 @@ class FieldTimeService:
         if line is None or line.timesheet_id != timesheet_id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Timesheet line not found on this timesheet",
+                detail="That line is not part of this timesheet. Reload the timesheet and try again.",
             )
         await self.repo.delete_line(line_id)
         await self.session.refresh(timesheet)
@@ -276,12 +289,15 @@ class FieldTimeService:
         if timesheet.status != _DRAFT:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot submit a timesheet with status '{timesheet.status}' - must be draft",
+                detail=(
+                    f"This timesheet is already '{timesheet.status}', so it cannot be submitted again. "
+                    "Only a draft can be sent for approval."
+                ),
             )
         if not timesheet.lines:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot submit a timesheet with no lines",
+                detail="Add at least one hours line before submitting. An empty timesheet cannot be sent for approval.",
             )
         await self._validate_or_raise(timesheet, operation="submit")
 
@@ -307,7 +323,10 @@ class FieldTimeService:
         if timesheet.status != _SUBMITTED:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot approve a timesheet with status '{timesheet.status}' - must be submitted",
+                detail=(
+                    f"This timesheet is '{timesheet.status}'. Only a submitted timesheet can be approved. "
+                    "Submit it for approval first."
+                ),
             )
         await self._validate_or_raise(timesheet, operation="approve")
 
@@ -350,7 +369,10 @@ class FieldTimeService:
         if original.status != _APPROVED:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Only an approved timesheet can be reversed (status is '{original.status}')",
+                detail=(
+                    f"Only an approved timesheet can be reversed. This one is '{original.status}', "
+                    "so there are no approved hours to undo."
+                ),
             )
 
         mirrored = ft.reverse_lines(self._line_dicts(original))
@@ -407,6 +429,10 @@ class FieldTimeService:
         """Build the validation payload and run the ``field_time`` rule set."""
         valid_cost_codes, valid_wbs = await self._resolve_cost_codes(timesheet.project_id)
         open_variation_ids = await self._open_variation_ids(timesheet.project_id)
+        # The per-worker daily cap is a project setting (defaults to 24 hours):
+        # forward it so the rule checks hours against the configured ceiling
+        # rather than a single hard-coded value.
+        config = ft.read_hours_config(getattr(timesheet, "metadata_", None))
         payload = {
             "id": str(timesheet.id),
             "project_id": str(timesheet.project_id),
@@ -420,6 +446,7 @@ class FieldTimeService:
             "valid_cost_codes": (list(valid_cost_codes) if valid_cost_codes is not None else None),
             "valid_wbs": (list(valid_wbs) if valid_wbs is not None else None),
             "open_variation_ids": (list(open_variation_ids) if open_variation_ids is not None else None),
+            "max_hours_per_day": str(config.max_hours_per_day),
         }
         return await validation_engine.validate(
             data=payload,
@@ -437,7 +464,10 @@ class FieldTimeService:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail={
-                    "message": "Field timesheet has blocking validation errors",
+                    "message": (
+                        f"This timesheet has problems that must be fixed before you can {operation} it. "
+                        "See the errors listed below, correct each line, then try again."
+                    ),
                     "report": report.summary(),
                     "errors": [
                         {
@@ -476,8 +506,8 @@ class FieldTimeService:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=(
-                    "A timesheet line must reference either a resource (labour) or equipment "
-                    "(plant), not both or neither"
+                    "Each line records either a worker (labour) or a machine (plant), not both and "
+                    "not neither. Pick one for this line and save again."
                 ),
             )
 
@@ -825,7 +855,8 @@ class FieldTimeService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
-                    f"Cannot {action} a timesheet with status '{timesheet.status}' - only draft timesheets are editable"
+                    f"You can only {action} a draft timesheet. This one is '{timesheet.status}' and is now locked. "
+                    "To change an approved timesheet, reverse it and enter a new one."
                 ),
             )
 

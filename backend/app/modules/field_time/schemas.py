@@ -137,7 +137,9 @@ class FieldTimesheetResponse(BaseModel):
     note: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
     lines: list[FieldTimesheetLineResponse] = Field(default_factory=list)
-    # Hours rollup (strings), computed by the service.
+    # Hours rollup (strings): the sum of this timesheet's line hours, split by
+    # whether each line books a worker (labour) or a machine (plant). These are
+    # totals of the hours as entered, not a cost figure.
     labour_hours: str = "0"
     plant_hours: str = "0"
     created_at: datetime
@@ -211,9 +213,16 @@ class SuggestCostCodeResponse(BaseModel):
 
 
 class FieldTimeSummary(BaseModel):
-    """Project-level rollup of field timesheets."""
+    """Project-level rollup of field timesheets.
+
+    Hour totals are strings (the money / quantity convention) and cover only
+    live approved timesheets. ``overtime_hours`` is the portion of labour hours
+    above the project's daily overtime threshold, summed per worker per day; it
+    is ``"0"`` for any project that does not configure overtime.
+    """
 
     total: int = 0
     by_status: dict[str, int] = Field(default_factory=dict)
     labour_hours: str = "0"
     plant_hours: str = "0"
+    overtime_hours: str = "0"
