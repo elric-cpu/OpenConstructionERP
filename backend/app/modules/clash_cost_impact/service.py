@@ -21,6 +21,7 @@ the symmetric lookup in :data:`TRADE_PAIR_HOURS` below.
 from __future__ import annotations
 
 import logging
+import unicodedata
 import uuid
 from collections import defaultdict
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
@@ -97,34 +98,112 @@ DEFAULT_TRADE_PAIR_HOURS = 4
 # ── Helpers ────────────────────────────────────────────────────────────────
 
 
+#: The canonical discipline keys the trade-pair table is written in.
+CANONICAL_DISCIPLINES: frozenset[str] = frozenset(
+    {"architectural", "structural", "mechanical", "electrical", "plumbing", "civil"}
+)
+
+#: Free-text discipline aliases in several languages, all mapping onto the six
+#: canonical keys. BIM exports label disciplines in the project's own language,
+#: so an English-only alias table quietly dropped every German, French, Spanish,
+#: Italian or Russian label to "unknown" and lost its rework-hours estimate.
+#: Keys are folded to accent-free lower case at import (see ``_fold``) so
+#: "Sanitär" and "sanitar" both resolve. Blanket MEP labels roll up to
+#: mechanical, matching the trade-pair table.
+_RAW_DISCIPLINE_ALIASES: dict[str, str] = {
+    # English
+    "arch": "architectural",
+    "architecture": "architectural",
+    "struct": "structural",
+    "structure": "structural",
+    "mep": "mechanical",
+    "hvac": "mechanical",
+    "mech": "mechanical",
+    "elec": "electrical",
+    "elect": "electrical",
+    "pl": "plumbing",
+    "plumb": "plumbing",
+    "site": "civil",
+    "landscape": "civil",
+    # German
+    "architektur": "architectural",
+    "tragwerk": "structural",
+    "statik": "structural",
+    "elektro": "electrical",
+    "elektrik": "electrical",
+    "sanitaer": "plumbing",
+    "sanitär": "plumbing",
+    "lueftung": "mechanical",
+    "lüftung": "mechanical",
+    "hlk": "mechanical",
+    "heizung": "mechanical",
+    "klima": "mechanical",
+    "tiefbau": "civil",
+    # French (French "structure" already folds onto the English "structure" key)
+    "electricite": "electrical",
+    "électricité": "electrical",
+    "plomberie": "plumbing",
+    "cvc": "mechanical",
+    "mecanique": "mechanical",
+    "genie civil": "civil",
+    # Spanish
+    "arquitectura": "architectural",
+    "estructura": "structural",
+    "estructural": "structural",
+    "electricidad": "electrical",
+    "fontaneria": "plumbing",
+    "fontanería": "plumbing",
+    "mecanica": "mechanical",
+    "climatizacion": "mechanical",
+    # Italian
+    "architettura": "architectural",
+    "struttura": "structural",
+    "strutturale": "structural",
+    "elettrico": "electrical",
+    "idraulica": "plumbing",
+    "meccanica": "mechanical",
+    # Russian
+    "конструкции": "structural",
+    "архитектура": "architectural",
+    "электрика": "electrical",
+    "сантехника": "plumbing",
+    "вентиляция": "mechanical",
+    "отопление": "mechanical",
+}
+
+
+def _fold(value: str) -> str:
+    """Lower-case and strip accents so "Sanitär" and "sanitar" hit one key.
+
+    Accents are removed via NFKD decomposition, dropping combining marks;
+    non-Latin scripts (for example Cyrillic) are left intact and simply
+    lower-cased. Surrounding whitespace is trimmed.
+    """
+    decomposed = unicodedata.normalize("NFKD", value)
+    without_marks = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return without_marks.strip().lower()
+
+
+#: The alias table actually consulted, with every key folded the same way an
+#: incoming label is, so lookups match regardless of case or accents.
+DISCIPLINE_ALIASES: dict[str, str] = {_fold(key): value for key, value in _RAW_DISCIPLINE_ALIASES.items()}
+
+
 def _normalise_discipline(value: str | None) -> str:
     """Collapse a free-text discipline label to a canonical lookup key.
 
-    Handles the common variants the BIM importers produce
-    (``"Structural"``, ``"struct"``, ``"STRUCT"``, ``"Structure"``, …)
-    by lower-casing + stripping whitespace + mapping a small alias
-    dictionary. Unknown labels pass through lower-cased so the
-    ``unknown`` cell of the lookup table can still match.
+    Handles the common variants the BIM importers produce in any language
+    (``"Structural"``, ``"struct"``, ``"Tragwerk"``, ``"Estructura"``,
+    ``"конструкции"``, ...) by folding case and accents and mapping through
+    :data:`DISCIPLINE_ALIASES`. Unknown labels pass through folded so a genuine
+    canonical key still matches and anything else lands on the table's fallback.
     """
     if not value:
         return "unknown"
-    raw = value.strip().lower()
-    aliases = {
-        "arch": "architectural",
-        "architecture": "architectural",
-        "struct": "structural",
-        "structure": "structural",
-        "mep": "mechanical",  # blanket MEP rolls up to mechanical
-        "hvac": "mechanical",
-        "mech": "mechanical",
-        "elec": "electrical",
-        "elect": "electrical",
-        "pl": "plumbing",
-        "plumb": "plumbing",
-        "site": "civil",
-        "landscape": "civil",
-    }
-    return aliases.get(raw, raw)
+    folded = _fold(value)
+    if not folded:
+        return "unknown"
+    return DISCIPLINE_ALIASES.get(folded, folded)
 
 
 def _pair_key(a: str | None, b: str | None) -> tuple[str, str]:
@@ -137,6 +216,21 @@ def trade_pair_hours(a: str | None, b: str | None) -> int:
     """Lookup the labour hours for a discipline pair (symmetric)."""
     key = _pair_key(a, b)
     return TRADE_PAIR_HOURS.get(key, DEFAULT_TRADE_PAIR_HOURS)
+
+
+def explain_trade_pair(a: str | None, b: str | None) -> str:
+    """Plain-language line for why a discipline pair carries its rework hours.
+
+    Names the two normalised disciplines, the hours the table assigns and
+    whether that came from an explicit row or the median fallback, so a user
+    can see the basis of the estimate instead of a bare number.
+    """
+    key = _pair_key(a, b)
+    hours = trade_pair_hours(a, b)
+    left, right = key
+    basis = "a coordination rule-of-thumb row" if key in TRADE_PAIR_HOURS else "the median fallback (no explicit row)"
+    hour_word = "hour" if hours == 1 else "hours"
+    return f"{left} vs {right}: about {hours} rework {hour_word}, from {basis}."
 
 
 def _to_decimal(value: Any) -> Decimal:
