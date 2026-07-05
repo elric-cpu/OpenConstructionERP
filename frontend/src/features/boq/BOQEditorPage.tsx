@@ -4799,6 +4799,7 @@ export function BOQEditorPage() {
               ? { code: displayCurrencyMeta.currency, rate: displayCurrencyMeta.rate }
               : null
           }
+          sectionTotalBasis={directCost}
           onOpenFxRateSettings={
             boq?.project_id
               ? () => navigate(`/projects/${boq.project_id}/settings#fx-rates`)

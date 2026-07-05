@@ -147,6 +147,13 @@ export interface SectionGroupContext {
    * BOQ (per-position totals, footer rows, grand total). View-only.
    */
   displayCurrency?: { code: string; rate: number } | null;
+  /**
+   * Base-currency direct cost of the whole estimate (sum of every line
+   * total). Used only to show each section's share of the project total as
+   * a small "X% of total" chip. A ratio, so it is currency-invariant and
+   * needs no display-currency conversion. Undefined / 0 hides the chip.
+   */
+  sectionTotalBasis?: number;
 }
 
 export function SectionFullWidthRenderer(params: ICellRendererParams) {
@@ -444,6 +451,26 @@ export function SectionFullWidthRenderer(params: ICellRendererParams) {
               })}
             </span>
           </button>
+        )}
+
+      {/* Share of the whole estimate - helps the estimator see at a glance
+          which sections carry the money. Ratio of the section subtotal to
+          the project direct cost, so it is currency-invariant. Hidden when
+          the basis is unknown or zero. */}
+      {typeof ctx.sectionTotalBasis === 'number' &&
+        ctx.sectionTotalBasis > 0 &&
+        Number.isFinite(subtotal) && (
+          <span
+            className="shrink-0 inline-flex items-center h-4 px-1.5 rounded-full
+                       bg-oe-blue-subtle text-oe-blue-text text-[10px] font-semibold
+                       tabular-nums cursor-help"
+            title={t('boq.section_pct_of_total_tip', {
+              defaultValue: 'This section is {{pct}}% of the project direct cost.',
+              pct: Math.round((subtotal / ctx.sectionTotalBasis) * 100),
+            })}
+          >
+            {Math.round((subtotal / ctx.sectionTotalBasis) * 100)}%
+          </span>
         )}
 
       <span className="shrink-0 text-xs font-bold text-content-primary tabular-nums pl-2">

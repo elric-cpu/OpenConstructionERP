@@ -299,6 +299,41 @@ export function resourceSplitMoneyTotals(
   return any ? totals : null;
 }
 
+/** True for a real cost line (not a section header, footer, or resource sub-row). */
+function isCostLine(d: Record<string, unknown> | undefined): boolean {
+  return (
+    !!d && !d._isSection && !d._isFooter && !d._isResource && !d._isAddResource && !d._isVariantHeader
+  );
+}
+
+/**
+ * A cost line with no quantity yet. Zero and missing both count - the line
+ * carries no measured work, so its total is zero and the estimate is
+ * understated until a quantity is set.
+ */
+export function needsQuantity(d: Record<string, unknown> | undefined): boolean {
+  if (!isCostLine(d)) return false;
+  const q = typeof d!.quantity === 'number' ? d!.quantity : parseFloat(String(d!.quantity));
+  return !Number.isFinite(q) || q === 0;
+}
+
+/**
+ * A cost line with no unit rate yet. Positions whose rate is built from
+ * resources are excluded - their rate is computed, never typed - so only a
+ * genuinely unpriced line is flagged.
+ */
+export function needsPrice(d: Record<string, unknown> | undefined): boolean {
+  if (!isCostLine(d)) return false;
+  const meta = (d!.metadata || d!.metadata_ || {}) as Record<string, unknown>;
+  const res = meta.resources;
+  if (Array.isArray(res) && res.length > 0) return false;
+  const r = typeof d!.unit_rate === 'number' ? d!.unit_rate : parseFloat(String(d!.unit_rate));
+  return !Number.isFinite(r) || r === 0;
+}
+
+/** Faint amber tint marking a cell that needs a value. Subtle, not alarming. */
+const NEEDS_VALUE_CLASS = 'bg-amber-50/70 dark:bg-amber-950/30';
+
 export function getColumnDefs(context: BOQColumnContext): ColDef[] {
   const { t } = context;
 
@@ -545,12 +580,19 @@ export function getColumnDefs(context: BOQColumnContext): ColDef[] {
         return ctx?.displayQuantity ? ctx.displayQuantity.toMetric(val, unit) : val;
       },
       // Surface the source formula in the AG Grid tooltip — much easier to
-      // see than a tiny badge alone (Issue #90 follow-up).
+      // see than a tiny badge alone (Issue #90 follow-up). Also nudge the
+      // estimator when the line has no quantity yet, since that silently
+      // zeroes the line total.
       tooltipValueGetter: (params) => {
         const meta = params.data?.metadata as Record<string, unknown> | undefined;
         const f = meta?.formula;
         if (typeof f === 'string' && f) {
           return `Formula: ${f}\nClick to edit.`;
+        }
+        if (needsQuantity(params.data as Record<string, unknown> | undefined)) {
+          return t('boq.flag_no_quantity', {
+            defaultValue: 'No quantity yet - this line adds nothing to the total until you set one.',
+          });
         }
         return undefined;
       },
@@ -558,7 +600,10 @@ export function getColumnDefs(context: BOQColumnContext): ColDef[] {
         const base = 'text-right tabular-nums text-xs !pr-2 !pl-2';
         const ctx = params.context as { expandedPositions?: Set<string> } | undefined;
         const isExpanded = !!params.data?.id && (ctx?.expandedPositions?.has(params.data.id) ?? false);
-        return isExpanded ? `${base} font-bold` : base;
+        const flag = needsQuantity(params.data as Record<string, unknown> | undefined)
+          ? ` ${NEEDS_VALUE_CLASS}`
+          : '';
+        return `${isExpanded ? `${base} font-bold` : base}${flag}`;
       },
       headerClass: 'ag-right-aligned-header',
       type: 'numericColumn',
@@ -606,7 +651,10 @@ export function getColumnDefs(context: BOQColumnContext): ColDef[] {
         if (Array.isArray(res) && res.length > 0) base = `${base} text-content-tertiary`;
         const ctx = params.context as { expandedPositions?: Set<string> } | undefined;
         const isExpanded = !!params.data?.id && (ctx?.expandedPositions?.has(params.data.id) ?? false);
-        return isExpanded ? `${base} font-bold` : base;
+        const flag = needsPrice(params.data as Record<string, unknown> | undefined)
+          ? ` ${NEEDS_VALUE_CLASS}`
+          : '';
+        return `${isExpanded ? `${base} font-bold` : base}${flag}`;
       },
       headerClass: 'ag-right-aligned-header',
       type: 'numericColumn',
@@ -614,6 +662,11 @@ export function getColumnDefs(context: BOQColumnContext): ColDef[] {
         const res = params.data?.metadata?.resources;
         if (Array.isArray(res) && res.length > 0) {
           return t('boq.rate_from_resources', { defaultValue: 'Rate is calculated from resources. Edit individual resources to change.' });
+        }
+        if (needsPrice(params.data as Record<string, unknown> | undefined)) {
+          return t('boq.flag_no_price', {
+            defaultValue: 'No unit rate yet - price this line to include it in the total.',
+          });
         }
         return undefined;
       },

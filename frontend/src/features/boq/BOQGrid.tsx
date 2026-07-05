@@ -369,6 +369,12 @@ export interface BOQGridProps {
    */
   displayCurrency?: { code: string; rate: number } | null;
   /**
+   * Base-currency direct cost of the whole estimate. Passed straight into
+   * the grid context so each section header can show its share of the
+   * project total as a small "X% of total" chip.
+   */
+  sectionTotalBasis?: number;
+  /**
    * Issue #105 — open-handler for the Project Settings → FX Rates page.
    * Wired by BOQEditorPage to `navigate('/projects/:id/settings#fx-rates')`.
    * When omitted, the warning badge stays a non-clickable info chip.
@@ -551,6 +557,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
   fxRates,
   onUpsertProjectFxRate,
   displayCurrency,
+  sectionTotalBasis,
   onOpenFxRateSettings,
   locale,
   footerRows,
@@ -1207,6 +1214,9 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
       // Issue #285: imperial-units display seam consumed by the Qty / Unit /
       // Unit-rate renderers and the inline resource / variant editors.
       displayQuantity,
+      // Base-currency direct cost, used only to show each section's share of
+      // the project total as a small chip on the section header.
+      sectionTotalBasis,
     }) as FullGridContext,
     [descDensity, currencySymbol, currencyCode, fxRates, onUpsertProjectFxRate, displayCurrency, onOpenFxRateSettings, locale, fmt, t, collapsedSections, onToggleSection, onAddPosition, onAddSubSection,
      expandedPositions, toggleResources, onRemoveResource, onUpdateResource, onUpdateResourceFields,
@@ -1215,7 +1225,8 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
      onDeletePosition, onSaveToDatabase, onAddComment,
      onDuplicatePosition, showContextMenu, anomalyMap, onApplyAnomalySuggestion, bimModelId,
      onUpdatePosition, onHighlightBIMElements, onDeleteSection, onReorderSections, onFormulaApplied,
-     positions, boqVariablesMap, customColumns, showResourceSplit, showResourceSplitPill, renderInlineCopilot, displayQuantity],
+     positions, boqVariablesMap, customColumns, showResourceSplit, showResourceSplitPill, renderInlineCopilot, displayQuantity,
+     sectionTotalBasis],
   );
 
   /* ── Column defs (standard + custom) ─────────────────────────────── */
