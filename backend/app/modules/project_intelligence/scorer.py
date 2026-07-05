@@ -415,3 +415,79 @@ def compute_score(state: ProjectState) -> ProjectScore:
             logger.debug("Achievement rule failed", exc_info=True)
 
     return result
+
+
+# ── Presentation helpers (additive, pure, localized) ──────────────────────
+#
+# The score itself is language-neutral, but the severity words shown on the
+# headline were English-only, and a user still had to eyeball which gap to act
+# on. These helpers localize the severity words and turn the gap list into a
+# plain "do this next" view without re-deriving anything.
+
+#: The four severities in worst-first order (matches _SEVERITY_ORDER).
+SEVERITIES: tuple[str, ...] = ("blocker", "critical", "warning", "suggestion")
+
+#: Localized severity word, per language. English is always present and is the
+#: fallback for any missing language or unknown severity.
+SEVERITY_LABELS: dict[str, dict[str, str]] = {
+    "blocker": {"en": "blocker", "de": "Blocker", "ru": "блокер"},
+    "critical": {"en": "critical", "de": "kritisch", "ru": "критично"},
+    "warning": {"en": "warning", "de": "Warnung", "ru": "предупреждение"},
+    "suggestion": {"en": "suggestion", "de": "Vorschlag", "ru": "рекомендация"},
+}
+
+
+def severity_label(severity: str, lang: str = "en") -> str:
+    """Localized word for a gap severity, English as fallback.
+
+    Falls back to English for an unknown language and to the raw ``severity``
+    for an unknown severity, so a caller never gets a blank.
+    """
+    per_lang = SEVERITY_LABELS.get(severity)
+    if per_lang is None:
+        return severity
+    return per_lang.get(lang) or per_lang["en"]
+
+
+def gap_counts(score: ProjectScore) -> dict[str, int]:
+    """Count a score's gaps by severity, worst first, zero-filled.
+
+    Always returns all four severities in :data:`SEVERITIES` order so a caller
+    can render a stable row of counts without guarding for missing keys.
+    """
+    counts = dict.fromkeys(SEVERITIES, 0)
+    for gap in score.critical_gaps:
+        if gap.severity in counts:
+            counts[gap.severity] += 1
+    return counts
+
+
+def next_actions(score: ProjectScore, limit: int | None = None) -> list[CriticalGap]:
+    """The actionable gaps to tackle next, worst severity first.
+
+    Keeps only gaps that carry an ``action_id`` (something the user can act on
+    directly), preserving the severity-sorted order :func:`compute_score`
+    already applied. ``limit`` caps the list; ``None`` returns them all.
+    """
+    actionable = [gap for gap in score.critical_gaps if gap.action_id]
+    if limit is not None and limit >= 0:
+        return actionable[:limit]
+    return actionable
+
+
+def score_summary(score: ProjectScore) -> str:
+    """One-line plain-language summary of a project score.
+
+    States the grade and score, then the count of blocking and critical gaps to
+    address, or confirms a clean project. Kept in English (it quotes English gap
+    titles elsewhere); a UI wanting other languages uses :func:`severity_label`.
+    """
+    head = f"Project health is grade {score.overall_grade} ({score.overall}/100)."
+    counts = gap_counts(score)
+    blockers = counts["blocker"]
+    criticals = counts["critical"]
+    if blockers == 0 and criticals == 0:
+        return f"{head} No blocking or critical gaps."
+    blocker_word = "blocker" if blockers == 1 else "blockers"
+    critical_word = "critical gap" if criticals == 1 else "critical gaps"
+    return f"{head} {blockers} {blocker_word} and {criticals} {critical_word} need attention."
