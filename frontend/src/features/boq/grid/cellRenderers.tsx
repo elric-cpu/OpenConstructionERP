@@ -1205,6 +1205,33 @@ export function OrdinalCellRenderer(params: ICellRendererParams) {
           code: refCode || (value as string),
         });
 
+  // ── AI-confidence badge ─────────────────────────────────────────────
+  // AI-sourced positions carry a confidence in [0, 1]. Surface it as a
+  // small percent chip so the estimator can see, without opening anything,
+  // how sure the AI was and knows to confirm the line. Manual / imported
+  // lines carry no confidence, so the chip simply does not render for them
+  // (the "AI proposes, human confirms" principle made visible).
+  const rawConfidence = data.confidence;
+  const source = typeof data.source === 'string' ? data.source : '';
+  const isAiSourced = source.includes('ai') || source.includes('takeoff');
+  const confidence =
+    typeof rawConfidence === 'number' && Number.isFinite(rawConfidence)
+      ? Math.max(0, Math.min(1, rawConfidence))
+      : null;
+  const showConfidence = confidence !== null && (isAiSourced || rawConfidence !== undefined);
+  const confidencePct = confidence !== null ? Math.round(confidence * 100) : 0;
+  const confidenceTone =
+    confidencePct >= 80
+      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+      : confidencePct >= 50
+        ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+        : 'bg-red-500/15 text-red-600 dark:text-red-400';
+  const confidenceTooltip = t('boq.ai_confidence_tooltip', {
+    defaultValue:
+      'AI suggested this line with {{pct}}% confidence. Review the quantity and rate, then confirm.',
+    pct: confidencePct,
+  });
+
   return (
     <div className="flex items-center justify-end gap-1 overflow-hidden w-full">
       {(linkRole === 'master' || linkRole === 'instance') && (
@@ -1222,6 +1249,16 @@ export function OrdinalCellRenderer(params: ICellRendererParams) {
         </span>
       )}
       <span className="text-xs font-mono truncate min-w-0">{value}</span>
+      {showConfidence && (
+        <span
+          className={`inline-flex h-4 shrink-0 items-center rounded px-1 text-[9px] font-semibold tabular-nums ${confidenceTone} cursor-help`}
+          title={confidenceTooltip}
+          aria-label={confidenceTooltip}
+          data-testid="boq-ai-confidence-badge"
+        >
+          {confidencePct}%
+        </span>
+      )}
       <span
         className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${dotColor} cursor-help`}
         title={getValidationTooltip(status, t)}

@@ -1,4 +1,10 @@
-import type { ColDef, ValueFormatterParams, ValueGetterParams, ValueSetterParams } from 'ag-grid-community';
+import type {
+  ColDef,
+  ITooltipParams,
+  ValueFormatterParams,
+  ValueGetterParams,
+  ValueSetterParams,
+} from 'ag-grid-community';
 import { convertToBase, fmtWithCurrency, resourceAwareTotalInBase } from '../boqHelpers';
 import type { DisplayQuantityApi } from '@/shared/hooks/useDisplayQuantity';
 import { unitColumnValueSetter } from './cellEditors';
@@ -110,6 +116,95 @@ function totalFormatter(params: ValueFormatterParams): string {
   }
   const currencyCode = ctx?.currencyCode ?? 'EUR';
   return fmtWithCurrency(params.value, locale, currencyCode);
+}
+
+/**
+ * Plain-language explanation of how a line total was reached, shown as the
+ * Total cell's hover tooltip. The single most-used number in the grid is
+ * otherwise silent: the user sees a figure with no hint of the arithmetic,
+ * the resource roll-up, or the silent FX rebase behind it. This spells all
+ * three out.
+ *
+ * The concrete quantity and rate are expressed in the user's OWN display
+ * units (imperial or metric) via `displayQuantity`, so the numbers match what
+ * the Qty and Unit Rate cells show on the same row. Resource-backed positions
+ * say the rate comes from their resources instead of a hand-typed rate.
+ * Returns undefined for section / footer / empty rows so only real positions
+ * carry the hint.
+ */
+function totalTooltip(params: ITooltipParams): string | undefined {
+  const d = params.data as Record<string, unknown> | undefined;
+  const ctx = params.context as BOQColumnContext | undefined;
+  if (!d || d._isFooter || d._isSection || !ctx) return undefined;
+
+  const t = ctx.t;
+  const locale = ctx.locale ?? 'de-DE';
+  const baseCode = ctx.currencyCode ?? 'EUR';
+  const meta = (d.metadata || d.metadata_ || {}) as Record<string, unknown>;
+  const resources = meta.resources;
+  const hasResources = Array.isArray(resources) && resources.length > 0;
+  const totalBase = typeof params.value === 'number' ? params.value : Number(params.value) || 0;
+
+  const lines: string[] = [];
+
+  if (hasResources) {
+    lines.push(
+      t('boq.total_tip_resources', {
+        defaultValue: "Total is the sum of this position's resources (labour, material, plant).",
+      }),
+    );
+  } else {
+    const q = typeof d.quantity === 'number' ? d.quantity : parseFloat(String(d.quantity)) || 0;
+    const r = typeof d.unit_rate === 'number' ? d.unit_rate : parseFloat(String(d.unit_rate)) || 0;
+    const unit = (d.unit as string | undefined) ?? '';
+    const dq = ctx.displayQuantity;
+    const qDisp = dq ? dq.convert(q, unit) : { value: q, unit };
+    const rDisp = dq ? dq.convertRate(r, unit) : r;
+    const unitLabel = qDisp.unit || unit;
+    const srcCode = (meta.currency as string | undefined) || baseCode;
+    const qtyFmt = new Intl.NumberFormat(locale, { maximumFractionDigits: 3 });
+    lines.push(
+      t('boq.total_tip_formula', {
+        defaultValue: '{{qty}} {{unit}} x {{rate}} per {{unit}}',
+        qty: qtyFmt.format(qDisp.value),
+        unit: unitLabel,
+        rate: fmtWithCurrency(rDisp, locale, srcCode),
+      }),
+    );
+  }
+
+  // Silent FX rebase: the cell converts a foreign-priced line into the base
+  // currency before it is summed. Say so, otherwise the number looks wrong.
+  const srcCurrency = meta.currency as string | undefined;
+  if (srcCurrency && srcCurrency !== baseCode) {
+    lines.push(
+      t('boq.total_tip_fx', {
+        defaultValue: 'Priced in {{cur}}, converted to {{base}} for the project total.',
+        cur: srcCurrency,
+        base: baseCode,
+      }),
+    );
+  }
+
+  // View-only display-currency override applied on top of the base value.
+  const dc = ctx.displayCurrency;
+  if (dc && dc.rate > 0 && dc.code !== baseCode) {
+    lines.push(
+      t('boq.total_tip_display', {
+        defaultValue: 'Shown in {{code}} at the project display rate.',
+        code: dc.code,
+      }),
+    );
+  }
+
+  lines.push(
+    t('boq.total_tip_equals', {
+      defaultValue: '= {{total}}',
+      total: totalFormatter({ value: totalBase, context: ctx } as ValueFormatterParams),
+    }),
+  );
+
+  return lines.join('\n');
 }
 
 /**
@@ -574,6 +669,7 @@ export function getColumnDefs(context: BOQColumnContext): ColDef[] {
         return convertToBase(raw, sourceCurrency, ctx?.currencyCode, ctx?.fxRates);
       },
       valueFormatter: totalFormatter,
+      tooltipValueGetter: totalTooltip,
       cellClass: (params) => {
         const base = 'text-right tabular-nums text-xs !pr-2 !pl-2';
         if (params.data?._isSection) return `${base} font-bold`;
