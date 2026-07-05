@@ -637,6 +637,117 @@ async def export_invoice_br_pdf(
     )
 
 
+@router.get(
+    "/invoices/{invoice_id}/einvoice",
+    summary="Export invoice as an EN 16931 e-invoice (ZUGFeRD / Factur-X / XRechnung)",
+    description=(
+        "Render the invoice as a EN 16931 Cross Industry Invoice (CII) XML, "
+        "the shared syntax behind ZUGFeRD 2.1, Factur-X 1.0 and XRechnung 3.0. "
+        "Choose the target with ?format=xrechnung|zugferd|facturx|en16931. "
+        "Seller and buyer master data, the Buyer reference / Leitweg-ID and an "
+        "explicit VAT rate are read from the invoice metadata under the "
+        "'einvoice' key. Pass ?dry_run=true to get the list of missing EN 16931 "
+        "fields as JSON instead of the file, so the UI can prompt for them."
+    ),
+    response_description="application/xml CII stream, or a JSON problem list when dry_run=true",
+)
+async def export_invoice_einvoice(
+    invoice_id: uuid.UUID,
+    session: SessionDep,
+    fmt: str = Query(default="xrechnung", alias="format"),
+    dry_run: bool = Query(default=False),
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("finance.read")),
+    service: FinanceService = Depends(_get_service),
+) -> StreamingResponse | dict[str, Any]:
+    """Stream a German e-invoice (CII XML) rendered from the finance invoice."""
+    from app.modules.einvoice import (
+        SUPPORTED_PROFILES,
+        problems_for,
+        render_einvoice,
+    )
+    from app.modules.einvoice.cii import EInvoiceError
+
+    profile = (fmt or "xrechnung").strip().lower()
+    if profile not in SUPPORTED_PROFILES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"unknown e-invoice format {fmt!r}; use one of {', '.join(SUPPORTED_PROFILES)}",
+        )
+
+    await _require_invoice_access(session, invoice_id, user_id)
+    fresh = await service.get_invoice(invoice_id)
+
+    # Best-effort buyer name fallback from the linked contact (never block on it).
+    buyer_fallback = ""
+    if fresh.contact_id:
+        try:
+            from app.modules.contacts.repository import ContactRepository
+
+            contact = await ContactRepository(session).get_by_id(fresh.contact_id)
+            if contact is not None:
+                buyer_fallback = str(getattr(contact, "name", "") or "").strip()
+        except Exception:  # noqa: BLE001 - fallback only
+            logger.debug("e-invoice: contact lookup failed", exc_info=True)
+
+    invoice_dict: dict[str, Any] = {
+        "invoice_number": fresh.invoice_number,
+        "invoice_direction": fresh.invoice_direction,
+        "invoice_date": fresh.invoice_date,
+        "due_date": fresh.due_date,
+        "currency_code": fresh.currency_code,
+        "amount_subtotal": fresh.amount_subtotal,
+        "tax_amount": fresh.tax_amount,
+        "retention_amount": fresh.retention_amount,
+        "amount_total": fresh.amount_total,
+        "notes": fresh.notes,
+        "metadata": dict(fresh.metadata_ or {}),
+    }
+    line_items: list[dict[str, Any]] = [
+        {
+            "description": li.description,
+            "unit": li.unit,
+            "quantity": li.quantity,
+            "unit_rate": li.unit_rate,
+            "amount": li.amount,
+        }
+        for li in (fresh.line_items or [])
+    ]
+
+    if dry_run:
+        problems = problems_for(
+            invoice=invoice_dict,
+            line_items=line_items,
+            profile=profile,
+            buyer_fallback_name=buyer_fallback,
+        )
+        return {"format": profile, "valid": not problems, "problems": problems}
+
+    try:
+        filename, media_type, xml = render_einvoice(
+            invoice=invoice_dict,
+            line_items=line_items,
+            profile=profile,
+            buyer_fallback_name=buyer_fallback,
+        )
+    except EInvoiceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"invoice is not EN 16931 complete for {profile}: {exc}. "
+                "Fill seller/buyer master data and the Leitweg-ID under the "
+                "invoice metadata 'einvoice' key, or call with ?dry_run=true."
+            ),
+        ) from exc
+
+    # ``filename`` is already ASCII-sanitised by the service (_safe_token).
+    return StreamingResponse(
+        io.BytesIO(xml),
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 # ── Payments (MUST be before /{invoice_id}) ─────────────────────────────────
 
 
