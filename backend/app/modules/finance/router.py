@@ -639,17 +639,21 @@ async def export_invoice_br_pdf(
 
 @router.get(
     "/invoices/{invoice_id}/einvoice",
-    summary="Export invoice as an EN 16931 e-invoice (ZUGFeRD / Factur-X / XRechnung)",
+    summary="Export invoice as an EN 16931 e-invoice (international: CII and UBL/Peppol)",
     description=(
-        "Render the invoice as a EN 16931 Cross Industry Invoice (CII) XML, "
-        "the shared syntax behind ZUGFeRD 2.1, Factur-X 1.0 and XRechnung 3.0. "
-        "Choose the target with ?format=xrechnung|zugferd|facturx|en16931. "
-        "Seller and buyer master data, the Buyer reference / Leitweg-ID and an "
-        "explicit VAT rate are read from the invoice metadata under the "
-        "'einvoice' key. Pass ?dry_run=true to get the list of missing EN 16931 "
-        "fields as JSON instead of the file, so the UI can prompt for them."
+        "Render the invoice as an EN 16931 electronic invoice. EN 16931 is the "
+        "international semantic standard, so the same invoice can be issued in "
+        "any supported country flavour and either syntax: CII for ZUGFeRD 2.1, "
+        "Factur-X 1.0 and XRechnung 3.0 (DACH/EU), or UBL for Peppol BIS "
+        "Billing 3.0 and plain EN 16931 UBL (worldwide - EU, UK, Australia, New "
+        "Zealand, Singapore and more). Choose with "
+        "?format=peppol|ubl|xrechnung|zugferd|facturx|en16931. Seller and buyer "
+        "master data, the Buyer reference (Leitweg-ID for XRechnung, PO for "
+        "Peppol) and an explicit VAT rate are read from the invoice metadata "
+        "under the 'einvoice' key. Pass ?dry_run=true to get the list of missing "
+        "EN 16931 fields as JSON instead of the file, so the UI can prompt for them."
     ),
-    response_description="application/xml CII stream, or a JSON problem list when dry_run=true",
+    response_description="application/xml e-invoice stream, or a JSON problem list when dry_run=true",
 )
 async def export_invoice_einvoice(
     invoice_id: uuid.UUID,

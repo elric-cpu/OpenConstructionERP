@@ -28,6 +28,8 @@ from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from xml.etree import ElementTree as ET  # noqa: N817 - trusted, we build not parse
 
+from app.modules.einvoice.profiles import PROFILES, Profile, get_profile
+
 # --- namespaces -----------------------------------------------------------
 
 RSM = "urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"
@@ -45,18 +47,9 @@ def _q(prefix: str, local: str) -> str:
 
 
 # --- profiles -------------------------------------------------------------
-
-# BT-24 guideline identifiers per target format.
-_GUIDELINE = {
-    "en16931": "urn:cen.eu:en16931:2017",
-    "zugferd": "urn:cen.eu:en16931:2017",
-    "facturx": "urn:cen.eu:en16931:2017",
-    "xrechnung": ("urn:cen.eu:en16931:2017#compliant#urn:xoev-de:kosit:standard:xrechnung_3.0"),
-}
-# Profiles that make the Buyer reference (BT-10) mandatory.
-_BUYER_REF_REQUIRED = {"xrechnung"}
-
-SUPPORTED_PROFILES = tuple(_GUIDELINE)
+# Profiles live in the extensible ``profiles`` registry (imported above) so a
+# new country is one entry there, not a change here. ``PROFILES`` /
+# ``SUPPORTED_PROFILES`` / ``get_profile`` are re-exported for callers.
 
 # Inverse of peppol._UNIT_MAP: internal unit label -> UNECE Rec-20 code.
 # Kept local so the two modules stay decoupled; falls back to piece (C62).
@@ -226,16 +219,14 @@ def _date_el(parent: ET.Element, prefix: str, local: str, iso: str) -> None:
 # --- validation -----------------------------------------------------------
 
 
-def validate(inv: EInvoice) -> list[str]:
-    """Return a list of EN 16931 mandatory-field problems (empty = ok).
+def validate_semantics(inv: EInvoice) -> list[str]:
+    """Country-agnostic EN 16931 checks (syntax and profile independent).
 
-    This is a pragmatic subset of the business rules - enough to catch the
-    fields a receiver's validator will reject on, without pulling in a full
-    Schematron engine.
+    A pragmatic subset of the business rules - enough to catch the fields a
+    receiver's validator will reject on, without a full Schematron engine.
+    These rules hold for every country/profile.
     """
     problems: list[str] = []
-    if inv.profile not in _GUIDELINE:
-        problems.append(f"unknown profile {inv.profile!r} (BT-24)")
     if not inv.invoice_number:
         problems.append("missing invoice number (BT-1)")
     if not inv.issue_date:
@@ -251,8 +242,6 @@ def validate(inv: EInvoice) -> list[str]:
             problems.append(f"missing {who} country code (BR-08/BR-11)")
     if not (inv.seller.vat_id or inv.seller.tax_number):
         problems.append("seller needs a VAT id (BT-31) or tax number (BT-32)")
-    if inv.profile in _BUYER_REF_REQUIRED and not inv.buyer_reference:
-        problems.append("XRechnung requires a Buyer reference / Leitweg-ID (BT-10)")
     # Totals must reconcile (BR-CO-*).
     if inv.line_total != sum((line.line_net_amount for line in inv.lines), Decimal("0")):
         problems.append("sum of line net amounts != document line total (BR-CO-10)")
@@ -261,6 +250,35 @@ def validate(inv: EInvoice) -> list[str]:
         problems.append("grand total != tax basis + tax total (BR-CO-15)")
     if inv.due_payable != inv.grand_total - inv.prepaid_amount:
         problems.append("amount due != grand total - prepaid (BR-CO-16)")
+    return problems
+
+
+def profile_problems(inv: EInvoice, profile: Profile) -> list[str]:
+    """Rules specific to one profile (e.g. XRechnung / Peppol Buyer reference)."""
+    problems: list[str] = []
+    if profile.buyer_ref_required:
+        has_buyer_ref = bool(inv.buyer_reference)
+        has_order_ref = bool(inv.order_reference)
+        if not has_buyer_ref and not (profile.order_ref_alternative and has_order_ref):
+            if profile.name == "xrechnung":
+                problems.append("XRechnung requires a Buyer reference / Leitweg-ID (BT-10)")
+            elif profile.order_ref_alternative:
+                problems.append(
+                    f"{profile.label or profile.name} requires a Buyer reference (BT-10) or an Order reference (BT-13)"
+                )
+            else:
+                problems.append(f"{profile.label or profile.name} requires a Buyer reference (BT-10)")
+    return problems
+
+
+def validate(inv: EInvoice) -> list[str]:
+    """Full validation: shared semantics plus the invoice's own profile rules."""
+    problems = validate_semantics(inv)
+    profile = get_profile(inv.profile)
+    if profile is None:
+        problems.append(f"unknown profile {inv.profile!r} (BT-24)")
+    else:
+        problems += profile_problems(inv, profile)
     return problems
 
 
@@ -312,6 +330,12 @@ def build_cii_xml(inv: EInvoice, *, strict: bool = True) -> bytes:
             invoice fails :func:`validate`. Set False to emit a best-effort
             document for inspection/debugging.
     """
+    profile = get_profile(inv.profile)
+    if profile is None or profile.syntax != "cii":
+        raise EInvoiceError(
+            f"profile {inv.profile!r} is not a CII profile "
+            f"(supported CII: {', '.join(n for n, p in PROFILES.items() if p.syntax == 'cii')})"
+        )
     if strict:
         problems = validate(inv)
         if problems:
@@ -322,7 +346,7 @@ def build_cii_xml(inv: EInvoice, *, strict: bool = True) -> bytes:
     # 1. ExchangedDocumentContext (guideline / profile)
     ctx = _sub(root, "rsm", "ExchangedDocumentContext")
     gp = _sub(ctx, "ram", "GuidelineSpecifiedDocumentContextParameter")
-    _sub(gp, "ram", "ID", _GUIDELINE[inv.profile])
+    _sub(gp, "ram", "ID", profile.guideline)
 
     # 2. ExchangedDocument (header)
     doc = _sub(root, "rsm", "ExchangedDocument")

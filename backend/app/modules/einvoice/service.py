@@ -26,6 +26,8 @@ from app.modules.einvoice.cii import (
     build_cii_xml,
     validate,
 )
+from app.modules.einvoice.profiles import get_profile
+from app.modules.einvoice.ubl import build_ubl_xml
 
 _2P = Decimal("0.01")
 
@@ -176,6 +178,9 @@ def render_einvoice(
     ``direction`` unused for now; both payable and receivable render the same
     CII (party roles are already set by seller/buyer).
     """
+    prof = get_profile(profile)
+    if prof is None:
+        raise EInvoiceError(f"unknown e-invoice profile {profile!r}")
     ei = build_einvoice(
         invoice=invoice,
         line_items=line_items,
@@ -185,7 +190,7 @@ def render_einvoice(
         seller_fallback_name=seller_fallback_name,
         buyer_fallback_name=buyer_fallback_name,
     )
-    xml = build_cii_xml(ei, strict=strict)
+    xml = build_ubl_xml(ei, strict=strict) if prof.syntax == "ubl" else build_cii_xml(ei, strict=strict)
     safe_num = _safe_token(ei.invoice_number)
     filename = f"einvoice_{safe_num}_{profile}.xml"
     return filename, "application/xml", xml
