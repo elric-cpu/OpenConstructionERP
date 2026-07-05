@@ -8,6 +8,8 @@ from app.modules.measurement import (
     MeasurementError,
     build_sheet,
     get_preset,
+    list_variables,
+    reconcile,
     render_csv,
     render_markdown,
     safe_eval,
@@ -134,3 +136,32 @@ def test_preset_lookup_defaults_to_international():
     assert get_preset("reb").standard == "REB 23.003"
     assert get_preset("oenorm").region == "AT"
     assert get_preset("nope").name == "international"
+
+
+# ---- variable listing and reconciliation -----------------------------------
+def test_list_variables_first_seen_order_without_functions():
+    assert list_variables("L * B * H") == ["L", "B", "H"]
+    # A repeated variable appears once; functions are not variables.
+    assert list_variables("sqrt(A) + A * n") == ["A", "n"]
+    # A pure-number formula needs no variables.
+    assert list_variables("3.5 * 2.4") == []
+
+
+def test_list_variables_tolerates_leading_equals():
+    assert list_variables("= L * B") == ["L", "B"]
+    assert safe_eval("= 2 * 3") == Decimal("6")
+
+
+def test_reconcile_within_and_outside_tolerance():
+    sheet = _sheet()  # total 29.16
+    good = reconcile(sheet, "29.16")
+    assert good["matches"] is True
+    assert good["difference"] == "0.000"
+    assert good["measured_quantity"] == "29.160"
+
+    off = reconcile(sheet, "30.00")
+    assert off["matches"] is False
+    assert off["difference"] == "-0.840"
+
+    # A generous tolerance accepts the drift.
+    assert reconcile(sheet, "29.20", tolerance="0.1")["matches"] is True

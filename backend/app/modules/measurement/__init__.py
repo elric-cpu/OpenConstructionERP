@@ -10,12 +10,17 @@ Pure library (no manifest, no router of its own), Decimal-exact and ORM-free
 like the ``price_breakdown`` and ``einvoice`` libraries.
 """
 
-from app.modules.measurement.formula import MeasurementError, safe_eval
+from app.modules.measurement.formula import (
+    MeasurementError,
+    list_variables,
+    safe_eval,
+)
 from app.modules.measurement.model import (
     MeasurementLine,
     MeasurementSheet,
     build_line,
     build_sheet,
+    reconcile,
 )
 from app.modules.measurement.presets import (
     PRESETS,
@@ -32,6 +37,8 @@ __all__ = [
     "build_line",
     "build_sheet",
     "get_preset",
+    "list_variables",
+    "reconcile",
     "render_csv",
     "render_markdown",
     "safe_eval",

@@ -7652,7 +7652,7 @@ async def compute_position_measurement(
     ``format=markdown`` or ``format=csv`` streams a readable sheet; otherwise
     JSON. ``preset`` labels the output (international, reb, oenorm).
     """
-    from app.modules.measurement import build_sheet
+    from app.modules.measurement import build_sheet, reconcile
     from app.modules.measurement.formula import MeasurementError
 
     existing = await service.position_repo.get_by_id(position_id)
@@ -7678,7 +7678,12 @@ async def compute_position_measurement(
         ) from exc
 
     streamed = _measurement_stream(sheet, fmt, preset, existing.ordinal or "")
-    return streamed if streamed is not None else sheet.to_dict()
+    if streamed is not None:
+        return streamed
+    result = sheet.to_dict()
+    # Show whether the measured total matches the position's current quantity.
+    result["reconciliation"] = reconcile(sheet, existing.quantity)
+    return result
 
 
 @router.get(
@@ -7700,7 +7705,7 @@ async def get_position_measurement(
     Bad stored formulas are kept as per-line errors (quantity 0) rather than
     failing the whole read, so a saved sheet always renders.
     """
-    from app.modules.measurement import build_sheet
+    from app.modules.measurement import build_sheet, reconcile
 
     existing = await service.position_repo.get_by_id(position_id)
     if existing is None:
@@ -7736,6 +7741,7 @@ async def get_position_measurement(
         return streamed
     result = sheet.to_dict()
     result["stored"] = True
+    result["reconciliation"] = reconcile(sheet, existing.quantity)
     return result
 
 

@@ -119,6 +119,25 @@ def build_line(raw: dict[str, Any], *, strict: bool = True) -> MeasurementLine:
     return line
 
 
+def reconcile(sheet: MeasurementSheet, target_quantity: Any, *, tolerance: Any = "0.001") -> dict:
+    """Compare the measured total against a target (for example the position
+    quantity) and report the drift, so a user can trust or fix a quantity.
+
+    ``matches`` is true when the absolute difference is within ``tolerance``.
+    """
+    measured = sheet.total_quantity
+    target = _dec(target_quantity)
+    tol = abs(_dec(tolerance, "0.001"))
+    difference = measured - target
+    return {
+        "measured_quantity": _q(measured, _3P),
+        "target_quantity": _q(target, _3P),
+        "difference": _q(difference, _3P),
+        "tolerance": str(tol),
+        "matches": abs(difference) <= tol,
+    }
+
+
 def build_sheet(
     *,
     item_ref: str,

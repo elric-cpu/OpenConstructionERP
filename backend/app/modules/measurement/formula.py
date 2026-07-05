@@ -61,14 +61,46 @@ def safe_eval(expr: str, variables: dict[str, Any] | None = None) -> Decimal:
     ``variables`` maps names used in the formula (case-insensitive) to values,
     for example ``{"L": 3.5, "B": 2.4}`` for ``"L * B"``.
     """
+    tree = _parse(expr)
+    return _eval(tree.body, _norm_vars(variables))
+
+
+def _parse(expr: str) -> ast.Expression:
+    """Parse a formula, tolerating a leading ``=`` (spreadsheet paste)."""
     text = (expr or "").strip()
+    if text.startswith("="):
+        text = text[1:].strip()
     if not text:
         raise MeasurementError("empty formula")
     try:
-        tree = ast.parse(text, mode="eval")
+        return ast.parse(text, mode="eval")
     except SyntaxError as exc:
         raise MeasurementError(f"invalid formula: {text!r}") from exc
-    return _eval(tree.body, _norm_vars(variables))
+
+
+def list_variables(expr: str) -> list[str]:
+    """Return the variable names a formula needs, in first-seen order.
+
+    Lets a take-off UI prompt for exactly the dimensions a template uses, for
+    example ``["L", "B", "H"]`` for ``"L * B * H"``. Function names such as
+    ``sqrt`` are not variables and are excluded.
+    """
+    tree = _parse(expr)
+    # ast.walk is breadth-first, so sort names by their position in the source
+    # to get left-to-right order, then keep the first occurrence of each.
+    names = sorted(
+        (
+            (node.lineno, node.col_offset, node.id)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Name) and node.id not in _FUNCS
+        ),
+        key=lambda item: (item[0], item[1]),
+    )
+    seen: list[str] = []
+    for _lineno, _col, name in names:
+        if name not in seen:
+            seen.append(name)
+    return seen
 
 
 _BIN_OPS = (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow, ast.Mod)
