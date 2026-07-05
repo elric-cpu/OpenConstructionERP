@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PartyLoadOut(BaseModel):
@@ -94,8 +94,21 @@ class ImpactProjectionOut(BaseModel):
 class ClarifyIn(BaseModel):
     """Request body for the clarifier: a rough change note to structure."""
 
-    note: str
-    contract_standard: str = ""
+    note: str = Field(
+        max_length=20_000,
+        description=(
+            "The rough free-text change note to structure. May be blank; capped "
+            "in length so the analysis stays fast for everyone."
+        ),
+    )
+    contract_standard: str = Field(
+        default="",
+        max_length=100,
+        description=(
+            "Optional contract form (for example FIDIC, NEC4, JCT) used to "
+            "suggest a likely governing clause. Leave blank if unknown."
+        ),
+    )
 
 
 class ClarificationGapOut(BaseModel):

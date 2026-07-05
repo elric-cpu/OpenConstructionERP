@@ -24,6 +24,12 @@ being mentioned, not its polarity. A note that says "no cost yet" still trips
 the cost signal because the word "cost" is present; the clarifier deliberately
 errs toward "the author is talking about cost" rather than parsing negation.
 Confirming the actual figures stays with the author and the commercial review.
+
+International note: the cost signal is currency-agnostic. It fires on generic
+value words, on a broad set of international currency names / ISO codes and
+symbols, or on a money-shaped figure with either Anglo (``1,200.00``) or
+European (``1.200,00``) grouping, so a note written anywhere in the world is
+read the same way rather than only one priced in euros, dollars or pounds.
 """
 
 from __future__ import annotations
@@ -133,8 +139,9 @@ CLASSIFICATION_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
 
 # --- Signal detection ------------------------------------------------------
 
-#: Currency tokens that count as a cost / value signal on their own.
-_CURRENCY_WORDS = (
+#: Generic cost / value vocabulary that signals the author is talking about
+#: money regardless of the country or currency they work in.
+_VALUE_WORDS = (
     "cost",
     "price",
     "priced",
@@ -146,6 +153,18 @@ _CURRENCY_WORDS = (
     "sum",
     "fee",
     "rate",
+)
+
+#: International currency names and ISO codes that count as a cost / value signal
+#: on their own. Kept broad so a change note written anywhere in the world trips
+#: the cost signal, not only one priced in euros, dollars or pounds. A few tokens
+#: that read as ordinary non-money words in construction English are deliberately
+#: left out (for example the ISO code for the Canadian dollar collides with the
+#: everyday abbreviation for computer-aided design, and the plain-English names of
+#: some currencies are common verbs / nouns): those are still recognised by their
+#: currency symbol or by a money-shaped figure, just not by an ambiguous word.
+_CURRENCY_WORDS = (
+    # Majors, by ISO code and common name.
     "eur",
     "euro",
     "euros",
@@ -156,18 +175,73 @@ _CURRENCY_WORDS = (
     "pound",
     "pounds",
     "sterling",
+    # Other widely used codes and names, chosen for low collision risk with
+    # everyday construction wording.
+    "chf",
+    "franc",
+    "francs",
+    "zar",
+    "aud",
+    "jpy",
+    "yen",
+    "cny",
+    "yuan",
+    "renminbi",
+    "rmb",
+    "inr",
+    "rupee",
+    "rupees",
+    "aed",
+    "dirham",
+    "dirhams",
+    "sar",
+    "riyal",
+    "riyals",
+    "ngn",
+    "naira",
+    "kes",
+    "shilling",
+    "shillings",
+    "krw",
+    "pln",
+    "zloty",
+    "sek",
+    "nok",
+    "dkk",
+    "krona",
+    "kronor",
+    "krone",
+    "peso",
+    "pesos",
 )
 
-#: Whole-word cost vocabulary.
+#: Every word that, on its own, signals the author is discussing cost or value.
+_COST_SIGNAL_WORDS = _VALUE_WORDS + _CURRENCY_WORDS
+
+#: Whole-word cost vocabulary (generic value words plus international currency
+#: names / codes).
 _COST_WORD_RE = re.compile(
-    r"\b(?:" + "|".join(re.escape(w) for w in _CURRENCY_WORDS) + r")\b",
+    r"\b(?:" + "|".join(re.escape(w) for w in _COST_SIGNAL_WORDS) + r")\b",
     re.IGNORECASE,
 )
 
 #: Currency symbols that count as a money signal when attached to a figure.
-#: Built from code points so this source file stays pure ASCII: ``$`` (dollar),
-#: U+20AC (euro), U+00A3 (pound).
-_CURRENCY_SYMBOLS = "$" + chr(0x20AC) + chr(0x00A3)
+#: Built from code points so this source file stays pure ASCII. Covers the
+#: dollar sign plus the main non-Latin currency symbols, so a figure written in
+#: any of them is read as money worldwide, not only in the three Western majors.
+#: A symbol on its own (with no figure) is deliberately not treated as a signal.
+_CURRENCY_SYMBOLS = (
+    "$"
+    + chr(0x20AC)  # euro
+    + chr(0x00A3)  # pound sterling
+    + chr(0x00A5)  # yen / yuan
+    + chr(0x20B9)  # Indian rupee
+    + chr(0x20A9)  # won
+    + chr(0x20BA)  # lira
+    + chr(0x20BD)  # ruble
+    + chr(0x20A6)  # naira
+    + chr(0x20B1)  # peso
+)
 
 #: A currency symbol immediately followed by a number, e.g. ``$1,200``. A
 #: symbol on its own (no figure) is deliberately not treated as a money signal.

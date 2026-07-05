@@ -245,9 +245,18 @@ async def get_ownership_chain(
     try:
         chain, project_id = await build_ownership_chain_for(session, kind, entity_id)
     except KeyError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown change kind: {kind}") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Unknown change kind '{kind}'. Use one of: change_order, "
+                "variation_notice, variation_request, variation_order, moc_entry."
+            ),
+        ) from exc
     except LookupError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Change record not found") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No change of that kind and id was found in a project you can access. Check the id and try again.",
+        ) from exc
 
     await verify_project_access(project_id, user_id or "", session)
 
@@ -373,7 +382,10 @@ async def get_decision_impact(
     try:
         impact, candidate = await build_decision_impact(session, project_id, candidate_change_id)
     except LookupError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate change not found") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Candidate change not found in this project. Check the change id belongs to this project.",
+        ) from exc
 
     return DecisionImpactOut(
         project_id=str(project_id),
@@ -501,7 +513,13 @@ async def preview_intake_record(
     try:
         result = preview_intake(payload.profile_name, payload.record)
     except LookupError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown intake profile") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Unknown intake profile '{payload.profile_name}'. Call the intake "
+                "profiles endpoint for this project to see the available profile names."
+            ),
+        ) from exc
 
     draft = result.draft
     return IntakePreviewOut(
