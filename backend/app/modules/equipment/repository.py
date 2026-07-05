@@ -1,4 +1,4 @@
-"""‌⁠‍Equipment data access layer."""
+"""Equipment data access layer."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from app.modules.equipment.models import (
 
 
 class _BaseRepository:
-    """‌⁠‍Common CRUD primitives."""
+    """Common CRUD primitives."""
 
     model: type
     session: AsyncSession
@@ -54,7 +54,7 @@ class _BaseRepository:
 
 
 class EquipmentTypeRepository(_BaseRepository):
-    """‌⁠‍Data access for EquipmentType."""
+    """Data access for EquipmentType."""
 
     model = EquipmentType
 

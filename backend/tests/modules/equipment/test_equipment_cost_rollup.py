@@ -8,7 +8,7 @@ transaction that is rolled back on teardown via the canonical
 with a small monkeypatched stub so we never open a second session across
 event-loop boundaries (which would raise "Future attached to a different loop").
 
-Money is asserted with exact ``Decimal`` values — the equipment line is one of
+Money is asserted with exact ``Decimal`` values - the equipment line is one of
 the sums every downstream cost rollup reads, so a silent float drift here would
 corrupt the 5D model.
 

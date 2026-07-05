@@ -1,13 +1,13 @@
 """Unit tests for :class:`EquipmentService` and pure helpers.
 
 Scope:
-    * compute_next_due — hours/km/date triggers
-    * is_blocked_from_assignment — inspection + status gates
-    * assign_to_project — event emission + ValueError on blocked
-    * compute_rental_billing — day vs hour rates
-    * depreciation_value_at — linear method
-    * record_damage — auto-creates a maintenance work order
-    * record_telemetry — only updates equipment counters when reading newer
+    * compute_next_due - hours/km/date triggers
+    * is_blocked_from_assignment - inspection + status gates
+    * assign_to_project - event emission + ValueError on blocked
+    * compute_rental_billing - day vs hour rates
+    * depreciation_value_at - linear method
+    * record_damage - auto-creates a maintenance work order
+    * record_telemetry - only updates equipment counters when reading newer
     * repository CRUD basics
     * permission constants registered
 """
@@ -448,7 +448,7 @@ async def test_assign_to_project_succeeds_and_emits_event() -> None:
 
 @pytest.mark.asyncio
 async def test_assign_to_project_rejects_inverted_dates() -> None:
-    """end_date before start_date is a corrupt billing window — rejected.
+    """end_date before start_date is a corrupt billing window - rejected.
 
     Without the guard the rental persists but compute_rental_billing
     silently returns 0 and the unit never counts as utilized.
@@ -616,7 +616,7 @@ async def test_return_rental_happy_path() -> None:
 def test_busy_days_merges_overlapping_rentals() -> None:
     """Concurrent rentals must not double-count a shared day.
 
-    Two rentals fully covering Jan 1–10 should yield 10 busy days, not
+    Two rentals fully covering Jan 1-10 should yield 10 busy days, not
     20 (which would push utilization over 100% before the clamp).
     """
     from app.modules.equipment.repository import _busy_days_in_window
@@ -953,7 +953,7 @@ async def test_generate_due_work_orders_hours_fires_within_lookahead() -> None:
         id=uuid.uuid4(),
         equipment_id=eid,
         trigger_type="hours",
-        next_due_meter=Decimal("1500"),  # 20 h away — within 50 h lookahead
+        next_due_meter=Decimal("1500"),  # 20 h away - within 50 h lookahead
         next_due_date=None,
         description="500h service",
     )
@@ -1023,7 +1023,7 @@ async def test_generate_due_work_orders_skips_not_yet_due() -> None:
         id=uuid.uuid4(),
         equipment_id=eid,
         trigger_type="hours",
-        next_due_meter=Decimal("1500"),  # 500 h away — well beyond 50 h
+        next_due_meter=Decimal("1500"),  # 500 h away - well beyond 50 h
         next_due_date=None,
         description="x",
     )

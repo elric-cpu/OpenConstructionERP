@@ -1,4 +1,4 @@
-"""‌⁠‍Equipment & Fleet API routes.
+"""Equipment & Fleet API routes.
 
 Endpoints (mounted at /api/v1/equipment/):
 
@@ -259,7 +259,7 @@ async def equipment_health_analytics(
     _perm: None = Depends(RequirePermission("equipment.read")),
     service: EquipmentService = Depends(_get_service),
 ) -> HealthAnalyticsResponse:
-    """‌⁠‍Deterministic health score (0-100), anomalies and maintenance trend
+    """Deterministic health score (0-100), anomalies and maintenance trend
     derived on the fly from this unit's telemetry history."""
     return await service.health_analytics(equipment_id)
 
@@ -273,7 +273,7 @@ async def equipment_failure_forecast(
     _perm: None = Depends(RequirePermission("equipment.read")),
     service: EquipmentService = Depends(_get_service),
 ) -> FailureForecastResponse:
-    """‌⁠‍Predicted next-service date and confidence from usage / hours trend."""
+    """Predicted next-service date and confidence from usage / hours trend."""
     return await service.failure_forecast(equipment_id)
 
 
@@ -385,7 +385,7 @@ async def generate_due_work_orders(
     _perm: None = Depends(RequirePermission("equipment.update")),
     service: EquipmentService = Depends(_get_service),
 ) -> list[MaintenanceWorkOrderResponse]:
-    """‌⁠‍Generate work-order stubs for schedules within `hours` of due."""
+    """Generate work-order stubs for schedules within `hours` of due."""
     wos = await service.generate_due_work_orders(
         equipment_id=equipment_id,
         lookahead_hours=hours,
@@ -804,7 +804,7 @@ async def fleet_optimization(
     _perm: None = Depends(RequirePermission("equipment.read")),
     service: EquipmentService = Depends(_get_service),
 ) -> FleetOptimizationResponse:
-    """‌⁠‍Fleet-wide optimisation: underutilised units, maintenance bundles and
+    """Fleet-wide optimisation: underutilised units, maintenance bundles and
     estimated monthly idle-cost savings."""
     return await service.fleet_optimization(
         target_utilization_pct=target_utilization,

@@ -1,4 +1,4 @@
-"""‌⁠‍Equipment & Fleet Management module manifest."""
+"""Equipment & Fleet Management module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

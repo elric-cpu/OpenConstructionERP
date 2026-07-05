@@ -1,4 +1,4 @@
-"""‌⁠‍Equipment service - business logic for fleet, maintenance, rentals, and damage.
+"""Equipment service - business logic for fleet, maintenance, rentals, and damage.
 
 Key features:
     * record_telemetry - append reading + bump Equipment counters if newer.
@@ -84,7 +84,7 @@ def compute_next_due(
     current_km: Decimal | None = None,
     today: str | None = None,
 ) -> dict[str, Any]:
-    """‌⁠‍Compute the next due trigger for a schedule.
+    """Compute the next due trigger for a schedule.
 
     Returns a dict with `next_due_meter` (Decimal | None) and `next_due_date`
     (str | None). The shape mirrors :class:`MaintenanceSchedule` fields.
@@ -124,19 +124,37 @@ def compute_next_due(
     return {"next_due_meter": None, "next_due_date": None}
 
 
+def _non_negative(value: Decimal | float | int | str | None) -> Decimal:
+    """Coerce a value to Decimal and never let it go below zero.
+
+    Rental billing must never produce a credit from a bad input, so a negative
+    logged-hours value or a negative rate (both only reachable through corrupt
+    data) is floored at zero rather than silently reversing the charge.
+    """
+    try:
+        result = Decimal(str(value if value is not None else 0))
+    except (ArithmeticError, ValueError, TypeError):
+        return Decimal("0")
+    return result if result > 0 else Decimal("0")
+
+
 def compute_rental_billing(
     rental: EquipmentRental,
     period_start: str,
     period_end: str,
     hours_logged: Decimal | float | int | None = None,
 ) -> Decimal:
-    """‌⁠‍Compute billing for a rental over a period.
+    """Compute billing for a rental over a period.
 
     Hours billing takes precedence if ``hours_logged`` is provided and the
-    rental has a non-zero hourly rate; otherwise day billing applies.
+    rental has a non-zero hourly rate; otherwise day billing applies. Dates are
+    ISO 8601 (YYYY-MM-DD), unambiguous in every country, and the currency is
+    whatever the rental rate is stored in. Negative hours or rates from corrupt
+    data are floored at zero so billing is never a credit.
     """
-    if hours_logged is not None and Decimal(str(rental.internal_rate_per_hour or 0)) > 0:
-        return Decimal(str(hours_logged)) * Decimal(str(rental.internal_rate_per_hour))
+    rate_per_hour = _non_negative(rental.internal_rate_per_hour)
+    if hours_logged is not None and rate_per_hour > 0:
+        return _non_negative(hours_logged) * rate_per_hour
 
     try:
         start = date.fromisoformat(period_start)
@@ -147,7 +165,7 @@ def compute_rental_billing(
         return Decimal("0")
 
     days = Decimal((end - start).days + 1)
-    return days * Decimal(str(rental.internal_rate_per_day or 0))
+    return days * _non_negative(rental.internal_rate_per_day)
 
 
 def depreciation_value_at(
