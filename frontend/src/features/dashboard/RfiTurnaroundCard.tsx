@@ -14,7 +14,7 @@
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader } from '@/shared/ui';
+import { Card, CardContent, CardHeader, InfoHint } from '@/shared/ui';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { fetchRFIStats } from '@/features/rfi/api';
 
@@ -60,6 +60,9 @@ export function RfiTurnaroundCard() {
     <Card className="h-full">
       <CardHeader
         title={t('dashboard.rfi_title', { defaultValue: 'RFI turnaround' })}
+        subtitle={t('dashboard.rfi_subtitle', {
+          defaultValue: 'How quickly requests for information get answered',
+        })}
         action={
           <button
             type="button"
@@ -99,6 +102,13 @@ export function RfiTurnaroundCard() {
                 days: avgDays,
               })}
         </p>
+        <InfoHint
+          className="mt-3"
+          text={t('dashboard.rfi_help', {
+            defaultValue:
+              'Open counts RFIs that are still waiting for an answer. Overdue are the open ones already past their response date, and turn amber the moment one appears. The average is the response time across RFIs that have been answered, measured in days.',
+          })}
+        />
       </CardContent>
     </Card>
   );

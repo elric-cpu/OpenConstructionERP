@@ -21,7 +21,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { CalendarClock, Flag, ArrowRight } from 'lucide-react';
-import { Card, CardContent, CardHeader } from '@/shared/ui';
+import { Card, CardContent, CardHeader, InfoHint } from '@/shared/ui';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { scheduleApi, type Activity } from '@/features/schedule/api';
 
@@ -120,6 +120,9 @@ export function UpcomingMilestonesCard() {
             {t('dashboard.milestones_title', { defaultValue: 'Upcoming milestones' })}
           </span>
         }
+        subtitle={t('dashboard.milestones_subtitle', {
+          defaultValue: 'The next key dates from your schedule',
+        })}
         action={
           <button
             type="button"
@@ -146,6 +149,13 @@ export function UpcomingMilestonesCard() {
             </li>
           ))}
         </ul>
+        <InfoHint
+          className="mt-3"
+          text={t('dashboard.milestones_help', {
+            defaultValue:
+              'These are schedule activities marked as milestones that are not yet complete, sorted by date with the soonest first. The chip shows how many days until the date, or how far a date has already slipped. A milestone that has just passed stays listed for two weeks so it is not missed.',
+          })}
+        />
       </CardContent>
     </Card>
   );

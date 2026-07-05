@@ -60,6 +60,14 @@ export const dashboardGuide: ModuleGuideContent = {
       bodyDefault:
         'New to the platform? Follow the Getting Started checklist below the ribbon: load a cost database, enable AI search, connect your AI keys, create a project, build a BOQ and set quantities. Each step turns green once done. Next Steps then suggests what to do next based on how far along your estimate is.',
     },
+    {
+      icon: 'ClipboardCheck',
+      titleKey: 'guide.dashboard.delivery.title',
+      titleDefault: 'Delivery and quality widgets',
+      bodyKey: 'guide.dashboard.delivery.body',
+      bodyDefault:
+        'Five widgets track the delivery and quality work on your active project and each carries a How it works note you can open right on the card. Upcoming Milestones lists the next key schedule dates with days remaining or overdue. RFI Turnaround shows open and overdue requests for information and the average days to a response. Submittals splits pending review, approved and overdue. Inspections gives the pass rate with open and failed counts. Punch List shows open and overdue items with the average days to close. Each card stays hidden until its module has data, so a new project starts clean and the cards appear as you begin using each area.',
+    },
   ],
   ctaKey: 'guide.dashboard.cta',
   ctaDefault: 'Start a new estimate',

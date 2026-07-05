@@ -19,7 +19,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { ClipboardCheck, ArrowRight } from 'lucide-react';
-import { Card, CardContent, CardHeader } from '@/shared/ui';
+import { Card, CardContent, CardHeader, InfoHint } from '@/shared/ui';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { fetchInspections, type Inspection } from '@/features/inspections/api';
 
@@ -90,6 +90,9 @@ export function InspectionsQualityCard() {
             {t('dashboard.inspections_title', { defaultValue: 'Inspection quality' })}
           </span>
         }
+        subtitle={t('dashboard.inspections_subtitle', {
+          defaultValue: 'How inspections are passing on this project',
+        })}
         action={
           <button
             type="button"
@@ -148,6 +151,13 @@ export function InspectionsQualityCard() {
             {nf.format(stats.failed)}
           </span>
         </div>
+        <InfoHint
+          className="mt-3"
+          text={t('dashboard.inspections_help', {
+            defaultValue:
+              'Pass rate is passed inspections divided by those that already have a result, passed or failed. Inspections still scheduled or in progress do not affect the rate yet, so until the first result comes in the card shows the open count instead. Failed counts inspections with a failing result.',
+          })}
+        />
       </CardContent>
     </Card>
   );

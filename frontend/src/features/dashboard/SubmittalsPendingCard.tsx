@@ -21,7 +21,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
-import { Card, CardContent, CardHeader } from '@/shared/ui';
+import { Card, CardContent, CardHeader, InfoHint } from '@/shared/ui';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { fetchSubmittals, type Submittal, type SubmittalStatus } from '@/features/submittals/api';
 
@@ -103,6 +103,9 @@ export function SubmittalsPendingCard() {
     <Card className="h-full">
       <CardHeader
         title={t('dashboard.submittals_title', { defaultValue: 'Submittals for review' })}
+        subtitle={t('dashboard.submittals_subtitle', {
+          defaultValue: 'Where each submittal sits in the review',
+        })}
         action={
           <button
             type="button"
@@ -145,6 +148,13 @@ export function SubmittalsPendingCard() {
             </p>
           </div>
         </div>
+        <InfoHint
+          className="mt-3"
+          text={t('dashboard.submittals_help', {
+            defaultValue:
+              'Pending review counts submittals that have been sent in and are waiting for a reviewer decision. Approved includes both approved and approved as noted. Overdue are submittals past their required date that are not yet approved, closed or rejected.',
+          })}
+        />
       </CardContent>
     </Card>
   );

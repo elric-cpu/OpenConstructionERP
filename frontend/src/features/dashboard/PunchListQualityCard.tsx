@@ -23,7 +23,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { ClipboardCheck, ArrowRight } from 'lucide-react';
-import { Card, CardContent, CardHeader } from '@/shared/ui';
+import { Card, CardContent, CardHeader, InfoHint } from '@/shared/ui';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { fetchPunchSummary, type PunchStatus } from '@/features/punchlist/api';
 
@@ -123,6 +123,13 @@ export function PunchListQualityCard() {
                 defaultValue: 'No items closed yet',
               })}
         </p>
+        <InfoHint
+          className="mt-3"
+          text={t('dashboard.punch_help', {
+            defaultValue:
+              'Open items are everything not yet verified or closed, so items that are open, in progress or resolved but awaiting a final check all count here. Overdue are open items past their due date. The average is how long closed items took, from raised to closed, in days.',
+          })}
+        />
       </CardContent>
     </Card>
   );
