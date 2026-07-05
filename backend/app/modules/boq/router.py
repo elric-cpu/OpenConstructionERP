@@ -7603,6 +7603,142 @@ async def get_position_price_analysis(
     return result
 
 
+def _measurement_stream(sheet: Any, fmt: str, preset: str, item_ref: str) -> StreamingResponse | None:
+    """Return a Markdown or CSV download of a measurement sheet, or None for JSON."""
+    from app.modules.measurement import render_csv, render_markdown
+
+    safe = str(item_ref or "measurement").replace("/", "-").replace(" ", "_")
+    if fmt == "markdown":
+        body = render_markdown(sheet, preset=preset)
+        return StreamingResponse(
+            io.BytesIO(body.encode("utf-8")),
+            media_type="text/markdown",
+            headers={"Content-Disposition": f'attachment; filename="measurement_{safe}.md"'},
+        )
+    if fmt == "csv":
+        body = render_csv(sheet, preset=preset)
+        return StreamingResponse(
+            io.BytesIO(body.encode("utf-8")),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="measurement_{safe}.csv"'},
+        )
+    return None
+
+
+@router.post(
+    "/positions/{position_id}/measurement/compute/",
+    summary="Compute a measurement sheet for a position (does not save)",
+    dependencies=[Depends(RequirePermission("boq.read"))],
+)
+async def compute_position_measurement(
+    position_id: uuid.UUID,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    data: dict = Body(...),
+    fmt: str = Query(default="json", alias="format"),
+    preset: str = Query(default="international"),
+    service: BOQService = Depends(_get_service),
+) -> StreamingResponse | dict[str, Any]:
+    """Compute a quantity from formula-based take-off lines without saving.
+
+    Body: ``{"lines": [{"description", "formula", "variables", "factor",
+    "sign"}], "unit"?, "strict"?}``. Each line's formula (for example
+    ``3.50 * 2.40`` or ``L * B * H``) is evaluated safely and the signed
+    partial quantities are totalled, so the number is auditable. The UI can then
+    persist the accepted quantity and the lines with a normal position update
+    (PATCH the position with ``quantity`` and ``metadata.measurement``).
+
+    ``format=markdown`` or ``format=csv`` streams a readable sheet; otherwise
+    JSON. ``preset`` labels the output (international, reb, oenorm).
+    """
+    from app.modules.measurement import build_sheet
+    from app.modules.measurement.formula import MeasurementError
+
+    existing = await service.position_repo.get_by_id(position_id)
+    if existing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=translate("errors.position_not_found", locale=get_locale()),
+        )
+    await _verify_boq_owner(session, existing.boq_id, user_id, payload)
+
+    try:
+        sheet = build_sheet(
+            item_ref=str(existing.ordinal or ""),
+            description=str(existing.description or ""),
+            unit=str(data.get("unit") or existing.unit or ""),
+            lines=list(data.get("lines") or []),
+            strict=bool(data.get("strict", False)),
+        )
+    except MeasurementError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"measurement error: {exc}",
+        ) from exc
+
+    streamed = _measurement_stream(sheet, fmt, preset, existing.ordinal or "")
+    return streamed if streamed is not None else sheet.to_dict()
+
+
+@router.get(
+    "/positions/{position_id}/measurement/",
+    summary="Read the saved measurement sheet of a position",
+    dependencies=[Depends(RequirePermission("boq.read"))],
+)
+async def get_position_measurement(
+    position_id: uuid.UUID,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    fmt: str = Query(default="json", alias="format"),
+    preset: str = Query(default="international"),
+    service: BOQService = Depends(_get_service),
+) -> StreamingResponse | dict[str, Any]:
+    """Return the measurement sheet stored on a position (``metadata.measurement``).
+
+    Bad stored formulas are kept as per-line errors (quantity 0) rather than
+    failing the whole read, so a saved sheet always renders.
+    """
+    from app.modules.measurement import build_sheet
+
+    existing = await service.position_repo.get_by_id(position_id)
+    if existing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=translate("errors.position_not_found", locale=get_locale()),
+        )
+    await _verify_boq_owner(session, existing.boq_id, user_id, payload)
+
+    meta = existing.metadata_ or {}
+    stored = meta.get("measurement") or {}
+    lines = list(stored.get("lines") or [])
+    if not lines:
+        return {
+            "item_ref": existing.ordinal or "",
+            "description": existing.description or "",
+            "unit": existing.unit or "",
+            "lines": [],
+            "total_quantity": "0.000",
+            "line_count": 0,
+            "has_errors": False,
+            "stored": False,
+        }
+    sheet = build_sheet(
+        item_ref=str(existing.ordinal or ""),
+        description=str(existing.description or ""),
+        unit=str(stored.get("unit") or existing.unit or ""),
+        lines=lines,
+        strict=False,
+    )
+    streamed = _measurement_stream(sheet, fmt, preset, existing.ordinal or "")
+    if streamed is not None:
+        return streamed
+    result = sheet.to_dict()
+    result["stored"] = True
+    return result
+
+
 # ── Statistics ──────────────────────────────────────────────────────────────
 
 
