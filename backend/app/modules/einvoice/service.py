@@ -196,6 +196,48 @@ def render_einvoice(
     return filename, "application/xml", xml
 
 
+def render_einvoice_pdf(
+    *,
+    invoice: dict[str, Any],
+    line_items: list[dict[str, Any]],
+    profile: str,
+    seller: Party | dict | None = None,
+    buyer: Party | dict | None = None,
+    seller_fallback_name: str = "",
+    buyer_fallback_name: str = "",
+    strict: bool = True,
+) -> tuple[str, str, bytes]:
+    """Return ``(filename, "application/pdf", pdf)`` for a Factur-X/ZUGFeRD hybrid.
+
+    Only CII profiles (zugferd/facturx/xrechnung/en16931) can be embedded in a
+    PDF; UBL/Peppol is XML-only, so callers should use :func:`render_einvoice`
+    for those.
+    """
+    from app.modules.einvoice.pdf_embed import build_facturx_pdf
+
+    prof = get_profile(profile)
+    if prof is None:
+        raise EInvoiceError(f"unknown e-invoice profile {profile!r}")
+    if prof.syntax != "cii":
+        raise EInvoiceError(
+            f"profile {profile!r} is UBL/XML-only; a hybrid PDF needs a CII profile "
+            "(zugferd, facturx, xrechnung or en16931)"
+        )
+    ei = build_einvoice(
+        invoice=invoice,
+        line_items=line_items,
+        profile=profile,
+        seller=seller,
+        buyer=buyer,
+        seller_fallback_name=seller_fallback_name,
+        buyer_fallback_name=buyer_fallback_name,
+    )
+    pdf = build_facturx_pdf(ei, strict=strict)
+    safe_num = _safe_token(ei.invoice_number)
+    filename = f"einvoice_{safe_num}_{profile}.pdf"
+    return filename, "application/pdf", pdf
+
+
 def problems_for(
     *,
     invoice: dict[str, Any],

@@ -660,15 +660,17 @@ async def export_invoice_einvoice(
     session: SessionDep,
     fmt: str = Query(default="xrechnung", alias="format"),
     dry_run: bool = Query(default=False),
+    embed: bool = Query(default=False),
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("finance.read")),
     service: FinanceService = Depends(_get_service),
 ) -> StreamingResponse | dict[str, Any]:
-    """Stream a German e-invoice (CII XML) rendered from the finance invoice."""
+    """Stream an EN 16931 e-invoice (CII/UBL XML, or a hybrid PDF) from the invoice."""
     from app.modules.einvoice import (
         SUPPORTED_PROFILES,
         problems_for,
         render_einvoice,
+        render_einvoice_pdf,
     )
     from app.modules.einvoice.cii import EInvoiceError
 
@@ -727,8 +729,9 @@ async def export_invoice_einvoice(
         )
         return {"format": profile, "valid": not problems, "problems": problems}
 
+    render = render_einvoice_pdf if embed else render_einvoice
     try:
-        filename, media_type, xml = render_einvoice(
+        filename, media_type, body = render(
             invoice=invoice_dict,
             line_items=line_items,
             profile=profile,
@@ -739,14 +742,14 @@ async def export_invoice_einvoice(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
                 f"invoice is not EN 16931 complete for {profile}: {exc}. "
-                "Fill seller/buyer master data and the Leitweg-ID under the "
+                "Fill seller/buyer master data and the buyer reference under the "
                 "invoice metadata 'einvoice' key, or call with ?dry_run=true."
             ),
         ) from exc
 
     # ``filename`` is already ASCII-sanitised by the service (_safe_token).
     return StreamingResponse(
-        io.BytesIO(xml),
+        io.BytesIO(body),
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

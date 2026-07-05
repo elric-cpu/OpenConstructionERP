@@ -32,6 +32,7 @@ from app.modules.einvoice.service import (
     build_einvoice,
     problems_for,
     render_einvoice,
+    render_einvoice_pdf,
 )
 from app.modules.einvoice.ubl import build_ubl_xml
 
@@ -51,6 +52,7 @@ __all__ = [
     "problems_for",
     "profile_problems",
     "render_einvoice",
+    "render_einvoice_pdf",
     "validate",
     "validate_semantics",
 ]
