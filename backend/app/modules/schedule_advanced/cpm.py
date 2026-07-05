@@ -50,6 +50,38 @@ from typing import Any, Literal
 # the forward pass (ES/EF) and the backward pass (LS/LF).
 DepType = Literal["FS", "SS", "FF", "SF"]
 
+#: The unit every ``duration`` and ``lag`` value in this engine is expressed in:
+#: whole working days as counted by the active working calendar (see
+#: :class:`OffsetCalendar`). Durations are never elapsed calendar days and never
+#: hours. A caller working in another unit (hours, shifts, elapsed days) must
+#: convert to working days before building an :class:`Activity`. Exposed as a
+#: constant so reports and API responses can label the unit in one place instead
+#: of hard-coding the word "days" in scattered strings.
+DURATION_UNIT: str = "working_day"
+
+#: The four allowed dependency (precedence) types. Kept as a runtime set so
+#: validation can check user-supplied link types without relying on the static
+#: ``Literal`` type alias above.
+VALID_DEP_TYPES: frozenset[str] = frozenset({"FS", "SS", "FF", "SF"})
+
+#: Plain-language name for each dependency type, for UI, reports and error
+#: messages so a planner never has to memorise the two-letter codes.
+DEP_TYPE_NAMES: dict[str, str] = {
+    "FS": "Finish-to-Start (this activity starts after its predecessor finishes)",
+    "SS": "Start-to-Start (this activity starts after its predecessor starts)",
+    "FF": "Finish-to-Finish (this activity finishes after its predecessor finishes)",
+    "SF": "Start-to-Finish (this activity finishes after its predecessor starts)",
+}
+
+
+def dependency_type_label(dep_type: str) -> str:
+    """Return the plain-language name of a dependency type code.
+
+    Falls back to a clear "unknown type" message so an invalid code coming from
+    imported data never surfaces to the user as a bare two-letter string.
+    """
+    return DEP_TYPE_NAMES.get(dep_type, f"Unknown dependency type '{dep_type}' (expected FS, SS, FF or SF)")
+
 
 # ── Exceptions ─────────────────────────────────────────────────────────────
 
@@ -1480,6 +1512,31 @@ class OffsetCalendar:
                 count += 1
         return count
 
+    def nth_working_day(self, project_start: date, index: int) -> date:
+        """Calendar date of the 0-based working-day ``index`` from a project start.
+
+        This is how a CPM early/late-start index (which counts working days,
+        not calendar days) becomes a real date on the wall calendar. Index 0 is
+        the first working day on or after ``project_start``; each later index
+        advances by one working day, skipping non-working weekdays and holidays.
+        A negative index raises ``ValueError`` because there is no working day
+        before the project starts.
+        """
+        if index < 0:
+            raise ValueError(
+                f"Working-day index must be 0 or greater, got {index}. "
+                "An activity cannot start before the project start date."
+            )
+        current = project_start
+        while not self._is_working_date(current):
+            current += timedelta(days=1)
+        remaining = index
+        while remaining > 0:
+            current += timedelta(days=1)
+            if self._is_working_date(current):
+                remaining -= 1
+        return current
+
 
 #: A calendar where every day is a working day and there are no holidays. Every
 #: :class:`OffsetCalendar` method on it equals the plain offset arithmetic the
@@ -1489,3 +1546,311 @@ ALL_DAYS_CALENDAR = OffsetCalendar(work_weekdays=frozenset(range(7)))
 
 #: Default working-day calendar: Monday-Friday, no holidays, offset 0 on a Monday.
 DEFAULT_OFFSET_CALENDAR = OffsetCalendar()
+
+
+def offset_calendar_from_work_days(
+    work_days: list[int] | None = None,
+    holidays: list[str] | None = None,
+    *,
+    epoch: date = date(2000, 1, 3),
+) -> OffsetCalendar:
+    """Build an :class:`OffsetCalendar` from a project's stored calendar fields.
+
+    This is the bridge from the persisted ``Calendar`` model (which keeps
+    ``work_days`` as weekday integers and ``holidays`` as ISO date strings) to
+    the pure engine, so every country can drive the schedule with its own work
+    week and public holidays instead of a hidden assumption.
+
+    Args:
+        work_days: Weekday numbers that are working days, Monday=0 .. Sunday=6.
+            ``None`` or an empty list falls back to Monday-Friday, the worldwide
+            default work week. A weekday outside 0..6 raises ``ValueError`` that
+            names the bad value.
+        holidays: ISO 8601 (YYYY-MM-DD) date strings that are never working days
+            even when they fall on a working weekday. Each entry is validated;
+            anything that is not a real ISO date raises ``ValueError`` naming the
+            offending entry so the planner can correct it. Locale day/month
+            orders (for example DD/MM/YYYY) are rejected on purpose.
+        epoch: Calendar date that engine offset 0 maps to. Defaults to a Monday.
+
+    Returns:
+        An :class:`OffsetCalendar` ready to project working-day indices onto real
+        dates via :func:`to_calendar_dates`.
+    """
+    if not work_days:
+        weekdays = DEFAULT_WORK_WEEKDAYS
+    else:
+        cleaned: set[int] = set()
+        for wd in work_days:
+            wd_int = int(wd)
+            if wd_int < 0 or wd_int > 6:
+                raise ValueError(
+                    f"Work day '{wd}' is not a valid weekday. Use whole numbers from 0 (Monday) to 6 (Sunday)."
+                )
+            cleaned.add(wd_int)
+        weekdays = frozenset(cleaned)
+
+    normalised_holidays: set[str] = set()
+    for h in holidays or []:
+        try:
+            parsed = date.fromisoformat(str(h))
+        except ValueError as exc:
+            raise ValueError(
+                f"Holiday '{h}' is not a valid ISO 8601 date. Use the YYYY-MM-DD format, for example 2026-12-25."
+            ) from exc
+        normalised_holidays.add(parsed.isoformat())
+
+    return OffsetCalendar(epoch=epoch, work_weekdays=weekdays, holidays=frozenset(normalised_holidays))
+
+
+@dataclass(frozen=True)
+class CalendarDates:
+    """A CPM activity's four key dates as ISO 8601 (YYYY-MM-DD) strings.
+
+    The CPM passes work in working-day indices; this projects them onto the wall
+    calendar so users see plain dates. ``early_finish`` / ``late_finish`` are the
+    date of the LAST working day the activity occupies (its finish day), so a
+    one-day activity has ``early_start == early_finish`` and a zero-day milestone
+    reports the same date for start and finish. Dates are always ISO 8601 and
+    never a locale day/month order.
+    """
+
+    early_start: str
+    early_finish: str
+    late_start: str
+    late_finish: str
+
+
+def to_calendar_dates(
+    results: dict[Any, CPMResult],
+    calendar: OffsetCalendar,
+    project_start: date,
+) -> dict[Any, CalendarDates]:
+    """Project a :func:`compute_cpm` result onto real ISO 8601 dates.
+
+    Each activity's early/late start and finish working-day indices are mapped
+    through ``calendar`` so weekends and holidays are skipped. ``project_start``
+    is the calendar date working-day index 0 lands on (the first working day on
+    or after it). Any index that would fall before the project start (possible
+    only with a negative lag / lead) is clamped to the project start for display;
+    :func:`validate_network` reports that situation separately so it is never
+    silently hidden.
+    """
+    out: dict[Any, CalendarDates] = {}
+    for aid, r in results.items():
+        es_idx = max(0, r.es)
+        # Finish day = last working day the activity occupies. EF is an
+        # exclusive-end index, so the last occupied day is EF - 1; a milestone
+        # (EF == ES) reports its start day.
+        ef_idx = max(0, max(r.es, r.ef - 1))
+        ls_idx = max(0, r.ls)
+        lf_idx = max(0, max(r.ls, r.lf - 1))
+        out[aid] = CalendarDates(
+            early_start=calendar.nth_working_day(project_start, es_idx).isoformat(),
+            early_finish=calendar.nth_working_day(project_start, ef_idx).isoformat(),
+            late_start=calendar.nth_working_day(project_start, ls_idx).isoformat(),
+            late_finish=calendar.nth_working_day(project_start, lf_idx).isoformat(),
+        )
+    return out
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Conservative network validation (plain-language, pre-computation)
+# ────────────────────────────────────────────────────────────────────────────
+# The CPM engine is deliberately forgiving: it drops self-loops and links to
+# unknown activities, and clamps negative durations to zero, so a partial
+# network never crashes the passes. That forgiveness is right for computation
+# but wrong for the user, who needs to be told what is off and how to fix it.
+# :func:`validate_network` is the pure, side-effect-free counterpart: it never
+# mutates or raises, it just reports the real problems a planner hits, in plain
+# language, so the UI can surface them before or alongside a schedule run.
+# ════════════════════════════════════════════════════════════════════════════
+
+#: Issue severities returned by :func:`validate_network`. ``error`` means the
+#: schedule cannot be trusted until it is fixed; ``warning`` means the run will
+#: proceed but the result may surprise the planner; ``info`` is a neutral note.
+ISSUE_ERROR: str = "error"
+ISSUE_WARNING: str = "warning"
+ISSUE_INFO: str = "info"
+
+#: Sort weight per severity (higher shows first) for a stable, readable log.
+_ISSUE_SEVERITY_ORDER: dict[str, int] = {ISSUE_ERROR: 3, ISSUE_WARNING: 2, ISSUE_INFO: 1}
+
+
+@dataclass(frozen=True)
+class NetworkIssue:
+    """One problem found in an activity network by :func:`validate_network`.
+
+    Attributes:
+        code: Stable machine-readable code (for example ``"SELF_DEPENDENCY"``).
+        severity: :data:`ISSUE_ERROR`, :data:`ISSUE_WARNING` or :data:`ISSUE_INFO`.
+        activity_id: The activity the issue is about, or ``None`` for a
+            whole-schedule issue such as an empty network.
+        message: A plain-language, self-contained sentence that also says what to
+            do next.
+    """
+
+    code: str
+    severity: str
+    activity_id: Any | None
+    message: str
+
+
+def validate_network(activities: list[Activity]) -> list[NetworkIssue]:
+    """Check an activity network for the real problems a scheduler hits.
+
+    Pure and total: it never mutates ``activities`` and never raises. It returns
+    a deterministic, severity-sorted list of :class:`NetworkIssue` so the UI can
+    show a clear "fix these first" list. Checks performed:
+
+    * ``EMPTY_NETWORK`` (info) - no activities to schedule yet.
+    * ``DUPLICATE_ACTIVITY_ID`` (error) - the same id used twice; only the first
+      is scheduled and the rest are ignored.
+    * ``NEGATIVE_DURATION`` (warning) - a duration below zero is treated as a
+      zero-day milestone.
+    * ``ZERO_DURATION`` (info) - a zero-day activity behaves as a milestone.
+    * ``SELF_DEPENDENCY`` (error) - an activity linked to itself.
+    * ``MISSING_PREDECESSOR`` (error) - a link to an activity not in the network.
+    * ``UNKNOWN_DEPENDENCY_TYPE`` (error) - a link type other than FS/SS/FF/SF.
+    * ``CIRCULAR_DEPENDENCY`` (error) - activities that form a loop that can
+      never finish; the loop is spelled out in the message.
+    * ``STARTS_BEFORE_PROJECT_START`` (warning) - a negative lag (lead) pulls an
+      early start before day 0 of the project.
+    """
+    issues: list[NetworkIssue] = []
+
+    if not activities:
+        return [
+            NetworkIssue(
+                code="EMPTY_NETWORK",
+                severity=ISSUE_INFO,
+                activity_id=None,
+                message="The schedule has no activities yet. Add at least one activity to calculate dates.",
+            )
+        ]
+
+    seen_ids: set[Any] = set()
+    known_ids: set[Any] = set()
+    for a in activities:
+        known_ids.add(a.id)
+
+    for a in activities:
+        if a.id in seen_ids:
+            issues.append(
+                NetworkIssue(
+                    code="DUPLICATE_ACTIVITY_ID",
+                    severity=ISSUE_ERROR,
+                    activity_id=a.id,
+                    message=(
+                        f"Activity id '{a.id}' is used more than once. Give each activity a unique id; "
+                        "only the first one with this id is scheduled and the others are ignored."
+                    ),
+                )
+            )
+            continue
+        seen_ids.add(a.id)
+
+        dur = int(a.duration)
+        if dur < 0:
+            issues.append(
+                NetworkIssue(
+                    code="NEGATIVE_DURATION",
+                    severity=ISSUE_WARNING,
+                    activity_id=a.id,
+                    message=(
+                        f"Activity '{a.id}' has a negative duration of {dur} working days and will be "
+                        "treated as a 0-day milestone. Set a duration of 0 or more working days."
+                    ),
+                )
+            )
+        elif dur == 0:
+            issues.append(
+                NetworkIssue(
+                    code="ZERO_DURATION",
+                    severity=ISSUE_INFO,
+                    activity_id=a.id,
+                    message=(
+                        f"Activity '{a.id}' has a duration of 0 working days, so it is treated as a "
+                        "milestone (a point in time with no work). Give it a duration if that is not intended."
+                    ),
+                )
+            )
+
+        for p_id, dep_type, _lag in a.predecessors:
+            if p_id == a.id:
+                issues.append(
+                    NetworkIssue(
+                        code="SELF_DEPENDENCY",
+                        severity=ISSUE_ERROR,
+                        activity_id=a.id,
+                        message=(
+                            f"Activity '{a.id}' depends on itself. Remove the self-dependency; an activity "
+                            "cannot wait for its own completion."
+                        ),
+                    )
+                )
+            elif p_id not in known_ids:
+                issues.append(
+                    NetworkIssue(
+                        code="MISSING_PREDECESSOR",
+                        severity=ISSUE_ERROR,
+                        activity_id=a.id,
+                        message=(
+                            f"Activity '{a.id}' depends on '{p_id}', which is not in the schedule. Add that "
+                            "activity or remove the link."
+                        ),
+                    )
+                )
+            if dep_type not in VALID_DEP_TYPES:
+                issues.append(
+                    NetworkIssue(
+                        code="UNKNOWN_DEPENDENCY_TYPE",
+                        severity=ISSUE_ERROR,
+                        activity_id=a.id,
+                        message=(
+                            f"The link from '{p_id}' to '{a.id}' uses an unknown dependency type "
+                            f"'{dep_type}'. Use FS, SS, FF or SF."
+                        ),
+                    )
+                )
+
+    # Loop detection and negative-early-start detection both need the built
+    # network. TaskNetwork drops self-loops and unknown links, so the cycle
+    # check here is about genuine multi-activity loops among valid links.
+    network = TaskNetwork(activities)
+    cycle = network.detect_cycle()
+    if cycle is not None:
+        loop_text = " -> ".join(str(x) for x in cycle)
+        issues.append(
+            NetworkIssue(
+                code="CIRCULAR_DEPENDENCY",
+                severity=ISSUE_ERROR,
+                activity_id=cycle[0] if cycle else None,
+                message=(
+                    f"These activities form a loop that can never finish: {loop_text}. Break the loop by "
+                    "removing one of the links."
+                ),
+            )
+        )
+    else:
+        # Only meaningful when the network is acyclic (otherwise compute_cpm
+        # would raise). A negative early start means a lead (negative lag)
+        # pulled an activity before the project start.
+        results = compute_cpm(network)
+        for aid, r in results.items():
+            if r.es < 0:
+                issues.append(
+                    NetworkIssue(
+                        code="STARTS_BEFORE_PROJECT_START",
+                        severity=ISSUE_WARNING,
+                        activity_id=aid,
+                        message=(
+                            f"Activity '{aid}' is scheduled to start {-r.es} working day(s) before the "
+                            "project start because of a negative lag (lead). Reduce the lead or move the "
+                            "project start earlier."
+                        ),
+                    )
+                )
+
+    issues.sort(key=lambda i: (-_ISSUE_SEVERITY_ORDER.get(i.severity, 0), str(i.activity_id), i.code))
+    return issues
