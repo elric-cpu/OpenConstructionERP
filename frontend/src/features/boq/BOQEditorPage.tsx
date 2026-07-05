@@ -98,6 +98,7 @@ import { CostDatabaseSearchModal, AssemblyPickerModal } from './BOQModals';
 import { CatalogPickerModal, type CatalogResource } from './CatalogPickerModal';
 import { CustomColumnsDialog } from './CustomColumnsDialog';
 import { BOQVariablesDialog } from './BOQVariablesDialog';
+import { CostPerAreaBenchmark } from './CostPerAreaBenchmark';
 import { RenumberDialog } from './RenumberDialog';
 import { LinkedPositionsModal } from './LinkedPositionsModal';
 
@@ -243,6 +244,16 @@ export function BOQEditorPage() {
     if (!Array.isArray(vs)) return [];
     return vs as import('./api').BOQVariable[];
   }, [boq]);
+
+  // Gross floor area from the BOQ $GFA variable - drives the cost-per-m2
+  // benchmark strip. Null (no numeric $GFA set) hides the strip entirely, so
+  // it never shows a figure divided by an unknown area.
+  const grossFloorArea = useMemo<number | null>(() => {
+    const v = boqVariables.find((x) => x.name.trim().toUpperCase() === 'GFA');
+    if (!v) return null;
+    const n = typeof v.value === 'number' ? v.value : parseFloat(String(v.value));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [boqVariables]);
   const fmt = useMemo(
     () => createFormatter(locale),
     [locale],
@@ -4892,6 +4903,17 @@ export function BOQEditorPage() {
             openSignal={markupOpenSignal}
           />
         </div>
+      )}
+
+      {/* ── Cost per m2 benchmark strip ──────────────────────────────────
+          Self-hides when the BOQ has no $GFA variable to divide by. */}
+      {boqId && hasPositions && (
+        <CostPerAreaBenchmark
+          directCost={directCost}
+          currencyCode={currencyCode}
+          grossFloorArea={grossFloorArea}
+          locale={locale}
+        />
       )}
 
       {/* ── Resource Summary ──────────────────────────────────────────── */}

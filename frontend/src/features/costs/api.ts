@@ -394,3 +394,42 @@ export async function recordCostItemUsage(
     RecordUsageRequest
   >(`/v1/costs/${costItemId}/record-usage/`, body);
 }
+
+/* ── Cost benchmark: own-portfolio cost-per-m2 distribution ──────────────
+ * POST /v1/costs/benchmark/ positions a cost-per-m2 value against the
+ * tenant's OWN past projects (each project contributes BOQ total / recorded
+ * area). Money figures are decimal strings per the money rule. own_portfolio
+ * and percentile_vs_own are null when the tenant has no project carrying both
+ * a cost and an area - an honest empty state, still a 200. */
+export interface CostBenchmarkRequest {
+  building_type?: string | null;
+  region?: string | null;
+  currency?: string | null;
+  /** Sent as a decimal string so no precision is lost through Number. */
+  cost_per_m2?: string | null;
+}
+
+export interface CostBenchmarkOwnPortfolio {
+  project_count: number;
+  min: string;
+  p25: string;
+  median: string;
+  p75: string;
+  max: string;
+  confidence: 'high' | 'medium' | 'low';
+  note: string;
+}
+
+export interface CostBenchmarkResponse {
+  currency: string;
+  own_portfolio: CostBenchmarkOwnPortfolio | null;
+  /** Where the supplied value sits in the own-portfolio distribution (0-100). */
+  percentile_vs_own: number | null;
+  explanation: string;
+}
+
+export function fetchCostBenchmark(
+  body: CostBenchmarkRequest,
+): Promise<CostBenchmarkResponse> {
+  return apiPost<CostBenchmarkResponse, CostBenchmarkRequest>('/v1/costs/benchmark/', body);
+}

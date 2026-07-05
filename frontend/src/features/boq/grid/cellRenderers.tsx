@@ -1102,8 +1102,59 @@ export function DescriptionCellRenderer(params: ICellRendererParams) {
       </span>
     ) : null;
 
+  // ── Price provenance chip ───────────────────────────────────────────
+  // Where this line's price came from, so the estimator can trust it or go
+  // check the source. Catalogue applies stamp `metadata.cost_item_code` and
+  // set source to 'cost_database'; GAEB and CAD imports set their own source.
+  // Manual lines carry no provenance, so no chip renders for them (the most
+  // common case stays clean). AI-sourced lines are covered by the confidence
+  // badge on the ordinal, so they are not repeated here.
+  const posSource = typeof data.source === 'string' ? data.source : '';
+  const costItemCode =
+    (typeof (meta as { cost_item_code?: unknown }).cost_item_code === 'string'
+      ? ((meta as { cost_item_code?: string }).cost_item_code as string)
+      : '') ||
+    (typeof data.reference_code === 'string' ? (data.reference_code as string) : '');
+  let provenance: { label: string; tip: string } | null = null;
+  if (posSource === 'cost_database') {
+    provenance = costItemCode
+      ? {
+          label: costItemCode,
+          tip: t('boq.provenance_catalogue_code', {
+            defaultValue: 'Priced from catalogue item {{code}}.',
+            code: costItemCode,
+          }),
+        }
+      : {
+          label: t('boq.provenance_catalogue_short', { defaultValue: 'Catalogue' }),
+          tip: t('boq.provenance_catalogue', { defaultValue: 'Priced from a cost catalogue.' }),
+        };
+  } else if (posSource === 'gaeb_import') {
+    provenance = {
+      label: t('boq.provenance_gaeb_short', { defaultValue: 'GAEB' }),
+      tip: t('boq.provenance_gaeb', { defaultValue: 'Imported from a GAEB tender file.' }),
+    };
+  } else if (posSource === 'cad_import') {
+    provenance = {
+      label: t('boq.provenance_cad_short', { defaultValue: 'CAD' }),
+      tip: t('boq.provenance_cad', { defaultValue: 'Imported from a CAD or BIM model.' }),
+    };
+  }
+  const provenanceChip = provenance ? (
+    <span
+      className="shrink-0 inline-flex items-center gap-0.5 rounded text-[10px] font-medium px-1 py-0.5
+                 bg-surface-tertiary text-content-tertiary cursor-help max-w-[140px] truncate"
+      title={provenance.tip}
+      aria-label={provenance.tip}
+      data-testid="boq-provenance-chip"
+    >
+      <FileText size={10} strokeWidth={2} className="shrink-0" />
+      <span className="truncate">{provenance.label}</span>
+    </span>
+  ) : null;
+
   if (!hasVariant && !hasDefault) {
-    if (!variantIconButton && !scopeHint && !breakdownPill) {
+    if (!variantIconButton && !scopeHint && !breakdownPill && !provenanceChip) {
       return descMultiline ? (
         <span className="block w-full whitespace-pre-wrap break-words leading-snug overflow-y-auto max-h-full">
           {displayValue}
@@ -1118,6 +1169,7 @@ export function DescriptionCellRenderer(params: ICellRendererParams) {
         <span className={descTextCls}>{displayValue}</span>
         {scopeHint}
         {breakdownPill}
+        {provenanceChip}
       </span>
     );
   }
@@ -1143,6 +1195,7 @@ export function DescriptionCellRenderer(params: ICellRendererParams) {
         <span className={descTextCls}>{displayValue}</span>
         {scopeHint}
         {breakdownPill}
+        {provenanceChip}
       </span>
     );
   }
@@ -1172,6 +1225,7 @@ export function DescriptionCellRenderer(params: ICellRendererParams) {
       <span className="truncate min-w-0">{displayValue}</span>
       {scopeHint}
       {breakdownPill}
+      {provenanceChip}
       <span
         className="shrink-0 inline-flex items-center gap-1 rounded
                    bg-amber-100 dark:bg-amber-900/40
