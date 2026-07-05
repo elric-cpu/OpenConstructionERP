@@ -16,6 +16,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
 from app.core.json_merge import merge_metadata
+from app.modules.transmittals.logic import (
+    RESPONDABLE_STATUSES,
+    STATUS_ISSUED,
+    STATUS_RESPONDED,
+    compute_response_due_date,
+    issue_blockers,
+    response_due_error,
+)
 from app.modules.transmittals.models import (
     Transmittal,
     TransmittalItem,
@@ -36,6 +44,58 @@ _logger_ev = logging.getLogger(__name__ + ".events")
 # IntegrityError; we roll back and retry with a freshly-bumped suffix.
 # Mirrors the rfi / changeorders code-collision retry loop.
 _TRANSMITTAL_CREATE_MAX_RETRIES = 5
+
+
+def _numbering_config(metadata: dict) -> dict:
+    """Read optional per-project numbering settings from a transmittal's metadata.
+
+    Projects can override the default ``TR-001`` scheme by setting
+    ``numbering_prefix`` (for example a project code) and ``numbering_pad``
+    (counter width) in metadata. Anything missing or the wrong type falls back
+    to the sensible defaults in ``next_transmittal_number``.
+    """
+    config: dict = {}
+    prefix = metadata.get("numbering_prefix")
+    if isinstance(prefix, str) and prefix.strip():
+        config["prefix"] = prefix.strip()
+    pad = metadata.get("numbering_pad")
+    if isinstance(pad, int) and pad > 0:
+        config["pad"] = pad
+    return config
+
+
+def _resolve_response_due_date(
+    issued_date: str | None,
+    response_due_date: str | None,
+    metadata: dict,
+) -> str | None:
+    """Work out the final response due date and check it is consistent.
+
+    If no explicit due date is given but metadata carries
+    ``response_period_days``, the deadline is computed as the issue date plus
+    that many calendar days. The result is then checked so a deadline can
+    never fall before the issue date. Raises HTTP 422 with a plain-language
+    message on any bad value.
+    """
+    resolved = response_due_date
+    if resolved is None:
+        period = metadata.get("response_period_days")
+        if isinstance(period, int):
+            try:
+                resolved = compute_response_due_date(issued_date, period)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=str(exc),
+                ) from exc
+
+    error = response_due_error(issued_date, resolved)
+    if error is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error,
+        )
+    return resolved
 
 
 async def _safe_publish(name: str, data: dict, source_module: str = "oe_transmittals") -> None:
@@ -70,11 +130,19 @@ class TransmittalService:
         (high contention) we surface HTTP 409 so the client retries - never
         silently writing a duplicate. Mirrors the rfi create_rfi pattern.
         """
+        metadata = data.metadata or {}
+        number_config = _numbering_config(metadata)
+        response_due_date = _resolve_response_due_date(
+            data.issued_date,
+            data.response_due_date,
+            metadata,
+        )
+
         last_exc: Exception | None = None
         transmittal: Transmittal | None = None
         number = ""
         for _attempt in range(_TRANSMITTAL_CREATE_MAX_RETRIES):
-            number = await self.repo.next_number(data.project_id)
+            number = await self.repo.next_number(data.project_id, **number_config)
             candidate = Transmittal(
                 project_id=data.project_id,
                 transmittal_number=number,
@@ -82,7 +150,7 @@ class TransmittalService:
                 sender_org_id=data.sender_org_id,
                 purpose_code=data.purpose_code,
                 issued_date=data.issued_date,
-                response_due_date=data.response_due_date,
+                response_due_date=response_due_date,
                 cover_note=data.cover_note,
                 created_by=uuid.UUID(user_id) if user_id else None,
                 metadata_=data.metadata,
@@ -186,6 +254,17 @@ class TransmittalService:
                 else _incoming
             )
 
+        # Keep the issue/response dates consistent even when only one of them is
+        # changed: compare the incoming value against whatever is already stored.
+        effective_issued = fields.get("issued_date", transmittal.issued_date)
+        effective_due = fields.get("response_due_date", transmittal.response_due_date)
+        date_error = response_due_error(effective_issued, effective_due)
+        if date_error is not None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=date_error,
+            )
+
         if fields:
             await self.repo.update_fields(transmittal_id, **fields)
 
@@ -237,13 +316,28 @@ class TransmittalService:
     # ── Issue (lock) ──────────────────────────────────────────────────────
 
     async def issue_transmittal(self, transmittal_id: uuid.UUID) -> Transmittal:
-        """Lock the transmittal and set status to 'issued'."""
+        """Formally send the transmittal: lock it and set status to 'issued'.
+
+        Issuing is the point of no return, so we first check the transmittal is
+        actually ready: it must have at least one recipient and at least one
+        document, and it must not already be issued.
+        """
         transmittal = await self.get_transmittal(transmittal_id)
 
         if transmittal.is_locked:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Transmittal has already been issued",
+                detail="This transmittal has already been issued, so it cannot be issued again.",
+            )
+
+        blockers = issue_blockers(
+            recipient_count=len(transmittal.recipients or []),
+            item_count=len(transmittal.items or []),
+        )
+        if blockers:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Cannot issue this transmittal yet. " + " ".join(blockers),
             )
 
         now = datetime.now(UTC).isoformat()
@@ -257,7 +351,7 @@ class TransmittalService:
         prior_status = transmittal.status
         await self.repo.update_fields(
             transmittal_id,
-            status="issued",
+            status=STATUS_ISSUED,
             is_locked=True,
             issued_date=now,
         )
@@ -310,26 +404,29 @@ class TransmittalService:
         transmittal_id: uuid.UUID,
         recipient_id: uuid.UUID,
     ) -> TransmittalRecipient:
-        """Mark a recipient as having acknowledged the transmittal."""
-        # Verify transmittal exists and is in a valid state for acknowledgement
+        """Record that a recipient has confirmed they received the transmittal."""
+        # A recipient can only acknowledge a transmittal that has been issued.
         transmittal = await self.get_transmittal(transmittal_id)
-        if transmittal.status not in ("issued", "responded"):
+        if transmittal.status not in RESPONDABLE_STATUSES:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot acknowledge transmittal in status '{transmittal.status}'",
+                detail=(
+                    "This transmittal has not been issued yet, so there is nothing to "
+                    "acknowledge. Issue the transmittal first."
+                ),
             )
 
         recipient = await self.repo.get_recipient(recipient_id)
         if recipient is None or recipient.transmittal_id != transmittal_id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Recipient not found for this transmittal",
+                detail="That recipient is not on this transmittal. Check the recipient id.",
             )
 
         if recipient.acknowledged_at is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Recipient has already acknowledged this transmittal",
+                detail="This recipient has already acknowledged receipt of the transmittal.",
             )
 
         project_id_s = str(transmittal.project_id)
@@ -366,26 +463,29 @@ class TransmittalService:
         recipient_id: uuid.UUID,
         response_text: str,
     ) -> TransmittalRecipient:
-        """Submit a response from a recipient."""
-        # Verify transmittal exists and is in a valid state for responses
+        """Record a recipient's response to the transmittal."""
+        # A recipient can only respond to a transmittal that has been issued.
         transmittal = await self.get_transmittal(transmittal_id)
-        if transmittal.status not in ("issued", "responded"):
+        if transmittal.status not in RESPONDABLE_STATUSES:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot respond to transmittal in status '{transmittal.status}'",
+                detail=(
+                    "This transmittal has not been issued yet, so there is nothing to "
+                    "respond to. Issue the transmittal first."
+                ),
             )
 
         recipient = await self.repo.get_recipient(recipient_id)
         if recipient is None or recipient.transmittal_id != transmittal_id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Recipient not found for this transmittal",
+                detail="That recipient is not on this transmittal. Check the recipient id.",
             )
 
         if recipient.responded_at is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Recipient has already responded to this transmittal",
+                detail="This recipient has already responded to the transmittal.",
             )
 
         project_id_s = str(transmittal.project_id)
@@ -402,12 +502,14 @@ class TransmittalService:
             responded_at=now,
         )
 
-        # Check if all recipients responded - auto-close if so
+        # Once every recipient has responded, mark the whole transmittal as
+        # 'responded' so the sender can see the exchange is complete.
         transmittal = await self.repo.get(transmittal_id)
         if transmittal is not None:
-            all_responded = all(r.responded_at is not None for r in transmittal.recipients)
-            if all_responded and transmittal.status == "issued":
-                await self.repo.update_fields(transmittal_id, status="responded")
+            recipients = transmittal.recipients or []
+            all_responded = bool(recipients) and all(r.responded_at is not None for r in recipients)
+            if all_responded and transmittal.status == STATUS_ISSUED:
+                await self.repo.update_fields(transmittal_id, status=STATUS_RESPONDED)
 
         result = await self.repo.get_recipient(recipient_id)
         logger.info("Transmittal response submitted: recipient=%s", recipient_id)

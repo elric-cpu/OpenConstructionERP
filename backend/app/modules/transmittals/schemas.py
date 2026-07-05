@@ -4,7 +4,20 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.modules.transmittals.logic import PURPOSE_CODES, response_due_error
+
+# ISO 8601 (YYYY-MM-DD) is the one calendar-date format that is unambiguous in
+# every country, so both date fields accept it and nothing else.
+_ISO_DATE_PATTERN = r"^\d{4}-\d{2}-\d{2}$"
+# Build the purpose-code pattern from the single source of truth in logic.py so
+# the two can never drift apart.
+_PURPOSE_PATTERN = r"^(" + "|".join(PURPOSE_CODES) + r")$"
+_PURPOSE_HELP = (
+    "Why the documents are being sent: "
+    "for_approval, for_review, for_information, for_construction, for_tender or for_record."
+)
 
 # ── Recipients ──────────────────────────────────────────────────────────
 
@@ -74,35 +87,65 @@ class TransmittalCreate(BaseModel):
     project_id: UUID
     subject: str = Field(..., min_length=1, max_length=500)
     sender_org_id: UUID | None = None
-    purpose_code: str = Field(
-        ...,
-        pattern=r"^(for_approval|for_information|for_construction|for_tender|for_review|for_record)$",
+    purpose_code: str = Field(..., pattern=_PURPOSE_PATTERN, description=_PURPOSE_HELP)
+    issued_date: str | None = Field(
+        default=None,
+        pattern=_ISO_DATE_PATTERN,
+        max_length=20,
+        description="Date the transmittal is sent, as YYYY-MM-DD.",
     )
-    issued_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$", max_length=20)
-    response_due_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$", max_length=20)
+    response_due_date: str | None = Field(
+        default=None,
+        pattern=_ISO_DATE_PATTERN,
+        max_length=20,
+        description="Date a response is expected by, as YYYY-MM-DD. Cannot be before the issue date.",
+    )
     cover_note: str | None = Field(default=None, max_length=5000)
     recipients: list[RecipientCreate] = Field(default_factory=list)
     items: list[ItemCreate] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def _check_response_due_date(self) -> "TransmittalCreate":
+        error = response_due_error(self.issued_date, self.response_due_date)
+        if error is not None:
+            raise ValueError(error)
+        return self
+
 
 class TransmittalUpdate(BaseModel):
-    """Partial update for a transmittal (only while unlocked)."""
+    """Partial update for a transmittal. Allowed only while it is still a draft."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
     subject: str | None = Field(default=None, min_length=1, max_length=500)
     sender_org_id: UUID | None = None
-    purpose_code: str | None = Field(
+    purpose_code: str | None = Field(default=None, pattern=_PURPOSE_PATTERN, description=_PURPOSE_HELP)
+    issued_date: str | None = Field(
         default=None,
-        pattern=r"^(for_approval|for_information|for_construction|for_tender|for_review|for_record)$",
+        pattern=_ISO_DATE_PATTERN,
+        max_length=20,
+        description="Date the transmittal is sent, as YYYY-MM-DD.",
     )
-    issued_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$", max_length=20)
-    response_due_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$", max_length=20)
+    response_due_date: str | None = Field(
+        default=None,
+        pattern=_ISO_DATE_PATTERN,
+        max_length=20,
+        description="Date a response is expected by, as YYYY-MM-DD. Cannot be before the issue date.",
+    )
     cover_note: str | None = Field(default=None, max_length=5000)
     recipients: list[RecipientCreate] | None = None
     items: list[ItemCreate] | None = None
     metadata: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def _check_response_due_date(self) -> "TransmittalUpdate":
+        # Only checkable when both dates are supplied in the same request; the
+        # service layer covers the case where only one date changes.
+        error = response_due_error(self.issued_date, self.response_due_date)
+        if error is not None:
+            raise ValueError(error)
+        return self
 
 
 # ── Response ────────────────────────────────────────────────────────────
@@ -121,7 +164,9 @@ class TransmittalResponse(BaseModel):
     purpose_code: str
     issued_date: str | None = None
     response_due_date: str | None = None
-    status: str
+    status: str = Field(
+        description="draft (being prepared), issued (sent and locked) or responded (all recipients replied).",
+    )
     cover_note: str | None = None
     is_locked: bool
     created_by: UUID | None = None

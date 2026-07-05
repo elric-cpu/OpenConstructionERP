@@ -1,13 +1,17 @@
 """‌⁠‍Transmittals API routes.
 
+A transmittal is a formal record of documents or drawings handed to named
+parties: what was sent, when, to whom, and any response that was asked for.
+
 Endpoints:
-    GET    /                                              - List transmittals by project
-    POST   /                                              - Create transmittal (auto-number)
-    GET    /{transmittal_id}                              - Get single transmittal
-    PATCH  /{transmittal_id}                              - Update (fails if locked)
-    POST   /{transmittal_id}/issue                        - Lock + set issued
-    POST   /{transmittal_id}/recipients/{id}/acknowledge  - Acknowledge receipt
-    POST   /{transmittal_id}/recipients/{id}/respond      - Submit response
+    GET    /                                              - List a project's transmittals
+    POST   /                                              - Create a draft (number assigned automatically)
+    GET    /{transmittal_id}                              - Get one transmittal
+    PATCH  /{transmittal_id}                              - Edit a draft (blocked once issued)
+    DELETE /{transmittal_id}                              - Delete a draft (issued ones are kept for the record)
+    POST   /{transmittal_id}/issue                        - Send it: lock the record and mark it issued
+    POST   /{transmittal_id}/recipients/{id}/acknowledge  - A recipient confirms they received it
+    POST   /{transmittal_id}/recipients/{id}/respond      - A recipient sends their response
 """
 
 import uuid
@@ -163,7 +167,10 @@ async def issue_transmittal(
     session: SessionDep,
     service: TransmittalService = Depends(_get_service),
 ) -> TransmittalResponse:
-    """Lock the transmittal and set status to 'issued'."""
+    """Send the transmittal: lock the record and mark it issued.
+
+    Needs at least one recipient and one document, otherwise returns 422.
+    """
     existing = await service.get_transmittal(transmittal_id)
     await verify_project_access(existing.project_id, str(user_id), session)
     transmittal = await service.issue_transmittal(transmittal_id)
