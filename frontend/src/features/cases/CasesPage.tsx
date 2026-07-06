@@ -321,10 +321,10 @@ function CasesList() {
               {/* connecting rail behind the stage nodes */}
               <span
                 aria-hidden="true"
-                className="pointer-events-none absolute inset-x-8 top-[1.4rem] h-0.5 rounded-full bg-gradient-to-r from-border-light via-border to-border-light"
+                className="pointer-events-none absolute inset-x-12 top-9 h-0.5 rounded-full bg-gradient-to-r from-border-light via-border to-border-light"
               />
               <div
-                className="relative flex gap-1 overflow-x-auto pb-1"
+                className="relative flex gap-2 overflow-x-auto pb-1"
                 role="group"
                 aria-label={t('cases.stage_selector.heading', { defaultValue: 'Project lifecycle' })}
               >
@@ -343,32 +343,40 @@ function CasesList() {
                       aria-pressed={active}
                       disabled={disabled}
                       className={clsx(
-                        'group flex min-w-[4.75rem] flex-1 flex-col items-center gap-1 rounded-xl px-1 py-1.5 text-center transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40',
+                        'group flex min-w-[5.5rem] flex-1 flex-col items-center gap-1.5 rounded-2xl px-1.5 py-2 text-center transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40',
+                        active && 'bg-surface-secondary/40',
                         disabled && 'cursor-not-allowed opacity-40',
                       )}
                     >
                       <span
                         className={clsx(
-                          'relative flex h-11 w-11 items-center justify-center rounded-full ring-1 ring-inset transition-transform',
+                          'relative flex h-14 w-14 items-center justify-center rounded-full ring-1 ring-inset transition-transform',
                           active
-                            ? clsx(s.tint.tile, 'scale-110 shadow-sm')
+                            ? clsx(s.tint.tile, 'scale-105 shadow-sm')
                             : 'bg-surface-primary text-content-tertiary ring-border-light group-hover:ring-oe-blue/30 group-hover:text-content-secondary',
                         )}
                       >
-                        <Icon size={18} strokeWidth={1.9} />
-                        <span className="absolute -left-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-surface-primary text-[9px] font-bold tabular-nums text-content-secondary ring-1 ring-border-light">
+                        <Icon size={23} strokeWidth={1.8} />
+                        <span className="absolute -left-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-surface-primary text-[10px] font-bold tabular-nums text-content-secondary ring-1 ring-border-light">
                           {s.num}
                         </span>
                       </span>
                       <span
                         className={clsx(
-                          'text-2xs font-semibold leading-tight',
+                          'text-xs font-semibold leading-tight',
                           active ? s.tint.text : 'text-content-secondary',
                         )}
                       >
                         {t(s.shortKey, { defaultValue: s.shortDefault })}
                       </span>
-                      <span className="text-2xs tabular-nums text-content-tertiary">{count}</span>
+                      <span
+                        className={clsx(
+                          'rounded-full px-2 py-0.5 text-2xs font-medium tabular-nums',
+                          active ? s.tint.chip : 'bg-surface-secondary text-content-tertiary',
+                        )}
+                      >
+                        {t('cases.selector.count', { defaultValue: '{{count}} cases', count })}
+                      </span>
                     </button>
                   );
                 })}

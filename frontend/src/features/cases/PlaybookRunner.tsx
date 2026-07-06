@@ -22,6 +22,7 @@ import type { Playbook, PlaybookStep } from './types';
 import { tintFor, CATEGORY_BY_ID } from './categories';
 import { iconFor } from './icons';
 import { CaseArt } from './CaseArt';
+import { StepScene } from './StepScene';
 import { useCasesStore, EMPTY_PROGRESS } from './useCasesStore';
 import {
   clampStepIndex,
@@ -353,6 +354,12 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
         <section className="min-w-0">
           {currentStep && (
             <div className="rounded-2xl border border-border-light bg-surface-primary p-5 shadow-xs sm:p-6">
+              {/* Line-art visual of what this step does */}
+              <StepScene
+                icon={currentStep.icon}
+                title={curTitle}
+                className="mb-4 h-32 w-full sm:h-36"
+              />
               {/* Eyebrow: step counter + module chip */}
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <span className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">

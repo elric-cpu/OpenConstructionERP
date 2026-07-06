@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [10.5.0] - 2026-07-06
+
+Every step of every case now shows a small drawing of what it does. Open a case and each step carries a piece of line art, an RFI sheet for a question, a balance for a comparison, a hard hat for a permit, a calendar for a programme, so you can see what a step is about before you read a word. The drawings are chosen from the step itself, so all 85 cases got them at once, and where a specific drawing has not been made yet the step falls back to a clean framed icon rather than a blank. The same drawings now appear in the How it works hub, so expanding a module there shows its illustration too.
+
+The Project lifecycle timeline on the Cases hub is bigger and sits better with the rest of the page. The stage markers are larger, the labels clearer, and each stage carries a count styled like the company and role pickers below it.
+
+Twenty two new worked cases were added, taking the catalogue from 63 to 85. They fill in the everyday work and the modules that did not have a case yet. On site you can issue a permit to work, manage the plant and equipment register, mark up and compare a drawing revision, and record a verbal instruction for the record. In planning you can run a progress meeting and drive the actions, plan repetitive work with takt and line of balance, and balance the portfolio and level resources. In estimating you can draft an estimate with AI element matching, build the resource library and rates, build a 5D cost-loaded model, and appraise a development scheme. On the commercial side you can track an opportunity from enquiry to tender, turn field time into payroll and labour cost, build a delay and disruption claim with evidence, and give the client a project portal. In BIM you can set up the common data environment, set up BIM requirements and coordination, and verify the as-built against the model with a scan. There are also cases to maintain supplier catalogs and buy from them, run the submittals register, manage an engineering change, and run reactive facilities service after handover.
+
 ## [10.4.0] - 2026-07-06
 
 The Cases hub gets a hand-drawn look. Every case, professional role and company type now carries a light line-art illustration. The hub pickers became picture-left chips, each case card shows a full illustration banner with a single discipline colour and an overlapping stack of the role avatars, and the case runner puts the illustration beside a bigger title with a clearer meta row and a primary action that names the module it opens. Where an illustration has not been drawn yet the card falls back to a plain glyph, so nothing breaks and there are no broken images.
