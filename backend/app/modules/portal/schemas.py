@@ -343,6 +343,32 @@ class PortalChangeOrderList(BaseModel):
     total: int = 0
 
 
+class PortalInvoiceEntry(BaseModel):
+    """Read-only client view of an issued invoice.
+
+    Only the fields a client needs to recognise and reconcile an invoice:
+    number, dates, total amount + currency, status and its project. Internal
+    line items, tax configuration, retention breakdown and draft rows are
+    deliberately omitted.
+    """
+
+    id: UUID
+    project_id: UUID
+    invoice_number: str
+    invoice_date: str = ""
+    due_date: str | None = None
+    currency_code: str = ""
+    amount_total: Decimal | None = None
+    status: str = ""
+
+
+class PortalInvoiceList(BaseModel):
+    """List of issued invoices the caller can see."""
+
+    items: list[PortalInvoiceEntry] = Field(default_factory=list)
+    total: int = 0
+
+
 # ── Portal-side progress-report visibility ────────────────────────────────
 
 

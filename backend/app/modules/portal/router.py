@@ -60,6 +60,8 @@ from app.modules.portal.schemas import (
     PortalAgreementSummaryList,
     PortalChangeOrderEntry,
     PortalChangeOrderList,
+    PortalInvoiceEntry,
+    PortalInvoiceList,
     PortalProgressReportEntry,
     PortalProgressReportList,
     PortalProjectSummary,
@@ -735,6 +737,77 @@ async def portal_list_change_orders(
             )
         )
     return PortalChangeOrderList(items=items, total=total)
+
+
+@router.get(
+    "/me/invoices",
+    response_model=PortalInvoiceList,
+)
+async def portal_list_invoices(
+    user: RequirePortalSession,
+    session: SessionDep,
+    service: PortalService = Depends(_get_service),
+    project_id: uuid.UUID | None = Query(default=None),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> PortalInvoiceList:
+    """List issued invoices the caller can see.
+
+    Same dual access model as change orders: a per-invoice ``invoice`` grant
+    for specific invoices, or a ``project`` grant that exposes every issued
+    invoice under that project. Only issued, client-facing (receivable)
+    invoices are returned - drafts and payable/vendor invoices stay invisible.
+    """
+    from sqlalchemy import func as _func
+    from sqlalchemy import or_
+    from sqlalchemy import select as _select
+
+    from app.modules.finance.models import Invoice as _Invoice
+
+    accessible_invoices = await service.list_accessible_resources(user.id, "invoice")
+    accessible_projects = await service.list_accessible_resources(user.id, "project")
+    if not accessible_invoices and not accessible_projects:
+        return PortalInvoiceList(items=[], total=0)
+
+    # A per-invoice grant on project B must not unlock project A, so the scope
+    # predicate (project OR specific invoice) is ALWAYS applied, even when a
+    # project_id filter is supplied.
+    scope_ors = []
+    if accessible_projects:
+        scope_ors.append(_Invoice.project_id.in_(accessible_projects))
+    if accessible_invoices:
+        scope_ors.append(_Invoice.id.in_(accessible_invoices))
+    scope_predicate = or_(*scope_ors)
+
+    base = (
+        _select(_Invoice)
+        .where(_Invoice.invoice_direction == "receivable")
+        .where(_Invoice.status != "draft")
+        .where(scope_predicate)
+    )
+    if project_id is not None:
+        base = base.where(_Invoice.project_id == project_id)
+
+    count_stmt = _select(_func.count()).select_from(base.subquery())
+    total = int((await session.execute(count_stmt)).scalar_one())
+
+    stmt = base.order_by(_Invoice.created_at.desc()).offset(offset).limit(limit)
+    rows = list((await session.execute(stmt)).scalars().all())
+
+    items = [
+        PortalInvoiceEntry(
+            id=inv.id,
+            project_id=inv.project_id,
+            invoice_number=inv.invoice_number,
+            invoice_date=inv.invoice_date or "",
+            due_date=inv.due_date,
+            currency_code=inv.currency_code or "",
+            amount_total=inv.amount_total,
+            status=inv.status,
+        )
+        for inv in rows
+    ]
+    return PortalInvoiceList(items=items, total=total)
 
 
 # ── Portal-side progress-report visibility ────────────────────────────────

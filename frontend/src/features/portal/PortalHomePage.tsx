@@ -49,19 +49,23 @@ import {
   getPortalSessionToken,
   getMyPortalProfile,
   listMyChangeOrders,
+  listMyInvoices,
   listMyTickets,
   listMyDocuments,
   fetchMyDocumentBlob,
   type PortalChangeOrder,
+  type PortalInvoice,
   type PortalTicket,
   type PortalSharedDocument,
 } from './api';
 import { PORTAL_PAYMENTS_PATH } from './portalLanding';
 
-type Tab = 'progress' | 'change_orders' | 'tickets' | 'documents';
+type Tab = 'progress' | 'change_orders' | 'invoices' | 'tickets' | 'documents';
 
 // Roles that see executed change orders on their landing.
 const CHANGE_ORDER_ROLES = new Set(['client', 'investor', 'consultant']);
+// Roles that see issued invoices on their landing.
+const INVOICE_ROLES = new Set(['client', 'investor', 'consultant']);
 // Roles that see the tickets they filed on their landing.
 const TICKET_ROLES = new Set(['client', 'building_user']);
 
@@ -183,6 +187,7 @@ function PortalHomeContent() {
 
   const role = profileQ.data?.portal_role ?? '';
   const showChangeOrders = CHANGE_ORDER_ROLES.has(role);
+  const showInvoices = INVOICE_ROLES.has(role);
   const showTickets = TICKET_ROLES.has(role);
 
   // Documents are shared with any role, so the tab always shows. This lightweight
@@ -191,6 +196,13 @@ function PortalHomeContent() {
   const documentsQ = useQuery({
     queryKey: ['portal-home', 'documents'],
     queryFn: () => listMyDocuments(),
+    staleTime: 60_000,
+  });
+
+  const invoicesQ = useQuery({
+    queryKey: ['portal-home', 'invoices'],
+    queryFn: () => listMyInvoices({ limit: 100 }),
+    enabled: showInvoices,
     staleTime: 60_000,
   });
 
@@ -207,6 +219,13 @@ function PortalHomeContent() {
         label: t('homeportal.tab_change_orders', { defaultValue: 'Change Orders' }),
         icon: GitPullRequestArrow,
         show: showChangeOrders,
+      },
+      {
+        id: 'invoices' as Tab,
+        label: t('homeportal.tab_invoices', { defaultValue: 'Invoices' }),
+        icon: Receipt,
+        show: showInvoices,
+        count: invoicesQ.data?.total,
       },
       {
         id: 'tickets' as Tab,
@@ -325,6 +344,8 @@ function PortalHomeContent() {
           available (e.g. a one-tab role). */}
       {tab === 'change_orders' && showChangeOrders ? (
         <ChangeOrdersTab />
+      ) : tab === 'invoices' && showInvoices ? (
+        <InvoicesTab />
       ) : tab === 'tickets' && showTickets ? (
         <TicketsTab />
       ) : tab === 'documents' ? (
@@ -453,6 +474,107 @@ function ChangeOrderCard({ co }: { co: PortalChangeOrder }) {
           </dt>
           <dd className="text-content-secondary">
             {co.approved_at ? <DateDisplay value={co.approved_at} /> : '—'}
+          </dd>
+        </div>
+      </dl>
+    </li>
+  );
+}
+
+/* ── Invoices ──────────────────────────────────────────────────────────────*/
+
+const INVOICE_STATUS_VARIANT: Record<string, 'neutral' | 'blue' | 'warning' | 'success' | 'error'> =
+  {
+    issued: 'blue',
+    sent: 'blue',
+    partial: 'warning',
+    overdue: 'error',
+    paid: 'success',
+    cancelled: 'neutral',
+  };
+
+function InvoicesTab() {
+  const { t } = useTranslation();
+  const q = useQuery({
+    queryKey: ['portal-home', 'invoices'],
+    queryFn: () => listMyInvoices({ limit: 100 }),
+  });
+  const items = q.data?.items ?? [];
+
+  if (q.isLoading) {
+    return (
+      <Card padding="md">
+        <SkeletonTable rows={4} columns={3} />
+      </Card>
+    );
+  }
+  if (q.error) {
+    return (
+      <Card padding="none">
+        <EmptyState
+          icon={<AlertCircle size={22} />}
+          title={t('homeportal.inv_load_failed', { defaultValue: 'Could not load invoices' })}
+          description={q.error instanceof Error ? q.error.message : ''}
+          action={{
+            label: t('common.retry', { defaultValue: 'Retry' }),
+            onClick: () => void q.refetch(),
+          }}
+        />
+      </Card>
+    );
+  }
+  if (items.length === 0) {
+    return (
+      <Card padding="none">
+        <EmptyState
+          icon={<Receipt size={22} />}
+          title={t('homeportal.inv_empty', { defaultValue: 'No invoices shared yet' })}
+          description={t('homeportal.inv_empty_desc', {
+            defaultValue: 'Invoices shared with you will appear here.',
+          })}
+        />
+      </Card>
+    );
+  }
+  return (
+    <ul className="space-y-3">
+      {items.map((inv) => (
+        <InvoiceCard key={inv.id} inv={inv} />
+      ))}
+    </ul>
+  );
+}
+
+function InvoiceCard({ inv }: { inv: PortalInvoice }) {
+  const { t } = useTranslation();
+  return (
+    <li className="rounded-xl border border-border bg-surface-primary p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <span className="font-mono text-2xs text-content-tertiary">{inv.invoice_number}</span>
+          <p className="truncate text-sm font-medium text-content-primary">
+            {money(inv.amount_total, inv.currency_code)}
+          </p>
+        </div>
+        <Badge variant={INVOICE_STATUS_VARIANT[inv.status] ?? 'neutral'} dot>
+          {t(`homeportal.inv_status_${inv.status}`, { defaultValue: inv.status })}
+        </Badge>
+      </div>
+      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+        <div>
+          <dt className="text-2xs uppercase tracking-wide text-content-tertiary">
+            {t('homeportal.inv_date', { defaultValue: 'Invoice date' })}
+          </dt>
+          <dd className="text-content-secondary">
+            {inv.invoice_date ? <DateDisplay value={inv.invoice_date} /> : '—'}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-2xs uppercase tracking-wide text-content-tertiary">
+            {t('homeportal.inv_due', { defaultValue: 'Due' })}
+          </dt>
+          <dd className="text-content-secondary">
+            {inv.due_date ? <DateDisplay value={inv.due_date} /> : '—'}
           </dd>
         </div>
       </dl>

@@ -563,6 +563,36 @@ export function listMyChangeOrders(params?: {
   );
 }
 
+export interface PortalInvoice {
+  id: string;
+  project_id: string;
+  invoice_number: string;
+  invoice_date: string;
+  due_date: string | null;
+  currency_code: string;
+  amount_total: string | null;
+  status: string;
+}
+
+export interface PortalInvoiceList {
+  items: PortalInvoice[];
+  total: number;
+}
+
+/** List the issued invoices the portal caller can see. */
+export function listMyInvoices(params?: {
+  project_id?: string;
+  offset?: number;
+  limit?: number;
+}): Promise<PortalInvoiceList> {
+  const qs = new URLSearchParams();
+  if (params?.project_id) qs.set('project_id', params.project_id);
+  if (params?.offset !== undefined) qs.set('offset', String(params.offset));
+  if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+  const q = qs.toString();
+  return portalFetch<PortalInvoiceList>(`${PORTAL_ME_BASE}/invoices${q ? `?${q}` : ''}`);
+}
+
 /* ── Portal-user-facing (session-token) service tickets ────────────────────
  *
  * The tickets the portal caller filed (source="portal", reported_by=self) on
