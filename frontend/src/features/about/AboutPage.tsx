@@ -71,7 +71,7 @@ function AckAvatar({ entry, prominent = false }: { entry: Acknowledged; prominen
       <span
         className={clsx(
           'relative flex items-center justify-center overflow-hidden rounded-full shadow-sm transition-transform group-hover:scale-105',
-          prominent ? 'h-16 w-16 ring-2 ring-emerald-400/60' : 'h-14 w-14 ring-1 ring-border-light',
+          prominent ? 'h-24 w-24 ring-2 ring-emerald-400/60' : 'h-20 w-20 ring-1 ring-border-light',
         )}
       >
         {showImg ? (
@@ -86,7 +86,7 @@ function AckAvatar({ entry, prominent = false }: { entry: Acknowledged; prominen
           <span
             className={clsx(
               'flex h-full w-full items-center justify-center font-bold text-white',
-              prominent ? 'text-base' : 'text-sm',
+              prominent ? 'text-xl' : 'text-lg',
               monogramColor(entry.name),
             )}
           >
@@ -94,15 +94,15 @@ function AckAvatar({ entry, prominent = false }: { entry: Acknowledged; prominen
           </span>
         )}
       </span>
-      <span className="mt-1.5 w-full truncate text-center text-2xs text-content-secondary group-hover:text-content-primary transition-colors">
+      <span className="mt-2 w-full truncate text-center text-xs text-content-secondary group-hover:text-content-primary transition-colors">
         {entry.name}
       </span>
     </>
   );
 
   const cls = clsx(
-    'group flex flex-col items-center rounded-lg p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-2',
-    prominent ? 'w-20' : 'w-[4.5rem]',
+    'group flex flex-col items-center rounded-lg p-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-2',
+    prominent ? 'w-28' : 'w-24',
   );
 
   return url ? (
