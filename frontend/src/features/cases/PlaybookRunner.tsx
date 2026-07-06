@@ -19,8 +19,9 @@ import { Button, Badge } from '@/shared/ui';
 import { projectsApi, type Project } from '@/features/projects/api';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import type { Playbook, PlaybookStep } from './types';
-import { tintFor } from './categories';
+import { tintFor, CATEGORY_BY_ID } from './categories';
 import { iconFor } from './icons';
+import { CaseArt } from './CaseArt';
 import { useCasesStore, EMPTY_PROGRESS } from './useCasesStore';
 import {
   clampStepIndex,
@@ -163,6 +164,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
 
   // Visual identity + the focused step, resolved once for the detail stage.
   const tint = tintFor(playbook.category);
+  const cat = CATEGORY_BY_ID[playbook.category];
   const PlaybookIcon = iconFor(playbook.icon);
   const currentStep = playbook.steps[currentIndex];
   const CurIcon = iconFor(currentStep?.icon);
@@ -187,19 +189,34 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
           {t('cases.back_to_list', { defaultValue: 'All cases' })}
         </button>
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
-            <span
-              className={clsx(
-                'mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ring-inset',
-                tint.tile,
-              )}
+          <div className="flex min-w-0 items-start gap-4">
+            <div
+              className="mt-0.5 flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border-light bg-gradient-to-b from-white to-slate-50 ring-1 ring-inset ring-slate-900/[0.04] sm:h-24 sm:w-24"
               aria-hidden="true"
             >
-              <PlaybookIcon size={20} strokeWidth={1.9} />
-            </span>
+              <CaseArt id={playbook.id} fallbackIcon={PlaybookIcon} fallbackClass={tint.text} />
+            </div>
             <div className="min-w-0">
-              <h1 className="text-xl font-semibold tracking-tight text-content-primary">{title}</h1>
+              <h1 className="text-2xl font-semibold tracking-tight text-content-primary">{title}</h1>
               <p className="mt-1 max-w-2xl text-sm leading-relaxed text-content-secondary">{desc}</p>
+              <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span
+                  className={clsx(
+                    'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-2xs font-medium',
+                    tint.chip,
+                  )}
+                >
+                  <PlaybookIcon size={11} strokeWidth={2} aria-hidden="true" />
+                  {t(cat.labelKey, { defaultValue: cat.labelDefault })}
+                </span>
+                <span className="text-2xs font-medium text-content-tertiary">
+                  {t('cases.card.minutes', {
+                    defaultValue: 'about {{count}} min',
+                    count: playbook.estMinutes,
+                  })}
+                </span>
+                <span className="text-2xs font-medium text-content-tertiary">{progressLabel}</span>
+              </div>
             </div>
           </div>
           <Button
@@ -220,7 +237,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
       {/* ── Work area: a compact step rail beside the focused step ───────── */}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)] lg:items-start">
         {/* Rail: progress, sample project, and the ordered step list */}
-        <aside className="space-y-3 lg:sticky lg:top-4">
+        <aside className="space-y-4 lg:sticky lg:top-4">
           {/* Progress */}
           <div
             role="progressbar"
@@ -248,7 +265,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
           </div>
 
           {/* Sample-project picker (compact) */}
-          <div className="rounded-xl border border-dashed border-border-light bg-surface-secondary/40 p-2.5">
+          <div className="rounded-xl border border-border-light bg-surface-secondary/40 p-2.5">
             <label
               htmlFor={selectId}
               className="mb-1 block text-2xs font-semibold uppercase tracking-wide text-content-tertiary"
@@ -282,7 +299,6 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
             {playbook.steps.map((step, i) => {
               const done = isStepDone(progress, step.id);
               const isCurrent = i === currentIndex;
-              const StepIcon = iconFor(step.icon);
               const stepTitle = t(step.titleKey, { defaultValue: step.titleDefault });
               return (
                 <li key={step.id}>
@@ -326,12 +342,6 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                     >
                       {stepTitle}
                     </span>
-                    <StepIcon
-                      size={13}
-                      strokeWidth={2}
-                      className={clsx('shrink-0', isCurrent ? 'text-oe-blue' : 'text-content-tertiary')}
-                      aria-hidden="true"
-                    />
                   </button>
                 </li>
               );
@@ -340,7 +350,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
         </aside>
 
         {/* Stage: the focused step in full ────────────────────────────────── */}
-        <section aria-live="polite" className="min-w-0">
+        <section className="min-w-0">
           {currentStep && (
             <div className="rounded-2xl border border-border-light bg-surface-primary p-5 shadow-xs sm:p-6">
               {/* Eyebrow: step counter + module chip */}
@@ -371,7 +381,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                 >
                   {curDone ? <Check size={17} strokeWidth={2.5} /> : currentIndex + 1}
                 </span>
-                <h2 className="mt-1 text-base font-semibold leading-snug text-content-primary">
+                <h2 className="mt-1 text-lg font-semibold leading-snug text-content-primary">
                   {curTitle}
                 </h2>
               </div>
@@ -379,7 +389,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
               {/* What + Why */}
               <div className="mt-4 space-y-4">
                 <div>
-                  <p className={clsx('text-2xs font-semibold uppercase tracking-wide', tint.text)}>
+                  <p className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
                     {t('cases.step.what', { defaultValue: 'What you do' })}
                   </p>
                   <p className="mt-1 text-sm leading-relaxed text-content-secondary">
@@ -409,7 +419,10 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                     module: curModule,
                   })}
                 >
-                  {t('cases.step.go', { defaultValue: 'Go' })}
+                  {t('cases.step.go_to_module', {
+                    defaultValue: 'Open {{module}}',
+                    module: curModule,
+                  })}
                 </Button>
                 <Button
                   variant={curDone ? 'ghost' : 'secondary'}

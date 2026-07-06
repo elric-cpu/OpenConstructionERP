@@ -34,8 +34,8 @@ export interface CategoryTint {
   tile: string;
   /** Active filter chip: soft background, coloured border and text. */
   chip: string;
-  /** Background for the thin left accent rail on a case card (a `bg-*` class,
-   *  used on a positioned element so it never fights the card border). */
+  /** Colour of the thin left accent rail on a case card: a `border-l-*` colour
+   *  class, combined at the call site with `border-l-[3px]` for the rail width. */
   accent: string;
   /** Plain coloured text for small eyebrow labels. */
   text: string;

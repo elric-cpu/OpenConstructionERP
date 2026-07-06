@@ -16,6 +16,7 @@
 // is pure presentation. Reusable anywhere a role needs a face, not just the
 // Cases hub.
 
+import { useId } from 'react';
 import clsx from 'clsx';
 import type { ProfessionalRole } from './types';
 import { ROLE_BY_ID, type RoleHeadgear } from './roles';
@@ -65,6 +66,7 @@ export interface RoleAvatarProps {
 
 /** A round, colour-coded persona avatar for a professional role. */
 export function RoleAvatar({ role, className, title }: RoleAvatarProps) {
+  const clipId = useId();
   const meta = ROLE_BY_ID[role];
   if (!meta) return null;
   const Badge = meta.badge;
@@ -76,12 +78,12 @@ export function RoleAvatar({ role, className, title }: RoleAvatarProps) {
     >
       <svg viewBox="0 0 48 48" className={clsx('h-full w-full', meta.avatarText)}>
         <defs>
-          <clipPath id="oe-role-avatar-disc">
+          <clipPath id={clipId}>
             <circle cx="24" cy="24" r="24" />
           </clipPath>
         </defs>
         <circle cx="24" cy="24" r="24" className="fill-current opacity-[0.14]" />
-        <g clipPath="url(#oe-role-avatar-disc)">
+        <g clipPath={`url(#${clipId})`}>
           {/* shoulders + head bust */}
           <path
             d="M11 46 C11 35 16.5 31 24 31 C31.5 31 37 35 37 46 Z"

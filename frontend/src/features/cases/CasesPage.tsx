@@ -48,11 +48,13 @@ import { CATEGORY_META, tintFor, NEUTRAL_TINT } from './categories';
 import { COMPANY_TYPE_META, COMPANY_TYPE_BY_ID, tintForCompany } from './companyTypes';
 import { ROLE_META, ROLE_BY_ID, rolesForPlaybook, tintForRole } from './roles';
 import { RoleAvatar } from './RoleAvatar';
+import { RoleArt } from './RoleArt';
+import { CaseArt } from './CaseArt';
+import { CompanyArt } from './CompanyArt';
 import {
   STAGE_META,
   STAGE_BY_ID,
   stageForPlaybook,
-  tintForStage,
   buildCaseNumbers,
 } from './stages';
 import { iconFor } from './icons';
@@ -117,7 +119,10 @@ function CasesList() {
     () => [...(projects ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
     [projects],
   );
-  const pinnedIds = pinProjectId ? (pins[pinProjectId] ?? []) : [];
+  const pinnedIds = useMemo(
+    () => (pinProjectId ? (pins[pinProjectId] ?? []) : []),
+    [pinProjectId, pins],
+  );
 
   // Best progress for a card = the furthest a user got on this case across any
   // run (unscoped or scoped to a sample project).
@@ -363,7 +368,7 @@ function CasesList() {
                       >
                         {t(s.shortKey, { defaultValue: s.shortDefault })}
                       </span>
-                      <span className="text-2xs tabular-nums opacity-60">{count}</span>
+                      <span className="text-2xs tabular-nums text-content-tertiary">{count}</span>
                     </button>
                   );
                 })}
@@ -394,7 +399,7 @@ function CasesList() {
               </span>
             </div>
             <div
-              className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8"
+              className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4"
               role="group"
               aria-label={t('cases.company_selector.heading', { defaultValue: 'My company' })}
             >
@@ -411,26 +416,28 @@ function CasesList() {
                     aria-pressed={active}
                     disabled={disabled}
                     className={clsx(
-                      'flex flex-col items-center gap-1.5 rounded-xl border px-2 py-3 text-center transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40',
+                      'flex items-center gap-2.5 rounded-xl border p-2 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40 motion-reduce:transition-none',
                       active
                         ? clsx(c.tint.chip, 'shadow-sm')
-                        : 'border-border-light bg-surface-primary text-content-secondary hover:border-oe-blue/30 hover:text-content-primary',
+                        : 'border-border-light bg-surface-primary text-content-primary hover:border-oe-blue/30',
                       disabled && 'cursor-not-allowed opacity-40',
                     )}
                   >
-                    <span
-                      className={clsx(
-                        'flex h-8 w-8 items-center justify-center rounded-lg ring-1 ring-inset',
-                        active ? 'bg-white/40 ring-white/40 dark:bg-black/10' : c.tint.tile,
-                      )}
-                      aria-hidden="true"
-                    >
-                      <Icon size={16} strokeWidth={1.9} />
+                    <CompanyArt
+                      id={c.id}
+                      fallbackIcon={Icon}
+                      fallbackClass={c.tint.text}
+                      className="h-14 w-14"
+                      title={t(c.labelKey, { defaultValue: c.labelDefault })}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-semibold leading-tight">
+                        {t(c.labelKey, { defaultValue: c.labelDefault })}
+                      </span>
+                      <span className="mt-0.5 block text-2xs tabular-nums text-content-tertiary">
+                        {t('cases.selector.count', { defaultValue: '{{count}} cases', count })}
+                      </span>
                     </span>
-                    <span className="text-2xs font-semibold leading-tight">
-                      {t(c.labelKey, { defaultValue: c.labelDefault })}
-                    </span>
-                    <span className="text-2xs tabular-nums opacity-70">{count}</span>
                   </button>
                 );
               })}
@@ -460,7 +467,7 @@ function CasesList() {
               </span>
             </div>
             <div
-              className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6"
+              className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4"
               role="group"
               aria-label={t('cases.role_selector.heading', { defaultValue: 'Your role' })}
             >
@@ -476,22 +483,26 @@ function CasesList() {
                     aria-pressed={active}
                     disabled={disabled}
                     className={clsx(
-                      'flex flex-col items-center gap-1.5 rounded-xl border px-2 py-3 text-center transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40',
+                      'flex items-center gap-2.5 rounded-xl border p-2 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40 motion-reduce:transition-none',
                       active
                         ? clsx(r.tint.chip, 'shadow-sm')
-                        : 'border-border-light bg-surface-primary text-content-secondary hover:border-oe-blue/30 hover:text-content-primary',
+                        : 'border-border-light bg-surface-primary text-content-primary hover:border-oe-blue/30',
                       disabled && 'cursor-not-allowed opacity-40',
                     )}
                   >
-                    <RoleAvatar
+                    <RoleArt
                       role={r.id}
-                      className={clsx('h-11 w-11 transition-transform', active && 'scale-105')}
+                      className="h-14 w-14 shrink-0"
                       title={t(r.labelKey, { defaultValue: r.labelDefault })}
                     />
-                    <span className="text-2xs font-semibold leading-tight">
-                      {t(r.labelKey, { defaultValue: r.labelDefault })}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-semibold leading-tight">
+                        {t(r.labelKey, { defaultValue: r.labelDefault })}
+                      </span>
+                      <span className="mt-0.5 block text-2xs tabular-nums text-content-tertiary">
+                        {t('cases.selector.count', { defaultValue: '{{count}} cases', count })}
+                      </span>
                     </span>
-                    <span className="text-2xs tabular-nums opacity-70">{count}</span>
                   </button>
                 );
               })}
@@ -520,7 +531,7 @@ function CasesList() {
                 setPinProjectId(e.target.value);
                 if (!e.target.value) setShowOnlyPinned(false);
               }}
-              className="h-8 rounded-lg border border-border bg-surface-primary px-2.5 text-xs text-content-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+              className="h-8 rounded-lg border border-border-light bg-surface-primary px-2.5 text-xs text-content-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
             >
               <option value="">
                 {t('cases.project_pin.picker_none', { defaultValue: 'No project selected' })}
@@ -576,9 +587,12 @@ function CasesList() {
               />
             </div>
             <div>
-              <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
-                {t('cases.filter.discipline_label', { defaultValue: 'Discipline' })}
-              </p>
+              <div className="mb-2.5 flex items-center gap-2">
+                <Layers size={14} className="text-content-tertiary" aria-hidden="true" />
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-content-secondary">
+                  {t('cases.filter.discipline_label', { defaultValue: 'Discipline' })}
+                </h2>
+              </div>
               <div className="flex flex-wrap gap-2">
                 <CategoryChip
                   active={activeCategory === 'all'}
@@ -617,17 +631,25 @@ function CasesList() {
           )}
         >
           {role ? (
-            <RoleAvatar role={role} className="h-12 w-12" />
+            <RoleArt
+              role={role}
+              className="h-14 w-14"
+              title={t(ROLE_BY_ID[role]?.labelKey ?? '', {
+                defaultValue: ROLE_BY_ID[role]?.labelDefault ?? '',
+              })}
+            />
           ) : (
-            companyType &&
-            (() => {
-              const CIcon = COMPANY_TYPE_BY_ID[companyType]?.icon ?? Briefcase;
-              return (
-                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/50 ring-1 ring-inset ring-white/50 dark:bg-black/10">
-                  <CIcon size={20} strokeWidth={1.9} />
-                </span>
-              );
-            })()
+            companyType && (
+              <CompanyArt
+                id={companyType}
+                fallbackIcon={COMPANY_TYPE_BY_ID[companyType]?.icon ?? Briefcase}
+                fallbackClass={tintForCompany(companyType).text}
+                className="h-14 w-14"
+                title={t(COMPANY_TYPE_BY_ID[companyType]?.labelKey ?? '', {
+                  defaultValue: COMPANY_TYPE_BY_ID[companyType]?.labelDefault ?? '',
+                })}
+              />
+            )
           )}
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold">
@@ -695,7 +717,7 @@ function CasesList() {
           })}
         />
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {visible.map((pb) => {
             const Icon = iconFor(pb.icon);
             const tint = tintFor(pb.category);
@@ -709,7 +731,6 @@ function CasesList() {
             const stageId = stageByPlaybook.get(pb.id);
             const stage = stageId ? STAGE_BY_ID[stageId] : undefined;
             const StageIcon = stage?.icon;
-            const stageTint = tintForStage(stageId);
             return (
               <div
                 key={pb.id}
@@ -717,14 +738,16 @@ function CasesList() {
                 tabIndex={0}
                 onClick={() => navigate(`/cases/${pb.id}`)}
                 onKeyDown={(e) => {
+                  if (e.target !== e.currentTarget) return;
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
                     navigate(`/cases/${pb.id}`);
                   }
                 }}
                 className={clsx(
-                  'group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-2xl border border-border-light bg-surface-primary p-5 pl-6 text-left',
-                  'shadow-xs transition-all hover:-translate-y-0.5 hover:border-oe-blue/40 hover:shadow-md',
+                  'group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-xl border border-border-light bg-surface-primary text-left',
+                  'shadow-xs transition duration-200 hover:-translate-y-0.5 hover:border-oe-blue/40 hover:shadow-md',
+                  'motion-reduce:transition-none motion-reduce:hover:translate-y-0',
                   'focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40',
                 )}
               >
@@ -732,40 +755,35 @@ function CasesList() {
                     never fights the card border). */}
                 <span
                   aria-hidden="true"
-                  className={clsx('absolute inset-y-0 left-0 w-1', tint.accent)}
+                  className={clsx('absolute inset-y-0 left-0 border-l-[3px]', tint.accent)}
                 />
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
+                {/* Line-art illustration banner: the picture carries the card, on
+                    an always-light tile so the slate linework reads in both themes. */}
+                <div className="relative aspect-[16/9] w-full shrink-0 overflow-hidden border-b border-border-light bg-gradient-to-b from-white to-slate-50 ring-1 ring-inset ring-slate-900/[0.04]">
+                  <CaseArt id={pb.id} fallbackIcon={Icon} fallbackClass={tint.text} />
+                  {num != null && (
                     <span
-                      className={clsx(
-                        'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ring-inset',
-                        tint.tile,
-                      )}
+                      className="absolute left-3 top-3 inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-md bg-slate-900/85 px-1.5 text-2xs font-bold tabular-nums text-white shadow-sm ring-1 ring-inset ring-white/15"
+                      title={t('cases.card.number', {
+                        defaultValue: 'Case {{num}} of {{total}}',
+                        num,
+                        total: caseNumbers.size,
+                      })}
                     >
-                      <Icon size={19} strokeWidth={1.9} />
+                      {num}
                     </span>
-                    {num != null && (
-                      <span
-                        className="text-sm font-bold tabular-nums text-content-tertiary"
-                        title={t('cases.card.number', {
-                          defaultValue: 'Case {{num}} of {{total}}',
-                          num,
-                          total: caseNumbers.size,
-                        })}
-                      >
-                        {num}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5">
+                  )}
+                  <div className="absolute right-3 top-3 flex items-center gap-1.5">
                     {complete ? (
                       <Badge variant="success" size="sm">
                         {t('cases.card.done_badge', { defaultValue: 'Done' })}
                       </Badge>
                     ) : started ? (
-                      <Badge variant="blue" size="sm">
-                        {t('cases.card.in_progress', { defaultValue: 'In progress' })}
-                      </Badge>
+                      <span
+                        className="h-2.5 w-2.5 rounded-full bg-oe-blue shadow-sm ring-2 ring-white"
+                        title={t('cases.card.in_progress', { defaultValue: 'In progress' })}
+                        aria-label={t('cases.card.in_progress', { defaultValue: 'In progress' })}
+                      />
                     ) : null}
                     {pinProjectId && (
                       <button
@@ -789,7 +807,7 @@ function CasesList() {
                           'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40',
                           pinned
                             ? 'border-oe-blue/40 bg-oe-blue/10 text-oe-blue'
-                            : 'border-border-light bg-surface-primary text-content-tertiary hover:border-oe-blue/30 hover:text-content-primary',
+                            : 'border-border-light bg-surface-primary/90 text-content-tertiary hover:border-oe-blue/30 hover:text-content-primary',
                         )}
                       >
                         {pinned ? <Pin size={13} /> : <PinOff size={13} />}
@@ -798,22 +816,19 @@ function CasesList() {
                   </div>
                 </div>
 
-                <h2 className="text-sm font-semibold leading-snug text-content-primary">
+                {/* Card content */}
+                <div className="flex flex-1 flex-col p-3.5 pl-4">
+                <h3 className="text-sm font-semibold leading-snug text-content-primary">
                   {t(pb.titleKey, { defaultValue: pb.titleDefault })}
-                </h2>
-                <p className="mt-1.5 flex-1 text-xs leading-relaxed text-content-secondary">
+                </h3>
+                <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-content-secondary">
                   {t(pb.descKey, { defaultValue: pb.descDefault })}
                 </p>
 
                 {/* Lifecycle stage: where in the project this case happens. */}
                 {stage && StageIcon && (
-                  <div className="mt-2.5">
-                    <span
-                      className={clsx(
-                        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-2xs font-medium',
-                        stageTint.chip,
-                      )}
-                    >
+                  <div className="mt-3">
+                    <span className="inline-flex items-center gap-1 rounded-full border border-border-light bg-surface-secondary px-2 py-0.5 text-2xs font-medium text-content-secondary">
                       <StageIcon size={10} strokeWidth={2} aria-hidden="true" />
                       {t('cases.card.stage', {
                         defaultValue: 'Stage {{num}}: {{label}}',
@@ -831,23 +846,27 @@ function CasesList() {
                   if (caseRoles.length === 0) return null;
                   return (
                     <div
-                      className="mt-3 flex items-center gap-1.5"
+                      className="mt-3 flex items-center -space-x-1.5"
                       aria-label={caseRoles
-                        .map((id) => ROLE_BY_ID[id]?.labelDefault ?? id)
+                        .map((id) =>
+                          t(ROLE_BY_ID[id]?.labelKey ?? '', {
+                            defaultValue: ROLE_BY_ID[id]?.labelDefault ?? id,
+                          }),
+                        )
                         .join(', ')}
                     >
                       {caseRoles.slice(0, 3).map((id) => (
                         <RoleAvatar
                           key={id}
                           role={id}
-                          className="h-7 w-7"
+                          className="h-6 w-6 rounded-full ring-2 ring-surface-primary"
                           title={t(ROLE_BY_ID[id]?.labelKey ?? '', {
                             defaultValue: ROLE_BY_ID[id]?.labelDefault ?? id,
                           })}
                         />
                       ))}
                       {caseRoles.length > 3 && (
-                        <span className="text-2xs font-medium text-content-tertiary">
+                        <span className="ml-2 text-2xs font-medium text-content-tertiary">
                           +{caseRoles.length - 3}
                         </span>
                       )}
@@ -876,21 +895,11 @@ function CasesList() {
                         style={{ width: `${pct}%` }}
                       />
                     </div>
-                    <p
-                      aria-hidden="true"
-                      className="mt-1 text-2xs text-content-tertiary tabular-nums"
-                    >
-                      {t('cases.steps_progress', {
-                        defaultValue: '{{done}} of {{total}} steps',
-                        done,
-                        total,
-                      })}
-                    </p>
                   </div>
                 )}
 
                 {/* Footer meta + CTA */}
-                <div className="mt-4 flex items-center justify-between gap-2 border-t border-border-light pt-3">
+                <div className="mt-auto flex items-center justify-between gap-2 border-t border-border-light pt-3">
                   <div className="flex items-center gap-3 text-2xs text-content-tertiary">
                     <span className="inline-flex items-center gap-1">
                       <ListChecks size={12} aria-hidden="true" />
@@ -914,6 +923,7 @@ function CasesList() {
                       aria-hidden="true"
                     />
                   </span>
+                </div>
                 </div>
               </div>
             );

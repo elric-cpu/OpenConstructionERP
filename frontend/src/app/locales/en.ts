@@ -4274,6 +4274,8 @@ const resource = {
     "cases.stage_short.handover": "Handover",
     "cases.stage_short.operate": "Operate",
     "cases.card.number": "Case {{num}} of {{total}}",
+    "cases.selector.count_one": "{{count}} case",
+    "cases.selector.count_other": "{{count}} cases",
     "cases.card.stage": "Stage {{num}}: {{label}}",
     "cases.filter.discipline_label": "Discipline",
     "cases.project_pin.heading": "Cases for a project",
