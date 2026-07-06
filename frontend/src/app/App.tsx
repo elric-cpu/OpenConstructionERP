@@ -514,6 +514,11 @@ const HowItWorksPage = lazy(() => import('@/features/help/HowItWorksPage'));
 const CasesPage = lazy(() =>
   import('@/features/cases').then((m) => ({ default: m.CasesPage }))
 );
+// Inside track - backers-only early-look panel (donation perk). Lazy so the
+// changelog it reuses does not weigh down the boot bundle.
+const InsidePage = lazy(() =>
+  import('@/features/inside').then((m) => ({ default: m.InsidePage }))
+);
 
 // CPMView is keyed by the schedule it analyses, so the route reads :id and
 // forwards it through. Kept as a tiny inline component to avoid bloating
@@ -1074,6 +1079,11 @@ export default function App() {
             (one component serves both so it stays a single lazy chunk). */}
         <Route path="/cases" element={<P title="Cases"><CasesPage /></P>} />
         <Route path="/cases/:playbookId" element={<P title="Cases"><CasesPage /></P>} />
+        {/* Inside track - backers-only early-look panel (donation perk):
+            recent releases (reused from the /about changelog) + a short
+            coming-next list. Gated client-side by a supporter access code
+            remembered in localStorage; never gates the AGPL code itself. */}
+        <Route path="/inside" element={<P title="Inside track"><InsidePage /></P>} />
         <Route path="/project-intelligence" element={<P title="Project Intelligence"><ProjectIntelligencePage /></P>} />
         {/* Architecture Map — internal tool, admin-only. Surfaces module
             dependency graph + DDC integrity audit; not for day-to-day use. */}

@@ -9,7 +9,7 @@ import {
   Mail, Shield, BookOpen, Users, Award,
   Briefcase, Globe, ExternalLink,
   Linkedin, Youtube, Star, Coffee, Rocket, ArrowRight, Handshake,
-  Github, MessageCircle, Heart, HandCoins, ChevronDown,
+  Github, MessageCircle, Heart, HandCoins, ChevronDown, Sparkles,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { Card, Button, Badge, Breadcrumb, DismissibleInfo, IntroRichText } from '@/shared/ui';
@@ -830,11 +830,19 @@ export function AboutPage() {
                   {t('about.support_title', { defaultValue: 'Support OpenConstructionERP' })}
                 </h2>
               </div>
-              <p className="text-sm text-content-secondary leading-relaxed mb-5">
+              <p className="text-sm text-content-secondary leading-relaxed mb-2">
                 {t('about.support_desc_short', { defaultValue: 'Free, open-source, built by construction professionals. Every star, sponsor, or paid engagement keeps the project alive.' })}
               </p>
+              {/* Perk badge - additive, inline-default only; does not touch
+                  support_desc_short above (reconciled with en.ts separately). */}
+              <p className="mb-5 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-2xs font-medium text-emerald-700 dark:text-emerald-300">
+                <Sparkles size={12} className="shrink-0" />
+                {t('about.support_perk_badge', {
+                  defaultValue: 'Donors unlock the Inside track: early word on what shipped and a say in what is next',
+                })}
+              </p>
 
-              {/* 3 action cards, stacked vertically to keep the section dense */}
+              {/* 4 action cards, stacked vertically to keep the section dense */}
               <div className="space-y-2">
                 <a
                   href="https://github.com/datadrivenconstruction/OpenConstructionERP"
@@ -907,6 +915,25 @@ export function AboutPage() {
                   </div>
                   <ArrowRight size={14} className="shrink-0 text-content-quaternary group-hover:text-oe-blue group-hover:translate-x-0.5 transition-all" />
                 </a>
+
+                <button
+                  type="button"
+                  onClick={() => navigate('/inside')}
+                  className="group flex w-full items-center gap-3 rounded-lg border border-border-light bg-surface-primary/80 backdrop-blur-sm px-3.5 py-3 hover:border-emerald-400/60 hover:bg-emerald-50/60 dark:hover:bg-emerald-900/15 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-1"
+                >
+                  <Sparkles size={22} className="shrink-0 text-emerald-500 group-hover:scale-110 transition-transform" />
+                  <div className="min-w-0 flex-1 text-left">
+                    <p className="text-sm font-bold text-content-primary leading-tight">
+                      {t('about.support_inside_track', { defaultValue: 'Backers inside track' })}
+                    </p>
+                    <p className="text-2xs text-content-tertiary leading-snug mt-0.5">
+                      {t('about.support_inside_track_desc', {
+                        defaultValue: 'Already have a supporter code? Open the early-look news panel',
+                      })}
+                    </p>
+                  </div>
+                  <ArrowRight size={14} className="shrink-0 text-content-quaternary group-hover:text-emerald-500 group-hover:translate-x-0.5 transition-all" />
+                </button>
               </div>
             </div>
             {/* /Left column */}

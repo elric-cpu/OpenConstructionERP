@@ -19,6 +19,7 @@ import {
   Send,
   Users,
   ArrowRight,
+  Sparkles,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { copyToClipboard } from '@/shared/lib/browser';
@@ -495,6 +496,17 @@ function SupportUsModal({ onClose, copied, setCopied }: ModalProps) {
                       'Donations keep OpenConstructionERP free and open for everyone. They fund new regional cost data, AI estimation and support for more CAD and file formats.',
                   })}
                 </p>
+                {/* Perk line - additive, inline-default only (do not fold into
+                    action_donate_body above; that sentence is reconciled with
+                    the rest of en.ts separately). Advertises the "Inside
+                    track" backers-only panel this donation unlocks. */}
+                <p className="mt-1.5 flex items-start gap-1.5 text-2xs font-medium text-emerald-700 dark:text-emerald-300">
+                  <Sparkles size={12} className="mt-0.5 shrink-0" />
+                  {t('support.donate_perk_line', {
+                    defaultValue:
+                      'Backers get a supporter access code that unlocks the Inside track panel - early word on what just shipped and a say in what gets built next.',
+                  })}
+                </p>
               </div>
             </div>
             <div className="flex flex-wrap gap-2 ml-14">
@@ -516,6 +528,17 @@ function SupportUsModal({ onClose, copied, setCopied }: ModalProps) {
                 <Github size={12} />
                 {t('support.donate_github', { defaultValue: 'Sponsor on GitHub' })}
               </a>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  navigate('/inside');
+                }}
+                className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300/60 bg-emerald-50/60 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-950/30 dark:text-emerald-300 dark:hover:bg-emerald-900/40 transition-colors"
+              >
+                <Sparkles size={12} />
+                {t('support.inside_track_link', { defaultValue: 'Backers inside track' })}
+              </button>
             </div>
           </div>
         </div>
