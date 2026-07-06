@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [10.2.0] - 2026-07-06
+
+This release reorganizes the Cases hub around who you are. A new "I work as" selector lets you pick your company type, general contractor, specialist subcontractor, cost consultant, designer, developer, project manager, BIM consultant or owner and operator, and the list narrows to the cases that kind of company actually runs, so you see your own set instead of the whole catalogue. Discipline stays as a secondary filter, you can pin the cases that matter to a project and switch to a project only shortlist, and the catalogue grew from 40 to 52 worked examples. Cases also moved above Project files in the menu.
+
+Custom cost catalogues are now easy to fill. Creating a catalogue selects it and opens the add position form straight away, every custom catalogue gets an add position button and a clear empty state, and editing or deleting positions stays limited to your own catalogues while the built in regional data stays read only.
+
+Supporters get a new Inside track panel at /inside, unlocked with a supporter code, showing an early view of what shipped and a short list of what is coming next. The Fund development message now explains that backers get early access, a say in the roadmap and priority handling of their reports, and the platform stays free either way. The client portal gains an Invoices tab so a client sees the invoices shared with them, and view only BIM and CAD sharing so a client can open a shared model in a read only 3D viewer with no editing tools and no cost figures.
+
+It also fixes a start up failure. A source build could fail to boot because four routes declared a streaming or json return type that FastAPI tried to turn into a response model. Those routes now opt out and the app starts cleanly. Creating or listing cost items by catalogue now checks catalogue ownership so private rates stay private, and a takeoff volume depth entered in imperial units is converted correctly instead of being read as metres. This covers issues 322, 323 and 318.
+
 ## [10.1.0] - 2026-07-05
 
 This release makes the main dashboard and the estimate far clearer to read. The dashboard gains five cards that surface delivery and quality work for the active project: upcoming schedule milestones with days remaining or overdue, RFI turnaround with open and overdue counts and the average response time, submittals split into pending review, approved and overdue, inspection pass rate with open and failed counts, and punch list items open and overdue with the average time to close. Each card appears only when its module has data, so a fresh install stays clean, and each carries a short How it works note explaining what the numbers mean.
