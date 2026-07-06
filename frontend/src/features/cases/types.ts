@@ -97,6 +97,50 @@ export type CompanyType =
   | 'owner-operator';
 
 /**
+ * The individual professional role a user does day to day, one level finer
+ * than `CompanyType` (a "general contractor" employs an estimator, a site
+ * manager and a foreman all at once). This is the SECONDARY persona axis on
+ * the Cases hub: the "Your role" selector, with an illustrated avatar per
+ * role, narrows the list to the cases that person actually runs.
+ *
+ * A case rarely lists its roles explicitly; when `Playbook.roles` is omitted
+ * the relevant roles are derived from the case discipline and company types
+ * (see `rolesForPlaybook` in `roles.ts`), so every existing case gets a
+ * sensible role set for free. Keep this list aligned with `ROLE_META` in
+ * `roles.ts`.
+ */
+export type ProfessionalRole =
+  | 'estimator'
+  | 'quantity-surveyor'
+  | 'site-manager'
+  | 'project-manager'
+  | 'bim-coordinator'
+  | 'procurement-buyer'
+  | 'planner'
+  | 'hse-officer'
+  | 'design-lead'
+  | 'document-controller'
+  | 'commercial-manager'
+  | 'foreman';
+
+/**
+ * The project lifecycle stage a case sits in, ordered from the start of a
+ * project to the end. Drives the lifecycle timeline and the sequential case
+ * numbering on the Cases hub. When a case does not set `stage` it is derived
+ * from the discipline (see `stageForPlaybook` in `stages.ts`). Keep this list
+ * aligned with `STAGE_META` in `stages.ts`.
+ */
+export type LifecycleStage =
+  | 'define'
+  | 'design'
+  | 'estimate'
+  | 'procure'
+  | 'plan'
+  | 'build'
+  | 'handover'
+  | 'operate';
+
+/**
  * A complete case: an ordered set of steps spanning several modules.
  *
  * Drop a new one into `features/cases/data/<slug>.playbook.ts` as the file's
@@ -113,6 +157,17 @@ export interface Playbook {
   /** Company types this case is built for (one or more). Drives the primary
    *  "I work as..." selector on the Cases hub; see `companyTypes.ts`. */
   companyTypes: CompanyType[];
+  /** Optional explicit professional roles this case is built for. When omitted
+   *  the roles are derived from `category` + `companyTypes` (see
+   *  `rolesForPlaybook` in `roles.ts`), so most cases never set this. Set it
+   *  only when a case is tightly aimed at specific roles the derivation would
+   *  miss. */
+  roles?: ProfessionalRole[];
+  /** Optional explicit project lifecycle stage. When omitted the stage is
+   *  derived from `category` (see `stageForPlaybook` in `stages.ts`). Set it
+   *  only when the case happens at a different point than its discipline
+   *  implies. */
+  stage?: LifecycleStage;
   /** i18n key for the case title. */
   titleKey: string;
   /** Inline English default for the case title. */

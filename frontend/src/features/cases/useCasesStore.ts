@@ -16,7 +16,7 @@
 // no backend, same pattern as everything else in this file.
 
 import { create } from 'zustand';
-import type { CompanyType, PlaybookProgress } from './types';
+import type { CompanyType, PlaybookProgress, ProfessionalRole } from './types';
 import {
   clampStepIndex,
   emptyProgress,
@@ -27,6 +27,7 @@ import {
 const RUNS_KEY = 'oe_cases_progress';
 const SELECTED_KEY = 'oe_cases_selected';
 const COMPANY_TYPE_KEY = 'oe_cases_company_type';
+const ROLE_KEY = 'oe_cases_role';
 const PIN_PROJECT_KEY = 'oe_cases_pin_project';
 const PINS_KEY = 'oe_cases_pins';
 
@@ -123,6 +124,39 @@ function persistCompanyType(value: CompanyType | null) {
   }
 }
 
+const VALID_ROLES: readonly ProfessionalRole[] = [
+  'estimator',
+  'quantity-surveyor',
+  'site-manager',
+  'project-manager',
+  'bim-coordinator',
+  'procurement-buyer',
+  'planner',
+  'hse-officer',
+  'design-lead',
+  'document-controller',
+  'commercial-manager',
+  'foreman',
+];
+
+function readRole(): ProfessionalRole | null {
+  try {
+    const raw = localStorage.getItem(ROLE_KEY);
+    return raw && (VALID_ROLES as string[]).includes(raw) ? (raw as ProfessionalRole) : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistRole(value: ProfessionalRole | null) {
+  try {
+    if (value) localStorage.setItem(ROLE_KEY, value);
+    else localStorage.removeItem(ROLE_KEY);
+  } catch {
+    /* non-fatal */
+  }
+}
+
 function readPinProject(): string {
   try {
     return localStorage.getItem(PIN_PROJECT_KEY) ?? '';
@@ -176,8 +210,12 @@ interface CasesState {
   /** Sample project chosen per playbook id (empty / absent = none). */
   selected: SelectedMap;
   /** The "I work as..." company type picked on the Cases hub (null = show
-   *  every case, no role filter applied). Persists across visits. */
+   *  every case, no company filter applied). Persists across visits. */
   companyType: CompanyType | null;
+  /** The "Your role" professional role picked on the Cases hub (null = no role
+   *  filter applied). Independent of `companyType`; both narrow the list.
+   *  Persists across visits. */
+  role: ProfessionalRole | null;
   /** The real project the user is pinning cases to on the Cases hub ('' =
    *  none picked). Independent of the per-case sample-project `selected`
    *  above - this is "which job am I building a case list for". */
@@ -199,6 +237,8 @@ interface CasesState {
   setSelectedProject: (playbookId: string, projectId: string) => void;
   /** Set (or clear, with null) the "I work as..." company type filter. */
   setCompanyType: (companyType: CompanyType | null) => void;
+  /** Set (or clear, with null) the "Your role" professional role filter. */
+  setRole: (role: ProfessionalRole | null) => void;
   /** Set (or clear, with '') the project the pin picker is scoped to. */
   setPinProjectId: (projectId: string) => void;
   /** Pin or unpin a case for a project (no-op with an empty projectId). */
@@ -211,6 +251,7 @@ export const useCasesStore = create<CasesState>((set, get) => ({
   runs: readRuns(),
   selected: readSelected(),
   companyType: readCompanyType(),
+  role: readRole(),
   pinProjectId: readPinProject(),
   pins: readPins(),
 
@@ -253,6 +294,11 @@ export const useCasesStore = create<CasesState>((set, get) => ({
   setCompanyType: (companyType) => {
     persistCompanyType(companyType);
     set({ companyType });
+  },
+
+  setRole: (role) => {
+    persistRole(role);
+    set({ role });
   },
 
   setPinProjectId: (projectId) => {
