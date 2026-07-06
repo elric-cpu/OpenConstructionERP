@@ -654,6 +654,7 @@ async def export_invoice_br_pdf(
         "EN 16931 fields as JSON instead of the file, so the UI can prompt for them."
     ),
     response_description="application/xml e-invoice stream, or a JSON problem list when dry_run=true",
+    response_model=None,
 )
 async def export_invoice_einvoice(
     invoice_id: uuid.UUID,

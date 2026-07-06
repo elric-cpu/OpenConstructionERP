@@ -7543,6 +7543,7 @@ async def get_cost_breakdown(
     "/positions/{position_id}/price-analysis/",
     summary="Unit-price breakdown for a position",
     dependencies=[Depends(RequirePermission("boq.read"))],
+    response_model=None,
 )
 async def get_position_price_analysis(
     position_id: uuid.UUID,
@@ -7629,6 +7630,7 @@ def _measurement_stream(sheet: Any, fmt: str, preset: str, item_ref: str) -> Str
     "/positions/{position_id}/measurement/compute/",
     summary="Compute a measurement sheet for a position (does not save)",
     dependencies=[Depends(RequirePermission("boq.read"))],
+    response_model=None,
 )
 async def compute_position_measurement(
     position_id: uuid.UUID,
@@ -7690,6 +7692,7 @@ async def compute_position_measurement(
     "/positions/{position_id}/measurement/",
     summary="Read the saved measurement sheet of a position",
     dependencies=[Depends(RequirePermission("boq.read"))],
+    response_model=None,
 )
 async def get_position_measurement(
     position_id: uuid.UUID,
