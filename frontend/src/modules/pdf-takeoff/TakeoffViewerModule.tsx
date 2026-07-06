@@ -90,6 +90,7 @@ import {
   deriveScale,
   presetScale,
   formatScaleRatio,
+  toMeters,
 } from './data/scale-helpers';
 import {
   type PageScales,
@@ -2466,12 +2467,19 @@ export default function TakeoffViewerModule({
 
   /** Confirm volume depth and create the volume measurement */
   const handleVolumeDepthConfirm = useCallback(() => {
-    const depth = parseFloat(volumeDepthValue);
-    if (isNaN(depth) || depth <= 0 || pendingVolumePoints.length < 3) {
+    const entered = parseFloat(volumeDepthValue);
+    if (isNaN(entered) || entered <= 0 || pendingVolumePoints.length < 3) {
       setShowVolumeDepthInput(false);
       setPendingVolumePoints([]);
       return;
     }
+    // The depth is typed in the user's display units (feet in Imperial), but
+    // measurements are stored metric-canonical, so convert the entry back to
+    // metres before multiplying by the canonical base area (D-TKC-016). This is
+    // the one takeoff input that used the raw number as metres, which made an
+    // Imperial depth come out about 3.28x too large with no warning (#323).
+    const depthUnit: CalibrationUnit = measurementSystem === 'imperial' ? 'ft' : 'm';
+    const depth = toMeters(entered, depthUnit);
     const pixArea = polygonAreaPixels(pendingVolumePoints);
     const realArea = toRealArea(pixArea, scale);
     const volume = realArea * depth;
@@ -2492,7 +2500,7 @@ export default function TakeoffViewerModule({
     setMeasurements((prev) => [...prev, newMeasurement]);
     setShowVolumeDepthInput(false);
     setPendingVolumePoints([]);
-  }, [volumeDepthValue, pendingVolumePoints, scale, currentPage, pushUndo, nextAnnotation, activeGroup]);
+  }, [volumeDepthValue, pendingVolumePoints, scale, currentPage, pushUndo, nextAnnotation, activeGroup, measurementSystem]);
 
   /** Right-click: finish an in-progress polyline / area / volume / cloud
    *  (reuses the double-click finish, which drops no stray vertex here since no
@@ -7888,7 +7896,9 @@ export default function TakeoffViewerModule({
                   }
                 }}
               />
-              <span className="text-sm text-content-secondary">{scale.unitLabel}</span>
+              <span className="text-sm text-content-secondary">
+                {displayUnitFor(scale.unitLabel, measurementSystem)}
+              </span>
             </div>
             <div className="flex justify-end gap-2">
               <button
