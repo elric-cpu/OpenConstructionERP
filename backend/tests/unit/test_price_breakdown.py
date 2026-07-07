@@ -261,9 +261,7 @@ def test_render_csv_quotes_awkward_descriptions_safely():
         description='Wall, "special", 24cm',
         unit="m2",
         position_quantity="1",
-        components=[
-            {"kind": "material", "description": 'Block, grade "A"', "quantity": "1", "unit_cost": "10"}
-        ],
+        components=[{"kind": "material", "description": 'Block, grade "A"', "quantity": "1", "unit_cost": "10"}],
     )
     text = render_csv(bd)
     rows = list(csv.reader(io.StringIO(text)))
@@ -315,9 +313,7 @@ def test_zero_position_quantity_does_not_divide_by_zero():
         "quantity": "0",
         "unit_rate": "50",
         "metadata_": {
-            "resources": [
-                {"type": "material", "name": "block", "quantity": "1", "unit_rate": "30", "total": "600"}
-            ]
+            "resources": [{"type": "material", "name": "block", "quantity": "1", "unit_rate": "30", "total": "600"}]
         },
     }
     bd = from_position(position)
