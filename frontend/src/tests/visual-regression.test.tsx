@@ -82,6 +82,10 @@ vi.mock('@/shared/lib/api', () => ({
   apiPost: vi.fn().mockResolvedValue({}),
   apiPatch: vi.fn().mockResolvedValue({}),
   apiDelete: vi.fn().mockResolvedValue(undefined),
+  // API_BASE is read at module-eval time by transitively imported feature
+  // APIs (e.g. schedule/api.ts, pulled in via the dashboard milestones card),
+  // so the mock must expose it or those modules throw on import.
+  API_BASE: '',
   ApiError: class ApiError extends Error {
     status: number;
     statusText: string;

@@ -7756,9 +7756,18 @@ export default function TakeoffViewerModule({
                                   </button>
                                 </div>
                               </div>
-                              {/* Link to BOQ picker — self-contained, no prerequisites */}
+                              {/* Link to BOQ picker — self-contained, no prerequisites.
+                                  Issue #337: the picker renders inside the measurement
+                                  row, whose click handler toggles selection and opens the
+                                  Properties pane. stopPropagation on the container keeps
+                                  every click inside the picker (the project/BOQ dropdowns,
+                                  the search box, a position row, even the close button)
+                                  from also firing the row handler and toggling the pane. */}
                               {linkingMeasurementId === m.id && (
-                                <div className="mt-1.5 rounded-lg border border-rose-200 dark:border-rose-800/40 bg-rose-50/50 dark:bg-rose-950/20 p-2 animate-fade-in">
+                                <div
+                                  className="mt-1.5 rounded-lg border border-rose-200 dark:border-rose-800/40 bg-rose-50/50 dark:bg-rose-950/20 p-2 animate-fade-in"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
                                   <div className="flex items-center justify-between mb-1.5">
                                     <span className="text-[10px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400">
                                       {m.linkedPositionId

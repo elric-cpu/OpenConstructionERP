@@ -367,6 +367,21 @@ export default defineConfig({
     ],
   },
   build: {
+    // Keep heavy, route-only vendor chunks out of the entry HTML's eager
+    // <link rel="modulepreload"> set. They are reached only through lazy()
+    // routes (geo hub globe, flow editor, 3D viewer, PDF/takeoff, Excel
+    // export, realtime collab), so preloading them on the very first paint
+    // makes every session pay for libraries most never open. They still
+    // load on demand when their route mounts. Only the entry HTML preload
+    // is trimmed; runtime dynamic-import preloads stay intact so navigating
+    // to a heavy route still warms its chunks (V321-PERF-03).
+    modulePreload: {
+      resolveDependencies: (_url, deps, ctx) => {
+        if (ctx.hostType !== 'html') return deps;
+        const HEAVY = /vendor-(cesium|flow|three|pdf|pdf-export|exceljs|collab)/;
+        return deps.filter((d) => !HEAVY.test(d));
+      },
+    },
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -378,7 +393,38 @@ export default defineConfig({
           // would otherwise skip them).
           const localeMatch = id.match(/[\\/]src[\\/]app[\\/]locales[\\/]([a-z]{2})\.ts$/);
           if (localeMatch) return `i18n-${localeMatch[1]}`;
+          // Vite's module-preload helper (`__vitePreload`) is a virtual module
+          // ("\0vite/preload-helper.js"). Left unassigned, Rollup folds it into
+          // whichever vendor chunk shares its import signature (it landed in
+          // vendor-maplibre), forcing the entry to statically import that ~1 MB
+          // chunk just to get the ~1 KB helper every lazy() route uses. Pin it to
+          // its own chunk. Checked before the node_modules guard because the
+          // virtual id contains no "node_modules" (V321-PERF-04).
+          if (id.includes('vite/preload-helper')) return 'vendor-preload';
           if (!id.includes('node_modules')) return;
+          // A bare CSS side-effect import (e.g. maplibre-gl's stylesheet,
+          // which the dashboard map widget imports eagerly so markers
+          // position correctly on first paint) must not be grouped into a
+          // heavy JS vendor chunk. Grouping the CSS with the JS forces the
+          // entry to statically pull that vendor's ~1 MB JS just to fetch
+          // the stylesheet. Returning undefined lets Vite co-locate the CSS
+          // with its importing chunk, so the JS stays truly async behind its
+          // dynamic import (V321-PERF-02).
+          if (/\.css($|\?)/.test(id)) return;
+          // DOMPurify is shared by the eager app shell (Markdown + the always
+          // mounted floating chat panel, via isomorphic-dompurify), the lazy
+          // Cesium globe, and the PDF export stack (jspdf). Unassigned, Rollup
+          // bucketed it into vendor-cesium, so the entry statically imported the
+          // 4.8 MB cesium chunk just to get the sanitizer (and vendor-pdf-export
+          // dynamically imported cesium for the same reason). Pin DOMPurify to
+          // its own tiny chunk; the entry imports that, and cesium / pdf-export
+          // share it. node_modules/dompurify does not match the isomorphic
+          // wrapper, so both are listed (V321-PERF-05).
+          if (
+            id.includes('node_modules/dompurify') ||
+            id.includes('node_modules/isomorphic-dompurify')
+          )
+            return 'vendor-dompurify';
           // ── Heavy, route-only vendors → dedicated async chunks ───────
           // These libraries are only reached through `lazy()` route
           // chunks (BOQ editor, dashboard map, PDF/DWG takeoff, Excel
