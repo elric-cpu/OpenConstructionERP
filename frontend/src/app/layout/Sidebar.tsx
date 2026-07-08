@@ -255,6 +255,11 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.match_elements', to: '/match-elements', icon: Link2, badge: 'BETA' },
       { labelKey: 'nav.estimation_dashboard', to: '/project-intelligence', icon: BrainCircuit },
       { labelKey: 'nav.methodologies', to: '/methodologies', icon: SlidersHorizontal },
+      { labelKey: 'nav.rom_estimate', to: '/rom-estimate', icon: Gauge },
+      { labelKey: 'nav.estimate_copilot', to: '/estimate-copilot', icon: Bot, badge: 'BETA' },
+      { labelKey: 'nav.estimate_basis', to: '/estimate-basis', icon: FileText, advancedOnly: true },
+      { labelKey: 'nav.preliminaries', to: '/preliminaries', icon: ClipboardList, advancedOnly: true },
+      { labelKey: 'nav.allowances', to: '/allowances', icon: Wallet, advancedOnly: true },
     ],
   },
   // ── 4. COST DATA ───────────────────────────────────────────────────
@@ -271,6 +276,11 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.cost_explorer', to: '/cost-explorer', icon: Compass },
       { labelKey: 'nav.assemblies', to: '/assemblies', icon: Layers },
       { labelKey: 'nav.benchmarks', to: '/benchmarks', icon: BarChart3, moduleKey: 'cost-benchmark', advancedOnly: true },
+      { labelKey: 'nav.price_index', to: '/price-index', icon: TrendingUp, advancedOnly: true },
+      { labelKey: 'nav.labor_rates', to: '/labor-rates', icon: HardHat, advancedOnly: true },
+      { labelKey: 'nav.norm_expansion', to: '/norm-expansion', icon: ListChecks, advancedOnly: true },
+      { labelKey: 'nav.waste_factors', to: '/waste-factors', icon: Ruler, advancedOnly: true },
+      { labelKey: 'nav.resource_summary', to: '/resource-summary', icon: Package, advancedOnly: true },
     ],
   },
   // ── 5. REALITY CAPTURE & 3D ─────────────────────────────────────────
