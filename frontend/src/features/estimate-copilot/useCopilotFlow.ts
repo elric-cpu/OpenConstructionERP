@@ -3,23 +3,38 @@
 // Estimate Copilot — flow controller.
 //
 // Thin orchestration over four capabilities the platform already exposes over
-// HTTP. This hook owns the React Query mutations and the per-step confirm
-// state; the ordering/gating rules live in `steps.ts` (pure, unit tested).
+// HTTP. This hook owns the React Query mutations, the conceptual step's ROM
+// inputs, and the per-step confirm state; the ordering/gating rules live in
+// `steps.ts` (pure, unit tested).
 //
-// Endpoints chained (referenced by URL only, never by import):
+// Endpoints chained:
 //   1. conceptual  POST /api/v1/rom-estimate/generate/        (rough first-pass number)
 //   2. scope       POST /api/v1/boq/boqs/{boqId}/check-scope/ (missing trades / work packages)
 //   3. audit       POST /api/v1/validation/run/               (quality rule checks)
-//   4. basis       POST /api/v1/basis-of-estimate/generate/   (written basis-of-estimate)
+//   4. basis       POST /api/v1/estimate-basis/generate       (written basis-of-estimate)
 //
-// Money fields arrive as Decimal strings on the wire; they are kept as
-// `string | number` and only ever formatted (never float-mathed) in the view.
+// Steps 1 and 4 reuse the feature clients (rom-estimate, estimate-basis); steps
+// 2 and 3 post directly, since the copilot only consumes a slice of each result.
+//
+// Money fields arrive as Decimal strings on the wire; they are kept as strings
+// and only ever formatted (never float-mathed) in the view.
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 
 import { apiPost } from '@/shared/lib/api';
+import {
+  generateBasis,
+  type EstimateBasisDocument,
+  type QualificationItem,
+} from '@/features/estimate-basis/api';
+import {
+  romEstimateApi,
+  type RomEstimateResult,
+  type RomReference,
+} from '@/features/rom-estimate/api';
 import {
   COPILOT_STEPS,
   type CopilotStepDef,
@@ -44,20 +59,13 @@ export const DEFAULT_AUDIT_RULE_SETS = ['boq_quality', 'project_completeness'] a
 
 // ── Wire shapes (local, minimal) ──────────────────────────────────────────
 
-/** Result of the conceptual first-pass estimate. Money is Decimal-as-string.
- *  Typed defensively because the copilot only consumes a headline summary. */
-export interface ConceptualEstimateResult {
-  /** Headline rollup. Decimal-as-string on the wire; may be absent. */
-  grand_total?: string | number | null;
-  currency?: string | null;
-  /** Model self-reported confidence in [0, 1], when provided. */
-  confidence?: number | null;
-  /** One-line plain-words note on how the number was reached. */
-  basis?: string | null;
-  /** How many rough line items backed the number, when provided. */
-  line_count?: number | null;
-  model_used?: string | null;
-}
+/**
+ * The conceptual step reuses the ROM (order-of-magnitude) calculator, so its
+ * result is the calculator's own {@link RomEstimateResult}. The alias keeps the
+ * copilot's public type name stable for existing importers while pointing at the
+ * real wire shape (headline `total`, `currency`, `cost_per_m2`, `accuracy` band).
+ */
+export type ConceptualEstimateResult = RomEstimateResult;
 
 /** One missing scope item flagged by the coverage check. */
 export interface ScopeMissingItem {
@@ -100,11 +108,58 @@ export interface BasisSection {
   body: string;
 }
 
-/** Result of the basis-of-estimate generate endpoint. Typed defensively. */
+/** Compact summary of a basis-of-estimate the copilot renders. Typed defensively. */
 export interface BasisOfEstimateResult {
   narrative?: string | null;
   sections?: BasisSection[] | null;
   model_used?: string | null;
+}
+
+/**
+ * Fold a stored basis-of-estimate document into the compact summary the copilot
+ * renders. The document carries structured qualifications rather than free text,
+ * so its notes become the narrative (when present) and the inclusion / exclusion
+ * / assumption lists become labelled sections. Every field is treated as
+ * optional so a sparse document never throws in the view.
+ */
+function mapBasisDocument(doc: EstimateBasisDocument, t: TFunction): BasisOfEstimateResult {
+  const groups: { title: string; items: QualificationItem[] }[] = [
+    {
+      title: t('copilot.basis.inclusions', { defaultValue: 'Inclusions' }),
+      items: doc.inclusions ?? [],
+    },
+    {
+      title: t('copilot.basis.exclusions', { defaultValue: 'Exclusions' }),
+      items: doc.exclusions ?? [],
+    },
+    {
+      title: t('copilot.basis.assumptions', { defaultValue: 'Assumptions' }),
+      items: doc.assumptions ?? [],
+    },
+  ];
+
+  const sections: BasisSection[] = groups
+    .map((group) => ({
+      title: group.title,
+      body: group.items
+        .filter((item) => item.enabled !== false && Boolean(item.text))
+        .map((item) => item.text)
+        .join('\n'),
+    }))
+    .filter((section) => section.body.length > 0);
+
+  const narrative = doc.notes && doc.notes.trim().length > 0 ? doc.notes : null;
+
+  return { narrative, sections };
+}
+
+/** User-entered inputs for the conceptual (ROM) first-pass estimate. */
+export interface ConceptualInputs {
+  buildingType: string;
+  /** Gross floor area as the raw input string; parsed to Decimal on the wire. */
+  grossFloorArea: string;
+  quality: string;
+  region: string;
 }
 
 // ── View model ─────────────────────────────────────────────────────────────
@@ -130,6 +185,14 @@ export interface CopilotFlow {
   isComplete: boolean;
   progress: number;
   steps: CopilotStepView[];
+  /** Reference lists (building types, quality levels, regions) for the ROM form. */
+  reference: RomReference | undefined;
+  /** Current conceptual-step inputs the user edits before running step 1. */
+  conceptualInputs: ConceptualInputs;
+  /** Patch one or more conceptual-step inputs. */
+  setConceptualInput: (patch: Partial<ConceptualInputs>) => void;
+  /** True once a building type and a positive gross floor area are entered. */
+  conceptualReady: boolean;
   conceptual: ConceptualEstimateResult | undefined;
   scope: ScopeCoverageResult | undefined;
   audit: QualityAuditResult | undefined;
@@ -166,19 +229,60 @@ interface StepMutation {
  * @returns A {@link CopilotFlow} the page renders and drives.
  */
 export function useCopilotFlow({ projectId, boqId }: CopilotFlowInput): CopilotFlow {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [confirmedCount, setConfirmedCount] = useState(0);
 
   const inputsReady = Boolean(projectId && boqId);
 
-  // Step 1 — conceptual first-pass number.
+  // Conceptual (ROM) reference table — seeds the form's option lists and the
+  // quality / region defaults. Cached for an hour; it is effectively static.
+  const referenceQuery = useQuery({
+    queryKey: ['rom-estimate', 'reference'],
+    queryFn: romEstimateApi.reference,
+    staleTime: 60 * 60 * 1000,
+  });
+  const reference = referenceQuery.data;
+
+  // The four inputs the ROM calculator needs. Building type and area are entered
+  // by the user; quality and region are seeded from the reference defaults once
+  // it loads (while the user has not overridden them).
+  const [conceptualInputs, setConceptualInputs] = useState<ConceptualInputs>({
+    buildingType: '',
+    grossFloorArea: '',
+    quality: '',
+    region: '',
+  });
+
+  const setConceptualInput = useCallback((patch: Partial<ConceptualInputs>) => {
+    setConceptualInputs((prev) => ({ ...prev, ...patch }));
+  }, []);
+
+  useEffect(() => {
+    if (!reference) return;
+    setConceptualInputs((prev) => ({
+      ...prev,
+      quality: prev.quality || reference.default_quality || '',
+      region: prev.region || reference.default_region || '',
+    }));
+  }, [reference]);
+
+  // Step 1 may run only once a building type and a positive area are provided.
+  const conceptualAreaNum = Number(conceptualInputs.grossFloorArea);
+  const conceptualReady =
+    Boolean(conceptualInputs.buildingType) &&
+    Number.isFinite(conceptualAreaNum) &&
+    conceptualAreaNum > 0;
+
+  // Step 1 — conceptual first-pass number via the ROM calculator.
   const conceptualM = useMutation<ConceptualEstimateResult, Error, void>({
     mutationFn: () =>
-      apiPost<ConceptualEstimateResult>(
-        '/v1/rom-estimate/generate/',
-        { project_id: projectId, boq_id: boqId },
-        { longRunning: true },
-      ),
+      romEstimateApi.generate({
+        building_type: conceptualInputs.buildingType,
+        gross_floor_area: conceptualInputs.grossFloorArea,
+        quality: conceptualInputs.quality || reference?.default_quality || 'standard',
+        region: conceptualInputs.region || reference?.default_region || 'global',
+        gfa_unit: 'm2',
+      }),
   });
 
   // Step 2 — scope coverage.
@@ -201,14 +305,14 @@ export function useCopilotFlow({ projectId, boqId }: CopilotFlowInput): CopilotF
       }),
   });
 
-  // Step 4 — basis of estimate.
+  // Step 4 — basis of estimate. The client posts to /v1/estimate-basis/generate
+  // and returns the stored document, which we fold into the summary shape the
+  // flow renders (a short narrative plus qualification sections).
   const basisM = useMutation<BasisOfEstimateResult, Error, void>({
-    mutationFn: () =>
-      apiPost<BasisOfEstimateResult>(
-        '/v1/basis-of-estimate/generate/',
-        { project_id: projectId, boq_id: boqId },
-        { longRunning: true },
-      ),
+    mutationFn: async () => {
+      const doc = await generateBasis({ project_id: projectId ?? '', boq_id: boqId });
+      return mapBasisDocument(doc, t);
+    },
   });
 
   const mutations = useMemo(
@@ -235,9 +339,10 @@ export function useCopilotFlow({ projectId, boqId }: CopilotFlowInput): CopilotF
     (id: CopilotStepId) => {
       if (!inputsReady) return;
       if (!canConfirmStep(id, confirmedCount)) return; // only the active step runs
+      if (id === 'conceptual' && !conceptualReady) return; // ROM inputs required first
       mutations[id].mutate();
     },
-    [inputsReady, confirmedCount, mutations],
+    [inputsReady, confirmedCount, mutations, conceptualReady],
   );
 
   const confirm = useCallback(
@@ -271,17 +376,19 @@ export function useCopilotFlow({ projectId, boqId }: CopilotFlowInput): CopilotF
         const phase = stepPhaseById(def.id, confirmedCount);
         const isActive = canConfirmStep(def.id, confirmedCount);
         const hasResult = m.isSuccess;
+        // The conceptual step also needs its ROM inputs before it can run.
+        const stepReady = def.id === 'conceptual' ? conceptualReady : true;
         return {
           def,
           phase,
           isRunning: m.isPending,
           error: m.error ?? null,
           hasResult,
-          canRun: isActive && inputsReady && !m.isPending,
+          canRun: isActive && inputsReady && !m.isPending && stepReady,
           canConfirm: isActive && inputsReady && hasResult,
         };
       }),
-    [mutations, confirmedCount, inputsReady],
+    [mutations, confirmedCount, inputsReady, conceptualReady],
   );
 
   return {
@@ -291,6 +398,10 @@ export function useCopilotFlow({ projectId, boqId }: CopilotFlowInput): CopilotF
     isComplete: isCompleteFor(confirmedCount),
     progress: progressPercent(confirmedCount),
     steps,
+    reference,
+    conceptualInputs,
+    setConceptualInput,
+    conceptualReady,
     conceptual: conceptualM.data,
     scope: scopeM.data,
     audit: auditM.data,

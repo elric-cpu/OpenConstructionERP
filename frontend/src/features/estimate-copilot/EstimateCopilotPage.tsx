@@ -27,7 +27,6 @@ import {
   Badge,
   Button,
   Card,
-  ConfidenceBadge,
   EmptyState,
   PageHeader,
 } from '@/shared/ui';
@@ -51,6 +50,12 @@ const STEP_ICON: Record<CopilotStepId, React.ReactNode> = {
   audit: <Gauge size={16} strokeWidth={1.8} />,
   basis: <FileText size={16} strokeWidth={1.8} />,
 };
+
+/** Shared field styling for the conceptual step's ROM inputs (mirrors the ROM page). */
+const ROM_INPUT_CLASS =
+  'w-full rounded-lg border border-border bg-surface-primary px-3 py-2 text-sm text-content-primary ' +
+  'placeholder:text-content-tertiary focus:border-oe-blue focus:outline-none focus:ring-1 focus:ring-oe-blue ' +
+  'disabled:cursor-not-allowed disabled:opacity-60';
 
 export function EstimateCopilotPage() {
   const { t } = useTranslation();
@@ -323,9 +328,12 @@ function ActiveStepBody({
 }) {
   const { t } = useTranslation();
   const { def, isRunning, error, hasResult, canRun, canConfirm } = step;
+  const isConceptual = def.id === 'conceptual';
 
   return (
     <div className="space-y-3">
+      {isConceptual && <ConceptualInputFields flow={flow} disabled={isRunning} />}
+
       {hasResult && <ResultView id={def.id} flow={flow} />}
 
       {error && !isRunning && (
@@ -385,6 +393,119 @@ function ActiveStepBody({
   );
 }
 
+// ── Conceptual step inputs ───────────────────────────────────────────────────
+
+/**
+ * Inputs for the conceptual step: the four values the ROM calculator needs.
+ * Building type and area gate the run; quality and region default from the
+ * reference table. Rendered only inside the conceptual step's active body.
+ */
+function ConceptualInputFields({
+  flow,
+  disabled,
+}: {
+  flow: ReturnType<typeof useCopilotFlow>;
+  disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const { reference, conceptualInputs, setConceptualInput } = flow;
+
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div>
+        <label
+          htmlFor="copilot-rom-type"
+          className="mb-1 block text-xs font-medium text-content-secondary"
+        >
+          {t('copilot.conceptual.building_type', { defaultValue: 'Building type' })}
+        </label>
+        <select
+          id="copilot-rom-type"
+          value={conceptualInputs.buildingType}
+          disabled={disabled}
+          onChange={(e) => setConceptualInput({ buildingType: e.target.value })}
+          className={ROM_INPUT_CLASS}
+        >
+          <option value="">
+            {t('copilot.conceptual.building_type_placeholder', {
+              defaultValue: 'Select a building type…',
+            })}
+          </option>
+          {(reference?.building_types ?? []).map((opt) => (
+            <option key={opt.key} value={opt.key}>
+              {t(`romEstimate.type_${opt.key}`, { defaultValue: opt.label })}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label
+          htmlFor="copilot-rom-area"
+          className="mb-1 block text-xs font-medium text-content-secondary"
+        >
+          {t('copilot.conceptual.gross_floor_area', { defaultValue: 'Gross floor area (m²)' })}
+        </label>
+        <input
+          id="copilot-rom-area"
+          type="number"
+          min={1}
+          step="any"
+          value={conceptualInputs.grossFloorArea}
+          disabled={disabled}
+          onChange={(e) => setConceptualInput({ grossFloorArea: e.target.value })}
+          placeholder={t('copilot.conceptual.area_placeholder', { defaultValue: 'e.g. 1200' })}
+          className={`${ROM_INPUT_CLASS} tabular-nums`}
+        />
+      </div>
+
+      <div>
+        <label
+          htmlFor="copilot-rom-quality"
+          className="mb-1 block text-xs font-medium text-content-secondary"
+        >
+          {t('copilot.conceptual.quality', { defaultValue: 'Quality level' })}
+        </label>
+        <select
+          id="copilot-rom-quality"
+          value={conceptualInputs.quality}
+          disabled={disabled}
+          onChange={(e) => setConceptualInput({ quality: e.target.value })}
+          className={ROM_INPUT_CLASS}
+        >
+          {(reference?.quality_levels ?? []).map((opt) => (
+            <option key={opt.key} value={opt.key}>
+              {t(`romEstimate.quality_${opt.key}`, { defaultValue: opt.label })}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label
+          htmlFor="copilot-rom-region"
+          className="mb-1 block text-xs font-medium text-content-secondary"
+        >
+          {t('copilot.conceptual.region', { defaultValue: 'Region' })}
+        </label>
+        <select
+          id="copilot-rom-region"
+          value={conceptualInputs.region}
+          disabled={disabled}
+          onChange={(e) => setConceptualInput({ region: e.target.value })}
+          className={ROM_INPUT_CLASS}
+        >
+          {(reference?.regions ?? []).map((opt) => (
+            <option key={opt.key} value={opt.key}>
+              {t(`romEstimate.region_${opt.key}`, { defaultValue: opt.label })}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
+
 // ── Per-step result views ────────────────────────────────────────────────────
 
 function ResultView({
@@ -419,6 +540,12 @@ function ConceptualResult({
 }) {
   const { t } = useTranslation();
   if (!data) return null;
+  const currency = data.currency || undefined;
+  const { accuracy } = data;
+  const low = formatCurrency(accuracy.low_amount, currency, undefined, { maximumFractionDigits: 0 });
+  const high = formatCurrency(accuracy.high_amount, currency, undefined, {
+    maximumFractionDigits: 0,
+  });
   return (
     <ResultShell>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -426,19 +553,32 @@ function ConceptualResult({
           {t('copilot.conceptual.headline', { defaultValue: 'First-pass total' })}
         </span>
         <span className="text-base font-semibold tabular-nums text-content-primary">
-          {formatCurrency(data.grand_total ?? 0, data.currency ?? undefined)}
+          {formatCurrency(data.total, currency, undefined, { maximumFractionDigits: 0 })}
         </span>
-        {typeof data.confidence === 'number' && <ConfidenceBadge score={data.confidence} showScore />}
+        {accuracy.estimate_class_label && (
+          <Badge variant="neutral" size="sm">
+            {accuracy.estimate_class_label}
+          </Badge>
+        )}
       </div>
-      {!compact && data.basis && <p className="mt-1.5 text-content-secondary">{data.basis}</p>}
-      {!compact && typeof data.line_count === 'number' && (
-        <p className="mt-1 text-content-tertiary">
-          {t('copilot.conceptual.lines', {
-            defaultValue: 'Backed by {{count}} rough line items',
-            count: data.line_count,
+      {!compact && (
+        <p className="mt-1.5 tabular-nums text-content-secondary">
+          {t('copilot.conceptual.range', {
+            defaultValue: 'Likely range {{low}} to {{high}}',
+            low,
+            high,
           })}
         </p>
       )}
+      {!compact && data.cost_per_m2 && (
+        <p className="mt-1 text-content-tertiary">
+          {t('copilot.conceptual.per_m2', {
+            defaultValue: '{{rate}} per m²',
+            rate: formatCurrency(data.cost_per_m2, currency),
+          })}
+        </p>
+      )}
+      {!compact && accuracy.note && <p className="mt-1 text-content-tertiary">{accuracy.note}</p>}
     </ResultShell>
   );
 }
