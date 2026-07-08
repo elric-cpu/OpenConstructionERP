@@ -18,6 +18,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.validation.engine import rule_registry
@@ -155,6 +156,49 @@ async def run_validation(
             for r in result["results"]
         ],
     )
+
+
+# ── POST /audit - One-click estimate audit on a BOQ ───────────────────────
+
+
+class AuditEstimateRequest(BaseModel):
+    """Request body for POST /validation/audit - audit a finished BOQ."""
+
+    project_id: uuid.UUID = Field(description="Project owning the BOQ")
+    boq_id: uuid.UUID = Field(description="BOQ to audit")
+
+
+@router.post(
+    "/audit/",
+    dependencies=[Depends(RequirePermission("validation.create"))],
+)
+async def audit_estimate(
+    data: AuditEstimateRequest,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: ValidationModuleService = Depends(_get_service),
+) -> dict[str, Any]:
+    """Run the one-click estimate audit over a finished BOQ.
+
+    Runs the universal quality checks, groups the failures into actionable
+    findings (missing items, wrong units, duplicates, price outliers), attaches
+    a concrete one-click fix to each, persists the report, and writes every
+    finding back onto the BOQ positions so the estimate grid accents match. The
+    response carries the grouped findings and the quality score so the caller
+    can show a score delta after applying fixes and re-running.
+    """
+    await _require_project_access(session, data.project_id, user_id)
+    try:
+        return await service.run_estimate_audit(
+            project_id=data.project_id,
+            boq_id=data.boq_id,
+            user_id=uuid.UUID(user_id),
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
 
 
 # ── POST /check-bim-model - Run per-element BIM rules ───────────────────

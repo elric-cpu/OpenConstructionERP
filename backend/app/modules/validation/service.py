@@ -19,14 +19,34 @@ from app.core.validation.engine import (
     rule_registry,
     validation_engine,
 )
+from app.modules.validation import audit as estimate_audit
 from app.modules.validation.models import ValidationReport
 from app.modules.validation.repository import ValidationReportRepository
 
 logger = logging.getLogger(__name__)
 
+
+def _build_rule_sets(requested: list[str]) -> list[str]:
+    """Expand logical rule-set names into the concrete sets the engine runs.
+
+    Today this only rewrites the one-click ``estimate_audit`` rule set into the
+    universal ``boq_quality`` checks it is built on (see
+    :func:`app.modules.validation.audit.build_rule_sets`); every already-concrete
+    rule-set name passes through unchanged. Centralised here so both the audit
+    path and any future alias resolve rule sets the same way.
+    """
+    return estimate_audit.build_rule_sets(requested)
+
+
 # ── Rule set descriptions ─────────────────────────────────────────────────
 
 RULE_SET_DESCRIPTIONS: dict[str, str] = {
+    "estimate_audit": (
+        "One-click estimate audit: runs the finished BOQ through the universal "
+        "quality checks (missing quantities, zero or anomalous rates, empty units, "
+        "duplicate ordinals, empty sections), groups the findings and proposes a "
+        "one-click fix for each."
+    ),
     "boq_quality": (
         "Universal BOQ quality checks: missing quantities, zero prices, "
         "duplicate ordinals, unit rate anomalies, and more."
@@ -230,6 +250,195 @@ class ValidationModuleService:
             ],
             "engine_error_count": len(engine_report.engine_errors),
         }
+
+    # ── Estimate audit (one-click) ────────────────────────────────────────
+
+    async def run_estimate_audit(
+        self,
+        project_id: uuid.UUID,
+        boq_id: uuid.UUID,
+        *,
+        user_id: uuid.UUID | None = None,
+    ) -> dict[str, Any]:
+        """Run the one-click estimate audit over a finished BOQ.
+
+        Runs the ``boq_quality`` rule set (resolved from the logical
+        ``estimate_audit`` set), groups the failing results into actionable
+        findings with concrete one-click fixes, persists a
+        :class:`ValidationReport` carrying those findings, and writes each
+        finding back onto ``Position.validation_status`` (plus a compact
+        ``metadata.audit`` summary) so the estimate grid accents match the
+        latest report.
+
+        Args:
+            project_id: Project owning the BOQ (authorisation scope).
+            boq_id: BOQ to audit.
+            user_id: Optional user who triggered the audit.
+
+        Returns:
+            Dict with report_id, status, score, counts, grouped findings and
+            per-finding fixes.
+
+        Raises:
+            ValueError: If the BOQ is not found or belongs to another project.
+        """
+        from datetime import UTC, datetime
+
+        from app.core.i18n import get_locale
+
+        positions_data = await self._load_boq_positions(boq_id, project_id)
+        rule_sets = _build_rule_sets([estimate_audit.ESTIMATE_AUDIT_RULE_SET])
+
+        engine_report: EngineReport = await validation_engine.validate(
+            data={"positions": positions_data},
+            rule_sets=rule_sets,
+            target_type="boq",
+            target_id=str(boq_id),
+            project_id=str(project_id),
+            metadata={"locale": get_locale()},
+        )
+
+        results_json = [
+            {
+                "rule_id": r.rule_id,
+                "rule_name": r.rule_name,
+                "severity": r.severity.value if hasattr(r.severity, "value") else str(r.severity),
+                "status": "pass" if r.passed else r.severity.value,
+                "passed": r.passed,
+                "message": r.message,
+                "element_ref": r.element_ref,
+                "details": r.details or {},
+                "suggestion": r.suggestion,
+                "is_engine_error": r.is_engine_error,
+            }
+            for r in engine_report.results
+        ]
+
+        # Group failing results into actionable findings + fixes (pure).
+        findings = estimate_audit.build_findings(results_json, positions_data)
+        groups = estimate_audit.summarize_groups(findings)
+        status_map = estimate_audit.build_status_map(results_json)
+        finding_meta = estimate_audit.build_position_audit_meta(findings)
+
+        # Persist the report with the ``estimate_audit`` label and the grouped
+        # findings in metadata, so a re-open restores the exact panel and the
+        # score-delta baseline.
+        db_report = ValidationReport(
+            id=uuid.uuid4(),
+            project_id=project_id,
+            target_type="boq",
+            target_id=str(boq_id),
+            rule_set=estimate_audit.ESTIMATE_AUDIT_RULE_SET,
+            status=engine_report.status.value,
+            score=(None if engine_report.score is None else str(round(engine_report.score, 4))),
+            total_rules=len(engine_report.results),
+            passed_count=len(engine_report.passed_rules),
+            warning_count=len(engine_report.warnings),
+            error_count=len(engine_report.errors),
+            results=results_json,
+            created_by=user_id,
+            metadata_={
+                "duration_ms": engine_report.duration_ms,
+                "rule_sets": rule_sets,
+                "audit": True,
+                "findings": findings,
+                "groups": groups,
+            },
+        )
+        await self.repo.create(db_report)
+
+        # Write the findings back onto the positions so the BOQ grid accents
+        # (and the dashboard error/warning counts) match this report.
+        await self._write_back_position_audit(
+            boq_id,
+            status_map=status_map,
+            finding_meta=finding_meta,
+            report_id=db_report.id,
+            checked_at=datetime.now(UTC).isoformat(),
+        )
+
+        # Best-effort event so the vector indexer / cross-module subscribers
+        # can react. A publish failure must never fail a successful audit.
+        try:
+            from app.core.events import event_bus
+
+            event_bus.publish_detached(
+                "validation.report.created",
+                {
+                    "report_id": str(db_report.id),
+                    "project_id": str(project_id),
+                    "target_type": "boq",
+                    "target_id": str(boq_id),
+                    "status": engine_report.status.value,
+                },
+                source_module="oe_validation",
+            )
+        except Exception:
+            logger.debug("Failed to publish validation.report.created event", exc_info=True)
+
+        return {
+            "report_id": str(db_report.id),
+            "boq_id": str(boq_id),
+            "status": engine_report.status.value,
+            "score": engine_report.score,
+            "total_rules": len(engine_report.results),
+            "passed_count": len(engine_report.passed_rules),
+            "warning_count": len(engine_report.warnings),
+            "error_count": len(engine_report.errors),
+            "info_count": len(engine_report.infos),
+            "rule_sets": rule_sets,
+            "duration_ms": engine_report.duration_ms,
+            "findings": findings,
+            "groups": groups,
+        }
+
+    async def _write_back_position_audit(
+        self,
+        boq_id: uuid.UUID,
+        *,
+        status_map: dict[str, str],
+        finding_meta: dict[str, dict[str, Any]],
+        report_id: uuid.UUID,
+        checked_at: str,
+    ) -> None:
+        """Persist audit results onto each checked BOQ position.
+
+        For every position the audit checked, set ``validation_status`` to the
+        rolled-up status and stamp a compact ``metadata.audit`` summary
+        (findings groups + count) so the grid can render richer per-row
+        markers. Positions that are now clean have any stale ``metadata.audit``
+        cleared. A new dict is assigned to ``metadata_`` so the JSON column
+        change is detected by SQLAlchemy (in-place mutation is not tracked).
+
+        Positions the audit never checked are left untouched.
+        """
+        from app.modules.boq.models import Position
+
+        rows = (await self.session.execute(select(Position).where(Position.boq_id == boq_id))).scalars().all()
+
+        for pos in rows:
+            pid = str(pos.id)
+            new_status = status_map.get(pid)
+            if new_status is None:
+                # Not part of this audit's checked set - leave as-is.
+                continue
+            pos.validation_status = new_status
+
+            existing_meta = dict(pos.metadata_ or {})
+            meta = finding_meta.get(pid)
+            if meta:
+                existing_meta["audit"] = {
+                    "status": new_status,
+                    "groups": meta["groups"],
+                    "count": meta["count"],
+                    "report_id": str(report_id),
+                    "checked_at": checked_at,
+                }
+            else:
+                existing_meta.pop("audit", None)
+            pos.metadata_ = existing_meta
+
+        await self.session.flush()
 
     # ── Rule sets ─────────────────────────────────────────────────────────
 

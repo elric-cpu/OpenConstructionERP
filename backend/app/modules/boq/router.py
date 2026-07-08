@@ -2230,6 +2230,201 @@ async def delete_position(
     await service.delete_position(position_id, cascade=cascade)
 
 
+# ── POST /boqs/{boq_id}/audit/apply-fix - one-click estimate-audit fix ──────
+
+
+class AuditFixBody(BaseModel):
+    """Payload for applying a single one-click estimate-audit fix.
+
+    ``fix_type`` selects the action; ``position_id`` is the primary line the fix
+    targets (for rate / unit changes) and ``params`` carries the fix-specific
+    values produced by the audit (target rate, target unit, duplicate ids,
+    companion-line fields). Every referenced position is verified to belong to
+    the BOQ before anything is written.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    fix_type: Literal[
+        "set_rate_to_median",
+        "switch_unit",
+        "merge_duplicate",
+        "add_companion_line",
+    ]
+    position_id: uuid.UUID | None = None
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+async def _require_boq_position(service: BOQService, position_id: uuid.UUID, boq_id: uuid.UUID) -> object:
+    """Load a position and confirm it belongs to ``boq_id`` (else 404)."""
+    pos = await service.position_repo.get_by_id(position_id)
+    if pos is None or pos.boq_id != boq_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Position {position_id} not found in BOQ {boq_id}",
+        )
+    return pos
+
+
+def _decimal_param(raw: object) -> Decimal | None:
+    """Parse a money param to Decimal, or ``None`` when blank/invalid."""
+    from decimal import InvalidOperation
+
+    if raw is None or raw == "":
+        return None
+    try:
+        return Decimal(str(raw))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+
+def _next_free_ordinal(existing: set[str], base: str) -> str:
+    """Return ``base`` if unused, otherwise ``base-2``, ``base-3`` ... free."""
+    if base and base not in existing:
+        return base
+    counter = 2
+    while f"{base}-{counter}" in existing:
+        counter += 1
+    return f"{base}-{counter}"
+
+
+@router.post(
+    "/boqs/{boq_id}/audit/apply-fix/",
+    summary="Apply a one-click estimate-audit fix",
+    dependencies=[Depends(RequirePermission("boq.update"))],
+)
+async def apply_audit_fix(
+    boq_id: uuid.UUID,
+    data: AuditFixBody,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: BOQService = Depends(_get_service),
+) -> dict[str, Any]:
+    """Apply one estimate-audit fix, reusing the normal position write paths.
+
+    ``set_rate_to_median`` / ``switch_unit`` patch the target line;
+    ``merge_duplicate`` renumbers the redundant duplicate lines to fresh unique
+    ordinals (non-destructive - no line is deleted); ``add_companion_line``
+    inserts a first child line under an empty section. Totals recompute,
+    validation resets and an audit-log row is written through the service, so a
+    follow-up audit re-run reflects the change and the score improves.
+    """
+    await _verify_boq_owner(session, boq_id, user_id, payload)
+    changed: list[str] = []
+    result: dict[str, Any] = {"applied": True, "fix_type": data.fix_type}
+
+    if data.fix_type in ("set_rate_to_median", "switch_unit"):
+        if data.position_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="position_id is required for this fix",
+            )
+        await _require_boq_position(service, data.position_id, boq_id)
+        if data.fix_type == "set_rate_to_median":
+            rate = _decimal_param(data.params.get("unit_rate"))
+            if rate is None or rate < 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="A non-negative 'unit_rate' param is required",
+                )
+            update = PositionUpdate(unit_rate=rate)
+        else:
+            unit = str(data.params.get("unit") or "").strip()[:20]
+            if not unit:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="A non-empty 'unit' param is required",
+                )
+            update = PositionUpdate(unit=unit)
+        try:
+            await service.update_position(data.position_id, update, actor_id=user_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        changed.append(str(data.position_id))
+
+    elif data.fix_type == "merge_duplicate":
+        dup_ids = data.params.get("duplicate_position_ids") or []
+        if not isinstance(dup_ids, list) or not dup_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="'duplicate_position_ids' must be a non-empty list",
+            )
+        boq_data = await service.get_boq_with_positions(boq_id)
+        existing_ordinals = {p.ordinal for p in (boq_data.positions or [])}
+        for raw_id in dup_ids:
+            try:
+                dup_id = uuid.UUID(str(raw_id))
+            except (ValueError, TypeError) as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid position id: {raw_id!r}",
+                ) from exc
+            dup_pos = await _require_boq_position(service, dup_id, boq_id)
+            new_ord = _next_free_ordinal(existing_ordinals, str(getattr(dup_pos, "ordinal", "")))
+            existing_ordinals.add(new_ord)
+            try:
+                await service.update_position(dup_id, PositionUpdate(ordinal=new_ord), actor_id=user_id)
+            except ValueError as exc:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+            changed.append(str(dup_id))
+        result["kept_position_id"] = str(data.params.get("keep_position_id") or "")
+
+    else:  # add_companion_line
+        boq_data = await service.get_boq_with_positions(boq_id)
+        existing_ordinals = {p.ordinal for p in (boq_data.positions or [])}
+        parent = None
+        section_id = data.params.get("section_id")
+        if section_id:
+            try:
+                parent_uuid = uuid.UUID(str(section_id))
+            except (ValueError, TypeError) as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid section id: {section_id!r}",
+                ) from exc
+            parent = await _require_boq_position(service, parent_uuid, boq_id)
+        base = f"{getattr(parent, 'ordinal', '')}.001" if parent else f"{len(boq_data.positions or []) + 1:03d}"
+        new_ord = _next_free_ordinal(existing_ordinals, base)
+        unit = str(data.params.get("unit") or "pcs").strip()[:20] or "pcs"
+        rate = _decimal_param(data.params.get("unit_rate")) or Decimal("0")
+        try:
+            qty = float(data.params.get("quantity") or 1)
+        except (ValueError, TypeError):
+            qty = 1.0
+        # Give the companion a non-empty placeholder description so the re-run
+        # audit does not immediately flag it as missing a description; the
+        # estimator renames it in place.
+        description = str(data.params.get("description") or "").strip() or "New item"
+        create = PositionCreate(
+            boq_id=boq_id,
+            parent_id=(getattr(parent, "id", None) if parent else None),
+            ordinal=new_ord,
+            description=description,
+            unit=unit,
+            quantity=max(qty, 0.0),
+            unit_rate=rate,
+            source="manual",
+            metadata={"audit_companion": True},
+        )
+        new_pos = await service.add_position(create)
+        changed.append(str(new_pos.id))
+        result["created_position_id"] = str(new_pos.id)
+
+    await _log_activity(
+        service,
+        user_id=user_id,
+        action="position.audit_fix_applied",
+        target_type="position",
+        description=f"Applied estimate-audit fix '{data.fix_type}'",
+        boq_id=boq_id,
+        target_id=(uuid.UUID(changed[0]) if changed else None),
+    )
+
+    result["position_ids"] = changed
+    return result
+
+
 @router.post(
     "/boqs/{boq_id}/positions/reorder/",
     summary="Reorder positions",

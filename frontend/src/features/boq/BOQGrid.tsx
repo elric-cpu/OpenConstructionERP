@@ -62,6 +62,7 @@ import {
   type CollabLock,
 } from '@/features/collab_locks';
 import { getColumnDefs, getCustomColumnDefs } from './grid/columnDefs';
+import { auditRowTooltip } from './grid/auditMarkers';
 import type { FormulaVariable } from './grid/formula';
 import {
   FormulaCellEditor,
@@ -1240,6 +1241,13 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
         if (params.data?._isSection || params.data?._isFooter) return undefined;
         return { component: OrdinalCellRenderer };
       };
+      // Richer per-row marker: hovering a flagged line surfaces exactly which
+      // estimate-audit issues it carries, read from the persisted
+      // `metadata.audit` summary the audit writes back onto each position
+      // (the coloured left-border accent from getRowClass shows severity; this
+      // adds the specifics on hover).
+      ordinalCol.tooltipValueGetter = (params) =>
+        auditRowTooltip(params.data as { metadata?: unknown } | undefined, tRef.current);
     }
     // Insert custom columns before _actions column
     if (customColumns && customColumns.length > 0) {

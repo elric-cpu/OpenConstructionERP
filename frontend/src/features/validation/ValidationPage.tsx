@@ -29,6 +29,7 @@ import {
   validationExportPath,
   type ValidationExportFormat,
 } from './validationExport';
+import { EstimateAuditPanel } from './EstimateAuditPanel';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -1232,6 +1233,12 @@ export function ValidationPage() {
             </span>
           </div>
         </Card>
+      )}
+
+      {/* One-click estimate audit - grouped findings + per-finding apply-fix
+          + re-run score delta. Independent of the rule-set report above. */}
+      {selectedProjectId && (
+        <EstimateAuditPanel projectId={selectedProjectId} boqId={selectedBoqId} />
       )}
 
       {/* No report yet (project active) — honest empty state once a project is
