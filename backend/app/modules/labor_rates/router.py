@@ -1,15 +1,16 @@
 """Labor rate API routes.
 
 Endpoints:
-    POST   /compute                 - build an all-in rate (and optional crew blend)
-    POST   /templates/              - create a rate template
-    GET    /templates/              - list the caller's templates
-    GET    /templates/{template_id} - get a template
-    PATCH  /templates/{template_id} - update a template
-    DELETE /templates/{template_id} - delete a template
-    POST   /crews/                  - create or replace a crew's members
-    GET    /crews/{crew_id}         - get a crew with its blended rate
-    DELETE /crews/{crew_id}         - delete a crew
+    POST   /compute                        - build an all-in rate (and optional crew blend)
+    POST   /templates/                     - create a rate template
+    GET    /templates/                     - list the caller's templates
+    GET    /templates/{template_id}        - get a template
+    PATCH  /templates/{template_id}        - update a template
+    DELETE /templates/{template_id}        - delete a template
+    POST   /templates/{template_id}/publish - publish the all-in rate as a labor cost item
+    POST   /crews/                         - create or replace a crew's members
+    GET    /crews/{crew_id}                - get a crew with its blended rate
+    DELETE /crews/{crew_id}                - delete a crew
 """
 
 import uuid
@@ -17,17 +18,19 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.dependencies import CurrentUserId, CurrentUserPayload, RequirePermission, SessionDep
+from app.modules.costs.schemas import CostItemResponse
 from app.modules.labor_rates.models import LaborRateTemplate
 from app.modules.labor_rates.schemas import (
     ComputeRequest,
     CrewResponse,
     CrewSaveRequest,
+    PublishTemplateRequest,
     RateBreakdown,
     TemplateCreate,
     TemplateResponse,
     TemplateUpdate,
 )
-from app.modules.labor_rates.service import LaborRateService
+from app.modules.labor_rates.service import LaborRateService, LaborRateTemplateNotFoundError
 
 router = APIRouter(tags=["labor_rates"])
 
@@ -175,6 +178,47 @@ async def delete_template(
     """Delete a labor rate template and its components."""
     template = await _load_owned_template(service, template_id, user_id, payload)
     await service.delete_template(template)
+
+
+@router.post(
+    "/templates/{template_id}/publish",
+    response_model=CostItemResponse,
+    dependencies=[
+        Depends(RequirePermission("labor_rates.create")),
+        Depends(RequirePermission("costs.create")),
+    ],
+)
+async def publish_template(
+    template_id: uuid.UUID,
+    data: PublishTemplateRequest,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    service: LaborRateService = Depends(_get_service),
+) -> CostItemResponse:
+    """Publish a template's all-in rate as a reusable labor cost item.
+
+    Loads the caller's template (404 on a missing or unowned id, never 403),
+    computes its all-in rate exactly as the priced-assembly build does, and
+    creates - or updates, when one already exists for the same template, region
+    and catalog - a labour cost item carrying that rate so it becomes a pickable
+    cost line in the same pickers assemblies and the BOQ already use. This is an
+    idempotent upsert. Requires ``labor_rates.create`` (a module write) and
+    ``costs.create`` (the output is a cost item).
+    """
+    template = await _load_owned_template(service, template_id, user_id, payload)
+    try:
+        item = await service.publish_template_as_cost_item(
+            template.id,
+            region=data.region,
+            catalog=data.catalog_id,
+            currency=data.currency,
+            owner_id=user_id,
+        )
+    except LaborRateTemplateNotFoundError as exc:
+        # Unreachable via this route (the load above proved existence), but keeps
+        # the IDOR posture explicit for any future caller path.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found") from exc
+    return CostItemResponse.model_validate(item)
 
 
 # ── Crews ────────────────────────────────────────────────────────────────────

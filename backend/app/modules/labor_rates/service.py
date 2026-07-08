@@ -6,6 +6,8 @@ Decimal). This layer maps the schema payloads onto that math for the stateless
 """
 
 import uuid
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +28,24 @@ from app.modules.labor_rates.schemas import (
     TemplateResponse,
     TemplateUpdate,
 )
+from app.modules.price_breakdown.model import ResourceKind
+
+if TYPE_CHECKING:
+    from app.modules.costs.models import CostItem
+
+
+class LaborRateTemplateNotFoundError(LookupError):
+    """Raised when publishing references a template id that does not exist.
+
+    The router maps this to a 404 so publishing a missing template never leaks
+    an existence oracle or raises an unhandled 500. In practice the router
+    pre-checks ownership (and therefore existence) before calling the service,
+    so this guards the service for any other caller.
+    """
+
+    def __init__(self, template_id: uuid.UUID) -> None:
+        self.template_id = template_id
+        super().__init__(f"labor rate template not found: {template_id}")
 
 
 def _crew_to_breakdown(build: rate_math.CrewBuildUp, currency: str) -> CrewBreakdown:
@@ -221,6 +241,113 @@ class LaborRateService:
         await self.session.delete(template)
         await self.session.flush()
 
+    # ── Publish (rate -> cost database link) ─────────────────────────────────
+
+    async def publish_template_as_cost_item(
+        self,
+        template_id: uuid.UUID,
+        *,
+        region: str | None = None,
+        catalog: uuid.UUID | None = None,
+        currency: str | None = None,
+        owner_id: str | None = None,
+    ) -> "CostItem":
+        """Publish a template's all-in rate as a reusable labor cost item.
+
+        Closes the missing rate -> cost-database link: a rate built here becomes
+        a pickable cost line in the very same pickers assemblies and the BOQ
+        already use. The template is resolved, its all-in Decimal rate is
+        computed exactly as the priced-assembly build does
+        (:func:`rate_math.all_in_rate` over the base wage and on-cost
+        components, so the published rate equals the rate an assembly prices
+        with), and a labour :class:`CostItem` is created through the existing
+        costs service - no new columns, no migration. The cost item carries unit
+        ``h``, the all-in rate (Decimal-as-string), resource kind ``labor`` and
+        a clear name (template name plus region).
+
+        Idempotent publish (upsert). The item's ``code`` encodes the template
+        and the target catalog and the region lives in the ``region`` column, so
+        the ``(code, region)`` uniqueness the costs table already enforces makes
+        the dedup key exactly (template, region, catalog). When a matching
+        published item already exists it is updated in place (rate, currency,
+        name, resource tagging, ``is_active``) rather than duplicated; otherwise
+        a fresh one is created.
+
+        Args:
+            template_id: The labour-rate template to publish.
+            region: Region tag for the cost item; blank resolves to global/NULL.
+            catalog: Owning cost catalog id. When set and no ``currency`` is
+                given, the item inherits the catalog currency at creation.
+            currency: ISO currency override; otherwise the template's currency
+                (then the catalog's, then region-derived at read time).
+            owner_id: The publishing user id, recorded in metadata for
+                provenance. Cost items are global, so this never scopes the row.
+
+        Returns:
+            The created or updated labour :class:`CostItem`.
+
+        Raises:
+            LaborRateTemplateNotFoundError: When ``template_id`` does not resolve.
+        """
+        from app.modules.costs.schemas import CostItemCreate, CostItemUpdate
+        from app.modules.costs.service import CostItemService
+
+        template = await self.get_template(template_id)
+        if template is None:
+            raise LaborRateTemplateNotFoundError(template_id)
+
+        all_in = _template_all_in_rate(template)
+        region_norm = (region or "").strip() or None
+        resolved_currency = (currency or "").strip() or (template.currency or "").strip()
+        code = _published_labor_code(template_id, catalog)
+        description = _published_labor_description(template.name, region_norm)
+
+        metadata: dict[str, Any] = {
+            "resource_kind": _PUBLISHED_LABOR_KIND,
+            "published_from": "labor_rate_template",
+            "labor_rate_template_id": str(template_id),
+            "base_wage": format(template.base_wage, "f"),
+            "all_in_rate": format(all_in, "f"),
+        }
+        if owner_id:
+            metadata["published_by"] = str(owner_id)
+        classification = {"collection": _PUBLISHED_LABOR_COLLECTION, "resource_kind": _PUBLISHED_LABOR_KIND}
+
+        costs = CostItemService(self.session)
+        existing = await costs.repo.get_by_code(code, region=region_norm)
+        if existing is not None:
+            # Same template + region + catalog: refresh the row in place so a
+            # re-publish never leaves a duplicate pickable line behind.
+            update_fields: dict[str, Any] = {
+                "description": description,
+                "unit": _PUBLISHED_LABOR_UNIT,
+                "rate": all_in,
+                "source": _PUBLISHED_LABOR_SOURCE,
+                "classification": classification,
+                "tags": [_PUBLISHED_LABOR_KIND],
+                "metadata": metadata,
+                "is_active": True,
+            }
+            if resolved_currency:
+                update_fields["currency"] = resolved_currency
+            return await costs.update_cost_item(existing.id, CostItemUpdate(**update_fields))
+
+        return await costs.create_cost_item(
+            CostItemCreate(
+                code=code,
+                description=description,
+                unit=_PUBLISHED_LABOR_UNIT,
+                rate=all_in,
+                currency=resolved_currency,
+                source=_PUBLISHED_LABOR_SOURCE,
+                classification=classification,
+                tags=[_PUBLISHED_LABOR_KIND],
+                region=region_norm,
+                catalog_id=catalog,
+                metadata=metadata,
+            )
+        )
+
     # ── Crews ───────────────────────────────────────────────────────────────
 
     async def save_crew(self, data: CrewSaveRequest, owner_id: uuid.UUID | None) -> CrewResponse:
@@ -286,3 +413,49 @@ class LaborRateService:
         )
         await self.session.flush()
         return int(result.rowcount or 0)
+
+
+# ── Publish helpers (a template's all-in rate -> a labor cost item) ───────────
+# A published labour rate is an atomic priced resource, so it lands in the cost
+# table as a cost item priced per hour (unit ``h``) and tagged as a ``labor``
+# resource - the same canonical token assemblies, the BoQ and the price
+# breakdown already read, so a published rate reads and prices identically.
+
+# Cost item shape for a published labour rate.
+_PUBLISHED_LABOR_UNIT = "h"
+# Provenance marker in ``CostItem.source`` so published rates are identifiable
+# and never mistaken for imported CWICR rows.
+_PUBLISHED_LABOR_SOURCE = "labor_rate"
+# Canonical resource-kind token shared across the cost spine ("labor").
+_PUBLISHED_LABOR_KIND = ResourceKind.LABOUR.value
+# Human-facing classification collection a published labour rate files under.
+_PUBLISHED_LABOR_COLLECTION = "Labour"
+
+
+def _template_all_in_rate(template: LaborRateTemplate) -> Decimal:
+    """All-in Decimal rate for a template, computed exactly as the norm build.
+
+    Mirrors ``norm_expansion._resolve_labor_rate`` so a published rate equals the
+    rate a priced assembly built from the same template would carry.
+    """
+    return rate_math.all_in_rate(
+        template.base_wage,
+        [rate_math.OnCost(label=c.label, kind=c.kind, value=c.value) for c in template.components],
+    )
+
+
+def _published_labor_code(template_id: uuid.UUID, catalog_id: uuid.UUID | None) -> str:
+    """Deterministic cost-item code encoding the template and target catalog.
+
+    The region lives in the cost item's own ``region`` column, so the existing
+    ``(code, region)`` uniqueness turns this code into the dedup key (template,
+    region, catalog): re-publishing the same trio lands on the same row.
+    """
+    catalog_part = catalog_id.hex if catalog_id is not None else "GLOBAL"
+    return f"LABOR-RATE-{template_id.hex}-{catalog_part}"
+
+
+def _published_labor_description(template_name: str, region: str | None) -> str:
+    """Clear cost-item name: the template name, suffixed with the region."""
+    base = (template_name or "").strip() or "Labor rate"
+    return f"{base} ({region})" if region else base

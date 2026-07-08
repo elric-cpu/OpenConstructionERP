@@ -266,3 +266,32 @@ class CrewResponse(BaseModel):
     @field_serializer("total_cost_per_hour", "blended_hourly_rate", when_used="json")
     def _ser(self, v: Decimal) -> str | None:
         return _serialise_decimal(v)
+
+
+# ── Publish a template's rate as a cost item ─────────────────────────────────
+
+
+class PublishTemplateRequest(BaseModel):
+    """Body for publishing a template's all-in rate as a labor cost item.
+
+    Every field is optional: with an empty body the template's own currency is
+    used and a global (region-less) cost item is produced. The response is the
+    created (or updated, on a re-publish) cost item itself.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    region: str | None = Field(
+        default=None,
+        max_length=50,
+        description="Region tag for the published cost item; blank = global.",
+    )
+    catalog_id: UUID | None = Field(
+        default=None,
+        description="Owning cost catalog id; the item inherits its currency when no currency is given.",
+    )
+    currency: str | None = Field(
+        default=None,
+        max_length=3,
+        description="ISO 4217 currency override; defaults to the template currency.",
+    )
