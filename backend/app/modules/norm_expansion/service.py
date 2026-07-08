@@ -11,6 +11,7 @@ unit-testable without a database.
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -355,6 +356,7 @@ async def build_assembly_from_norm(
     owner_id: str | None = None,
     region: str | None = None,
     currency: str | None = None,
+    apply_waste: bool = True,
 ) -> object:
     """Build and persist a priced Assembly from a production norm.
 
@@ -365,6 +367,19 @@ async def build_assembly_from_norm(
     lines are persisted as a new project-scoped Assembly (``is_template`` False)
     through the existing assemblies service, so the assembly's ``total_rate`` is
     the built-up unit rate and each component links back to its cost item.
+
+    Waste factors feed the material quantities: a material coefficient is the NET
+    (installed) quantity, so when ``apply_waste`` is set each material is grossed
+    up to its purchased (gross) quantity by a factor resolved from the
+    :class:`~app.modules.waste_factors.models.WasteFactor` library, keyed by the
+    material's ``name`` (there is no separate material category column, so the
+    name is the lookup key; it is matched case-insensitively via
+    :func:`~app.modules.waste_factors.waste_math.resolve_factor`). The gross-up is
+    persisted through the assemblies material-waste path (``metadata['waste_pct']``
+    -> ``component.total``), and the net / waste_pct / gross figures are recorded
+    on each material component's metadata for the resource grid. A material with
+    no library entry stays at net == gross and is collected under the assembly's
+    ``metadata['waste_unmatched']``.
 
     Lines with no resolved rate / cost are still created, at a zero unit cost and
     flagged ``priced=False`` in their metadata (and collected under the
@@ -384,6 +399,9 @@ async def build_assembly_from_norm(
         region: Optional region hint biasing the material cost match.
         currency: Optional currency override; otherwise resolved from the labour
             rate, then the first matched material, then ``EUR``.
+        apply_waste: When ``True`` (default) each material is grossed up net ->
+            gross using the waste-factor library. Set ``False`` to price the net
+            quantities with no waste allowance (nothing is flagged unmatched).
 
     Returns:
         The persisted :class:`Assembly` with its priced components loaded.
@@ -393,7 +411,9 @@ async def build_assembly_from_norm(
     """
     from app.modules.assemblies.schemas import AssemblyCreate, ComponentCreate
     from app.modules.assemblies.service import AssemblyService
-    from app.modules.norm_expansion.price_math import price_build_up
+    from app.modules.norm_expansion.price_math import MATERIAL, price_build_up
+    from app.modules.waste_factors.service import WasteFactorService
+    from app.modules.waste_factors.waste_math import resolve_factor
 
     service = NormExpansionService(session)
     norm = await service.get_norm(norm_id)
@@ -405,13 +425,33 @@ async def build_assembly_from_norm(
     labor_rate, labor_currency = await _resolve_labor_rate(session, labor_rate_template_id)
     machine_rate, machine_currency = await _resolve_labor_rate(session, machine_rate_template_id)
 
+    # Resolve the waste-factor library once. The factor for a material is keyed
+    # by the material's ``name`` (there is no per-material category column) and
+    # matched case-insensitively; an absent name -> pass-through factor 1.0.
+    waste_factor_map: dict[str, Decimal] = {}
+    if apply_waste:
+        waste_factor_map = await WasteFactorService(session).factor_map()
+
     material_prices = []
     material_currencies: list[str] = []
+    material_waste: list[bool] = []
     for material in norm.materials:
         price, mat_currency = await _resolve_material_price(session, material.name, material.unit, region=region)
-        material_prices.append(price)
+        if apply_waste:
+            factor, matched = resolve_factor(material.name, waste_factor_map)
+        else:
+            factor, matched = Decimal("1"), False
+        material_prices.append(replace(price, waste_factor=factor, waste_matched=matched))
+        material_waste.append(matched)
         if mat_currency:
             material_currencies.append(mat_currency)
+
+    # Materials the caller asked to gross up but the library had no factor for.
+    waste_unmatched = [
+        material.name
+        for material, matched in zip(norm.materials, material_waste, strict=True)
+        if apply_waste and not matched
+    ]
 
     resolved_currency = (
         (currency or "").strip()
@@ -451,6 +491,8 @@ async def build_assembly_from_norm(
                 "machine_rate_template_id": (str(machine_rate_template_id) if machine_rate_template_id else None),
                 "built_up_unit_rate": format(build.unit_rate, "f"),
                 "unpriced": list(build.unpriced),
+                "waste_applied": apply_waste,
+                "waste_unmatched": waste_unmatched,
             },
         ),
         owner_id=owner_id,
@@ -459,6 +501,24 @@ async def build_assembly_from_norm(
     for line in build.lines:
         component_unit = (line.unit or "").strip() or _DEFAULT_ASSEMBLY_UNIT
         cost_item_uuid = uuid.UUID(line.cost_item_id) if line.cost_item_id else None
+        component_metadata: dict[str, Any] = {
+            "source": "production_norm",
+            "priced": line.priced,
+            "resource_kind": line.kind,
+            "kind_i18n_key": line.kind_i18n_key,
+            "unpriced_reason": line.note,
+        }
+        if line.resource_type == MATERIAL:
+            # The component ``quantity`` stays the NET (installed) coefficient;
+            # ``waste_pct`` is the key the assemblies typed-total formula reads to
+            # gross ``component.total`` up (``base * (1 + waste_pct/100)``), so the
+            # gross-up flows into the money total, not just the metadata.
+            # net_qty / gross_qty are recorded so the /boq resource grid and
+            # Resource Summary can show "net X + Y% waste = gross Z".
+            component_metadata["waste_pct"] = format(line.waste_pct, "f")
+            component_metadata["net_qty"] = format(line.net_qty, "f")
+            component_metadata["gross_qty"] = format(line.gross_qty, "f")
+            component_metadata["waste_matched"] = line.waste_matched
         await assembly_service.add_component(
             assembly.id,
             ComponentCreate(
@@ -469,13 +529,7 @@ async def build_assembly_from_norm(
                 quantity=line.quantity,
                 unit=component_unit,
                 unit_cost=line.unit_cost,
-                metadata={
-                    "source": "production_norm",
-                    "priced": line.priced,
-                    "resource_kind": line.kind,
-                    "kind_i18n_key": line.kind_i18n_key,
-                    "unpriced_reason": line.note,
-                },
+                metadata=component_metadata,
             ),
         )
 

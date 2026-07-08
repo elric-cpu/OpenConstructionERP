@@ -266,3 +266,124 @@ def test_as_dict_renders_fixed_point_strings() -> None:
 
 def test_build_up_is_deterministic() -> None:
     assert _priced_plastering().as_dict() == _priced_plastering().as_dict()
+
+
+# ── Waste factors (net -> gross) ─────────────────────────────────────────────
+
+
+def _one_material_norm(name: str, qty: str) -> NormCoefficients:
+    """A norm with no hours and a single material coefficient."""
+    return NormCoefficients(
+        labor_hours_per_unit=D("0"),
+        machine_hours_per_unit=D("0"),
+        materials=(MaterialCoefficient(name=name, unit="m2", qty_per_unit=D(qty)),),
+    )
+
+
+def test_material_waste_grosses_up_net_to_gross() -> None:
+    build = price_build_up(
+        _one_material_norm("Tiling", "100"),
+        labor_rate=None,
+        machine_rate=None,
+        material_prices=[MaterialPrice(unit_cost=D("2"), waste_factor=D("1.10"), waste_matched=True)],
+    )
+    line = build.lines[0]
+    assert line.net_qty == D("100.0000")
+    assert line.quantity == D("100.0000")  # displayed quantity stays net
+    assert line.waste_pct == D("10.0000")  # (1.10 - 1) * 100
+    assert line.gross_qty == D("110.0000")  # 100 * 1.10
+    assert line.unit_cost == D("2.0000")
+    assert line.total == D("220.0000")  # priced on the GROSS: 110 * 2
+    assert line.waste_matched is True
+    # The build-up subtotals reflect the grossed material cost.
+    assert build.material_cost == D("220.0000")
+    assert build.unit_rate == D("220.0000")
+
+
+def test_default_material_price_applies_zero_waste() -> None:
+    build = price_build_up(
+        _one_material_norm("Water", "6"),
+        labor_rate=None,
+        machine_rate=None,
+        material_prices=[MaterialPrice(unit_cost=D("0.01"))],  # no waste_factor -> 1.0
+    )
+    line = build.lines[0]
+    assert line.waste_pct == D("0.0000")
+    assert line.gross_qty == line.net_qty == D("6.0000")
+    assert line.total == D("0.0600")  # 6 * 0.01, no gross-up
+    assert line.waste_matched is False
+
+
+def test_waste_gross_qty_rounds_half_up_at_four_dp() -> None:
+    build = price_build_up(
+        _one_material_norm("Membrane", "1.5"),
+        labor_rate=None,
+        machine_rate=None,
+        material_prices=[MaterialPrice(unit_cost=D("1"), waste_factor=D("1.0001"))],
+    )
+    # 1.5000 * 1.0001 = 1.50015 -> half-up at the 4th dp -> 1.5002.
+    assert build.lines[0].gross_qty == D("1.5002")
+    assert build.lines[0].waste_pct == D("0.0100")
+
+
+def test_waste_gross_up_matches_waste_factors_engine() -> None:
+    # The pure build-up must gross up exactly as the waste-factors engine does.
+    from app.modules.waste_factors.waste_math import apply as waste_apply
+
+    build = price_build_up(
+        _one_material_norm("Screed", "12.5"),
+        labor_rate=None,
+        machine_rate=None,
+        material_prices=[MaterialPrice(unit_cost=D("3"), waste_factor=D("1.03"))],
+    )
+    assert build.lines[0].gross_qty == waste_apply(D("12.5"), D("1.03"))  # 12.8750
+    assert build.lines[0].total == D("38.6250")  # 12.8750 * 3
+
+
+def test_labour_and_machine_lines_carry_no_waste() -> None:
+    build = _priced_plastering()
+    for desc in ("Labour", "Machine / equipment"):
+        line = next(ln for ln in build.lines if ln.description == desc)
+        assert line.waste_pct == D("0.0000")
+        assert line.gross_qty == line.net_qty == line.quantity
+        assert line.waste_matched is False
+
+
+def test_unmatched_material_stays_net_when_priced() -> None:
+    # A priced material with no library factor: gross == net, flagged unmatched.
+    build = price_build_up(
+        _one_material_norm("Granite slab", "4"),
+        labor_rate=None,
+        machine_rate=None,
+        material_prices=[MaterialPrice(unit_cost=D("50"), waste_matched=False)],
+    )
+    line = build.lines[0]
+    assert line.gross_qty == line.net_qty == D("4.0000")
+    assert line.total == D("200.0000")  # 4 * 50, no gross-up
+    assert line.waste_matched is False
+
+
+def test_as_dict_exposes_waste_fields() -> None:
+    build = price_build_up(
+        _one_material_norm("Tiling", "100"),
+        labor_rate=None,
+        machine_rate=None,
+        material_prices=[MaterialPrice(unit_cost=D("2"), waste_factor=D("1.10"), waste_matched=True)],
+    )
+    line = build.as_dict()["lines"][0]
+    assert line["net_qty"] == "100.0000"
+    assert line["waste_pct"] == "10.0000"
+    assert line["gross_qty"] == "110.0000"
+    assert line["waste_matched"] is True
+    assert line["total"] == "220.0000"
+
+
+def test_rejects_float_waste_factor() -> None:
+    # Factors must never enter the pipeline as binary floats.
+    with pytest.raises(TypeError):
+        price_build_up(
+            _one_material_norm("Tiling", "100"),
+            labor_rate=None,
+            machine_rate=None,
+            material_prices=[MaterialPrice(unit_cost=D("2"), waste_factor=1.10)],  # type: ignore[arg-type]
+        )

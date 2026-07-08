@@ -289,6 +289,9 @@ def _build_assembly_response(assembly: Any) -> BuildAssemblyResponse:
     for comp in assembly.components:
         comp_meta = comp.metadata_ or {}
         priced = bool(comp_meta.get("priced", True))
+        # Waste fields are written only onto material components; leave them
+        # None for labour / equipment so the response reflects "no waste here".
+        has_waste = "waste_pct" in comp_meta
         components.append(
             PricedComponentResponse(
                 resource_type=comp.resource_type,
@@ -300,10 +303,17 @@ def _build_assembly_response(assembly: Any) -> BuildAssemblyResponse:
                 cost_item_id=comp.cost_item_id,
                 priced=priced,
                 unpriced_reason=str(comp_meta.get("unpriced_reason", "") or ""),
+                net_qty=_dec(comp_meta["net_qty"]) if "net_qty" in comp_meta else None,
+                waste_pct=_dec(comp_meta["waste_pct"]) if has_waste else None,
+                gross_qty=_dec(comp_meta["gross_qty"]) if "gross_qty" in comp_meta else None,
+                waste_matched=bool(comp_meta.get("waste_matched")) if has_waste else None,
             )
         )
         if not priced:
             unpriced.append(comp.description)
+
+    raw_unmatched = metadata.get("waste_unmatched", [])
+    waste_unmatched = [str(x) for x in raw_unmatched] if isinstance(raw_unmatched, list) else []
 
     return BuildAssemblyResponse(
         id=assembly.id,
@@ -318,6 +328,8 @@ def _build_assembly_response(assembly: Any) -> BuildAssemblyResponse:
         work_key=str(metadata.get("work_key", "") or ""),
         components=components,
         unpriced=unpriced,
+        waste_applied=bool(metadata.get("waste_applied", True)),
+        waste_unmatched=waste_unmatched,
     )
 
 
@@ -339,10 +351,13 @@ async def build_assembly(
     """Build a priced assembly from a production norm's per-unit coefficients.
 
     Costs the norm's labour-hours, machine-hours and materials, then saves the
-    result as a new assembly whose ``total_rate`` is the built-up unit rate. Any
-    line that could not be priced is created at a zero unit cost and flagged so
-    the estimator can resolve it. Requires both ``norm_expansion.read`` (to read
-    the norm) and ``assemblies.create`` (the output is a new assembly).
+    result as a new assembly whose ``total_rate`` is the built-up unit rate. When
+    ``apply_waste`` is set (the default) each material's net (installed) quantity
+    is grossed up to its purchased quantity via the waste-factor library, and the
+    per-material waste plus any unmatched materials are surfaced on the response.
+    Any line that could not be priced is created at a zero unit cost and flagged
+    so the estimator can resolve it. Requires both ``norm_expansion.read`` (to
+    read the norm) and ``assemblies.create`` (the output is a new assembly).
     """
     try:
         assembly = await build_assembly_from_norm(
@@ -353,6 +368,7 @@ async def build_assembly(
             project_id=data.project_id,
             owner_id=user_id,
             region=data.region,
+            apply_waste=data.apply_waste,
         )
     except NormNotFoundError as exc:
         raise HTTPException(

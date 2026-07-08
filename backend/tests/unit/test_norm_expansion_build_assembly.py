@@ -80,6 +80,14 @@ async def _seed_cost_item(s, *, code: str, description: str, unit: str, rate: st
     return item
 
 
+async def _seed_waste_factor(s, *, category: str, factor: str) -> None:
+    """Insert one waste-factor library row (gross = net * factor)."""
+    from app.modules.waste_factors.models import WasteFactor
+
+    s.add(WasteFactor(category=category, label=category, factor=D(factor)))
+    await s.flush()
+
+
 @pytest.mark.asyncio
 async def test_build_prices_labour_and_materials_and_persists(session):
     norm = await _seed_plastering_norm(session)
@@ -189,6 +197,69 @@ async def test_project_scoping_sets_project_and_owner(session):
     assert assembly.project_id == project_id
     assert assembly.owner_id == owner_id
     assert assembly.is_template is False
+
+
+@pytest.mark.asyncio
+async def test_material_waste_grosses_up_component_total(session):
+    # A library factor keyed by the material NAME grosses that material up;
+    # a material with no library entry stays net == gross and is flagged.
+    norm = await _seed_plastering_norm(session)
+    template = await _seed_labor_template(session)
+    await _seed_cost_item(
+        session, code=f"G-{uuid.uuid4().hex[:6]}", description="Gypsum plaster 25 kg bag", unit="kg", rate="0.50"
+    )
+    await _seed_cost_item(session, code=f"W-{uuid.uuid4().hex[:6]}", description="Water potable", unit="l", rate="0.01")
+    # Only "Gypsum plaster" has a factor; "Water" does not.
+    await _seed_waste_factor(session, category="Gypsum plaster", factor="1.10")
+
+    assembly = await build_assembly_from_norm(session, norm.id, labor_rate_template_id=template.id)
+
+    gypsum = next(c for c in assembly.components if c.description == "Gypsum plaster")
+    assert gypsum.metadata_["waste_matched"] is True
+    assert gypsum.metadata_["waste_pct"] == "10.0000"
+    assert gypsum.metadata_["net_qty"] == "12.0000"
+    assert gypsum.metadata_["gross_qty"] == "13.2000"  # 12 * 1.10
+    # The gross-up reaches component.total (net 12 * 0.50 * 1.10 = 6.60), not
+    # just the metadata.
+    assert D(str(gypsum.total)) == D("6.60")
+    # The displayed quantity stays the net (installed) coefficient.
+    assert D(str(gypsum.quantity)) == D("12")
+
+    water = next(c for c in assembly.components if c.description == "Water")
+    assert water.metadata_["waste_matched"] is False
+    assert water.metadata_["waste_pct"] == "0.0000"
+    assert water.metadata_["net_qty"] == water.metadata_["gross_qty"] == "6.0000"
+    assert D(str(water.total)) == D("0.06")  # 6 * 0.01, no gross-up
+
+    # labour 16.20 + machine 0 + gypsum 6.60 + water 0.06 = 22.86.
+    assert D(str(assembly.total_rate)) == D("22.86")
+    assert assembly.metadata_["waste_applied"] is True
+    assert assembly.metadata_["waste_unmatched"] == ["Water"]
+
+
+@pytest.mark.asyncio
+async def test_apply_waste_false_prices_net_quantities(session):
+    # Opting out leaves every material at net == gross and flags nothing.
+    norm = await _seed_plastering_norm(session)
+    template = await _seed_labor_template(session)
+    await _seed_cost_item(
+        session, code=f"G-{uuid.uuid4().hex[:6]}", description="Gypsum plaster 25 kg bag", unit="kg", rate="0.50"
+    )
+    await _seed_cost_item(session, code=f"W-{uuid.uuid4().hex[:6]}", description="Water potable", unit="l", rate="0.01")
+    await _seed_waste_factor(session, category="Gypsum plaster", factor="1.10")
+
+    assembly = await build_assembly_from_norm(session, norm.id, labor_rate_template_id=template.id, apply_waste=False)
+
+    gypsum = next(c for c in assembly.components if c.description == "Gypsum plaster")
+    assert gypsum.metadata_["waste_matched"] is False
+    assert gypsum.metadata_["waste_pct"] == "0.0000"
+    assert gypsum.metadata_["net_qty"] == gypsum.metadata_["gross_qty"] == "12.0000"
+    assert D(str(gypsum.total)) == D("6.00")  # net, no gross-up despite the library factor
+
+    # labour 16.20 + gypsum 6.00 + water 0.06 = 22.26.
+    assert D(str(assembly.total_rate)) == D("22.26")
+    assert assembly.metadata_["waste_applied"] is False
+    assert assembly.metadata_["waste_unmatched"] == []
 
 
 @pytest.mark.asyncio

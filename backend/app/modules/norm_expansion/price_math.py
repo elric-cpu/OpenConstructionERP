@@ -12,6 +12,16 @@ the norm's PER-UNIT coefficients (labour_hours_per_unit, machine_hours_per_unit,
 material qty_per_unit), never on an expanded total. That keeps the resulting
 assembly reusable at any quantity.
 
+A material coefficient is the NET (installed) quantity. Real estimating buys more
+than it installs to cover offcuts, laps and breakage, so each material line is
+grossed up net -> gross by a waste factor (``gross = net * factor``, factor
+``>= 1``) before it is priced: the priced amount uses the GROSS quantity. The
+net->gross arithmetic is delegated to the waste-factors engine
+(:func:`app.modules.waste_factors.waste_math.apply`) so it lives in one place;
+the caller resolves the per-material factor from the waste-factor library and
+hands it in on each :class:`MaterialPrice`. A factor of 1 (labour, machine, and
+any material with no library entry) leaves gross == net and the waste at 0 pct.
+
 Everything here is deliberately free of SQLAlchemy, FastAPI and I/O so the math
 can be unit-tested without a database. The service layer resolves the rates and
 material prices (from labour-rate templates and cost items) and hands the pure
@@ -32,6 +42,7 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from app.modules.norm_expansion.expand_math import NormCoefficients
 from app.modules.price_breakdown.model import coerce_kind, kind_i18n_key
+from app.modules.waste_factors.waste_math import apply as apply_waste_factor
 
 # Money and quantities are carried to four decimal places - the same precision
 # expand_math uses for resource demand. Four places keep a per-unit unit-cost
@@ -102,11 +113,21 @@ class MaterialPrice:
             or decimal-string; never a float.
         cost_item_id: The matched cost item's id, when a match was found.
         matched_description: The matched cost item's description, for audit.
+        waste_factor: The net -> gross waste multiplier resolved from the
+            waste-factor library (``>= 1``; ``1`` means no waste). Decimal,
+            int or decimal-string; never a float. Defaults to ``1`` so a caller
+            that does not resolve waste prices the net quantity unchanged.
+        waste_matched: ``True`` when a waste-factor library entry was found for
+            this material, ``False`` when the pass-through factor was used.
+            Carried through (like ``cost_item_id``) for the caller to record;
+            the pure math does not compute it.
     """
 
     unit_cost: Decimal | int | str | None
     cost_item_id: str | None = None
     matched_description: str = ""
+    waste_factor: Decimal | int | str = Decimal("1")
+    waste_matched: bool = False
 
 
 @dataclass(frozen=True)
@@ -122,11 +143,21 @@ class PricedLine:
         unit: Unit the line quantity is measured in (``h`` for hours; the
             material unit otherwise).
         quantity: The per-unit coefficient (labour/machine hours per unit, or
-            material quantity per unit), quantised to four decimal places.
+            material NET quantity per unit), quantised to four decimal places.
         unit_cost: The resolved unit cost, quantised to four decimal places
             (zero when the line is unpriced).
-        total: ``quantity * unit_cost``, quantised to four decimal places.
+        total: ``gross_qty * unit_cost``, quantised to four decimal places -
+            the line is priced on the GROSS (purchased) quantity, so a material
+            with a waste allowance costs more than its net quantity implies.
         priced: ``False`` when no rate / cost was available for this line.
+        net_qty: The net (installed) quantity - the same figure as ``quantity``,
+            surfaced explicitly for the net -> gross story.
+        waste_pct: The waste allowance as a percentage, ``(factor - 1) * 100``
+            (``0`` for labour, machine and unmatched materials).
+        gross_qty: The gross (purchased) quantity, ``net_qty`` grossed up by the
+            waste factor. Equal to ``net_qty`` when there is no waste.
+        waste_matched: ``True`` when a waste-factor library entry was applied to
+            this line.
         cost_item_id: The linked cost item id for a priced material line.
         note: A short reason string when the line is unpriced.
     """
@@ -142,6 +173,10 @@ class PricedLine:
     priced: bool
     cost_item_id: str | None = None
     note: str = ""
+    net_qty: Decimal = Decimal("0")
+    waste_pct: Decimal = Decimal("0")
+    gross_qty: Decimal = Decimal("0")
+    waste_matched: bool = False
 
 
 @dataclass(frozen=True)
@@ -194,6 +229,10 @@ class PricedBuildUp:
                     "unit_cost": format(line.unit_cost, "f"),
                     "total": format(line.total, "f"),
                     "priced": line.priced,
+                    "net_qty": format(line.net_qty, "f"),
+                    "waste_pct": format(line.waste_pct, "f"),
+                    "gross_qty": format(line.gross_qty, "f"),
+                    "waste_matched": line.waste_matched,
                     "cost_item_id": line.cost_item_id,
                     "note": line.note,
                 }
@@ -211,15 +250,31 @@ def _price_line(
     rate: Decimal | int | str | None,
     cost_item_id: str | None = None,
     unpriced_note: str,
+    waste_factor: Decimal | int | str = Decimal("1"),
+    waste_matched: bool = False,
 ) -> PricedLine:
-    """Build one priced line, folding in the unpriced fallback.
+    """Build one priced line, folding in the waste gross-up and unpriced fallback.
+
+    The line's ``quantity`` is the NET (installed) coefficient. It is grossed up
+    to the purchased quantity via the waste-factors engine (``gross = net *
+    factor``) and the line is priced on that gross quantity, so a material with a
+    waste allowance costs more than its net quantity implies. A factor of 1
+    (labour, machine, unmatched material) leaves gross == net and waste at 0 pct.
 
     A ``None`` rate yields a zero-cost line flagged ``priced=False`` with
     ``note=unpriced_note`` so the demand is still visible and the caller can
     surface the missing price rather than silently dropping the line.
+
+    Raises:
+        TypeError: If ``waste_factor`` is a float.
+        ValueError: If ``waste_factor`` is not finite.
     """
     kind = coerce_kind(resource_type)
     qty = _q4(quantity)
+    # Net -> gross via the shared waste-factors math (reused, not reimplemented).
+    factor = _to_decimal(waste_factor)
+    gross = apply_waste_factor(qty, factor)
+    waste_pct = _q4((factor - Decimal("1")) * Decimal("100"))
     if rate is None:
         unit_cost = _q4(Decimal("0"))
         return PricedLine(
@@ -234,6 +289,10 @@ def _price_line(
             priced=False,
             cost_item_id=cost_item_id,
             note=unpriced_note,
+            net_qty=qty,
+            waste_pct=waste_pct,
+            gross_qty=gross,
+            waste_matched=waste_matched,
         )
     unit_cost = _q4(_to_decimal(rate))
     return PricedLine(
@@ -244,10 +303,14 @@ def _price_line(
         unit=unit,
         quantity=qty,
         unit_cost=unit_cost,
-        total=_q4(qty * unit_cost),
+        total=_q4(gross * unit_cost),
         priced=True,
         cost_item_id=cost_item_id,
         note="",
+        net_qty=qty,
+        waste_pct=waste_pct,
+        gross_qty=gross,
+        waste_matched=waste_matched,
     )
 
 
@@ -267,8 +330,12 @@ def price_build_up(
 
     Costs the labour-hours and machine-hours of one unit of the work item by
     their resolved hourly rates, and each material by its resolved unit cost.
-    The build-up is per unit: the sum of the line totals is the unit rate an
-    assembly built from this norm would carry.
+    Each material's NET coefficient is first grossed up to its purchased
+    quantity by the ``waste_factor`` carried on its :class:`MaterialPrice`
+    (``gross = net * factor``) and priced on the gross, so the build-up already
+    includes each material's waste allowance. The build-up is per unit: the sum
+    of the line totals is the unit rate an assembly built from this norm would
+    carry.
 
     A labour or machine line is emitted only when its per-unit coefficient is
     greater than zero (a work item with no machine time gets no machine line).
@@ -347,6 +414,8 @@ def price_build_up(
             rate=price.unit_cost,
             cost_item_id=price.cost_item_id,
             unpriced_note="no matching cost item",
+            waste_factor=price.waste_factor,
+            waste_matched=price.waste_matched,
         )
         lines.append(line)
         if not line.priced:

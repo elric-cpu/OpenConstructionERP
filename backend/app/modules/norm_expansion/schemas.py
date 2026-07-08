@@ -210,13 +210,25 @@ class BuildAssemblyRequest(BaseModel):
         max_length=64,
         description="Optional region hint biasing the material cost match.",
     )
+    apply_waste: bool = Field(
+        default=True,
+        description=(
+            "Gross each material from its net (installed) quantity up to the "
+            "purchased (gross) quantity using the waste-factor library. Set false "
+            "to price the net quantities with no waste allowance."
+        ),
+    )
 
 
 class PricedComponentResponse(BaseModel):
     """One priced component of an assembly built from a norm.
 
-    ``quantity`` is the per-unit coefficient; ``unit_cost`` and ``total`` are
-    money. All three are emitted as decimal strings.
+    ``quantity`` is the per-unit coefficient (the NET / installed quantity for a
+    material); ``unit_cost`` and ``total`` are money. For a material the waste
+    fields describe the net -> gross allowance folded into ``total``:
+    ``net_qty`` + ``waste_pct`` gives ``gross_qty``, and ``total`` is priced on
+    the gross. They are ``None`` for labour / equipment (no waste applies).
+    Every numeric field is emitted as a decimal string.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -230,10 +242,18 @@ class PricedComponentResponse(BaseModel):
     cost_item_id: UUID | None = None
     priced: bool = True
     unpriced_reason: str = ""
+    net_qty: Decimal | None = None
+    waste_pct: Decimal | None = None
+    gross_qty: Decimal | None = None
+    waste_matched: bool | None = None
 
     @field_serializer("quantity", "unit_cost", "total")
     def _ser_amounts(self, v: Decimal) -> str:
         return _serialise_decimal(v)  # type: ignore[return-value]
+
+    @field_serializer("net_qty", "waste_pct", "gross_qty")
+    def _ser_waste(self, v: Decimal | None) -> str | None:
+        return _serialise_decimal(v)
 
 
 class BuildAssemblyResponse(BaseModel):
@@ -241,7 +261,10 @@ class BuildAssemblyResponse(BaseModel):
 
     ``total_rate`` is the built-up unit rate (the sum of the component totals).
     ``unpriced`` lists the descriptions of any line that could not be priced so
-    the UI can flag them for the estimator to resolve.
+    the UI can flag them for the estimator to resolve. ``waste_applied`` echoes
+    whether the waste-factor library was used, and ``waste_unmatched`` lists the
+    materials that were grossed up at pass-through (no library factor) so the
+    estimator can add a factor for them.
     """
 
     id: UUID
@@ -256,6 +279,8 @@ class BuildAssemblyResponse(BaseModel):
     work_key: str
     components: list[PricedComponentResponse] = Field(default_factory=list)
     unpriced: list[str] = Field(default_factory=list)
+    waste_applied: bool = True
+    waste_unmatched: list[str] = Field(default_factory=list)
 
     @field_serializer("total_rate")
     def _ser_total_rate(self, v: Decimal) -> str:
