@@ -278,7 +278,9 @@ class CostExplorerService:
             )
 
         # Over-fetch so the lexical re-rank has room to promote the best hits.
-        pool = await self.repo.search_work(tokens, req.region, req.sources, min(req.limit * 4, 400))
+        # The repository also runs the domain-lexicon spelling pass and hands
+        # back a corrected query (or None) for the did-you-mean chip.
+        pool, suggestion = await self.repo.search_work(tokens, req.region, req.sources, min(req.limit * 4, 400))
         # Fold the query for accent- and case-insensitive phrase matching, so a
         # search typed without accents still lands on an accented row (and back).
         query_folded = search.fold(req.q)
@@ -320,8 +322,14 @@ class CostExplorerService:
             for score, item in top
         ]
         top_score = results[0].score if results else 0.0
-        hint = search.text_search_hint(
+        # Prefer a construction-aware spelling suggestion ("did you mean
+        # concrete?") over the generic guidance when the typed query looks
+        # misspelled and the results are weak or empty, since correcting the word
+        # is the most useful next step. The corrected query rides in the hint
+        # message so the client can re-run it from a one-click chip.
+        hint = self._find_work_hint(
             query=req.q,
+            suggestion=suggestion,
             result_count=len(results),
             top_score=top_score,
             has_region=has_region,
@@ -334,6 +342,37 @@ class CostExplorerService:
             results=results,
             hint=hint.message if hint else None,
             hint_code=hint.code if hint else None,
+        )
+
+    @staticmethod
+    def _find_work_hint(
+        *,
+        query: str,
+        suggestion: str | None,
+        result_count: int,
+        top_score: float,
+        has_region: bool,
+        has_sources: bool,
+    ) -> search.SearchHint | None:
+        """Pick the guidance for a find-work result, spelling suggestion first.
+
+        A domain-lexicon spelling suggestion (``cost_explorer.hint.did_you_mean``)
+        wins when the query looks misspelled and the results are weak or empty,
+        because correcting the word is the most actionable next step; its message
+        carries the corrected query verbatim so the client chip can re-run it on
+        one click. When the search already returns strong results the suggestion
+        stays silent (no nagging), and otherwise the existing no-result /
+        low-confidence guidance applies.
+        """
+        weak = result_count == 0 or top_score < search.LOW_CONFIDENCE_SCORE
+        if suggestion and weak and suggestion.strip().casefold() != query.strip().casefold():
+            return search.SearchHint("cost_explorer.hint.did_you_mean", suggestion.strip())
+        return search.text_search_hint(
+            query=query,
+            result_count=result_count,
+            top_score=top_score,
+            has_region=has_region,
+            has_sources=has_sources,
         )
 
     # ── 3. Compare across price bases ────────────────────────────────────────

@@ -8,10 +8,11 @@
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { GitCompareArrows, Repeat2, Search } from 'lucide-react';
+import { GitCompareArrows, Repeat2, Search, X } from 'lucide-react';
 import { Badge, Button, EmptyState, ErrorState, Input } from '@/shared/ui';
 import { getErrorMessage } from '@/shared/lib/api';
 import { findWork } from './api';
+import { selectFindWorkHint } from './findWorkHint';
 import { fmtMoney, MetaLine, Meter, pct, RegionSelect } from './parts';
 import type { CrossNav } from './types';
 
@@ -19,28 +20,38 @@ export function FindWorkPanel({ nav }: { nav: CrossNav }) {
   const { t } = useTranslation();
   const [q, setQ] = useState('');
   const [region, setRegion] = useState('');
+  const [dismissedSuggestion, setDismissedSuggestion] = useState<string | null>(null);
 
   const search = useMutation({
-    mutationFn: () => findWork({ q: q.trim(), region: region || null, limit: 40 }),
+    mutationFn: (term: string) => findWork({ q: term.trim(), region: region || null, limit: 40 }),
   });
   const results = search.data?.results ?? [];
+  const hintView = selectFindWorkHint(search.data, dismissedSuggestion);
 
   // Results are tagged to the region they were searched in; changing the price
-  // base region clears them so old rows with a mismatched region badge never
-  // linger over the new filter until the next search.
+  // base region clears them (and any pending did-you-mean) so old rows with a
+  // mismatched region badge never linger over the new filter until the next
+  // search.
   const { reset: resetSearch } = search;
   useEffect(() => {
     resetSearch();
+    setDismissedSuggestion(null);
   }, [region, resetSearch]);
 
   function run() {
-    if (q.trim().length > 0) search.mutate();
+    if (q.trim().length > 0) search.mutate(q);
   }
   function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter') {
       e.preventDefault();
       run();
     }
+  }
+  // Accept a did-you-mean suggestion: adopt the corrected query and re-run it.
+  function applySuggestion(suggestion: string) {
+    setQ(suggestion);
+    setDismissedSuggestion(null);
+    search.mutate(suggestion);
   }
 
   return (
@@ -72,6 +83,34 @@ export function FindWorkPanel({ nav }: { nav: CrossNav }) {
       </Button>
 
       {search.isError && <ErrorState title={getErrorMessage(search.error)} onRetry={run} />}
+
+      {hintView?.kind === 'suggestion' && (
+        <div className="flex items-center gap-2 rounded-lg border border-oe-blue/30 bg-oe-blue/5 px-3 py-2 text-sm">
+          <Search className="h-4 w-4 shrink-0 text-oe-blue" aria-hidden />
+          <span className="text-content-secondary">
+            {t('costExplorer.findWork.didYouMean', { defaultValue: 'Did you mean' })}
+          </span>
+          <button
+            type="button"
+            onClick={() => applySuggestion(hintView.suggestion)}
+            className="font-medium text-oe-blue hover:underline"
+          >
+            {hintView.suggestion}
+          </button>
+          <button
+            type="button"
+            onClick={() => setDismissedSuggestion(hintView.suggestion)}
+            aria-label={t('common.dismiss', { defaultValue: 'Dismiss' })}
+            className="ml-auto shrink-0 text-content-tertiary hover:text-content-secondary"
+          >
+            <X className="h-4 w-4" aria-hidden />
+          </button>
+        </div>
+      )}
+
+      {hintView?.kind === 'note' && (
+        <p className="text-xs text-content-tertiary">{t(hintView.code, { defaultValue: hintView.message })}</p>
+      )}
 
       {search.isSuccess && results.length === 0 && (
         <EmptyState

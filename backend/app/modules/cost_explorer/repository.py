@@ -20,7 +20,7 @@ from sqlalchemy import case, delete, distinct, func, insert, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.catalog.models import CatalogResource
-from app.modules.cost_explorer import search
+from app.modules.cost_explorer import search, spelling
 from app.modules.cost_explorer.models import CostItemResource
 from app.modules.costs.models import CostItem
 
@@ -181,8 +181,8 @@ class CostExplorerRepository:
         region: str | None,
         sources: Sequence[str] | None,
         limit: int,
-    ) -> list[CostItem]:
-        """Cost items ranked by how many of the query concepts they match.
+    ) -> tuple[list[CostItem], str | None]:
+        """Cost items ranked by query-concept match, plus a spelling suggestion.
 
         Each token is expanded with multilingual construction synonyms (so
         "rebar" also finds "reinforcement", and "beton" or the folded "béton"
@@ -195,7 +195,19 @@ class CostExplorerRepository:
         query returns the best partial matches instead of dead-ending on zero
         results when no single row carries every word. The caller re-ranks this
         pool lexically for the final order.
+
+        Alongside the pool this runs a construction-aware spelling pass over the
+        tokens and returns a corrected query (for example "concreet" -> "concrete")
+        when one is available, or ``None`` when the tokens are already well-formed
+        or only look like a grade or a code. The tokens themselves drive the
+        search unchanged, so a typo simply returns its (usually weak) matches and
+        the caller can offer the correction as a did-you-mean suggestion.
+
+        Returns:
+            A tuple of the matched cost items and the suggested corrected query
+            (or ``None``).
         """
+        suggestion = spelling.suggest_from_tokens(tokens)
         concept_preds = []
         for tok in tokens:
             like_clauses = []
@@ -225,7 +237,8 @@ class CostExplorerRepository:
         if sources:
             stmt = stmt.where(CostItem.source.in_(list(sources)))
         stmt = stmt.limit(limit)
-        return list((await self.session.execute(stmt)).scalars().all())
+        items = list((await self.session.execute(stmt)).scalars().all())
+        return items, suggestion
 
     # ── Compare across bases ─────────────────────────────────────────────────
 

@@ -74,6 +74,16 @@ export interface FindWorkResponse {
   result_count: number;
   mode: string;
   results: FindWorkItem[];
+  /**
+   * Plain-language guidance shown when a search returns nothing or only weak
+   * matches, or a spelling suggestion. Null when the top results are strong.
+   * For `hint_code === 'cost_explorer.hint.did_you_mean'` this carries the
+   * suggested corrected query verbatim (e.g. 'concrete') so the chip can re-run
+   * it; for every other code it is a ready English message.
+   */
+  hint?: string | null;
+  /** Stable key a localized UI maps to a translated string; null with `hint`. */
+  hint_code?: string | null;
 }
 
 // ── Compare across bases ─────────────────────────────────────────────────────
