@@ -16,8 +16,9 @@ import json as _json
 import logging
 import re
 import uuid
+from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_, func, or_, select
@@ -150,6 +151,296 @@ def mass_effective_unit_rate(
     if not effective.is_finite() or effective < 0:
         return None
     return effective
+
+
+# ── Rate freshness by price date (re-price-due flag) ───────────────────────
+#
+# The certainty badge grades a rate by how OFTEN and how RECENTLY it has been
+# APPLIED (the usage ledger). That misses a distinct risk: a rate can be
+# applied every week yet still carry a unit price that was last set years ago.
+# Price freshness closes that gap. Each cost item / resource base-price can
+# record a ``price_as_of`` date - the day its price was last set or verified -
+# and these pure helpers grade that date against a configurable staleness
+# horizon, independently of usage frequency:
+#
+#   * green  - the price date is comfortably within the horizon (fresh).
+#   * yellow - the price date is approaching the horizon (verify soon).
+#   * red    - the price date has passed the horizon: RE-PRICE DUE.
+#   * None   - no price date on record: no opinion, so the usage badge stands
+#     and the millions of imported rows without a price date are unaffected.
+#
+# When a rate is re-price-due the one-click fix offers an ESCALATED value: the
+# recorded price carried forward to today by an annual escalation rate
+# (compounded per full year, then pro-rated linearly across the trailing
+# partial year). Everything stays Decimal end to end; the horizon, the warning
+# lead and the escalation rate are all overridable so a tenant can tune them.
+
+# Default: a unit price older than one year is due for re-pricing. Aligned
+# with ``intelligence.CERTAINTY_GREEN_MAX_AGE_DAYS`` so the two freshness
+# signals agree on what "a year" means.
+PRICE_STALENESS_HORIZON_DAYS = 365
+# Start nudging (yellow) once the price date has aged past this fraction of the
+# horizon - three quarters of the way, by default.
+PRICE_STALENESS_WARN_FRACTION = 0.75
+# Default annual construction-cost escalation applied by the one-click fix. A
+# plain, conservative figure; a real per-region index can override it.
+PRICE_DEFAULT_ANNUAL_ESCALATION_PCT = Decimal("3.0")
+# Guard against a pathological price date (e.g. a year-1000 typo) blowing up
+# the compounding exponent; no real price is older than this many years.
+_MAX_ESCALATION_YEARS = 200
+
+PriceFreshnessBand = Literal["green", "yellow", "red"]
+
+
+def _coerce_price_date(value: date | str | None) -> date | None:
+    """Parse a ``price_as_of`` value into a plain ``date``.
+
+    Accepts a ``date`` as-is, a ``datetime`` (its date part is taken), an ISO
+    ``YYYY-MM-DD`` string (the JSON wire form), or ``None`` / blank. Any
+    unparseable value yields ``None`` so a junk date never poisons the age
+    math - it simply reads as "no date on record".
+
+    Args:
+        value: The stored / supplied price date in any accepted form.
+
+    Returns:
+        A ``date``, or ``None`` when nothing usable was given.
+    """
+    if value is None or value == "":
+        return None
+    # ``datetime`` is a subclass of ``date`` - check it first to take the day.
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value).strip()[:10])
+    except (ValueError, TypeError):
+        return None
+
+
+def _resolve_today(today: date | None) -> date:
+    """Return ``today`` when given, else the current UTC date."""
+    return today if today is not None else datetime.now(UTC).date()
+
+
+def _positive_decimal(value: str | Decimal | float | None) -> Decimal | None:
+    """Parse ``value`` into a strictly-positive finite ``Decimal``, else ``None``."""
+    if value is None or value == "":
+        return None
+    try:
+        dec = value if isinstance(value, Decimal) else Decimal(str(value).strip())
+    except (InvalidOperation, ValueError):
+        return None
+    if not dec.is_finite() or dec <= 0:
+        return None
+    return dec
+
+
+def price_age_days(price_as_of: date | str | None, *, today: date | None = None) -> int | None:
+    """Age of a recorded price in whole days, or ``None`` when no date is set.
+
+    Args:
+        price_as_of: The day the price was last set / verified.
+        today: Reference day; defaults to the current UTC date. Pass it
+            explicitly to keep tests deterministic.
+
+    Returns:
+        Whole days elapsed since ``price_as_of`` (a future date clamps to
+        ``0``, never negative), or ``None`` when no price date is on record.
+    """
+    as_of = _coerce_price_date(price_as_of)
+    if as_of is None:
+        return None
+    delta = (_resolve_today(today) - as_of).days
+    return delta if delta > 0 else 0
+
+
+def is_reprice_due(
+    price_as_of: date | str | None,
+    *,
+    horizon_days: int = PRICE_STALENESS_HORIZON_DAYS,
+    today: date | None = None,
+) -> bool:
+    """Whether a recorded price date has aged past ``horizon_days``.
+
+    Independent of usage frequency by design: a heavily-used but long-unpriced
+    rate is still due. Returns ``False`` when there is no price date (we do not
+    invent staleness we cannot prove) or the horizon is non-positive (the
+    check is effectively switched off).
+
+    Args:
+        price_as_of: The day the price was last set / verified.
+        horizon_days: Age at or beyond which the price is due for re-pricing.
+        today: Reference day; defaults to the current UTC date.
+
+    Returns:
+        ``True`` when the price is due for re-pricing, else ``False``.
+    """
+    if horizon_days <= 0:
+        return False
+    age = price_age_days(price_as_of, today=today)
+    return age is not None and age >= horizon_days
+
+
+def classify_price_freshness(
+    price_as_of: date | str | None,
+    *,
+    horizon_days: int = PRICE_STALENESS_HORIZON_DAYS,
+    warn_fraction: float = PRICE_STALENESS_WARN_FRACTION,
+    today: date | None = None,
+) -> PriceFreshnessBand | None:
+    """Grade a price date green / yellow / red, or ``None`` when unknown.
+
+    Reuses the same three-colour vocabulary as the usage certainty badge so
+    the UI can render one shared traffic-light control:
+
+    * ``None``     - no price date on record: no opinion.
+    * ``"red"``    - aged at/past ``horizon_days``: re-price due.
+    * ``"yellow"`` - aged past ``warn_fraction`` of the horizon: verify soon.
+    * ``"green"``  - comfortably within the horizon.
+
+    Args:
+        price_as_of: The day the price was last set / verified.
+        horizon_days: Re-price-due horizon in days.
+        warn_fraction: Fraction of the horizon (clamped to ``[0, 1]``) at
+            which the band steps up to yellow.
+        today: Reference day; defaults to the current UTC date.
+
+    Returns:
+        The freshness band, or ``None`` when no price date is on record or the
+        horizon is non-positive.
+    """
+    age = price_age_days(price_as_of, today=today)
+    if age is None or horizon_days <= 0:
+        return None
+    if age >= horizon_days:
+        return "red"
+    frac = min(max(warn_fraction, 0.0), 1.0)
+    if age >= int(horizon_days * frac):
+        return "yellow"
+    return "green"
+
+
+def escalated_reprice_value(
+    rate: str | Decimal | float | None,
+    price_as_of: date | str | None,
+    *,
+    annual_pct: Decimal | float | str = PRICE_DEFAULT_ANNUAL_ESCALATION_PCT,
+    today: date | None = None,
+) -> Decimal | None:
+    """The current price escalated forward from ``price_as_of`` to today.
+
+    The re-price-due one-click fix: take the recorded ``rate`` and carry it
+    forward by ``annual_pct`` per year - compounded for each full year, then
+    pro-rated linearly across the trailing partial year - so an estimator can
+    accept a defensible refreshed rate in a single click. All-Decimal; the
+    result is quantised to four places (matching the usage ledger's
+    ``Numeric(18, 4)`` and the regional-adjust output).
+
+    Args:
+        rate: The price to escalate.
+        price_as_of: The day the price was last set / verified.
+        annual_pct: Annual escalation as a percent (e.g. ``3.0`` for 3 %/yr).
+        today: Reference day; defaults to the current UTC date.
+
+    Returns:
+        The escalated Decimal value, or ``None`` when there is nothing to
+        escalate: no price date, a non-positive age (price set today or in the
+        future), a missing / invalid / non-positive rate, or a non-finite
+        escalation rate.
+    """
+    age = price_age_days(price_as_of, today=today)
+    if age is None or age <= 0:
+        return None
+    rate_dec = _positive_decimal(rate)
+    if rate_dec is None:
+        return None
+    try:
+        r = Decimal(str(annual_pct).strip()) / Decimal("100")
+    except (InvalidOperation, ValueError):
+        return None
+    if not r.is_finite():
+        return None
+
+    one_plus_r = Decimal("1") + r
+    if one_plus_r < 0:
+        # A cut so deep the compounding base goes negative is not meaningful;
+        # floor it at zero rather than emit an oscillating figure.
+        one_plus_r = Decimal("0")
+
+    full_years = min(age // 365, _MAX_ESCALATION_YEARS)
+    remainder_days = age % 365
+    # Integer-exponent power is exact under the Decimal context; no float.
+    factor = one_plus_r**full_years
+    if remainder_days > 0:
+        partial = Decimal(remainder_days) / Decimal("365")
+        factor *= Decimal("1") + r * partial
+
+    escalated = rate_dec * factor
+    if not escalated.is_finite() or escalated < 0:
+        return None
+    return escalated.quantize(Decimal("0.0001"))
+
+
+def price_freshness(
+    price_as_of: date | str | None,
+    rate: str | Decimal | float | None = None,
+    *,
+    horizon_days: int = PRICE_STALENESS_HORIZON_DAYS,
+    warn_fraction: float = PRICE_STALENESS_WARN_FRACTION,
+    annual_pct: Decimal | float | str = PRICE_DEFAULT_ANNUAL_ESCALATION_PCT,
+    today: date | None = None,
+) -> dict[str, Any]:
+    """One-stop price-date freshness read for the certainty response.
+
+    Bundles everything a caller needs to surface the re-price-due state next
+    to a cost item or resource base-price, so wiring it into the existing
+    certainty badge is a single merge. The returned dict carries:
+
+    * ``price_as_of`` (``date | None``) - the recorded date, echoed back.
+    * ``price_age_days`` (``int | None``) - whole days, ``None`` when no date.
+    * ``reprice_due`` (``bool``) - aged at/past the horizon.
+    * ``price_freshness_band`` (``str | None``) - green / yellow / red, or
+      ``None`` when there is no price date. Namespaced so it never collides
+      with the usage badge's ``confidence_badge`` when the two are merged.
+    * ``staleness_horizon_days`` (``int``) - the horizon in force.
+    * ``suggested_reprice_value`` (``Decimal | None``) - the escalated
+      one-click fix. Populated only when the item is ``reprice_due`` and there
+      is a valid positive rate to escalate, so the "offer" is tied to the flag
+      and never shown for a fresh price.
+
+    ``reprice_due`` and the band are computed purely from the date and the
+    horizon, never from usage frequency, so a heavily-used but long-unpriced
+    rate is still flagged.
+
+    Args:
+        price_as_of: The day the price was last set / verified.
+        rate: The current price, used to compute the escalated fix.
+        horizon_days: Re-price-due horizon in days.
+        warn_fraction: Fraction of the horizon at which the band turns yellow.
+        annual_pct: Annual escalation percent for the one-click fix.
+        today: Reference day; defaults to the current UTC date.
+
+    Returns:
+        A JSON-friendly dict as described above.
+    """
+    as_of = _coerce_price_date(price_as_of)
+    due = is_reprice_due(as_of, horizon_days=horizon_days, today=today)
+    suggested = escalated_reprice_value(rate, as_of, annual_pct=annual_pct, today=today) if due else None
+    return {
+        "price_as_of": as_of,
+        "price_age_days": price_age_days(as_of, today=today),
+        "reprice_due": due,
+        "price_freshness_band": classify_price_freshness(
+            as_of,
+            horizon_days=horizon_days,
+            warn_fraction=warn_fraction,
+            today=today,
+        ),
+        "staleness_horizon_days": horizon_days,
+        "suggested_reprice_value": suggested,
+    }
 
 
 class CostItemService:

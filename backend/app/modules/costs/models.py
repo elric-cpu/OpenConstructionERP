@@ -97,6 +97,18 @@ class CostItem(Base):
     # default to empty so every existing row is unaffected.
     mass_per_unit: Mapped[str] = mapped_column(String(50), nullable=False, default="", server_default="")
     mass_basis: Mapped[str] = mapped_column(String(10), nullable=False, default="", server_default="")
+    # ── Price-date freshness (re-price-due flag) ──────────────────────────
+    # The day this item's ``rate`` was last set or verified. This is a
+    # DIFFERENT signal from the usage-ledger recency behind the certainty
+    # badge: a rate can be applied constantly yet still carry a unit price
+    # that was fixed years ago. Recording the price date lets the platform
+    # flag an item "re-price due" once the date ages past a configurable
+    # staleness horizon, regardless of how often it is used (see
+    # ``service.price_freshness``). NULL means no price date is on record -
+    # read as "unknown", never as fresh - so every existing row is
+    # unaffected. Stored as a plain ``Date``: a price is verified on a day,
+    # not at a second.
+    price_as_of: Mapped[date | None] = mapped_column(Date(), nullable=True)
     # Owning user catalog (oe_costs_catalog.id). Kept as a bare indexed UUID
     # column (no FK constraint) following the cross-table convention used by
     # ``CostItemUsage.project_id``; detach/delete semantics live in the
