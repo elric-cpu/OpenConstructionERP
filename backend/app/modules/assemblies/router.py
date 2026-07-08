@@ -15,14 +15,12 @@ Endpoints:
 """
 
 import logging
-import time
 import uuid
 from datetime import UTC
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 
 from app.core.i18n import get_locale
 from app.core.validation.messages import translate
@@ -281,190 +279,35 @@ class AIGenerateRequest(BaseModel):
     unit: str = Field(default="m2", max_length=20)
 
 
-def _guess_component_type(item: object) -> str:
-    """Infer component type (material, labor, equipment) from a cost item."""
-    desc = (getattr(item, "description", "") or "").lower()
-    tags = getattr(item, "tags", []) or []
-    tags_lower = [str(t).lower() for t in tags]
-    meta = getattr(item, "metadata_", {}) or {}
-    item_type = str(meta.get("type", "")).lower()
-
-    labor_keywords = (
-        "labor",
-        "labour",
-        "worker",
-        "crew",
-        "mason",
-        "carpenter",
-        "plumber",
-        "electrician",
-        "fitter",
-        "welder",
-        "helper",
-        "operator",
-        "plasterer",
-        "roofer",
-        "driver",
-        "arbeit",
-        "lohn",
-        "monteur",
-        "arbeiter",
-    )
-    equipment_keywords = (
-        "equip",
-        "machine",
-        "crane",
-        "excavator",
-        "pump",
-        "mixer",
-        "truck",
-        "scaffold",
-        "vibrator",
-        "compressor",
-        "generator",
-        "maschine",
-        "bagger",
-        "kran",
-        "gerät",
-    )
-
-    if item_type in ("labor", "labour"):
-        return "labor"
-    if item_type in ("equipment", "plant"):
-        return "equipment"
-    if any(kw in desc for kw in labor_keywords) or "labor" in tags_lower:
-        return "labor"
-    if any(kw in desc for kw in equipment_keywords) or "equipment" in tags_lower:
-        return "equipment"
-    return "material"
-
-
 @router.post(
     "/ai-generate/",
     dependencies=[Depends(RequirePermission("assemblies.create"))],
 )
 async def ai_generate_assembly(
     data: AIGenerateRequest,
-    session: SessionDep,
-    user_id: CurrentUserId,
+    service: AssemblyService = Depends(_get_service),
 ) -> dict:
     """Generate an assembly from a natural language description.
 
-    Searches the cost database for matching components and builds a
-    preview assembly. The result is NOT saved - the user reviews and
-    confirms before creating.
+    Searches the cost catalogue for matching components and synthesizes a
+    grounded per-unit factor for each line (never a naive quantity of 1.0),
+    keeping the rates catalogue-grounded. The result is NOT saved: the
+    estimator reviews and confirms before creating, matching the platform's
+    human-confirms-AI rule.
 
     Args:
         data: Description, optional region and unit.
-        session: Database session.
-        user_id: Authenticated user ID.
+        service: Assembly service (injected).
 
     Returns:
-        dict with generated assembly preview including components and
-        total rate.
+        dict with the generated assembly preview: components carrying real
+        per-unit quantities, the rolled-up total rate and a confidence score.
     """
-    from app.modules.costs.models import CostItem
-
-    description = data.description.strip()
-
-    # Build search terms: split description into meaningful keywords
-    search_terms = [w for w in description.split() if len(w) >= 3]
-
-    found_items: list[object] = []
-
-    # Strategy 1: Try ILIKE search with full description
-    pattern = f"%{description}%"
-    stmt = select(CostItem).where(CostItem.is_active.is_(True), CostItem.description.ilike(pattern)).limit(15)
-    result = await session.execute(stmt)
-    found_items = list(result.scalars().all())
-
-    # Strategy 2: If too few results, search by individual keywords
-    if len(found_items) < 3 and search_terms:
-        for term in search_terms[:5]:
-            kw_pattern = f"%{term}%"
-            kw_stmt = (
-                select(CostItem).where(CostItem.is_active.is_(True), CostItem.description.ilike(kw_pattern)).limit(8)
-            )
-            kw_result = await session.execute(kw_stmt)
-            for item in kw_result.scalars().all():
-                if item.id not in {getattr(i, "id", None) for i in found_items}:
-                    found_items.append(item)
-            if len(found_items) >= 15:
-                break
-
-    # Optionally filter by region
-    if data.region and found_items:
-        region_items = [
-            i for i in found_items if getattr(i, "region", None) is None or getattr(i, "region", "") == data.region
-        ]
-        if region_items:
-            found_items = region_items
-
-    # Build components from found items (cap at 15)
-    found_items = found_items[:15]
-    components = []
-    total_rate = 0.0
-
-    for idx, item in enumerate(found_items):
-        rate = 0.0
-        try:
-            rate = float(getattr(item, "rate", 0))
-        except (ValueError, TypeError):
-            pass
-
-        comp_type = _guess_component_type(item)
-        item_desc = str(getattr(item, "description", ""))[:200]
-        item_code = str(getattr(item, "code", ""))
-        item_unit = str(getattr(item, "unit", data.unit))
-
-        comp_total = rate * 1.0  # quantity=1.0 by default
-        total_rate += comp_total
-
-        components.append(
-            {
-                "name": item_desc,
-                "code": item_code,
-                "unit": item_unit,
-                "quantity": 1.0,
-                "unit_rate": round(rate, 2),
-                "total": round(comp_total, 2),
-                "type": comp_type,
-                "sort_order": idx,
-                "cost_item_id": str(getattr(item, "id", "")),
-            }
-        )
-
-    # Determine confidence based on number of results found
-    if len(components) >= 5:
-        confidence = 0.8
-    elif len(components) >= 3:
-        confidence = 0.6
-    elif len(components) >= 1:
-        confidence = 0.4
-    else:
-        confidence = 0.1
-
-    timestamp = str(int(time.time()))
-
-    logger.info(
-        "AI assembly generated for '%s': %d components, total=%.2f",
-        description[:50],
-        len(components),
-        total_rate,
+    return await service.ai_generate_preview(
+        description=data.description,
+        unit=data.unit,
+        region=data.region,
     )
-
-    return {
-        "name": f"Generated: {description[:100]}",
-        "code": f"AI-{timestamp}",
-        "unit": data.unit,
-        "category": "",
-        "components": components,
-        "total_rate": round(total_rate, 2),
-        "source_items_count": len(found_items),
-        "confidence": confidence,
-        "description": description,
-        "region": data.region,
-    }
 
 
 @router.get(
