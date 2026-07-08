@@ -899,7 +899,7 @@ export function LoginPage() {
                   >
                     {t('auth.demo_hint', {
                       defaultValue:
-                        'This demo sign-in is optional. You can show or hide it anytime in Settings.',
+                        'Optional demo sign-in. It only appears while demo accounts are enabled, so an administrator can turn it off.',
                     })}
                   </div>
                 </div>
