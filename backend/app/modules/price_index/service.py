@@ -16,6 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.sql_json import json_path_text
+from app.modules.boq.models import BOQ, Position
 from app.modules.costs.models import CostItem
 from app.modules.price_index import index_math
 from app.modules.price_index.models import (
@@ -38,6 +39,7 @@ from app.modules.price_index.schemas import (
     LocationFactorCreate,
     LocationFactorUpdate,
 )
+from app.modules.projects.models import Project
 
 
 class SeriesNotFoundError(LookupError):
@@ -46,6 +48,10 @@ class SeriesNotFoundError(LookupError):
 
 class AmbiguousSeriesError(ValueError):
     """Raised when no series id is given but the store holds several to pick from."""
+
+
+class ProjectNotFoundError(LookupError):
+    """Raised when a project-scoped escalation names a project that does not exist."""
 
 
 class PriceIndexService:
@@ -256,6 +262,13 @@ class PriceIndexService:
         is written back: this is a read-only preview, the safe compute path that
         precedes any later write-back into the BOQ.
 
+        The selection has two scopes. Without ``project_id`` it is
+        *catalogue-scoped*: the cost-database rows matched by the explicit ids
+        and / or the region / category filter. With ``project_id`` it is
+        *project-scoped*: exactly the cost items the project's BOQ references
+        (see :meth:`_select_project_cost_items`), so the estimate itself is
+        escalated rather than the catalogue at large.
+
         An item whose ``price_as_of`` is null, whose stored rate is not a number,
         or whose base / target period is absent from the series is returned
         flagged (``escalatable = False`` with a ``note``) rather than guessed, so
@@ -263,24 +276,35 @@ class PriceIndexService:
 
         Args:
             request: The target date, the series to escalate against and the
-                item selectors (explicit ids and / or a region / category
-                filter).
+                item selectors (a ``project_id``, explicit ids and / or a
+                region / category filter).
 
         Returns:
-            The per-item preview paired with the resolved series and the target
-            period.
+            The per-item preview paired with the resolved series, the target
+            period and, in project scope, the project context.
 
         Raises:
             SeriesNotFoundError: If ``request.series_id`` does not exist, or it
                 is omitted and no series exists at all.
             AmbiguousSeriesError: If ``request.series_id`` is omitted while more
                 than one series exists.
+            ProjectNotFoundError: If ``request.project_id`` is given but no such
+                project exists.
         """
         series = await self._resolve_series(request.series_id)
         points = await self._load_series_points(series.id)
         target_period = index_math.period_for_date(request.target_date)
 
-        items = await self._select_cost_items(request)
+        scope = "catalogue"
+        project_name: str | None = None
+        project_fallback = False
+        if request.project_id is not None:
+            scope = "project"
+            project_name, project_region = await self._require_project(request.project_id)
+            items, project_fallback = await self._select_project_cost_items(request.project_id, request, project_region)
+        else:
+            items = await self._select_cost_items(request)
+
         results = [self._preview_line(item, points, target_period) for item in items]
         escalatable = sum(1 for line in results if line.escalatable)
         return EscalatePreviewResponse(
@@ -290,6 +314,10 @@ class PriceIndexService:
             target_period=target_period,
             item_count=len(results),
             escalatable_count=escalatable,
+            scope=scope,
+            project_id=request.project_id,
+            project_name=project_name,
+            project_fallback=project_fallback,
             results=results,
         )
 
@@ -343,6 +371,110 @@ class PriceIndexService:
         stmt = stmt.order_by(CostItem.code, CostItem.id)
         return list((await self.session.execute(stmt)).scalars().all())
 
+    # ── Project-scoped selection ─────────────────────────────────────────
+
+    async def _require_project(self, project_id: uuid.UUID) -> tuple[str, str]:
+        """Return a project's ``(name, region)``, or raise if it does not exist.
+
+        Guards the project scope so a bogus ``project_id`` surfaces as a clean
+        not-found error instead of silently falling through to the region
+        fallback (which, for a non-existent project, would have no region to
+        bound it).
+        """
+        row = (await self.session.execute(select(Project.name, Project.region).where(Project.id == project_id))).first()
+        if row is None:
+            raise ProjectNotFoundError(str(project_id))
+        name, region = row
+        return name, (region or "").strip()
+
+    async def _project_cost_item_ids(self, project_id: uuid.UUID) -> list[uuid.UUID]:
+        """Collect the DISTINCT cost items a project's BOQ positions reference.
+
+        The reliable typed link is ``Position.metadata_['cost_item_id']`` (a
+        string UUID stamped both when a user applies a catalogue item to a
+        position and when the match-elements pipeline commits a matched line).
+        It is read directly with a dialect-aware JSON extract across every
+        position of every BOQ the project owns, de-duplicated in stable order
+        and coerced to UUIDs (an unparseable value is skipped, never guessed).
+
+        Args:
+            project_id: The project whose BOQ positions are inspected.
+
+        Returns:
+            The DISTINCT, parseable cost-item UUIDs the project's positions link
+            to, in first-seen order (empty when no position carries a link).
+        """
+        id_text = json_path_text(Position.metadata_, "$.cost_item_id")
+        stmt = (
+            select(id_text)
+            .select_from(Position)
+            .join(BOQ, Position.boq_id == BOQ.id)
+            .where(BOQ.project_id == project_id, id_text.is_not(None))
+            .distinct()
+        )
+        rows = (await self.session.execute(stmt)).scalars().all()
+        unique: list[uuid.UUID] = []
+        seen: set[uuid.UUID] = set()
+        for value in rows:
+            parsed = _coerce_uuid(value)
+            if parsed is not None and parsed not in seen:
+                seen.add(parsed)
+                unique.append(parsed)
+        return unique
+
+    async def _select_project_cost_items(
+        self,
+        project_id: uuid.UUID,
+        request: EscalatePreviewRequest,
+        project_region: str,
+    ) -> tuple[list[CostItem], bool]:
+        """Select the cost items a project's BOQ uses; flag when the fallback ran.
+
+        Primary path: the DISTINCT cost items the project's positions link to
+        via ``metadata.cost_item_id`` (see :meth:`_project_cost_item_ids`),
+        escalated exactly. A supplied ``region`` / ``category`` narrows that set
+        further (AND). Explicit ids from the request are ignored here - the
+        project's own links define the set.
+
+        Fallback (documented): when NO position carries a typed link, positions
+        hold no ``(region, category)`` tuple of their own to group by, so the
+        project's own ``region`` is used as the best available regional proxy
+        and its active cost items are escalated. To honour "never escalate the
+        whole catalogue by accident", with neither a region (the project's or an
+        explicit one) nor a category to bound it the selection is empty.
+
+        Args:
+            project_id: The project whose used cost items are resolved.
+            request: The originating request (its region / category narrow the
+                selection in both paths).
+            project_region: The project's own region, the fallback proxy.
+
+        Returns:
+            The selected cost items paired with a flag that is ``True`` when the
+            region fallback ran (no typed links were found).
+        """
+        ids = await self._project_cost_item_ids(project_id)
+        if ids:
+            stmt = select(CostItem).where(CostItem.id.in_(ids))
+            if request.region:
+                stmt = stmt.where(CostItem.region == request.region)
+            if request.category:
+                stmt = stmt.where(_collection_expr(request.category))
+            stmt = stmt.order_by(CostItem.code, CostItem.id)
+            return list((await self.session.execute(stmt)).scalars().all()), False
+
+        region = (request.region or "").strip() or project_region
+        category = (request.category or "").strip()
+        if not region and not category:
+            return [], True
+        stmt = select(CostItem).where(CostItem.is_active.is_(True))
+        if region:
+            stmt = stmt.where(CostItem.region == region)
+        if category:
+            stmt = stmt.where(_collection_expr(category))
+        stmt = stmt.order_by(CostItem.code, CostItem.id)
+        return list((await self.session.execute(stmt)).scalars().all()), True
+
     @staticmethod
     def _preview_line(
         item: CostItem,
@@ -383,6 +515,20 @@ class PriceIndexService:
         line.escalated_rate = index_math.adjust(base_rate, factor, Decimal("1"))
         line.escalatable = True
         return line
+
+
+def _coerce_uuid(value: str | None) -> uuid.UUID | None:
+    """Parse a stored ``cost_item_id`` string into a UUID, or ``None`` if unusable.
+
+    Position links are text, so a legacy or hand-edited value may not be a valid
+    UUID; such a value is skipped rather than allowed to error the whole preview.
+    """
+    if not value:
+        return None
+    try:
+        return uuid.UUID(str(value).strip())
+    except (ValueError, AttributeError, TypeError):
+        return None
 
 
 def _collection_expr(category: str) -> Any:

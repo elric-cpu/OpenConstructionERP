@@ -24,10 +24,14 @@ import {
   ArrowRight,
   CalendarClock,
   Inbox,
+  Building2,
+  Library,
 } from 'lucide-react';
 import { Button, Badge, Card, CardHeader, EmptyState, ErrorState, Input, PageHeader } from '@/shared/ui';
 import { useToastStore } from '@/stores/useToastStore';
-import { getErrorMessage } from '@/shared/lib/api';
+import { useProjectContextStore } from '@/stores/useProjectContextStore';
+import { apiGet, getErrorMessage } from '@/shared/lib/api';
+import type { Project } from '@/features/projects/api';
 import {
   listSeries,
   fetchSeries,
@@ -688,15 +692,22 @@ function AdjustResults({ result }: { result: AdjustResponse }) {
  * target date on the chosen series, and shows which lines move and by how much.
  * Strictly read-only: nothing is written back to the cost items or the BOQ.
  */
+type EscalateScope = 'catalogue' | 'project';
+
 function EscalatePanel({ seriesList }: { seriesList: CostIndexSeries[] }) {
   const { t } = useTranslation();
   const addToast = useToastStore((s) => s.addToast);
+  const activeProjectId = useProjectContextStore((s) => s.activeProjectId);
 
+  const [scope, setScope] = useState<EscalateScope>('catalogue');
   const [targetDate, setTargetDate] = useState('');
   const [seriesId, setSeriesId] = useState('');
+  const [projectId, setProjectId] = useState('');
   const [region, setRegion] = useState('');
   const [category, setCategory] = useState('');
   const [result, setResult] = useState<EscalatePreviewResponse | null>(null);
+
+  const projectMode = scope === 'project';
 
   // Facets from the cost catalogue so the selectors offer the same region
   // codes and categories the escalate-preview endpoint actually filters on.
@@ -707,6 +718,17 @@ function EscalatePanel({ seriesList }: { seriesList: CostIndexSeries[] }) {
   });
   const regions = regionsQ.data ?? [];
   const categories = categoriesQ.data ?? [];
+
+  // Projects for the "this project" scope. Fetched only in project mode; the
+  // app-wide active project seeds the picker so it lands on what the user is
+  // already working on.
+  const projectsQ = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => apiGet<Project[]>('/v1/projects/'),
+    staleTime: 5 * 60_000,
+    enabled: projectMode,
+  });
+  const projects = projectsQ.data ?? [];
 
   const noSeries = seriesList.length === 0;
   const seriesRequired = seriesList.length > 1;
@@ -721,8 +743,18 @@ function EscalatePanel({ seriesList }: { seriesList: CostIndexSeries[] }) {
     }
   }, [seriesList, seriesId]);
 
+  // Default the project picker to the active project (or the first one) once
+  // the user switches to project scope.
+  useEffect(() => {
+    if (!projectMode || projectId) return;
+    const fallback = activeProjectId || projects[0]?.id || '';
+    if (fallback) setProjectId(fallback);
+  }, [projectMode, projectId, activeProjectId, projects]);
+
   const dateValid = isValidIsoDate(targetDate);
-  const selectorReady = hasEscalateSelector({ region, category });
+  // In project scope the project itself is the selector (region/category only
+  // narrow it); in catalogue scope a region or category is required.
+  const selectorReady = projectMode ? projectId !== '' : hasEscalateSelector({ region, category });
   const seriesReady = !seriesRequired || seriesId !== '';
 
   const previewMut = useMutation({
@@ -730,6 +762,7 @@ function EscalatePanel({ seriesList }: { seriesList: CostIndexSeries[] }) {
       escalatePreview({
         target_date: targetDate,
         series_id: seriesId || null,
+        project_id: projectMode ? projectId || null : null,
         region: region || null,
         category: category || null,
       }),
@@ -782,6 +815,42 @@ function EscalatePanel({ seriesList }: { seriesList: CostIndexSeries[] }) {
         ) : (
           <>
             <div className="flex flex-wrap items-end gap-3">
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-content-primary">
+                  {t('price_index.escalate_scope', { defaultValue: 'Rates to escalate' })}
+                </span>
+                <div className="inline-flex overflow-hidden rounded-lg border border-border">
+                  <button
+                    type="button"
+                    aria-pressed={scope === 'catalogue'}
+                    onClick={() => setScope('catalogue')}
+                    className={
+                      'inline-flex h-9 items-center gap-1.5 px-3 text-sm transition-colors ' +
+                      (scope === 'catalogue'
+                        ? 'bg-oe-blue/10 text-oe-blue'
+                        : 'text-content-secondary hover:bg-surface-secondary')
+                    }
+                  >
+                    <Library className="h-3.5 w-3.5" aria-hidden />
+                    {t('price_index.escalate_scope_catalogue', { defaultValue: 'Whole catalogue' })}
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={scope === 'project'}
+                    onClick={() => setScope('project')}
+                    className={
+                      'inline-flex h-9 items-center gap-1.5 border-l border-border px-3 text-sm transition-colors ' +
+                      (scope === 'project'
+                        ? 'bg-oe-blue/10 text-oe-blue'
+                        : 'text-content-secondary hover:bg-surface-secondary')
+                    }
+                  >
+                    <Building2 className="h-3.5 w-3.5" aria-hidden />
+                    {t('price_index.escalate_scope_project', { defaultValue: 'This project' })}
+                  </button>
+                </div>
+              </label>
+
               <div className="w-44">
                 <Input
                   type="date"
@@ -808,6 +877,28 @@ function EscalatePanel({ seriesList }: { seriesList: CostIndexSeries[] }) {
                   ))}
                 </select>
               </label>
+
+              {projectMode && (
+                <label className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium text-content-primary">
+                    {t('price_index.escalate_project', { defaultValue: 'Project' })}
+                  </span>
+                  <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className={selectClass}>
+                    {projects.length === 0 && (
+                      <option value="">
+                        {projectsQ.isLoading
+                          ? t('common.loading', { defaultValue: 'Loading...' })
+                          : t('price_index.escalate_no_projects', { defaultValue: 'No projects' })}
+                      </option>
+                    )}
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
 
               <label className="flex flex-col gap-1.5 text-sm">
                 <span className="font-medium text-content-primary">
@@ -857,12 +948,21 @@ function EscalatePanel({ seriesList }: { seriesList: CostIndexSeries[] }) {
               </Button>
             </div>
 
-            {!selectorReady && (
+            {projectMode ? (
               <p className="text-xs text-content-tertiary">
-                {t('price_index.escalate_need_selector', {
-                  defaultValue: 'Pick a region or a category to choose which stored rates to escalate.',
+                {t('price_index.escalate_project_hint', {
+                  defaultValue:
+                    'Escalates only the cost rates used by this project. A region or category narrows that set further.',
                 })}
               </p>
+            ) : (
+              !selectorReady && (
+                <p className="text-xs text-content-tertiary">
+                  {t('price_index.escalate_need_selector', {
+                    defaultValue: 'Pick a region or a category to choose which stored rates to escalate.',
+                  })}
+                </p>
+              )
             )}
 
             {previewMut.isPending ? (
@@ -906,6 +1006,14 @@ function EscalateResults({ result }: { result: EscalatePreviewResponse }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2 text-sm">
+        {result.scope === 'project' && result.project_name && (
+          <Badge variant="blue" size="sm">
+            {t('price_index.escalate_scope_project_badge', {
+              defaultValue: 'rates used in {{project}}',
+              project: result.project_name,
+            })}
+          </Badge>
+        )}
         <Badge variant="success" size="sm">
           {t('price_index.escalate_count_ok', {
             defaultValue: '{{count}} escalatable',
@@ -928,6 +1036,15 @@ function EscalateResults({ result }: { result: EscalatePreviewResponse }) {
           })}
         </span>
       </div>
+
+      {result.project_fallback && (
+        <p className="text-xs text-semantic-warning">
+          {t('price_index.escalate_fallback_note', {
+            defaultValue:
+              'No cost-item links were found on this project, so its region catalogue rates are shown instead.',
+          })}
+        </p>
+      )}
 
       <div className="overflow-x-auto rounded-lg border border-border-light">
         <table className="w-full text-sm">

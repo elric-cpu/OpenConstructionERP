@@ -273,11 +273,21 @@ class EscalatePreviewRequest(BaseModel):
     ``target_date`` using the chosen index series. This is a read-only preview -
     nothing is ever written back to the cost items or the BOQ.
 
-    Selection: pass explicit ``cost_item_ids`` and / or a ``region`` /
-    ``category`` filter; every supplied constraint is applied together (AND). At
-    least one selector is required so the whole catalogue is never escalated by
-    accident. When ``series_id`` is omitted and exactly one series exists, that
-    series is used; with several series ``series_id`` must be given.
+    Two scopes decide *which* rates are escalated:
+
+    * **Catalogue** (default): pass explicit ``cost_item_ids`` and / or a
+      ``region`` / ``category`` filter; every supplied constraint is applied
+      together (AND). It escalates cost-database rows regardless of any project.
+    * **Project**: pass ``project_id`` to escalate exactly the rates the
+      project's BOQ actually references (the DISTINCT cost items its positions
+      link to via ``metadata.cost_item_id``). A supplied ``region`` /
+      ``category`` narrows that project set further (AND); ``cost_item_ids`` is
+      ignored in this scope.
+
+    At least one selector (``project_id``, ``cost_item_ids`` or a ``region`` /
+    ``category`` filter) is required so the whole catalogue is never escalated
+    by accident. When ``series_id`` is omitted and exactly one series exists,
+    that series is used; with several series ``series_id`` must be given.
     """
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -286,6 +296,11 @@ class EscalatePreviewRequest(BaseModel):
     series_id: UUID | None = Field(
         default=None,
         description="Index series to escalate against; optional when only one series exists",
+    )
+    project_id: UUID | None = Field(
+        default=None,
+        description="Escalate the rates this project's BOQ actually references (the DISTINCT cost items "
+        "its positions link to); narrowed by any region / category filter",
     )
     region: str | None = Field(default=None, max_length=50, description="Filter items by region")
     category: str | None = Field(
@@ -296,15 +311,16 @@ class EscalatePreviewRequest(BaseModel):
     cost_item_ids: list[UUID] | None = Field(
         default=None,
         max_length=5000,
-        description="Explicit cost items to escalate",
+        description="Explicit cost items to escalate (catalogue scope only)",
     )
 
     @model_validator(mode="after")
     def _require_a_selector(self) -> EscalatePreviewRequest:
+        has_project = self.project_id is not None
         has_ids = bool(self.cost_item_ids)
         has_filter = bool((self.region or "").strip() or (self.category or "").strip())
-        if not has_ids and not has_filter:
-            raise ValueError("provide cost_item_ids and / or a region / category filter to select items")
+        if not has_project and not has_ids and not has_filter:
+            raise ValueError("provide project_id, cost_item_ids and / or a region / category filter to select items")
         return self
 
 
@@ -333,7 +349,15 @@ class EscalatePreviewLine(BaseModel):
 
 
 class EscalatePreviewResponse(BaseModel):
-    """The full result of an :class:`EscalatePreviewRequest`."""
+    """The full result of an :class:`EscalatePreviewRequest`.
+
+    ``scope`` records which selection ran: ``"catalogue"`` (region / category /
+    explicit ids) or ``"project"`` (the rates a project's BOQ references). In
+    project scope ``project_id`` / ``project_name`` identify the project and
+    ``project_fallback`` is ``True`` when no position carried a typed
+    ``cost_item_id`` link so the project's own region was used as the proxy
+    instead (see the service for the documented fallback).
+    """
 
     series_id: UUID
     series_name: str
@@ -341,4 +365,8 @@ class EscalatePreviewResponse(BaseModel):
     target_period: str
     item_count: int
     escalatable_count: int
+    scope: str = "catalogue"
+    project_id: UUID | None = None
+    project_name: str | None = None
+    project_fallback: bool = False
     results: list[EscalatePreviewLine] = Field(default_factory=list)

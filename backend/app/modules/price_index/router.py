@@ -40,6 +40,7 @@ from app.modules.price_index.schemas import (
 from app.modules.price_index.service import (
     AmbiguousSeriesError,
     PriceIndexService,
+    ProjectNotFoundError,
     SeriesNotFoundError,
 )
 
@@ -313,6 +314,10 @@ async def escalate_preview(
     strictly read-only: neither the cost items nor the BOQ are modified. An item
     with no ``price_as_of`` (or an unparseable rate, or a period the series does
     not carry) comes back flagged and unescalated rather than guessed.
+
+    Pass ``project_id`` to escalate exactly the rates the project's BOQ
+    references instead of the catalogue at large; the result then carries the
+    project context.
     """
     service = PriceIndexService(session)
     try:
@@ -321,6 +326,11 @@ async def escalate_preview(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Cost-index series not found",
+        ) from exc
+    except ProjectNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
         ) from exc
     except AmbiguousSeriesError as exc:
         raise HTTPException(

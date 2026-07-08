@@ -238,6 +238,12 @@ export interface EscalatePreviewInput {
   target_date: string;
   /** Index series to escalate against; optional when only one series exists. */
   series_id?: string | null;
+  /**
+   * Escalate the rates THIS project's BOQ actually references (the DISTINCT
+   * cost items its positions link to) instead of the catalogue at large. A
+   * region/category filter narrows the project set further.
+   */
+  project_id?: string | null;
   /** Filter items by region (matches `CostItem.region`). */
   region?: string | null;
   /** Filter items by category (the top classification level / collection). */
@@ -280,6 +286,17 @@ export interface EscalatePreviewResponse {
   target_period: string;
   item_count: number;
   escalatable_count: number;
+  /** Which selection ran: `'catalogue'` (region/category/ids) or `'project'`. */
+  scope: string;
+  /** The project the rates were scoped to, or null in catalogue scope. */
+  project_id: string | null;
+  /** The project's name, for labelling the results in project scope. */
+  project_name: string | null;
+  /**
+   * True when project scope found no typed cost-item link on any position and
+   * fell back to the project's own region as the regional proxy.
+   */
+  project_fallback: boolean;
   results: EscalatePreviewLine[];
 }
 
@@ -318,6 +335,7 @@ export async function escalatePreview(
 ): Promise<EscalatePreviewResponse> {
   const payload: Record<string, unknown> = { target_date: input.target_date };
   if (input.series_id) payload.series_id = input.series_id;
+  if (input.project_id) payload.project_id = input.project_id;
   if (input.region && input.region.trim() !== '') payload.region = input.region.trim();
   if (input.category && input.category.trim() !== '') payload.category = input.category.trim();
   if (input.cost_item_ids && input.cost_item_ids.length > 0) {
