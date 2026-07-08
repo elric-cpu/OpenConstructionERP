@@ -1,8 +1,11 @@
 """Unit tests for the Cost Explorer international text-matching helpers.
 
-``app.modules.cost_explorer.search`` is pure (``re`` + ``unicodedata`` only), so
-it is loaded here directly from its file path, independent of the FastAPI
-dependency graph, and runs identically here and in CI.
+``app.modules.cost_explorer.search`` builds on the shared construction vocabulary
+in ``app.modules.catalog.synonyms``; both are pure (stdlib ``re`` + ``unicodedata``
+and the vocabulary tables) and touch no database, so the module is loaded here
+directly from its file path and runs identically here and in CI. The backend
+source dir is put on ``sys.path`` first so the shared-vocabulary import resolves
+when the file is loaded standalone.
 """
 
 from __future__ import annotations
@@ -11,7 +14,11 @@ import importlib.util
 import sys
 from pathlib import Path
 
-_PATH = Path(__file__).resolve().parents[2] / "app" / "modules" / "cost_explorer" / "search.py"
+_BACKEND = Path(__file__).resolve().parents[2]
+if str(_BACKEND) not in sys.path:
+    sys.path.insert(0, str(_BACKEND))
+
+_PATH = _BACKEND / "app" / "modules" / "cost_explorer" / "search.py"
 _spec = importlib.util.spec_from_file_location("cost_explorer_search", _PATH)
 assert _spec and _spec.loader
 search = importlib.util.module_from_spec(_spec)
@@ -185,6 +192,42 @@ def test_regex_special_query_is_escaped_not_crashing() -> None:
     # A term is escaped literally on both paths; the call returns a bool cleanly.
     assert isinstance(variant_matches("c++", hay, whole_word=True), bool)
     assert variant_matches("c++", hay, whole_word=False) is True
+
+
+# ── trade abbreviation / acronym expansion ──────────────────────────────────
+
+
+def test_acronym_expands_to_its_full_phrase() -> None:
+    # A short code stops dead-ending on zero results by also searching its phrase.
+    assert "reinforced concrete" in _variants("RC")
+    assert "concrete masonry unit" in _variants("cmu")
+    assert "mechanical electrical plumbing" in _variants("MEP")
+    assert "heating ventilation air conditioning" in _variants("hvac")
+    assert "damp proof course" in _variants("dpc")
+    assert "damp proof membrane" in _variants("dpm")
+
+
+def test_acronym_is_matched_whole_word_and_phrase_is_partial() -> None:
+    by_word = {fold(word): whole for word, whole in match_terms("RC")}
+    # The code itself matches only on word boundaries, so it cannot hide inside an
+    # unrelated word (the "rc" in "concrete").
+    assert by_word["rc"] is True
+    # Its spelled-out phrase matches as a substring, so it lands on real rows.
+    assert by_word["reinforced concrete"] is False
+
+
+def test_acronym_does_not_poison_but_finds_the_spelled_out_row() -> None:
+    # The bare code never matches inside an unrelated word...
+    assert variant_matches("rc", fold("Precast concrete panel"), whole_word=True) is False
+    # ...while the query as a whole still lands on the written-out concept.
+    hay = fold("Foundation - reinforced concrete grade C30")
+    assert any(variant_matches(v, hay, whole_word=whole) for v, whole in match_terms("RC"))
+
+
+def test_ordinary_word_is_unaffected_by_abbreviations() -> None:
+    # A normal word still matches as a substring (partial), exactly as before.
+    by_word = {fold(word): whole for word, whole in match_terms("concrete")}
+    assert by_word["concrete"] is False
 
 
 # ── user guidance hints ─────────────────────────────────────────────────────

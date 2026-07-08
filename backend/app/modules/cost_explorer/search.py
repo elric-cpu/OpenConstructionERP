@@ -11,19 +11,23 @@ the two so a search still lands on the right priced work:
   intact so a Russian term still matches a Russian row.
 * :func:`match_terms` - expand a search word into the set of interchangeable
   construction terms across English, German, French, Spanish, Italian and
-  Russian, plus simple singular/plural variants. Each variant is tagged as a
-  *partial* match (the user's own word, matched as a substring so partial typing
-  still finds a row) or a *whole word* match (a machine-injected cross-language
-  synonym, matched on word boundaries so a short foreign word cannot poison the
-  result by hiding inside an unrelated English word).
+  Russian, plus simple singular/plural variants and trade acronym expansions.
+  Each variant is tagged as a *partial* match (the user's own word, matched as a
+  substring so partial typing still finds a row) or a *whole word* match (a
+  machine-injected cross-language synonym or short acronym, matched on word
+  boundaries so a short foreign word cannot poison the result by hiding inside an
+  unrelated English word).
 * :func:`variant_matches` - apply one variant against an already-folded haystack
   with the right partial / whole-word rule.
 * :func:`text_search_hint` / :func:`by_resources_hint` - a short, plain-language,
   translation-ready hint telling a user what to try when a search returns
   nothing or only weak matches.
 
-Pure and stdlib-only (``re`` + ``unicodedata``), so it imports and unit-tests on
-any interpreter, independent of the FastAPI dependency graph.
+The construction vocabulary (:data:`~app.modules.catalog.synonyms.SYNONYM_GROUPS`,
+:data:`~app.modules.catalog.synonyms.ABBREVIATIONS`) and :func:`fold` live in the
+shared layer :mod:`app.modules.catalog.synonyms`, loaded by the resource catalog
+search too so the two never drift apart. This module adds only ``re``-based
+matching on top, so it stays pure and touches no database.
 
 The vocabulary is kept deliberately conservative: only genuinely interchangeable
 words share a group. Related-but-distinct materials (a brick is not a block, a
@@ -34,8 +38,9 @@ dragging in the wrong resource.
 from __future__ import annotations
 
 import re
-import unicodedata
 from dataclasses import dataclass
+
+from app.modules.catalog.synonyms import ABBREVIATIONS, SYNONYM_GROUPS, fold
 
 # Cap the number of variants a single search word expands into, so the OR-search
 # it drives stays bounded even for a word that sits in a large multilingual group.
@@ -44,22 +49,6 @@ _MAX_VARIANTS = 18
 # Regex metacharacters that must be escaped before a folded variant is spliced
 # into a word-boundary pattern (PostgreSQL ``~*`` regex or Python :mod:`re`).
 _RX_SPECIAL = set(r".^$*+?()[]{}|\\")
-
-
-def fold(text: str) -> str:
-    """Normalise a string for accent-insensitive, case-insensitive comparison.
-
-    Decomposes accented Latin letters and drops the combining marks (so ``Béton``
-    folds to ``beton`` and ``hormigón`` to ``hormigon``), collapses runs of
-    whitespace to single spaces, trims, and lowercases. Non-Latin scripts such as
-    Cyrillic carry no combining marks here and survive unchanged, so a Russian
-    query still matches a Russian row.
-    """
-    if not text:
-        return ""
-    decomposed = unicodedata.normalize("NFKD", text)
-    stripped = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
-    return re.sub(r"\s+", " ", stripped).strip().casefold()
 
 
 def _rx_escape(term: str) -> str:
@@ -86,200 +75,12 @@ def boundary_pattern(term: str) -> str:
     return _rx_escape(term)
 
 
-# Groups of interchangeable construction terms. Typing any member searches for
-# every member. Each group spans the trades and materials estimators search for
-# most, across English, German, French, Spanish, Italian and Russian, plus the
-# common US/UK spelling pairs. Accented spellings are listed as authored; the
-# folded (accent-stripped) form is added automatically by :func:`match_terms`,
-# so a base that stored either spelling is still reached.
-_GROUPS: tuple[frozenset[str], ...] = (
-    frozenset({"concrete", "beton", "béton", "hormigón", "calcestruzzo", "бетон"}),
-    frozenset({"cement", "opc", "portland cement", "zement", "ciment", "cemento", "цемент"}),
-    frozenset(
-        {
-            "rebar",
-            "reinforcement",
-            "reinforcing",
-            "reinforcing bar",
-            "reinforcing steel",
-            "reinforcement steel",
-            "bewehrung",
-            "betonstahl",
-            "armature",
-            "armadura",
-            "armatura",
-            "арматура",
-        }
-    ),
-    frozenset({"steel", "stahl", "acier", "acero", "acciaio", "сталь"}),
-    frozenset({"formwork", "shuttering", "schalung", "coffrage", "encofrado", "cassaforma", "опалубка"}),
-    frozenset({"brick", "brickwork", "ziegel", "brique", "ladrillo", "mattone", "кирпич"}),
-    frozenset({"block", "blockwork", "hohlblock", "bloc", "bloque", "blocco", "блок"}),
-    frozenset(
-        {
-            "plaster",
-            "plastering",
-            "render",
-            "rendering",
-            "putz",
-            "enduit",
-            "enlucido",
-            "revoco",
-            "intonaco",
-            "штукатурка",
-        }
-    ),
-    frozenset(
-        {
-            "paint",
-            "painting",
-            "emulsion",
-            "anstrich",
-            "peinture",
-            "pintura",
-            "pittura",
-            "vernice",
-            "краска",
-        }
-    ),
-    frozenset(
-        {
-            "insulation",
-            "insulating",
-            "dämmung",
-            "dammung",
-            "isolation",
-            "aislamiento",
-            "isolamento",
-            "изоляция",
-            "утеплитель",
-        }
-    ),
-    frozenset(
-        {
-            "excavation",
-            "excavate",
-            "earthwork",
-            "earthworks",
-            "aushub",
-            "erdarbeiten",
-            "terrassement",
-            "excavación",
-            "excavacion",
-            "scavo",
-            "земляные",
-            "выемка",
-        }
-    ),
-    frozenset(
-        {
-            "waterproofing",
-            "waterproof",
-            "tanking",
-            "abdichtung",
-            "étanchéité",
-            "etancheite",
-            "impermeabilización",
-            "impermeabilizacion",
-            "impermeabilizzazione",
-            "гидроизоляция",
-        }
-    ),
-    frozenset(
-        {"scaffold", "scaffolding", "gerüst", "geruest", "échafaudage", "echafaudage", "andamio", "ponteggio", "леса"}
-    ),
-    frozenset({"timber", "lumber", "wood", "holz", "bois", "madera", "legno", "древесина", "дерево"}),
-    frozenset(
-        {
-            "tile",
-            "tiles",
-            "tiling",
-            "fliese",
-            "carrelage",
-            "baldosa",
-            "azulejo",
-            "piastrella",
-            "плитка",
-        }
-    ),
-    frozenset({"door", "doors", "tür", "tuer", "porte", "puerta", "porta", "дверь"}),
-    frozenset({"window", "windows", "fenster", "fenêtre", "fenetre", "ventana", "finestra", "окно"}),
-    frozenset(
-        {
-            "roof",
-            "roofing",
-            "dach",
-            "toiture",
-            "tejado",
-            "cubierta",
-            "tetto",
-            "copertura",
-            "крыша",
-            "кровля",
-        }
-    ),
-    frozenset(
-        {
-            "labour",
-            "labor",
-            "manpower",
-            "workman",
-            "arbeit",
-            "lohn",
-            "main d oeuvre",
-            "mano de obra",
-            "manodopera",
-            "труд",
-        }
-    ),
-    frozenset(
-        {
-            "plant",
-            "equipment",
-            "machinery",
-            "geräte",
-            "geraete",
-            "maschinen",
-            "maquinaria",
-            "attrezzatura",
-            "оборудование",
-        }
-    ),
-    frozenset({"pipe", "piping", "rohr", "tuyau", "tube", "tubo", "труба"}),
-    frozenset({"sand", "sable", "arena", "sabbia", "песок"}),
-    frozenset(
-        {
-            "aggregate",
-            "gravel",
-            "ballast",
-            "kies",
-            "schotter",
-            "gravier",
-            "grava",
-            "árido",
-            "arido",
-            "ghiaia",
-            "щебень",
-            "гравий",
-        }
-    ),
-    frozenset({"glass", "glazing", "glas", "verre", "vidrio", "vetro", "стекло"}),
-    frozenset({"mortar", "mörtel", "moertel", "mortier", "mortero", "malta", "раствор"}),
-    frozenset({"asphalt", "tarmac", "blacktop", "asphalte", "asfalto", "асфальт"}),
-    frozenset({"waterstop", "waterbar"}),
-    # US / UK spelling pairs that appear verbatim in resource and work names.
-    frozenset({"fibre", "fiber"}),
-    frozenset({"aluminium", "aluminum"}),
-    frozenset({"colour", "color"}),
-    frozenset({"mould", "mold"}),
-    frozenset({"galvanised", "galvanized"}),
-)
-
-# Folded term -> the full group it belongs to (built once at import). Folding the
-# key means an accented ("béton") and an unaccented ("beton") spelling of the
-# same word resolve to the same group.
+# Folded term -> the full multilingual group it belongs to (built once at import)
+# from the shared vocabulary, so typing any member - English or international -
+# searches for every member. Folding the key means an accented ("beton") and an
+# unaccented spelling of the same word resolve to the same group.
 _INDEX: dict[str, frozenset[str]] = {}
-for _group in _GROUPS:
+for _group in SYNONYM_GROUPS:
     for _term in _group:
         _INDEX.setdefault(fold(_term), _group)
 
@@ -314,31 +115,50 @@ def match_terms(term: str, limit: int = _MAX_VARIANTS) -> list[tuple[str, bool]]
     from the same group follow as *whole word* matches (``whole_word`` True), so a
     short foreign word (for example French ``porte`` for a door) matches a real
     word in a description and never hides inside an unrelated English word (such
-    as "supported"). Deduped by folded spelling and capped by ``limit``.
+    as "supported").
+
+    A trade acronym (``rc``, ``cmu``, ``mep``, ``hvac`` ...) is handled specially:
+    the code itself is matched as a *whole word* so a two-letter token cannot hide
+    inside an unrelated word, and its spelled-out phrase is added as a *partial*
+    match so the search lands on the rows that write the concept out in full
+    instead of dead-ending on zero results. Deduped by folded spelling and capped
+    by ``limit``.
     """
     original = term.strip()
     if not original:
         return []
+    key = fold(original)
+    abbreviation = ABBREVIATIONS.get(key)
     out: list[tuple[str, bool]] = []
     seen: set[str] = set()
 
     def push(candidate: str, whole_word: bool) -> None:
-        key = candidate.casefold()
-        if candidate and key not in seen:
-            seen.add(key)
+        folded = candidate.casefold()
+        if candidate and folded not in seen:
+            seen.add(folded)
             out.append((candidate, whole_word))
 
-    push(original, False)
-    key = fold(original)
-    push(key, False)
-    for variant in _number_variants(key):
-        push(variant, False)
+    # A known acronym is matched on word boundaries (never as a substring), so a
+    # short code cannot hide inside an unrelated word; an ordinary word stays a
+    # partial substring match so partial typing still lands.
+    push(original, abbreviation is not None)
+    push(key, abbreviation is not None)
+    if abbreviation is None:
+        for variant in _number_variants(key):
+            push(variant, False)
 
     group = _INDEX.get(key)
     if group:
         for member in sorted(group):
             push(member, True)
             push(fold(member), True)
+
+    # A known acronym also searches for its spelled-out phrase(s), matched as a
+    # substring: the phrase is long and specific, so recall widens without the
+    # short code poisoning the result.
+    if abbreviation is not None:
+        for phrase in abbreviation:
+            push(phrase, False)
 
     return out[:limit]
 
