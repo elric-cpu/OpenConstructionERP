@@ -2368,11 +2368,7 @@ class MatchElementsService:
                         strong.add(str(item.code))
                         exact_code = str(item.code)
                     winners[sig] = item
-            weak = {
-                code
-                for code, count in (picks_by_sig.get(sig) or {}).items()
-                if count >= _PRIOR_PICK_MIN_HISTORY
-            }
+            weak = {code for code, count in (picks_by_sig.get(sig) or {}).items() if count >= _PRIOR_PICK_MIN_HISTORY}
             weak.discard(exact_code or "")
             weak -= strong
             ctx = prior_pick.PriorPickContext(

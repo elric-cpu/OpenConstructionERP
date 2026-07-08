@@ -36,9 +36,7 @@ class Allowance(Base):
     """
 
     __tablename__ = "oe_allowances_allowance"
-    __table_args__ = (
-        Index("ix_allowances_allowance_project_type", "project_id", "allowance_type"),
-    )
+    __table_args__ = (Index("ix_allowances_allowance_project_type", "project_id", "allowance_type"),)
 
     # Scoped to a project; the row cascades away with the project it belongs to.
     project_id: Mapped[uuid.UUID] = mapped_column(
@@ -91,9 +89,7 @@ class AllowanceDrawdown(Base):
     """
 
     __tablename__ = "oe_allowances_drawdown"
-    __table_args__ = (
-        Index("ix_allowances_drawdown_allowance_created", "allowance_id", "created_at"),
-    )
+    __table_args__ = (Index("ix_allowances_drawdown_allowance_created", "allowance_id", "created_at"),)
 
     allowance_id: Mapped[uuid.UUID] = mapped_column(
         GUID(),

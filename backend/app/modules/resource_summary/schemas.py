@@ -55,7 +55,7 @@ class ResourceStatementLine(BaseModel):
         return _money(v)
 
     @classmethod
-    def from_line(cls, line: ResourceLine) -> "ResourceStatementLine":
+    def from_line(cls, line: ResourceLine) -> ResourceStatementLine:
         return cls(
             kind=line.kind.value,
             kind_i18n_key=kind_i18n_key(line.kind),
@@ -88,7 +88,7 @@ class ResourceStatementGroup(BaseModel):
         return None if v is None else _qty(v)
 
     @classmethod
-    def from_group(cls, group: ResourceKindGroup) -> "ResourceStatementGroup":
+    def from_group(cls, group: ResourceKindGroup) -> ResourceStatementGroup:
         total_hours = group.total_quantity if group.kind is ResourceKind.LABOUR else None
         return cls(
             kind=group.kind.value,
@@ -128,7 +128,7 @@ class ResourceStatementResponse(BaseModel):
         *,
         project_id: uuid.UUID,
         generated_at: datetime,
-    ) -> "ResourceStatementResponse":
+    ) -> ResourceStatementResponse:
         return cls(
             project_id=project_id,
             generated_at=generated_at,

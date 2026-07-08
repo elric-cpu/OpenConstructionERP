@@ -42,9 +42,7 @@ class ResourceSummaryService:
             from app.modules.projects.models import Project
 
             row = (
-                await self.session.execute(
-                    select(Project.currency, Project.fx_rates).where(Project.id == project_id)
-                )
+                await self.session.execute(select(Project.currency, Project.fx_rates).where(Project.id == project_id))
             ).first()
         except Exception:  # noqa: BLE001 - never break the statement on this lookup
             logger.debug("Project currency lookup failed for %s", project_id, exc_info=True)
@@ -72,8 +70,7 @@ class ResourceSummaryService:
         base_currency, fx_map = await self._resolve_project_currency(project_id)
         positions = await self.position_repo.list_for_project(project_id)
         position_dicts = [
-            {"id": str(pos.id), "quantity": pos.quantity, "metadata_": pos.metadata_ or {}}
-            for pos in positions
+            {"id": str(pos.id), "quantity": pos.quantity, "metadata_": pos.metadata_ or {}} for pos in positions
         ]
         statement = aggregate_resource_statement(
             position_dicts,
