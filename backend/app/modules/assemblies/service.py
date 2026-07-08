@@ -10,7 +10,9 @@ Stateless service layer. Handles:
 """
 
 import logging
+import time
 import uuid
+from collections.abc import Sequence
 from decimal import Decimal, InvalidOperation
 
 from fastapi import HTTPException, status
@@ -19,6 +21,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.events import event_bus
 from app.core.i18n import get_locale
 from app.core.validation.messages import translate
+from app.modules.assemblies.formula_engine import (
+    FormulaEvaluator,
+    classify_material_kind,
+    classify_resource_type,
+    default_component_metadata,
+    parse_dimensions,
+    synthesize_factor,
+)
 from app.modules.assemblies.models import Assembly, Component
 from app.modules.assemblies.repository import AssemblyRepository, ComponentRepository
 from app.modules.assemblies.schemas import (
@@ -177,6 +187,109 @@ def _str_to_float(value: str | None) -> float:
         return float(value)
     except (ValueError, TypeError):
         return 0.0
+
+
+def _safe_item_rate_decimal(item: object) -> Decimal:
+    """Read a catalogue item's rate as a finite, non-negative Decimal.
+
+    The cost catalogue stores ``rate`` as a string (SQLite/JSON precision);
+    a blank or malformed value degrades to ``Decimal("0")`` instead of
+    raising, so a single bad row never breaks the whole preview.
+    """
+    raw = getattr(item, "rate", 0)
+    try:
+        value = Decimal(str(raw))
+    except (InvalidOperation, ValueError, TypeError):
+        return Decimal("0")
+    if not value.is_finite() or value < 0:
+        return Decimal("0")
+    return value
+
+
+def synthesize_ai_components(
+    description: str,
+    assembly_unit: str,
+    found_items: Sequence[object],
+    *,
+    max_components: int = 15,
+) -> list[dict[str, object]]:
+    """Build grounded assembly-component previews from catalogue matches.
+
+    For every catalogue item this classifies the resource type (material /
+    labour / equipment) and, for materials, the construction kind (concrete /
+    rebar / formwork / …), then asks the factor synthesizer for a real
+    per-unit quantity grounded in the assembly's parsed dimensions instead of
+    the naive ``1.0``. The catalogue rate is preserved untouched; only the
+    quantity-per-unit is proposed, and each line carries typed waste/burden
+    metadata plus an audit trail (the formula and any assumptions) so the
+    estimator can review and edit before saving.
+
+    The returned dicts are wire-compatible with the existing AI-generate
+    preview: ``quantity`` carries the synthesized per-unit factor (the field
+    the assembly editor persists), and ``total`` = ``quantity`` × rate. Money
+    is computed with ``Decimal`` and floated only at the preview boundary,
+    matching the endpoint's established float-preview contract.
+
+    Args:
+        description: The natural-language assembly description.
+        assembly_unit: The finished assembly's unit (drives the factor basis).
+        found_items: Catalogue items matched for the description.
+        max_components: Hard cap on the number of components returned.
+
+    Returns:
+        A list of preview-component dicts.
+    """
+    dims = parse_dimensions(description)
+    engine = FormulaEvaluator()
+    components: list[dict[str, object]] = []
+    for idx, item in enumerate(list(found_items)[:max_components]):
+        item_desc = str(getattr(item, "description", "") or "")[:200]
+        item_code = str(getattr(item, "code", "") or "")
+        component_unit = str(getattr(item, "unit", "") or assembly_unit)
+        raw_meta = getattr(item, "metadata_", None)
+        item_type = str(raw_meta.get("type", "")) if isinstance(raw_meta, dict) else ""
+        resource_type = classify_resource_type(item_desc, getattr(item, "tags", None), item_type)
+        material_kind = classify_material_kind(item_desc)
+
+        synth = synthesize_factor(
+            resource_type=resource_type,
+            component_unit=component_unit,
+            assembly_unit=assembly_unit,
+            dims=dims,
+            description=item_desc,
+            evaluator=engine,
+        )
+        per_unit = synth.factor
+        rate = _safe_item_rate_decimal(item)
+        line_total = rate * Decimal(str(per_unit))
+
+        metadata: dict[str, object] = dict(default_component_metadata(resource_type, material_kind))
+        metadata["resource_type"] = resource_type
+        metadata["factor_basis"] = synth.basis
+        metadata["factor_formula"] = synth.formula
+        if synth.assumptions:
+            metadata["assumptions"] = list(synth.assumptions)
+
+        components.append(
+            {
+                "name": item_desc,
+                "code": item_code,
+                "unit": component_unit,
+                # ``quantity`` carries the synthesized per-unit factor: the
+                # assembly editor persists this field (factor stays 1.0), so
+                # the grounded coefficient must live here to survive the save.
+                "quantity": per_unit,
+                "factor": 1.0,
+                "unit_rate": round(float(rate), 2),
+                "total": round(float(line_total), 2),
+                "type": resource_type,
+                "resource_type": resource_type,
+                "sort_order": idx,
+                "cost_item_id": str(getattr(item, "id", "") or ""),
+                "metadata": metadata,
+            }
+        )
+    return components
 
 
 # Upper bound for a metadata multiplier (waste_pct / burden_pct /
@@ -1260,6 +1373,112 @@ class AssemblyService:
             "total": total,
             "most_used": most_used,
             "by_category": by_category,
+        }
+
+    # ── AI generate (grounded factor synthesis) ───────────────────────────
+
+    async def ai_generate_preview(
+        self,
+        *,
+        description: str,
+        unit: str,
+        region: str | None = None,
+        max_components: int = 15,
+    ) -> dict[str, object]:
+        """Generate a grounded, non-persisted assembly preview from free text.
+
+        Searches the cost catalogue for matches, then synthesizes a real
+        per-unit factor for each line (see :func:`synthesize_ai_components`)
+        instead of the naive ``quantity = 1.0``. Nothing is saved: the
+        estimator reviews and edits the draft before creating the assembly,
+        matching the platform's human-confirms-AI rule. Rates stay catalogue
+        grounded; only the quantities-per-unit are proposed.
+
+        Args:
+            description: The natural-language description to build from.
+            unit: The target assembly unit.
+            region: Optional region to bias catalogue matches.
+            max_components: Hard cap on components returned.
+
+        Returns:
+            A preview dict with the draft name/code, the synthesized
+            components, the rolled-up total rate, a match count and a
+            confidence score.
+        """
+        from sqlalchemy import select
+
+        from app.modules.costs.models import CostItem
+
+        text = (description or "").strip()
+        terms = [word for word in text.split() if len(word) >= 3]
+
+        # Strategy 1: full-description ILIKE.
+        pattern = f"%{text}%"
+        stmt = (
+            select(CostItem)
+            .where(CostItem.is_active.is_(True), CostItem.description.ilike(pattern))
+            .limit(max_components)
+        )
+        result = await self.session.execute(stmt)
+        found: list[object] = list(result.scalars().all())
+
+        # Strategy 2: fall back to per-keyword search when too few matches.
+        if len(found) < 3 and terms:
+            seen = {getattr(i, "id", None) for i in found}
+            for term in terms[:5]:
+                kw_stmt = (
+                    select(CostItem)
+                    .where(CostItem.is_active.is_(True), CostItem.description.ilike(f"%{term}%"))
+                    .limit(8)
+                )
+                kw_result = await self.session.execute(kw_stmt)
+                for item in kw_result.scalars().all():
+                    if getattr(item, "id", None) not in seen:
+                        found.append(item)
+                        seen.add(getattr(item, "id", None))
+                if len(found) >= max_components:
+                    break
+
+        # Optional region bias: keep global rows plus rows for this region.
+        if region and found:
+            region_items = [
+                i for i in found if getattr(i, "region", None) is None or getattr(i, "region", "") == region
+            ]
+            if region_items:
+                found = region_items
+
+        found = found[:max_components]
+        components = synthesize_ai_components(text, unit, found, max_components=max_components)
+        total_rate = round(sum(float(comp["total"]) for comp in components), 2)
+
+        count = len(components)
+        if count >= 5:
+            confidence = 0.8
+        elif count >= 3:
+            confidence = 0.6
+        elif count >= 1:
+            confidence = 0.4
+        else:
+            confidence = 0.1
+
+        logger.info(
+            "AI assembly preview for '%s': %d components, total=%.2f",
+            text[:50],
+            count,
+            total_rate,
+        )
+
+        return {
+            "name": f"Generated: {text[:100]}",
+            "code": f"AI-{int(time.time())}",
+            "unit": unit,
+            "category": "",
+            "components": components,
+            "total_rate": total_rate,
+            "source_items_count": count,
+            "confidence": confidence,
+            "description": text,
+            "region": region or "",
         }
 
     # ── Reorder ──────────────────────────────────────────────────────────
