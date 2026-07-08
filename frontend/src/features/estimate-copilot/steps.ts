@@ -188,3 +188,143 @@ export function progressPercent(confirmedCount: number): number {
   const c = clampConfirmedCount(confirmedCount);
   return Math.round((c / COPILOT_STEP_COUNT) * 100);
 }
+
+// ── Persistence ──────────────────────────────────────────────────────────────
+//
+// The flow is saved per project so a reload lands the user back on the step
+// they were on. Everything here is pure (key building + defensive parsing); the
+// React hook owns the actual localStorage reads and writes.
+
+/**
+ * Storage schema version. Bump it when {@link CopilotPersistedState} changes so
+ * an entry written by an older layout is ignored rather than misread.
+ */
+export const COPILOT_STORAGE_VERSION = 1;
+
+/** Versioned localStorage key prefix for the persisted copilot flow. */
+export const COPILOT_STORAGE_PREFIX = `oe.copilot.flow.v${COPILOT_STORAGE_VERSION}`;
+
+/**
+ * Build the per-project localStorage key, or `null` when no project is selected
+ * (nothing to persist against). Keying by project id scopes saved progress to
+ * one project; the stored {@link CopilotPersistedState.boqId} then guards
+ * against restoring progress that belongs to a different BOQ in that project.
+ */
+export function copilotStorageKey(projectId: string | null | undefined): string | null {
+  if (!projectId) return null;
+  return `${COPILOT_STORAGE_PREFIX}:${projectId}`;
+}
+
+/** Persisted, per-project snapshot of the guided flow. */
+export interface CopilotPersistedState {
+  /** How many leading steps the user has confirmed (0..COPILOT_STEP_COUNT). */
+  confirmedCount: number;
+  /** Ids of steps that have produced a result at least once. */
+  ranSteps: CopilotStepId[];
+  /** BOQ the progress belongs to; used to reject a cross-BOQ restore. */
+  boqId: string | null;
+}
+
+/** The set of known step ids, for validating untrusted stored values. */
+const KNOWN_STEP_IDS: ReadonlySet<string> = new Set<string>(COPILOT_STEPS.map((s) => s.id));
+
+/** Narrow an untrusted value to a known {@link CopilotStepId}. */
+function isKnownStepId(value: unknown): value is CopilotStepId {
+  return typeof value === 'string' && KNOWN_STEP_IDS.has(value);
+}
+
+/**
+ * Filter an untrusted value into the known step ids it contains, preserving
+ * order and dropping duplicates and anything unrecognised. Non-arrays yield an
+ * empty list. Never throws.
+ */
+export function sanitizeRanSteps(raw: unknown): CopilotStepId[] {
+  if (!Array.isArray(raw)) return [];
+  const out: CopilotStepId[] = [];
+  for (const value of raw) {
+    if (isKnownStepId(value) && !out.includes(value)) out.push(value);
+  }
+  return out;
+}
+
+/**
+ * Coerce an untrusted parsed value (typically from localStorage) into a valid
+ * {@link CopilotPersistedState}, or `null` when it is not a usable object.
+ * `confirmedCount` is clamped via {@link clampConfirmedCount}, `ranSteps` is
+ * filtered to known ids, and a non-string `boqId` becomes `null`. Never throws.
+ */
+export function parsePersistedState(raw: unknown): CopilotPersistedState | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
+  const obj = raw as Record<string, unknown>;
+  return {
+    confirmedCount: clampConfirmedCount(Number(obj.confirmedCount)),
+    ranSteps: sanitizeRanSteps(obj.ranSteps),
+    boqId: typeof obj.boqId === 'string' ? obj.boqId : null,
+  };
+}
+
+// ── Readiness ────────────────────────────────────────────────────────────────
+//
+// The readiness summary answers one question at a glance: is the estimate ready
+// to review? A step counts as "done" once confirmed; the estimate is
+// review-ready once every step is confirmed (which, because a step can only be
+// confirmed after producing a result, also means every step has been run).
+
+/** Readiness of one step for the summary panel. */
+export interface StepReadiness {
+  id: CopilotStepId;
+  order: number;
+  phase: StepPhase;
+  /** The user has confirmed this step. */
+  confirmed: boolean;
+  /** This step has produced a result (a confirmed step always has). */
+  hasResult: boolean;
+}
+
+/** Derived readiness of the whole guided flow for the summary panel. */
+export interface FlowReadiness {
+  steps: StepReadiness[];
+  /** Number of confirmed (done) steps. */
+  confirmedCount: number;
+  /** Number of steps that have produced a result. */
+  ranCount: number;
+  total: number;
+  /**
+   * True once every step is confirmed. Because a step can only be confirmed
+   * after it has produced a result, this also implies every step has been run.
+   */
+  reviewReady: boolean;
+}
+
+/**
+ * Derive the flow's readiness from the confirmed count and the ids of steps
+ * that have produced a result. A step is "done" when confirmed; the estimate is
+ * review-ready once all steps are confirmed. Pure - drives the summary panel.
+ */
+export function deriveReadiness(
+  confirmedCount: number,
+  ranStepIds: readonly CopilotStepId[] = [],
+): FlowReadiness {
+  const c = clampConfirmedCount(confirmedCount);
+  const ran = new Set<CopilotStepId>(ranStepIds);
+  const steps: StepReadiness[] = COPILOT_STEPS.map((def) => {
+    const phase = stepPhase(def.order, c);
+    const confirmed = phase === 'confirmed';
+    return {
+      id: def.id,
+      order: def.order,
+      phase,
+      confirmed,
+      // Confirmed steps have a result by construction; otherwise consult the
+      // ran set (which may carry a result restored from a previous session).
+      hasResult: confirmed || ran.has(def.id),
+    };
+  });
+  return {
+    steps,
+    confirmedCount: c,
+    ranCount: steps.filter((s) => s.hasResult).length,
+    total: COPILOT_STEP_COUNT,
+    reviewReady: isComplete(c),
+  };
+}

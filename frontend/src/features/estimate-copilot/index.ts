@@ -17,7 +17,12 @@ export {
 export {
   COPILOT_STEPS,
   COPILOT_STEP_COUNT,
+  copilotStorageKey,
+  deriveReadiness,
   type CopilotStepId,
   type CopilotStepDef,
   type StepPhase,
+  type CopilotPersistedState,
+  type StepReadiness,
+  type FlowReadiness,
 } from './steps';

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   COPILOT_STEPS,
   COPILOT_STEP_COUNT,
+  COPILOT_STORAGE_PREFIX,
   indexOfStep,
   stepAt,
   clampConfirmedCount,
@@ -15,6 +16,10 @@ import {
   revisitStep,
   isComplete,
   progressPercent,
+  copilotStorageKey,
+  sanitizeRanSteps,
+  parsePersistedState,
+  deriveReadiness,
   type CopilotStepId,
 } from './steps';
 
@@ -221,5 +226,133 @@ describe('isComplete / progressPercent', () => {
   it('clamps progress for out-of-range counts', () => {
     expect(progressPercent(-1)).toBe(0);
     expect(progressPercent(99)).toBe(100);
+  });
+});
+
+describe('copilotStorageKey', () => {
+  it('builds a versioned, project-scoped key', () => {
+    expect(copilotStorageKey('p1')).toBe(`${COPILOT_STORAGE_PREFIX}:p1`);
+    expect(copilotStorageKey('p1')?.startsWith(COPILOT_STORAGE_PREFIX)).toBe(true);
+  });
+
+  it('gives distinct projects distinct keys', () => {
+    expect(copilotStorageKey('p1')).not.toBe(copilotStorageKey('p2'));
+  });
+
+  it('returns null when there is no project to key against', () => {
+    expect(copilotStorageKey(null)).toBeNull();
+    expect(copilotStorageKey(undefined)).toBeNull();
+    expect(copilotStorageKey('')).toBeNull();
+  });
+});
+
+describe('sanitizeRanSteps', () => {
+  it('keeps known step ids in order', () => {
+    expect(sanitizeRanSteps(['conceptual', 'scope', 'audit'])).toEqual([
+      'conceptual',
+      'scope',
+      'audit',
+    ]);
+  });
+
+  it('drops unknown ids and non-string entries', () => {
+    expect(sanitizeRanSteps(['scope', 'nope', 42, null, 'basis'])).toEqual(['scope', 'basis']);
+  });
+
+  it('removes duplicates, first occurrence wins', () => {
+    expect(sanitizeRanSteps(['scope', 'scope', 'audit', 'scope'])).toEqual(['scope', 'audit']);
+  });
+
+  it('returns an empty list for non-array input', () => {
+    expect(sanitizeRanSteps(null)).toEqual([]);
+    expect(sanitizeRanSteps('scope')).toEqual([]);
+    expect(sanitizeRanSteps(undefined)).toEqual([]);
+  });
+});
+
+describe('parsePersistedState', () => {
+  it('rejects non-object and array values', () => {
+    expect(parsePersistedState(null)).toBeNull();
+    expect(parsePersistedState('x')).toBeNull();
+    expect(parsePersistedState(7)).toBeNull();
+    expect(parsePersistedState([1, 2])).toBeNull();
+  });
+
+  it('fills a well-formed default from an empty object', () => {
+    expect(parsePersistedState({})).toEqual({ confirmedCount: 0, ranSteps: [], boqId: null });
+  });
+
+  it('preserves a valid snapshot', () => {
+    expect(
+      parsePersistedState({ confirmedCount: 2, ranSteps: ['conceptual', 'scope'], boqId: 'b1' }),
+    ).toEqual({ confirmedCount: 2, ranSteps: ['conceptual', 'scope'], boqId: 'b1' });
+  });
+
+  it('clamps the confirmed count and defends against non-finite values', () => {
+    expect(parsePersistedState({ confirmedCount: 99 })?.confirmedCount).toBe(COPILOT_STEP_COUNT);
+    expect(parsePersistedState({ confirmedCount: -4 })?.confirmedCount).toBe(0);
+    expect(parsePersistedState({ confirmedCount: 'abc' })?.confirmedCount).toBe(0);
+    expect(parsePersistedState({ confirmedCount: 1.9 })?.confirmedCount).toBe(1);
+  });
+
+  it('sanitizes ran steps and a non-string boqId', () => {
+    const parsed = parsePersistedState({
+      confirmedCount: 1,
+      ranSteps: ['scope', 'bogus', 'scope'],
+      boqId: 123,
+    });
+    expect(parsed).toEqual({ confirmedCount: 1, ranSteps: ['scope'], boqId: null });
+  });
+});
+
+describe('deriveReadiness', () => {
+  it('starts with only the first step active and nothing done', () => {
+    const r = deriveReadiness(0, []);
+    expect(r.reviewReady).toBe(false);
+    expect(r.confirmedCount).toBe(0);
+    expect(r.ranCount).toBe(0);
+    expect(r.total).toBe(COPILOT_STEP_COUNT);
+    expect(r.steps.map((s) => s.phase)).toEqual(['active', 'locked', 'locked', 'locked']);
+    expect(r.steps.every((s) => !s.confirmed)).toBe(true);
+  });
+
+  it('treats every confirmed step as done and having a result', () => {
+    const r = deriveReadiness(2, []);
+    expect(r.steps[0]?.confirmed).toBe(true);
+    expect(r.steps[0]?.hasResult).toBe(true);
+    expect(r.steps[1]?.confirmed).toBe(true);
+    expect(r.steps[1]?.hasResult).toBe(true);
+    // confirmed steps count as results even when absent from the ran set
+    expect(r.ranCount).toBe(2);
+    expect(r.reviewReady).toBe(false);
+  });
+
+  it('marks a run-but-unconfirmed active step as having a result', () => {
+    const r = deriveReadiness(2, ['audit']);
+    const audit = r.steps[2];
+    expect(audit?.phase).toBe('active');
+    expect(audit?.confirmed).toBe(false);
+    expect(audit?.hasResult).toBe(true);
+    expect(r.ranCount).toBe(3); // two confirmed + audit
+    expect(r.reviewReady).toBe(false);
+  });
+
+  it('is review-ready only once every step is confirmed', () => {
+    const r = deriveReadiness(COPILOT_STEP_COUNT, []);
+    expect(r.reviewReady).toBe(true);
+    expect(r.confirmedCount).toBe(COPILOT_STEP_COUNT);
+    expect(r.ranCount).toBe(COPILOT_STEP_COUNT);
+    expect(r.steps.every((s) => s.confirmed)).toBe(true);
+  });
+
+  it('clamps an out-of-range confirmed count', () => {
+    expect(deriveReadiness(99, []).reviewReady).toBe(true);
+    expect(deriveReadiness(-1, []).confirmedCount).toBe(0);
+  });
+
+  it('defaults the ran set to empty when omitted', () => {
+    const r = deriveReadiness(1);
+    expect(r.ranCount).toBe(1); // the single confirmed step
+    expect(r.reviewReady).toBe(false);
   });
 });

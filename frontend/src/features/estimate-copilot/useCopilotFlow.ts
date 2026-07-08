@@ -4,8 +4,10 @@
 //
 // Thin orchestration over four capabilities the platform already exposes over
 // HTTP. This hook owns the React Query mutations, the conceptual step's ROM
-// inputs, and the per-step confirm state; the ordering/gating rules live in
-// `steps.ts` (pure, unit tested).
+// inputs, the per-step confirm state, and its persistence to localStorage (per
+// project, so a reload lands the user back on the step they were on); the
+// ordering/gating/readiness/persistence rules live in `steps.ts` (pure, unit
+// tested).
 //
 // Endpoints chained:
 //   1. conceptual  POST /api/v1/rom-estimate/generate/        (rough first-pass number)
@@ -19,7 +21,7 @@
 // Money fields arrive as Decimal strings on the wire; they are kept as strings
 // and only ever formatted (never float-mathed) in the view.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -37,13 +39,19 @@ import {
 } from '@/features/rom-estimate/api';
 import {
   COPILOT_STEPS,
+  type CopilotPersistedState,
   type CopilotStepDef,
   type CopilotStepId,
+  type FlowReadiness,
   type StepPhase,
   activeStepId as activeStepIdFor,
   canConfirmStep,
   confirmStep as confirmStepCount,
+  copilotStorageKey,
+  deriveReadiness,
+  indexOfStep,
   isComplete as isCompleteFor,
+  parsePersistedState,
   progressPercent,
   revisitStep,
   stepPhaseById,
@@ -184,6 +192,8 @@ export interface CopilotFlow {
   activeStepId: CopilotStepId | null;
   isComplete: boolean;
   progress: number;
+  /** At-a-glance readiness: which steps are done and whether review-ready. */
+  readiness: FlowReadiness;
   steps: CopilotStepView[];
   /** Reference lists (building types, quality levels, regions) for the ROM form. */
   reference: RomReference | undefined;
@@ -222,6 +232,48 @@ interface StepMutation {
   error: Error | null;
 }
 
+// ── Persistence (localStorage) ───────────────────────────────────────────────
+
+/**
+ * Read the persisted flow snapshot for a project, or `null` when nothing valid
+ * is stored. Progress saved against a different BOQ is rejected so switching
+ * BOQ within a project never restores the wrong estimate's state. Never throws
+ * (missing storage, malformed JSON and stale shapes all fall back to `null`).
+ */
+function loadPersistedFlow(
+  projectId: string | null,
+  boqId: string | null,
+): CopilotPersistedState | null {
+  const key = copilotStorageKey(projectId);
+  if (!key) return null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw === null) return null;
+    const parsed = parsePersistedState(JSON.parse(raw));
+    if (!parsed) return null;
+    if (parsed.boqId !== null && boqId !== null && parsed.boqId !== boqId) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+/** Stable signature of the persistable slice, to detect real changes cheaply. */
+function flowSignature(confirmedCount: number, ranSteps: readonly CopilotStepId[]): string {
+  return `${confirmedCount}|${ranSteps.join(',')}`;
+}
+
+/** Persist the flow snapshot for a project. Silently no-ops when unavailable. */
+function savePersistedFlow(projectId: string | null, state: CopilotPersistedState): void {
+  const key = copilotStorageKey(projectId);
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify(state));
+  } catch {
+    // Storage full or unavailable (private mode) - in-memory state still holds.
+  }
+}
+
 /**
  * Build the guided estimate-copilot flow.
  *
@@ -230,7 +282,17 @@ interface StepMutation {
  */
 export function useCopilotFlow({ projectId, boqId }: CopilotFlowInput): CopilotFlow {
   const { t, i18n } = useTranslation();
-  const [confirmedCount, setConfirmedCount] = useState(0);
+
+  // Restore any persisted progress for this project + BOQ once, on mount. The
+  // panel is remounted per (project, BOQ) selection, so this initialiser
+  // re-runs whenever the user picks a different estimate to work on.
+  const [restored] = useState<CopilotPersistedState | null>(() =>
+    loadPersistedFlow(projectId, boqId),
+  );
+  const [confirmedCount, setConfirmedCount] = useState(restored?.confirmedCount ?? 0);
+  // Ids of steps that have produced a result. Seeded from the restored snapshot
+  // (live mutation state is gone after a reload) and kept current below.
+  const [ranSteps, setRanSteps] = useState<CopilotStepId[]>(restored?.ranSteps ?? []);
 
   const inputsReady = Boolean(projectId && boqId);
 
@@ -331,9 +393,52 @@ export function useCopilotFlow({ projectId, boqId }: CopilotFlowInput): CopilotF
       COPILOT_STEPS.forEach((s, i) => {
         if (i >= fromIndex) mutations[s.id].reset();
       });
+      // Drop ran-flags for the rolled-back steps so readiness and the persisted
+      // snapshot stop claiming a result the user has thrown away.
+      setRanSteps((prev) => prev.filter((id) => indexOfStep(id) < fromIndex));
     },
     [mutations],
   );
+
+  // Fold freshly produced results into the ran-set. This is what lets the
+  // readiness summary and the persisted snapshot know which steps have output
+  // (and, after a reload, is seeded from storage rather than live mutations).
+  // Keyed on the success flags so it only fires when a result actually lands.
+  useEffect(() => {
+    const successById: Record<CopilotStepId, boolean> = {
+      conceptual: conceptualM.isSuccess,
+      scope: scopeM.isSuccess,
+      audit: auditM.isSuccess,
+      basis: basisM.isSuccess,
+    };
+    const live = COPILOT_STEPS.filter((s) => successById[s.id]).map((s) => s.id);
+    if (live.length === 0) return;
+    setRanSteps((prev) => {
+      const merged = [...prev];
+      let changed = false;
+      for (const id of live) {
+        if (!merged.includes(id)) {
+          merged.push(id);
+          changed = true;
+        }
+      }
+      return changed ? merged : prev;
+    });
+  }, [conceptualM.isSuccess, scopeM.isSuccess, auditM.isSuccess, basisM.isSuccess]);
+
+  // Persist progress whenever it changes, but never re-write the value we just
+  // restored at mount. Guarding on a signature (rather than a "first run" flag)
+  // also makes React StrictMode's dev remount a no-op, so merely opening the
+  // copilot on another BOQ never clobbers a sibling BOQ's saved slot.
+  const persistedSigRef = useRef(
+    flowSignature(restored?.confirmedCount ?? 0, restored?.ranSteps ?? []),
+  );
+  useEffect(() => {
+    const sig = flowSignature(confirmedCount, ranSteps);
+    if (sig === persistedSigRef.current) return;
+    persistedSigRef.current = sig;
+    savePersistedFlow(projectId, { confirmedCount, ranSteps, boqId });
+  }, [projectId, boqId, confirmedCount, ranSteps]);
 
   const run = useCallback(
     (id: CopilotStepId) => {
@@ -391,12 +496,18 @@ export function useCopilotFlow({ projectId, boqId }: CopilotFlowInput): CopilotF
     [mutations, confirmedCount, inputsReady, conceptualReady],
   );
 
+  const readiness = useMemo<FlowReadiness>(
+    () => deriveReadiness(confirmedCount, ranSteps),
+    [confirmedCount, ranSteps],
+  );
+
   return {
     inputsReady,
     confirmedCount,
     activeStepId: activeStepIdFor(confirmedCount),
     isComplete: isCompleteFor(confirmedCount),
     progress: progressPercent(confirmedCount),
+    readiness,
     steps,
     reference,
     conceptualInputs,

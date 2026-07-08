@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import {
   AlertTriangle,
   CheckCircle2,
+  CircleDot,
   ClipboardCheck,
   FileText,
   Gauge,
@@ -33,7 +34,14 @@ import {
 import { formatCurrency, toNum } from '@/shared/lib/money';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 
-import { COPILOT_STEP_COUNT, type CopilotStepId, type StepPhase } from './steps';
+import {
+  COPILOT_STEPS,
+  COPILOT_STEP_COUNT,
+  type CopilotStepId,
+  type FlowReadiness,
+  type StepPhase,
+  type StepReadiness,
+} from './steps';
 import {
   useCopilotFlow,
   type BasisOfEstimateResult,
@@ -137,7 +145,7 @@ function CopilotFlowPanel({ projectId, boqId }: CopilotFlowPanelProps) {
 
   return (
     <div className="space-y-4">
-      <ProgressStrip confirmedCount={flow.confirmedCount} progress={flow.progress} />
+      <ReadinessSummary readiness={flow.readiness} progress={flow.progress} />
 
       <ol className="space-y-3">
         {flow.steps.map((step) => (
@@ -178,34 +186,128 @@ function CopilotFlowPanel({ projectId, boqId }: CopilotFlowPanelProps) {
   );
 }
 
-// ── Progress strip ───────────────────────────────────────────────────────────
+// ── Readiness summary ────────────────────────────────────────────────────────
 
-function ProgressStrip({ confirmedCount, progress }: { confirmedCount: number; progress: number }) {
+/**
+ * At-a-glance panel: a progress bar, a per-step checklist of what is done, and a
+ * clear "review-ready" state once every step has been run and confirmed. The
+ * per-step "done" markers are driven by the confirmed count, so they survive a
+ * reload exactly as the persisted flow state does.
+ */
+function ReadinessSummary({
+  readiness,
+  progress,
+}: {
+  readiness: FlowReadiness;
+  progress: number;
+}) {
   const { t } = useTranslation();
+  const { reviewReady, confirmedCount, total, steps } = readiness;
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between text-xs">
-        <span className="font-medium text-content-secondary">
-          {t('copilot.progress_label', {
-            defaultValue: '{{done}} of {{total}} steps confirmed',
+    <Card
+      padding="md"
+      className={
+        reviewReady
+          ? 'space-y-3 border-semantic-success/40 bg-semantic-success/5'
+          : 'space-y-3'
+      }
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="flex items-start gap-2">
+          {reviewReady ? (
+            <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-semantic-success" />
+          ) : (
+            <Gauge size={18} className="mt-0.5 shrink-0 text-oe-blue" />
+          )}
+          <div>
+            <p className="text-sm font-semibold text-content-primary">
+              {reviewReady
+                ? t('copilot.readiness.ready_title', { defaultValue: 'Estimate is review-ready' })
+                : t('copilot.readiness.title', { defaultValue: 'Estimate readiness' })}
+            </p>
+            <p className="text-xs text-content-tertiary">
+              {reviewReady
+                ? t('copilot.readiness.ready_desc', {
+                    defaultValue:
+                      'All four checks have been run and confirmed. The estimate is ready to review and defend.',
+                  })
+                : t('copilot.readiness.subtitle', {
+                    defaultValue:
+                      'Run and confirm each check to make the estimate ready to review.',
+                  })}
+            </p>
+          </div>
+        </div>
+        <span className="tabular-nums text-xs font-medium text-content-secondary">
+          {t('copilot.readiness.count', {
+            defaultValue: '{{done}} of {{total}} confirmed',
             done: confirmedCount,
-            total: COPILOT_STEP_COUNT,
+            total,
           })}
         </span>
-        <span className="tabular-nums text-content-tertiary">{progress}%</span>
       </div>
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-tertiary">
+
+      <div
+        className="h-1.5 w-full overflow-hidden rounded-full bg-surface-tertiary"
+        role="progressbar"
+        aria-valuenow={progress}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
         <div
-          className="h-full rounded-full bg-oe-blue transition-all duration-300"
+          className={
+            reviewReady
+              ? 'h-full rounded-full bg-semantic-success transition-all duration-300'
+              : 'h-full rounded-full bg-oe-blue transition-all duration-300'
+          }
           style={{ width: `${progress}%` }}
-          role="progressbar"
-          aria-valuenow={progress}
-          aria-valuemin={0}
-          aria-valuemax={100}
         />
       </div>
-    </div>
+
+      <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+        {steps.map((step) => (
+          <ReadinessRow key={step.id} step={step} />
+        ))}
+      </ul>
+    </Card>
   );
+}
+
+function ReadinessRow({ step }: { step: StepReadiness }) {
+  const { t } = useTranslation();
+  const def = COPILOT_STEPS.find((d) => d.id === step.id);
+  if (!def) return null;
+  return (
+    <li className="flex items-center gap-2 text-xs">
+      <ReadinessMarker step={step} />
+      <span
+        className={
+          step.confirmed
+            ? 'text-content-secondary'
+            : step.phase === 'active'
+              ? 'font-medium text-content-primary'
+              : 'text-content-tertiary'
+        }
+      >
+        {t(def.titleKey, { defaultValue: def.titleFallback })}
+      </span>
+      {!step.confirmed && step.hasResult && (
+        <Badge variant="blue" size="sm">
+          {t('copilot.readiness.ready_to_confirm', { defaultValue: 'Ready to confirm' })}
+        </Badge>
+      )}
+    </li>
+  );
+}
+
+function ReadinessMarker({ step }: { step: StepReadiness }) {
+  if (step.confirmed) {
+    return <CheckCircle2 size={15} className="shrink-0 text-semantic-success" />;
+  }
+  if (step.phase === 'active') {
+    return <CircleDot size={15} className="shrink-0 text-oe-blue" />;
+  }
+  return <Lock size={13} strokeWidth={1.8} className="shrink-0 text-content-tertiary" />;
 }
 
 // ── Step card ────────────────────────────────────────────────────────────────
