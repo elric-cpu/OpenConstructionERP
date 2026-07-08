@@ -16,7 +16,7 @@
  * store. Live run = polling `GET /runs/{run_id}` (no websocket).
  * Empty canvas → `EmptyState`. Onboarding via the shared `OnboardingTour`.
  */
-import { Workflow } from 'lucide-react';
+import { Info, Workflow } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
@@ -474,7 +474,10 @@ export function PipelinesPage() {
           data-tour="pipeline-canvas"
         >
           {nodeCount === 0 && !pipelineQuery.isLoading ? (
-            <div className="absolute inset-0 z-10 flex items-center justify-center bg-surface-primary">
+            // pointer-events-none lets a first drag/drop fall through to the
+            // canvas underneath so "drag a step onto the canvas" works even
+            // while this guidance overlay is showing.
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center overflow-y-auto bg-surface-primary">
               <EmptyState
                 icon={<Workflow size={24} aria-hidden="true" />}
                 title={t('pipeline.empty.title', {
@@ -482,8 +485,52 @@ export function PipelinesPage() {
                 })}
                 description={t('pipeline.empty.description', {
                   defaultValue:
-                    'Drag a trigger and a few steps from the palette on the left, connect them, then press Run.',
+                    'A pipeline is a few steps wired together. Follow these steps to build your first one.',
                 })}
+                action={
+                  <div className="w-full max-w-md rounded-xl border border-border bg-surface-secondary/60 p-4 text-start">
+                    <ol className="space-y-2.5">
+                      {[
+                        t('pipeline.empty.step_trigger', {
+                          defaultValue:
+                            'Drag a trigger from the palette on the left to start the flow.',
+                        }),
+                        t('pipeline.empty.step_add', {
+                          defaultValue:
+                            'Add more steps: get data, transform, validate, then an action.',
+                        }),
+                        t('pipeline.empty.step_connect', {
+                          defaultValue:
+                            "Connect them left to right: drag from a step's Out dot to the next step's In dot.",
+                        }),
+                        t('pipeline.empty.step_run', {
+                          defaultValue:
+                            'Press Run and watch each step finish live.',
+                        }),
+                      ].map((step, i) => (
+                        <li key={i} className="flex items-start gap-3">
+                          <span className="mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-oe-blue/10 text-2xs font-semibold text-oe-blue">
+                            {i + 1}
+                          </span>
+                          <span className="text-sm text-content-secondary">
+                            {step}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                    <p className="mt-3 flex items-start gap-1.5 border-t border-border pt-3 text-xs text-content-tertiary">
+                      <Info
+                        size={13}
+                        aria-hidden="true"
+                        className="mt-px shrink-0"
+                      />
+                      {t('pipeline.empty.tip', {
+                        defaultValue:
+                          'Ports only connect when their data types match. Hover a dot to see what it carries.',
+                      })}
+                    </p>
+                  </div>
+                }
               />
             </div>
           ) : null}

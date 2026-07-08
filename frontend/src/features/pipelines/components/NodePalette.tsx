@@ -10,12 +10,20 @@
  * drag — important for trackpad / touch / motor accessibility.
  */
 import clsx from 'clsx';
-import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  GripVertical,
+  MousePointerClick,
+  Search,
+  X,
+} from 'lucide-react';
 import { useMemo, useState, type DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Skeleton } from '@/shared/ui';
 
+import { PortLegend } from './PortLegend';
 import {
   PIPELINE_DND_MIME,
   type PaletteDragItem,
@@ -69,11 +77,20 @@ function PaletteItem({ def }: { def: NodeTypeDef }) {
       onClick={onActivate}
       data-testid={`pipeline-palette-item-${def.type}`}
       data-node-category={def.category}
+      title={
+        description
+          ? t('pipeline.palette.item_title', {
+              defaultValue: '{{label}} — {{description}}',
+              label,
+              description,
+            })
+          : label
+      }
       className={clsx(
-        'group flex w-full items-start gap-2 rounded-md border px-2.5 py-2 text-start',
+        'group flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 text-start',
         'transition-all duration-fast ease-oe transform-gpu cursor-grab',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40',
-        'hover:shadow-sm active:cursor-grabbing',
+        'hover:-translate-y-px hover:shadow-sm active:cursor-grabbing active:translate-y-0',
         tokens.classes.bg,
         tokens.classes.border,
         tokens.classes.text,
@@ -87,7 +104,7 @@ function PaletteItem({ def }: { def: NodeTypeDef }) {
       >
         <Icon size={14} aria-hidden="true" />
       </span>
-      <span className="flex min-w-0 flex-col">
+      <span className="flex min-w-0 flex-1 flex-col">
         <span className="flex items-center gap-1.5">
           <span className="truncate text-sm font-medium">{label}</span>
           {def.module && (
@@ -118,6 +135,12 @@ function PaletteItem({ def }: { def: NodeTypeDef }) {
           </span>
         )}
       </span>
+      {/* Drag affordance — signals the item is draggable (click also inserts) */}
+      <GripVertical
+        size={14}
+        aria-hidden="true"
+        className="mt-0.5 shrink-0 self-center text-content-tertiary opacity-0 transition-opacity group-hover:opacity-70"
+      />
     </button>
   );
 }
@@ -190,8 +213,13 @@ export function NodePalette({
       })}
     >
       <header className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-        <span className="text-xs font-semibold uppercase tracking-wide text-content-secondary">
+        <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-content-secondary">
           {t('pipeline.palette.title', { defaultValue: 'Steps' })}
+          {!loading && totalItems > 0 && (
+            <span className="rounded bg-black/5 px-1 text-2xs font-medium tabular-nums text-content-tertiary dark:bg-white/10">
+              {totalItems}
+            </span>
+          )}
         </span>
         <button
           type="button"
@@ -204,7 +232,7 @@ export function NodePalette({
           <ChevronLeft size={14} aria-hidden="true" className="rtl:scale-x-[-1]" />
         </button>
       </header>
-      <div className="px-3 py-2">
+      <div className="px-3 pt-2">
         <label className="relative block">
           <span className="sr-only">
             {t('pipeline.palette.search', { defaultValue: 'Search steps' })}
@@ -215,22 +243,41 @@ export function NodePalette({
             className="pointer-events-none absolute start-2 top-1/2 -translate-y-1/2 text-content-tertiary"
           />
           <input
-            type="search"
+            type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t('pipeline.palette.search_ph', {
-              defaultValue: 'Search…',
+              defaultValue: 'Search steps…',
             })}
             data-testid="pipeline-palette-search"
             className={clsx(
-              'h-8 w-full rounded-md border border-border bg-surface-primary ps-7 pe-2 text-sm',
+              'h-8 w-full rounded-lg border border-border bg-surface-primary ps-7 pe-7 text-sm',
               'placeholder:text-content-tertiary',
               'focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue',
             )}
           />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              aria-label={t('pipeline.palette.clear_search', {
+                defaultValue: 'Clear search',
+              })}
+              data-testid="pipeline-palette-search-clear"
+              className="absolute end-1.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-content-tertiary hover:bg-surface-tertiary hover:text-content-secondary"
+            >
+              <X size={13} aria-hidden="true" />
+            </button>
+          )}
         </label>
+        <p className="mt-1.5 flex items-center gap-1.5 px-0.5 text-2xs text-content-tertiary">
+          <MousePointerClick size={12} aria-hidden="true" className="shrink-0" />
+          {t('pipeline.palette.drag_hint', {
+            defaultValue: 'Drag onto the canvas, or click to add.',
+          })}
+        </p>
       </div>
-      <div className="flex-1 overflow-y-auto px-2 pb-3">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {loading ? (
           <div className="space-y-2 px-1 pt-1">
             <Skeleton className="h-12 w-full rounded-md" />
@@ -256,14 +303,28 @@ export function NodePalette({
             const items = byCategory.get(category);
             if (!items || items.length === 0) return null;
             const ctok = getCategoryTokens(category);
+            const CatIcon = ctok.Icon;
             return (
               <section
                 key={category}
                 data-testid={`pipeline-palette-cat-${category}`}
-                className="mt-2 first:mt-0"
+                className="mt-3 first:mt-1"
               >
-                <h3 className="mb-1 px-1 text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
-                  {t(ctok.labelKey, { defaultValue: ctok.labelDefault })}
+                <h3 className="mb-1 flex items-center gap-1.5 px-1 text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
+                  <span
+                    className={clsx(
+                      'flex h-4 w-4 items-center justify-center',
+                      ctok.classes.icon,
+                    )}
+                  >
+                    <CatIcon size={12} aria-hidden="true" />
+                  </span>
+                  <span className="truncate">
+                    {t(ctok.labelKey, { defaultValue: ctok.labelDefault })}
+                  </span>
+                  <span className="ms-auto rounded bg-black/5 px-1 tabular-nums text-content-tertiary dark:bg-white/10">
+                    {items.length}
+                  </span>
                 </h3>
                 <div className="flex flex-col gap-1">
                   {items.map((def) => (
@@ -275,6 +336,7 @@ export function NodePalette({
           })
         )}
       </div>
+      <PortLegend />
     </aside>
   );
 }

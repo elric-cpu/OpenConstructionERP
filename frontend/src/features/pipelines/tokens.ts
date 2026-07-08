@@ -222,6 +222,9 @@ export interface PortTypeEntry {
   /** i18n key for the human-readable type label (used in tooltips / a11y). */
   labelKey: string;
   labelDefault: string;
+  /** i18n key for a compact one-word type label (shown inline on port rows). */
+  shortKey: string;
+  shortDefault: string;
 }
 
 /**
@@ -235,6 +238,8 @@ export const PORT_TYPES: Record<PortDataType, PortTypeEntry> = {
     dash: undefined,
     labelKey: 'pipeline.port.table',
     labelDefault: 'Table / rows',
+    shortKey: 'pipeline.port.table.short',
+    shortDefault: 'Table',
   },
   file: {
     color: '#475569',
@@ -242,6 +247,8 @@ export const PORT_TYPES: Record<PortDataType, PortTypeEntry> = {
     dash: undefined,
     labelKey: 'pipeline.port.file',
     labelDefault: 'File / document',
+    shortKey: 'pipeline.port.file.short',
+    shortDefault: 'File',
   },
   bim: {
     color: '#9333ea',
@@ -249,6 +256,8 @@ export const PORT_TYPES: Record<PortDataType, PortTypeEntry> = {
     dash: undefined,
     labelKey: 'pipeline.port.bim',
     labelDefault: 'BIM model',
+    shortKey: 'pipeline.port.bim.short',
+    shortDefault: 'BIM',
   },
   number: {
     color: '#0891b2',
@@ -256,6 +265,8 @@ export const PORT_TYPES: Record<PortDataType, PortTypeEntry> = {
     dash: undefined,
     labelKey: 'pipeline.port.number',
     labelDefault: 'Number',
+    shortKey: 'pipeline.port.number.short',
+    shortDefault: 'Number',
   },
   boolean: {
     color: '#0d9488',
@@ -263,6 +274,8 @@ export const PORT_TYPES: Record<PortDataType, PortTypeEntry> = {
     dash: undefined,
     labelKey: 'pipeline.port.boolean',
     labelDefault: 'Boolean / flag',
+    shortKey: 'pipeline.port.boolean.short',
+    shortDefault: 'Flag',
   },
   any: {
     color: '#94a3b8',
@@ -270,6 +283,8 @@ export const PORT_TYPES: Record<PortDataType, PortTypeEntry> = {
     dash: '4 4',
     labelKey: 'pipeline.port.any',
     labelDefault: 'Any / passthrough',
+    shortKey: 'pipeline.port.any.short',
+    shortDefault: 'Any',
   },
   error: {
     color: '#dc2626',
@@ -277,8 +292,21 @@ export const PORT_TYPES: Record<PortDataType, PortTypeEntry> = {
     dash: '2 3',
     labelKey: 'pipeline.port.error',
     labelDefault: 'Error branch',
+    shortKey: 'pipeline.port.error.short',
+    shortDefault: 'Error',
   },
 };
+
+/** Order the port types are listed in the legend / help surfaces. */
+export const PORT_TYPE_ORDER: PortDataType[] = [
+  'table',
+  'file',
+  'bim',
+  'number',
+  'boolean',
+  'any',
+  'error',
+];
 
 /** Lookup helper — falls back to `any` for an unknown port type. */
 export function getPortTokens(type: string): PortTypeEntry {

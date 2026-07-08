@@ -14,6 +14,8 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import clsx from 'clsx';
 import {
+  ArrowRightFromLine,
+  ArrowRightToLine,
   ChevronDown,
   ChevronRight,
   CircleSlash,
@@ -35,7 +37,8 @@ import { useTranslation } from 'react-i18next';
 
 import { useIsRTL } from '@/shared/hooks/useIsRTL';
 
-import { getCategoryTokens, getPortTokens, PORT_SHAPE_SVG } from '../tokens';
+import { PortGlyph } from '../components/PortGlyph';
+import { getCategoryTokens, getPortTokens } from '../tokens';
 import { usePipelineStore, type CanvasNode } from '../usePipelineStore';
 import type { RunStatus } from '../api';
 
@@ -44,22 +47,6 @@ export interface PipelineNodeData extends Record<string, unknown> {
 }
 
 export type PipelineNodeProps = NodeProps;
-
-/** Small inline SVG glyph for a port's data type (shape encoding). */
-function PortGlyph({ type, size = 12 }: { type: string; size?: number }) {
-  const tok = getPortTokens(type);
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 12 12"
-      aria-hidden="true"
-      style={{ fill: tok.color, stroke: tok.color }}
-      // eslint-disable-next-line react/no-danger
-      dangerouslySetInnerHTML={{ __html: PORT_SHAPE_SVG[tok.shape] }}
-    />
-  );
-}
 
 /** Map a run status → {icon, accent-bar token class}. */
 function runVisual(status: RunStatus | undefined): {
@@ -138,6 +125,17 @@ export function PipelineNode({ id, data, selected }: PipelineNodeProps) {
   );
   const rv = runVisual(runNodeState?.status);
   const isAi = node.category === 'ai';
+
+  // Localized port-type labels — the short form sits inline on the row, the
+  // long form powers the hover tooltip + screen-reader text.
+  const portTypeShort = (dt: string): string =>
+    t(getPortTokens(dt).shortKey, {
+      defaultValue: getPortTokens(dt).shortDefault,
+    });
+  const portTypeLong = (dt: string): string =>
+    t(getPortTokens(dt).labelKey, {
+      defaultValue: getPortTokens(dt).labelDefault,
+    });
 
   return (
     <div
@@ -295,76 +293,148 @@ export function PipelineNode({ id, data, selected }: PipelineNodeProps) {
         </div>
       )}
 
-      {/* Typed port rows */}
+      {/* Typed port rows — inputs sit on the logical-start edge, outputs on
+          the logical-end edge. A one-time "In / Out" caption labels the two
+          columns so the direction of data flow is unmistakable, and each row
+          shows the port label + its data-type with a hover tooltip. */}
       {rows > 0 && (
-        <div className="mt-2 space-y-1">
-          {Array.from({ length: rows }).map((_, idx) => {
-            const input = node.inputs[idx];
-            const output = node.outputs[idx];
-            return (
-              <div
-                key={idx}
-                className="relative flex items-center justify-between text-xs"
-              >
-                <span className="flex items-center gap-1.5">
-                  {input && (
-                    <>
-                      <Handle
-                        type="target"
-                        position={inputSide}
-                        id={input.id}
-                        data-testid={`pipeline-node-input-${id}-${input.id}`}
-                        aria-label={t('pipeline.port.aria_input', {
-                          defaultValue: 'input: {{label}}, type {{type}}',
-                          label: input.label,
-                          type: t(getPortTokens(input.dataType).labelKey, {
-                            defaultValue: getPortTokens(input.dataType)
-                              .labelDefault,
-                          }),
-                        })}
-                        style={{
-                          background: '#fff',
-                          border: `1px solid ${getPortTokens(input.dataType).color}`,
-                          width: 9,
-                          height: 9,
-                        }}
-                      />
-                      <PortGlyph type={input.dataType} />
-                      <span>{input.label}</span>
-                    </>
-                  )}
-                </span>
-                <span className="flex items-center gap-1.5">
-                  {output && (
-                    <>
-                      <span>{output.label}</span>
-                      <PortGlyph type={output.dataType} />
-                      <Handle
-                        type="source"
-                        position={outputSide}
-                        id={output.id}
-                        data-testid={`pipeline-node-output-${id}-${output.id}`}
-                        aria-label={t('pipeline.port.aria_output', {
-                          defaultValue: 'output: {{label}}, type {{type}}',
-                          label: output.label,
-                          type: t(getPortTokens(output.dataType).labelKey, {
-                            defaultValue: getPortTokens(output.dataType)
-                              .labelDefault,
-                          }),
-                        })}
-                        style={{
-                          background: '#fff',
-                          border: `1px solid ${getPortTokens(output.dataType).color}`,
-                          width: 9,
-                          height: 9,
-                        }}
-                      />
-                    </>
-                  )}
-                </span>
-              </div>
-            );
-          })}
+        <div className="mt-2 border-t border-black/5 pt-1.5 dark:border-white/10">
+          <div
+            className="mb-1 flex items-center justify-between text-2xs font-semibold uppercase tracking-wide"
+            aria-hidden="true"
+          >
+            <span
+              className={clsx(
+                'flex items-center gap-1',
+                node.inputs.length > 0
+                  ? tokens.classes.textSubtle
+                  : 'opacity-0',
+              )}
+            >
+              <ArrowRightToLine size={11} className="rtl:scale-x-[-1]" />
+              {t('pipeline.port.inputs_caption', { defaultValue: 'In' })}
+            </span>
+            <span
+              className={clsx(
+                'flex items-center gap-1',
+                node.outputs.length > 0
+                  ? tokens.classes.textSubtle
+                  : 'opacity-0',
+              )}
+            >
+              {t('pipeline.port.outputs_caption', { defaultValue: 'Out' })}
+              <ArrowRightFromLine size={11} className="rtl:scale-x-[-1]" />
+            </span>
+          </div>
+          <div className="space-y-1">
+            {Array.from({ length: rows }).map((_, idx) => {
+              const input = node.inputs[idx];
+              const output = node.outputs[idx];
+              return (
+                <div
+                  key={idx}
+                  className="relative flex items-center justify-between gap-3 text-xs"
+                >
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    {input && (
+                      <>
+                        <Handle
+                          type="target"
+                          position={inputSide}
+                          id={input.id}
+                          data-testid={`pipeline-node-input-${id}-${input.id}`}
+                          title={t('pipeline.port.tooltip_input', {
+                            defaultValue:
+                              'Input "{{label}}" accepts {{type}}. Drag a matching output here to connect it.',
+                            label: input.label,
+                            type: portTypeLong(input.dataType),
+                          })}
+                          aria-label={t('pipeline.port.aria_input', {
+                            defaultValue: 'input: {{label}}, type {{type}}',
+                            label: input.label,
+                            type: portTypeLong(input.dataType),
+                          })}
+                          style={{
+                            background: '#fff',
+                            border: `2px solid ${getPortTokens(input.dataType).color}`,
+                            width: 11,
+                            height: 11,
+                          }}
+                        />
+                        <span
+                          className="flex min-w-0 items-center gap-1.5"
+                          title={t('pipeline.port.tooltip_input', {
+                            defaultValue:
+                              'Input "{{label}}" accepts {{type}}. Drag a matching output here to connect it.',
+                            label: input.label,
+                            type: portTypeLong(input.dataType),
+                          })}
+                        >
+                          <PortGlyph type={input.dataType} />
+                          <span className="truncate font-medium">
+                            {input.label}
+                          </span>
+                          <span
+                            className={clsx('shrink-0', tokens.classes.textSubtle)}
+                          >
+                            {portTypeShort(input.dataType)}
+                          </span>
+                        </span>
+                      </>
+                    )}
+                  </span>
+                  <span className="flex min-w-0 items-center justify-end gap-1.5">
+                    {output && (
+                      <>
+                        <span
+                          className="flex min-w-0 items-center justify-end gap-1.5"
+                          title={t('pipeline.port.tooltip_output', {
+                            defaultValue:
+                              'Output "{{label}}" sends {{type}}. Drag from here to a matching input.',
+                            label: output.label,
+                            type: portTypeLong(output.dataType),
+                          })}
+                        >
+                          <span
+                            className={clsx('shrink-0', tokens.classes.textSubtle)}
+                          >
+                            {portTypeShort(output.dataType)}
+                          </span>
+                          <span className="truncate font-medium">
+                            {output.label}
+                          </span>
+                          <PortGlyph type={output.dataType} />
+                        </span>
+                        <Handle
+                          type="source"
+                          position={outputSide}
+                          id={output.id}
+                          data-testid={`pipeline-node-output-${id}-${output.id}`}
+                          title={t('pipeline.port.tooltip_output', {
+                            defaultValue:
+                              'Output "{{label}}" sends {{type}}. Drag from here to a matching input.',
+                            label: output.label,
+                            type: portTypeLong(output.dataType),
+                          })}
+                          aria-label={t('pipeline.port.aria_output', {
+                            defaultValue: 'output: {{label}}, type {{type}}',
+                            label: output.label,
+                            type: portTypeLong(output.dataType),
+                          })}
+                          style={{
+                            background: '#fff',
+                            border: `2px solid ${getPortTokens(output.dataType).color}`,
+                            width: 11,
+                            height: 11,
+                          }}
+                        />
+                      </>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
