@@ -37,6 +37,10 @@ export interface CategoryTint {
   /** Colour of the thin left accent rail on a case card: a `border-l-*` colour
    *  class, combined at the call site with `border-l-[3px]` for the rail width. */
   accent: string;
+  /** Very faint full-card wash in the same hue as the accent rail, layered under
+   *  the card content so cards are easy to tell apart at a glance without the
+   *  colour ever fighting the text. Kept lower opacity than the tile. */
+  softBg: string;
   /** Plain coloured text for small eyebrow labels. */
   text: string;
 }
@@ -61,6 +65,7 @@ export const CATEGORY_META: CategoryMeta[] = [
       tile: 'bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400',
       chip: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
       accent: 'border-l-emerald-400/60',
+      softBg: 'bg-emerald-400/5 dark:bg-emerald-400/10',
       text: 'text-emerald-600 dark:text-emerald-400',
     },
   },
@@ -73,6 +78,7 @@ export const CATEGORY_META: CategoryMeta[] = [
       tile: 'bg-violet-500/10 text-violet-600 ring-violet-500/20 dark:text-violet-400',
       chip: 'border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300',
       accent: 'border-l-violet-400/60',
+      softBg: 'bg-violet-400/5 dark:bg-violet-400/10',
       text: 'text-violet-600 dark:text-violet-400',
     },
   },
@@ -85,6 +91,7 @@ export const CATEGORY_META: CategoryMeta[] = [
       tile: 'bg-sky-500/10 text-sky-600 ring-sky-500/20 dark:text-sky-400',
       chip: 'border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300',
       accent: 'border-l-sky-400/60',
+      softBg: 'bg-sky-400/5 dark:bg-sky-400/10',
       text: 'text-sky-600 dark:text-sky-400',
     },
   },
@@ -97,6 +104,7 @@ export const CATEGORY_META: CategoryMeta[] = [
       tile: 'bg-indigo-500/10 text-indigo-600 ring-indigo-500/20 dark:text-indigo-400',
       chip: 'border-indigo-500/40 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300',
       accent: 'border-l-indigo-400/60',
+      softBg: 'bg-indigo-400/5 dark:bg-indigo-400/10',
       text: 'text-indigo-600 dark:text-indigo-400',
     },
   },
@@ -109,6 +117,7 @@ export const CATEGORY_META: CategoryMeta[] = [
       tile: 'bg-amber-500/10 text-amber-600 ring-amber-500/20 dark:text-amber-400',
       chip: 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300',
       accent: 'border-l-amber-400/60',
+      softBg: 'bg-amber-400/5 dark:bg-amber-400/10',
       text: 'text-amber-600 dark:text-amber-400',
     },
   },
@@ -121,6 +130,7 @@ export const CATEGORY_META: CategoryMeta[] = [
       tile: 'bg-teal-500/10 text-teal-600 ring-teal-500/20 dark:text-teal-400',
       chip: 'border-teal-500/40 bg-teal-500/10 text-teal-700 dark:text-teal-300',
       accent: 'border-l-teal-400/60',
+      softBg: 'bg-teal-400/5 dark:bg-teal-400/10',
       text: 'text-teal-600 dark:text-teal-400',
     },
   },
@@ -133,6 +143,7 @@ export const CATEGORY_META: CategoryMeta[] = [
       tile: 'bg-rose-500/10 text-rose-600 ring-rose-500/20 dark:text-rose-400',
       chip: 'border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300',
       accent: 'border-l-rose-400/60',
+      softBg: 'bg-rose-400/5 dark:bg-rose-400/10',
       text: 'text-rose-600 dark:text-rose-400',
     },
   },
@@ -145,6 +156,7 @@ export const CATEGORY_META: CategoryMeta[] = [
       tile: 'bg-cyan-500/10 text-cyan-600 ring-cyan-500/20 dark:text-cyan-400',
       chip: 'border-cyan-500/40 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300',
       accent: 'border-l-cyan-400/60',
+      softBg: 'bg-cyan-400/5 dark:bg-cyan-400/10',
       text: 'text-cyan-600 dark:text-cyan-400',
     },
   },
@@ -161,6 +173,7 @@ export const NEUTRAL_TINT: CategoryTint = {
   tile: 'bg-oe-blue/10 text-oe-blue ring-oe-blue/20',
   chip: 'border-oe-blue/40 bg-oe-blue/10 text-oe-blue',
   accent: 'border-l-oe-blue/50',
+  softBg: 'bg-oe-blue/5 dark:bg-oe-blue/10',
   text: 'text-oe-blue',
 };
 

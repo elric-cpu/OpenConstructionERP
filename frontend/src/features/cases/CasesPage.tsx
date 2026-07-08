@@ -893,12 +893,19 @@ function CaseCard({
         }
       }}
       className={clsx(
-        'group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-xl border border-border-light bg-surface-primary text-left',
+        'group relative isolate flex h-full cursor-pointer flex-col overflow-hidden rounded-xl border border-border-light bg-surface-primary text-left',
         'shadow-xs transition duration-200 hover:-translate-y-0.5 hover:border-oe-blue/40 hover:shadow-md',
         'motion-reduce:transition-none motion-reduce:hover:translate-y-0',
         'focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40',
       )}
     >
+      {/* Very faint full-card wash in the discipline hue, layered under the
+          content (via -z-10 inside the card's isolate) so cards are easy to tell
+          apart without the colour ever fighting the text. */}
+      <span
+        aria-hidden="true"
+        className={clsx('pointer-events-none absolute inset-0 -z-10', tint.softBg)}
+      />
       {/* Soft left rail tints the card by discipline (positioned so it never
           fights the card border). */}
       <span
