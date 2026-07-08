@@ -220,6 +220,10 @@ export interface MatchCandidate {
   region_code: string;
   source: string;
   classification: Record<string, string>;
+  /** Optional server-provided explanation for this candidate, shown as a
+   *  note beside the client-built match reasons. Absent on bases that do
+   *  not carry a reasoning string. */
+  reasoning?: string | null;
 }
 
 export interface GroupSummary {

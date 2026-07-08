@@ -21,7 +21,13 @@ def _positions():
             "quantity": "50",
             "metadata_": {
                 "resources": [
-                    {"type": "material", "name": "Concrete C30/37", "unit": "m3", "quantity": "1.02", "unit_rate": "95"},
+                    {
+                        "type": "material",
+                        "name": "Concrete C30/37",
+                        "unit": "m3",
+                        "quantity": "1.02",
+                        "unit_rate": "95",
+                    },
                     {"type": "labor", "name": "Mason", "unit": "h", "quantity": "3.5", "unit_rate": "42"},
                 ]
             },
@@ -31,7 +37,13 @@ def _positions():
             "quantity": "20",
             "metadata_": {
                 "resources": [
-                    {"type": "material", "name": "Concrete C30/37", "unit": "m3", "quantity": "1.02", "unit_rate": "95"},
+                    {
+                        "type": "material",
+                        "name": "Concrete C30/37",
+                        "unit": "m3",
+                        "quantity": "1.02",
+                        "unit_rate": "95",
+                    },
                     {"type": "labor", "name": "Mason", "unit": "h", "quantity": "3.5", "unit_rate": "42"},
                 ]
             },
@@ -126,12 +138,16 @@ def test_name_and_unit_grouping_is_case_insensitive():
         {
             "id": "p1",
             "quantity": "2",
-            "metadata_": {"resources": [{"type": "labor", "name": "Mason", "unit": "H", "quantity": "1", "unit_rate": "40"}]},
+            "metadata_": {
+                "resources": [{"type": "labor", "name": "Mason", "unit": "H", "quantity": "1", "unit_rate": "40"}]
+            },
         },
         {
             "id": "p2",
             "quantity": "3",
-            "metadata_": {"resources": [{"type": "labor", "name": "mason", "unit": "h", "quantity": "1", "unit_rate": "40"}]},
+            "metadata_": {
+                "resources": [{"type": "labor", "name": "mason", "unit": "h", "quantity": "1", "unit_rate": "40"}]
+            },
         },
     ]
     st = aggregate_resource_statement(positions)
@@ -145,7 +161,9 @@ def test_cost_falls_back_to_total_when_factors_missing():
         {
             "id": "p1",
             "quantity": "10",
-            "metadata_": {"resources": [{"type": "subcontractor", "name": "Waterproofing sub", "unit": "ls", "total": "5"}]},
+            "metadata_": {
+                "resources": [{"type": "subcontractor", "name": "Waterproofing sub", "unit": "ls", "total": "5"}]
+            },
         }
     ]
     st = aggregate_resource_statement(positions)
@@ -179,7 +197,14 @@ def test_foreign_currency_line_converted_via_fx_map():
             "quantity": "1",
             "metadata_": {
                 "resources": [
-                    {"type": "material", "name": "Imported panel", "unit": "pcs", "quantity": "1", "unit_rate": "100", "currency": "USD"}
+                    {
+                        "type": "material",
+                        "name": "Imported panel",
+                        "unit": "pcs",
+                        "quantity": "1",
+                        "unit_rate": "100",
+                        "currency": "USD",
+                    }
                 ]
             },
         }
@@ -196,7 +221,14 @@ def test_missing_fx_rate_leaves_line_in_own_units():
             "quantity": "1",
             "metadata_": {
                 "resources": [
-                    {"type": "material", "name": "Imported panel", "unit": "pcs", "quantity": "1", "unit_rate": "100", "currency": "USD"}
+                    {
+                        "type": "material",
+                        "name": "Imported panel",
+                        "unit": "pcs",
+                        "quantity": "1",
+                        "unit_rate": "100",
+                        "currency": "USD",
+                    }
                 ]
             },
         }
@@ -212,7 +244,9 @@ def test_currency_falls_back_to_first_resource_currency_when_base_unset():
             "id": "p1",
             "quantity": "1",
             "metadata_": {
-                "resources": [{"type": "material", "name": "X", "unit": "u", "quantity": "1", "unit_rate": "5", "currency": "GBP"}]
+                "resources": [
+                    {"type": "material", "name": "X", "unit": "u", "quantity": "1", "unit_rate": "5", "currency": "GBP"}
+                ]
             },
         }
     ]
@@ -227,7 +261,9 @@ def test_positions_without_resources_are_skipped():
         {
             "id": "p2",
             "quantity": "4",
-            "metadata_": {"resources": [{"type": "material", "name": "Brick", "unit": "pcs", "quantity": "10", "unit_rate": "1"}]},
+            "metadata_": {
+                "resources": [{"type": "material", "name": "Brick", "unit": "pcs", "quantity": "10", "unit_rate": "1"}]
+            },
         },
     ]
     st = aggregate_resource_statement(positions)
@@ -241,7 +277,9 @@ def test_zero_quantity_position_contributes_nothing():
         {
             "id": "p1",
             "quantity": "0",
-            "metadata_": {"resources": [{"type": "material", "name": "Brick", "unit": "pcs", "quantity": "10", "unit_rate": "1"}]},
+            "metadata_": {
+                "resources": [{"type": "material", "name": "Brick", "unit": "pcs", "quantity": "10", "unit_rate": "1"}]
+            },
         }
     ]
     st = aggregate_resource_statement(positions)
@@ -300,7 +338,15 @@ def test_render_csv_escapes_commas_in_names():
             "id": "p1",
             "quantity": "1",
             "metadata_": {
-                "resources": [{"type": "material", "name": "Bolt, M12, galvanised", "unit": "pcs", "quantity": "1", "unit_rate": "2"}]
+                "resources": [
+                    {
+                        "type": "material",
+                        "name": "Bolt, M12, galvanised",
+                        "unit": "pcs",
+                        "quantity": "1",
+                        "unit_rate": "2",
+                    }
+                ]
             },
         }
     ]

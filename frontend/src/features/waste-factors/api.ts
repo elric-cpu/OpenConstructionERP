@@ -115,7 +115,7 @@ export function parseApplyInput(text: string): ParsedApplyLine[] {
     const parts = line.split(/[\s,;]+/).filter(Boolean);
     if (parts.length < 2) continue;
     const qty = parts[parts.length - 1];
-    if (!QTY_TOKEN_RE.test(qty)) continue;
+    if (qty === undefined || !QTY_TOKEN_RE.test(qty)) continue;
     const category = parts.slice(0, -1).join(' ').trim();
     if (!category) continue;
     out.push({ category, net_qty: qty });
