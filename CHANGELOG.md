@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [10.6.1] - 2026-07-08
+
+The app now loads noticeably faster on first open. The dashboard is the landing page and, through a chain of shared modules, it was pulling the whole 3D globe and 2D map libraries into the very first download even for people who never open a map. Those libraries now load only when a map or the geo hub is actually opened, which takes about 1.6 MB off the initial load with no change in behaviour. Clicks inside the takeoff Link to BOQ picker no longer bubble to the measurement row and toggle the properties panel.
+
 ## [10.6.0] - 2026-07-07
 
 Five new modules extend the platform past the estimate into delivery on site. Site Logistics and Delivery plans the gates, the laydown zones and the delivery bookings so material arrives to a slot instead of a queue at the gate. Commissioning tracks each system through its checklists, results and open issues up to a clear ready for handover state. Off-site and Prefab runs a production board for prefabricated units through their stages, with a quality gate before a unit can be dispatched and installed. ESG Site Performance records environmental and social metrics for a project and reads them against targets. Cost-Value Reconciliation and Cashflow is the monthly commercial CVR, cost to date against value earned per cost head, the forecast final margin, and the project cashflow as a cumulative S-curve with interim payment applications.
