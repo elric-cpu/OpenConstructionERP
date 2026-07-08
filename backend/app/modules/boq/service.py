@@ -1133,6 +1133,36 @@ def _stamp_resource_breakdown(metadata: dict[str, Any]) -> None:
     }
 
 
+def _has_contributing_resources(resources: Any) -> bool:
+    """True when ``resources`` holds a resource that actually prices the line.
+
+    A position's ``unit_rate`` is derived (``Σ quantity × unit_rate``) and its
+    grid cell is locked ONLY when it carries a *contributing* resource: a
+    non-empty list with at least one entry whose ``quantity`` is a finite,
+    non-zero number. An empty list, an absent list, or a list whose every
+    entry has a zero / blank / non-numeric quantity counts as HAVING NO
+    RESOURCES - the ``unit_rate`` stays a directly-editable manual value and is
+    never auto-derived (and, critically, is never overwritten with a 0 sum when
+    a blank/zero-quantity resource row is added).
+
+    Mirrors the frontend ``hasContributingResources`` so the editable predicate
+    and this derive decision agree on what "resource-driven" means. Pure - no
+    DB I/O.
+    """
+    if not isinstance(resources, list):
+        return False
+    for r in resources:
+        if not isinstance(r, dict):
+            continue
+        try:
+            qty = Decimal(str(r.get("quantity", 0)))
+        except (InvalidOperation, ValueError, TypeError):
+            continue
+        if qty != 0:
+            return True
+    return False
+
+
 def _resource_total_in_base(
     resources: list[dict[str, Any]],
     fx_rates_map: dict[str, str] | None,
@@ -3466,7 +3496,12 @@ class BOQService:
         # That means a pure position-quantity edit must leave unit_rate
         # AND the per-unit resource norms untouched; only the total
         # scales. unit_rate is re-derived from resources only when the
-        # resources list itself changed.
+        # resources list itself changed AND the new list actually prices the
+        # line (``_has_contributing_resources`` - at least one non-zero
+        # quantity). Adding a blank / zero-quantity resource row therefore
+        # does NOT overwrite a manual unit_rate with a 0 sum: such a line is
+        # treated as resource-less and stays directly price-editable, exactly
+        # like the frontend editable predicate.
         triggered_by_qty = "quantity" in fields
         triggered_by_resources = False
         if meta and isinstance(meta, dict) and isinstance(meta.get("resources"), list):
@@ -3489,8 +3524,7 @@ class BOQService:
             triggered_by_resources
             and meta
             and isinstance(meta, dict)
-            and isinstance(meta.get("resources"), list)
-            and meta["resources"]
+            and _has_contributing_resources(meta.get("resources"))
         ):
             resources = meta["resources"]
             _fx_base_ccy, _fx_map = await self._resolve_project_fx(position.boq_id)

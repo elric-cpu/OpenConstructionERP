@@ -5,7 +5,12 @@ import type {
   ValueGetterParams,
   ValueSetterParams,
 } from 'ag-grid-community';
-import { convertToBase, fmtWithCurrency, resourceAwareTotalInBase } from '../boqHelpers';
+import {
+  convertToBase,
+  fmtWithCurrency,
+  hasContributingResources,
+  resourceAwareTotalInBase,
+} from '../boqHelpers';
 import type { DisplayQuantityApi } from '@/shared/hooks/useDisplayQuantity';
 import { unitColumnValueSetter } from './cellEditors';
 import {
@@ -325,8 +330,11 @@ export function needsQuantity(d: Record<string, unknown> | undefined): boolean {
 export function needsPrice(d: Record<string, unknown> | undefined): boolean {
   if (!isCostLine(d)) return false;
   const meta = (d!.metadata || d!.metadata_ || {}) as Record<string, unknown>;
-  const res = meta.resources;
-  if (Array.isArray(res) && res.length > 0) return false;
+  // Only a genuinely resource-DRIVEN line (a resource with a non-zero
+  // quantity) has a computed rate that is never typed. A line carrying only
+  // blank / zero-quantity resource rows is still manually priced, so an unset
+  // rate on it must be flagged (and its cell stays editable — see columnDefs).
+  if (hasContributingResources(meta.resources)) return false;
   const r = typeof d!.unit_rate === 'number' ? d!.unit_rate : parseFloat(String(d!.unit_rate));
   return !Number.isFinite(r) || r === 0;
 }
@@ -673,12 +681,16 @@ export function getColumnDefs(context: BOQColumnContext): ColDef[] {
       editable: (params) => {
         if (params.data?._isSection || params.data?._isFooter) return false;
         // Position rate is the sum of resource subtotals — never editable
-        // when the position carries resources. Variant rate edits happen
-        // on the synthetic VARIANT row inside the resource panel and
-        // patch ``metadata.variant.price`` only (see onUpdateVariantHeader
-        // in BOQGrid). User design: "если есть ресурсы, не нужно трогать".
-        const res = params.data?.metadata?.resources;
-        if (Array.isArray(res) && res.length > 0) return false;
+        // when the position is resource-DRIVEN (carries a resource with a
+        // non-zero quantity). A position with only blank / zero-quantity
+        // resource rows is NOT resource-driven: its rate stays a directly
+        // typed manual value (mirrors the backend derive decision, so we
+        // never lock a cell whose edit the server would accept). Variant
+        // rate edits happen on the synthetic VARIANT row inside the resource
+        // panel and patch ``metadata.variant.price`` only (see
+        // onUpdateVariantHeader in BOQGrid). User design: "если есть ресурсы,
+        // не нужно трогать".
+        if (hasContributingResources(params.data?.metadata?.resources)) return false;
         return true;
       },
       // Issue #287: a display-aware editor so the field OPENS on the same
@@ -705,8 +717,12 @@ export function getColumnDefs(context: BOQColumnContext): ColDef[] {
       cellRenderer: 'unitRateCellRenderer',
       cellClass: (params) => {
         let base = 'text-right tabular-nums text-xs !pr-2 !pl-2';
-        const res = params.data?.metadata?.resources;
-        if (Array.isArray(res) && res.length > 0) base = `${base} text-content-tertiary`;
+        // Grey the rate only when it is genuinely derived from resources
+        // (a contributing, non-zero-quantity resource) — a manually typed
+        // rate on a line with only blank resource rows reads as normal.
+        if (hasContributingResources(params.data?.metadata?.resources)) {
+          base = `${base} text-content-tertiary`;
+        }
         const ctx = params.context as { expandedPositions?: Set<string> } | undefined;
         const isExpanded = !!params.data?.id && (ctx?.expandedPositions?.has(params.data.id) ?? false);
         const flag = needsPrice(params.data as Record<string, unknown> | undefined)
@@ -717,8 +733,7 @@ export function getColumnDefs(context: BOQColumnContext): ColDef[] {
       headerClass: 'ag-right-aligned-header',
       type: 'numericColumn',
       tooltipValueGetter: (params) => {
-        const res = params.data?.metadata?.resources;
-        if (Array.isArray(res) && res.length > 0) {
+        if (hasContributingResources(params.data?.metadata?.resources)) {
           const buildup = rateBuildupTooltip(
             params.data as Record<string, unknown>,
             params.context as BOQColumnContext,

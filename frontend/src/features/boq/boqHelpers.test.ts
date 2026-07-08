@@ -9,7 +9,7 @@
 // producing nonsensical figures.
 
 import { describe, it, expect } from 'vitest';
-import { convertToBase, resourceAwareTotalInBase } from './boqHelpers';
+import { convertToBase, hasContributingResources, resourceAwareTotalInBase } from './boqHelpers';
 
 describe('convertToBase - multi-currency rebase', () => {
   const fxRates = [
@@ -172,5 +172,37 @@ describe('resourceAwareTotalInBase - resource-currency rebase', () => {
     };
     // GBP has no rate — summed in its own units, not dropped.
     expect(resourceAwareTotalInBase(pos, 'ARS', fx)).toBe(25000);
+  });
+});
+
+// ── Founder bug — Unit Rate editable iff no CONTRIBUTING resource ────────
+//
+// "If you change the Unit Rate on a position WITHOUT resources, it does not
+// change. It only changes if you add and fill in resource prices." The cause
+// was that ANY non-empty resources array (even one of blank / zero-quantity
+// rows) was treated as resource-driven, locking the cell. A resource only
+// drives the rate when it has a non-zero quantity.
+describe('hasContributingResources', () => {
+  it('is false for empty / absent / non-array', () => {
+    expect(hasContributingResources(undefined)).toBe(false);
+    expect(hasContributingResources(null)).toBe(false);
+    expect(hasContributingResources([])).toBe(false);
+    expect(hasContributingResources('nope')).toBe(false);
+  });
+
+  it('is false when every resource has a zero / blank / non-numeric quantity', () => {
+    // The founder's "phantom resources" position — reads as resource-less.
+    expect(hasContributingResources([{ quantity: 0, unit_rate: 5 }])).toBe(false);
+    expect(hasContributingResources([{ quantity: 0 }, { quantity: 0.0 }])).toBe(false);
+    expect(hasContributingResources([{ name: 'blank' }])).toBe(false);
+    expect(hasContributingResources([{ quantity: 'abc' }])).toBe(false);
+    expect(hasContributingResources(['not-a-dict', { quantity: 0 }])).toBe(false);
+  });
+
+  it('is true once a resource carries a non-zero quantity', () => {
+    // Non-zero quantity counts even before its price is filled in.
+    expect(hasContributingResources([{ quantity: 1, unit_rate: 0 }])).toBe(true);
+    expect(hasContributingResources([{ quantity: '2.5', unit_rate: 30 }])).toBe(true);
+    expect(hasContributingResources([{ quantity: 0 }, { quantity: 3 }])).toBe(true);
   });
 });

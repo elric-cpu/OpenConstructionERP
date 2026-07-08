@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { resourceSplitFraction, resourceSplitPct, resourceSplitMoneyTotals, nextResourceSplitMode } from './columnDefs';
+import {
+  getColumnDefs,
+  needsPrice,
+  nextResourceSplitMode,
+  resourceSplitFraction,
+  resourceSplitMoneyTotals,
+  resourceSplitPct,
+  type BOQColumnContext,
+} from './columnDefs';
 
 /* ── resource-split toolbar tri-state cycle (pill -> columns -> off) ── */
 describe('nextResourceSplitMode', () => {
@@ -146,5 +154,90 @@ describe('resourceSplitMoneyTotals', () => {
 
   it('returns null when no position carries a split', () => {
     expect(resourceSplitMoneyTotals([position({}), position({ metadata: {} })])).toBeNull();
+  });
+});
+
+/* ── Unit Rate editability (founder bug) ─────────────────────────────────
+ * "If you change the Unit Rate on a position WITHOUT resources it does not
+ * change. It only changes if you add and fill in resource prices." The cell
+ * was locked whenever ANY non-empty resources array was present, including a
+ * list of blank / zero-quantity placeholder rows. The rate cell must stay
+ * editable until a resource with a non-zero quantity actually prices the line.
+ */
+describe('unit_rate column editability', () => {
+  const ctx: BOQColumnContext = {
+    currencySymbol: '€',
+    currencyCode: 'EUR',
+    locale: 'de-DE',
+    fmt: new Intl.NumberFormat('de-DE'),
+    t: (key: string, opts?: Record<string, string>) => (opts?.defaultValue as string) ?? key,
+  };
+
+  const isEditable = (data: Record<string, unknown>): boolean => {
+    const col = getColumnDefs(ctx).find((c) => c.field === 'unit_rate');
+    if (!col) throw new Error('unit_rate column not found');
+    const raw = col.editable;
+    if (typeof raw !== 'function') return !!raw;
+    const ed = raw as unknown as (p: { data?: Record<string, unknown> }) => boolean;
+    return ed({ data });
+  };
+
+  it('is editable for a position with no resources', () => {
+    expect(isEditable({ id: 'p1', unit_rate: 10, metadata: {} })).toBe(true);
+  });
+
+  it('is editable for an empty resources array', () => {
+    expect(isEditable({ id: 'p1', unit_rate: 10, metadata: { resources: [] } })).toBe(true);
+  });
+
+  it('is editable for phantom / all-zero-quantity resources (the founder bug)', () => {
+    expect(
+      isEditable({
+        id: 'p1',
+        unit_rate: 10,
+        metadata: { resources: [{ name: 'blank', quantity: 0, unit_rate: 0 }] },
+      }),
+    ).toBe(true);
+  });
+
+  it('is NOT editable once a resource has a non-zero quantity (invariant kept)', () => {
+    expect(
+      isEditable({
+        id: 'p1',
+        unit_rate: 60,
+        metadata: { resources: [{ name: 'concrete', quantity: 2, unit_rate: 30 }] },
+      }),
+    ).toBe(false);
+  });
+
+  it('is not editable for section / footer rows', () => {
+    expect(isEditable({ id: 's', _isSection: true })).toBe(false);
+    expect(isEditable({ id: 'f', _isFooter: true })).toBe(false);
+  });
+});
+
+/* ── needsPrice flag agrees with editability ─────────────────────────────
+ * An unpriced line that is directly editable (no contributing resource) is
+ * flagged amber; a resource-driven line never is.
+ */
+describe('needsPrice', () => {
+  it('flags an unpriced line with no resources', () => {
+    expect(needsPrice({ unit: 'm2', unit_rate: 0, metadata: {} })).toBe(true);
+  });
+
+  it('flags an unpriced line carrying only blank / zero-quantity resources', () => {
+    expect(
+      needsPrice({ unit: 'm2', unit_rate: 0, metadata: { resources: [{ quantity: 0, unit_rate: 0 }] } }),
+    ).toBe(true);
+  });
+
+  it('does not flag a resource-driven line', () => {
+    expect(
+      needsPrice({ unit: 'm2', unit_rate: 60, metadata: { resources: [{ quantity: 2, unit_rate: 30 }] } }),
+    ).toBe(false);
+  });
+
+  it('does not flag a manually priced line', () => {
+    expect(needsPrice({ unit: 'm2', unit_rate: 42, metadata: {} })).toBe(false);
   });
 });

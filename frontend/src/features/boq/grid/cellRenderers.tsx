@@ -38,6 +38,7 @@ import {
   RESOURCE_TYPE_BADGE,
   fmtWithCurrency,
   getUnitsForLocale,
+  hasContributingResources,
   saveCustomUnit,
 } from '../boqHelpers';
 import { RESOURCE_TYPES, getResourceTypeLabel } from '../boqResourceTypes';
@@ -5178,7 +5179,12 @@ export function UnitRateCellRenderer(params: ICellRendererParams) {
     currency.trim().toUpperCase() !== baseCurrency.trim().toUpperCase();
   const unit = data.unit as string | undefined;
   const resources = meta.resources;
-  const isResourceDriven = Array.isArray(resources) && resources.length > 0;
+  // Resource-DRIVEN means the rate is computed from a contributing resource
+  // (non-zero quantity). A line with only blank / zero-quantity resource rows
+  // keeps a manually typed rate, so it is NOT resource-driven here — matches
+  // the editable predicate + backend derive decision (no variant pill
+  // suppression, no greyed rate for such a line).
+  const isResourceDriven = hasContributingResources(resources);
 
   const numericVal = typeof value === 'number' ? value : parseFloat(String(value ?? 0));
   // Issue #285: when the paired quantity is shown converted (e.g. m -> ft)

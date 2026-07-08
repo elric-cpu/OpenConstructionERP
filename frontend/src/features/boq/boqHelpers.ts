@@ -562,6 +562,34 @@ export function resourceAwareTotalInBase(
   return convertToBase(num(position.total), src, base, fxRates);
 }
 
+/* ── Resource-driven pricing predicate ───────────────────────────────────
+ * A position's Unit Rate is derived (Σ per-unit resource subtotals) and its
+ * cell is locked ONLY when the position carries a resource that actually
+ * contributes to the rate: a non-empty resources list with at least one entry
+ * whose quantity is a finite, non-zero number. An empty list, an absent list,
+ * or a list whose every entry has a zero / blank / non-numeric quantity counts
+ * as HAVING NO RESOURCES — the rate is a directly-editable manual value.
+ *
+ * This is the single source of truth the editable predicate (columnDefs) and
+ * the rate renderer (cellRenderers) share, and it mirrors the backend
+ * ``_has_contributing_resources`` so the UI never shows an editable cell whose
+ * edit the backend would discard, nor a locked cell the user cannot price
+ * (a position with only blank / zero-quantity resource rows).
+ *
+ * NB: this is the PRICING notion. Whether to render the resource sub-rows /
+ * expand chevron is a separate concern keyed on ``resources.length`` — blank
+ * resource rows must still be visible so the user can fill in a quantity.
+ */
+export function hasContributingResources(resources: unknown): boolean {
+  if (!Array.isArray(resources) || resources.length === 0) return false;
+  return resources.some((r) => {
+    if (!r || typeof r !== 'object') return false;
+    const q = (r as { quantity?: unknown }).quantity;
+    const n = typeof q === 'number' ? q : parseFloat(String(q ?? ''));
+    return Number.isFinite(n) && n !== 0;
+  });
+}
+
 /* ── Quality Score ───────────────────────────────────────────────────── */
 
 export interface QualityBreakdown {
