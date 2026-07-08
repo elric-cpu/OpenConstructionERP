@@ -250,13 +250,23 @@ const navGroups: NavGroup[] = [
     defaultOpen: true,
     items: [
       { labelKey: 'boq.title', to: '/boq', icon: Table2, tourId: 'boq' },
-      { labelKey: 'nav.ai_estimator', to: '/ai-estimator', icon: Wand2, badge: 'BETA' },
-      { labelKey: 'nav.ai_estimate', to: '/ai-estimate', icon: Sparkles, badge: 'BETA' },
       { labelKey: 'nav.match_elements', to: '/match-elements', icon: Link2, badge: 'BETA' },
       { labelKey: 'nav.estimation_dashboard', to: '/project-intelligence', icon: BrainCircuit },
-      { labelKey: 'nav.methodologies', to: '/methodologies', icon: SlidersHorizontal },
       { labelKey: 'nav.rom_estimate', to: '/rom-estimate', icon: Gauge },
-      { labelKey: 'nav.estimate_copilot', to: '/estimate-copilot', icon: Bot, badge: 'BETA' },
+      { labelKey: 'nav.methodologies', to: '/methodologies', icon: SlidersHorizontal },
+    ],
+  },
+  // ── 3b. ESTIMATE DETAIL ────────────────────────────────────────────
+  // The advanced refinements layered on top of the BOQ: the basis of
+  // estimate, preliminaries and allowances. Split out of Estimating so
+  // that group stays at five rows (all advanced-mode only).
+  {
+    id: 'grp_estimate_detail',
+    labelKey: 'sidebar.group.estimate_detail',
+    defaultLabel: 'Estimate Detail',
+    defaultOpen: true,
+    hideInSimple: true,
+    items: [
       { labelKey: 'nav.estimate_basis', to: '/estimate-basis', icon: FileText, advancedOnly: true },
       { labelKey: 'nav.preliminaries', to: '/preliminaries', icon: ClipboardList, advancedOnly: true },
       { labelKey: 'nav.allowances', to: '/allowances', icon: Wallet, advancedOnly: true },
@@ -311,11 +321,11 @@ const navGroups: NavGroup[] = [
     defaultOpen: true,
     hideInSimple: true,
     items: [
-      { labelKey: 'nav.coordination_hub', to: '/coordination', icon: LayoutDashboard },
+      { labelKey: 'nav.coordination_hub', to: '/coordination', icon: LayoutDashboard, badge: 'BETA' },
       { labelKey: 'nav.bim_federations', to: '/bim/federations', icon: Layers },
-      { labelKey: 'nav.clash_detection', to: '/clash', icon: Radar },
+      { labelKey: 'nav.clash_detection', to: '/clash', icon: Radar, badge: 'BETA' },
       { labelKey: 'nav.bim_rules', to: '/bim/rules?mode=requirements', icon: SlidersHorizontal },
-      { labelKey: 'nav.eir_matrix', to: '/requirements/matrix', icon: FileCheck, advancedOnly: true },
+      { labelKey: 'nav.eir_matrix', to: '/requirements/matrix', icon: FileCheck, advancedOnly: true, badge: 'BETA' },
     ],
   },
   // ── 7. SCHEDULING ──────────────────────────────────────────────────
@@ -479,9 +489,23 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.daily_diary', to: '/daily-diary', icon: BookOpen },
       { labelKey: 'nav.field_reports', to: '/field-reports', icon: ClipboardList, advancedOnly: true },
       { labelKey: 'nav.field_time', to: '/field-time', icon: Timer, advancedOnly: true },
+    ],
+  },
+  // ── 11b. ON SITE ───────────────────────────────────────────────────
+  // Site-facing operations: service tickets, site logistics and the
+  // external subcontractor / client portal. The /portal/payments route is
+  // intentionally NOT listed: it is the magic-link-authed surface for
+  // subcontractors (no app shell), reached only via their invitation email.
+  {
+    id: 'grp_site',
+    labelKey: 'sidebar.group.on_site',
+    defaultLabel: 'On Site',
+    defaultOpen: true,
+    hideInSimple: true,
+    items: [
       { labelKey: 'nav.service', to: '/service', icon: Wrench },
-      { labelKey: 'nav.portal', to: '/portal', icon: Globe },
       { labelKey: 'nav.site_logistics', to: '/site-logistics', icon: Truck },
+      { labelKey: 'nav.portal', to: '/portal', icon: Globe },
     ],
   },
   // ── 12. RESOURCES & ASSETS ─────────────────────────────────────────
@@ -517,9 +541,22 @@ const navGroups: NavGroup[] = [
       { labelKey: 'construction_control.title', to: '/construction-control', icon: ClipboardList },
       { labelKey: 'ncr.title', to: '/ncr', icon: AlertOctagon },
       { labelKey: 'nav.punchlist', to: '/punchlist', icon: ListChecks },
+    ],
+  },
+  // ── 13b. HANDOVER & COMMISSIONING ──────────────────────────────────
+  // Finishing the job cleanly: commissioning, close-out and the forms /
+  // checklists that back them. Split out of Quality so each group stays
+  // short and scannable.
+  {
+    id: 'grp_handover',
+    labelKey: 'sidebar.group.handover',
+    defaultLabel: 'Handover & Commissioning',
+    defaultOpen: true,
+    hideInSimple: true,
+    items: [
+      { labelKey: 'nav.commissioning', to: '/commissioning', icon: ClipboardCheck },
       { labelKey: 'closeout.title', to: '/closeout', icon: PackageCheck },
       { labelKey: 'nav.forms', to: '/forms', icon: ClipboardList },
-      { labelKey: 'nav.commissioning', to: '/commissioning', icon: ClipboardCheck },
     ],
   },
   // ── 14. SAFETY & ESG ───────────────────────────────────────────────
@@ -535,6 +572,18 @@ const navGroups: NavGroup[] = [
       { labelKey: 'safety.title', to: '/safety', icon: HardHat },
       { labelKey: 'nav.hse_advanced', to: '/hse-advanced', icon: Shield, advancedOnly: true },
       { labelKey: 'nav.qms', to: '/qms', icon: BadgeCheck, advancedOnly: true },
+    ],
+  },
+  // ── 14b. ESG & CARBON ──────────────────────────────────────────────
+  // Environmental, social and governance reporting: embodied and
+  // operational carbon, the sustainability hub and the ESG dashboard.
+  {
+    id: 'grp_esg',
+    labelKey: 'sidebar.group.esg',
+    defaultLabel: 'ESG & Carbon',
+    defaultOpen: true,
+    hideInSimple: true,
+    items: [
       { labelKey: 'nav.carbon', to: '/carbon', icon: Leaf, advancedOnly: true },
       { labelKey: 'nav.sustainability', to: '/sustainability', icon: Leaf, moduleKey: 'sustainability', advancedOnly: true },
       { labelKey: 'nav.esg', to: '/esg', icon: Leaf, advancedOnly: true },
@@ -584,7 +633,7 @@ const navGroups: NavGroup[] = [
     hideInSimple: true,
     items: [
       { labelKey: 'nav.property_dev', to: '/property-dev', icon: Building2 },
-      { labelKey: 'nav.accommodation', to: '/accommodation', icon: Building2 },
+      { labelKey: 'nav.accommodation', to: '/accommodation', icon: Building2, badge: 'BETA' },
       { labelKey: 'nav.property_dev_dashboards', to: '/property-dev/dashboards', icon: BarChart3, advancedOnly: true },
       { labelKey: 'nav.property_dev_house_types', to: '/property-dev/settings/house-types', icon: Building2, advancedOnly: true },
       { labelKey: 'nav.property_dev_doc_templates', to: '/property-dev/settings/document-templates', icon: FileText, advancedOnly: true },
@@ -638,7 +687,24 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.ai_agents', to: '/ai-agents', icon: Bot, badge: 'BETA' },
       { labelKey: 'nav.ai_advisor', to: '/advisor', icon: MessageSquare },
       { labelKey: 'nav.erp_chat', to: '/chat', icon: MessageSquare },
-      { labelKey: 'nav.pipelines', to: '/pipelines', icon: GitBranch, moduleKey: 'pipelines', advancedOnly: true },
+      { labelKey: 'nav.pipelines', to: '/pipelines', icon: GitBranch, moduleKey: 'pipelines', advancedOnly: true, badge: 'BETA' },
+    ],
+  },
+  // ── 20a. AI ESTIMATING (beta, in development) ──────────────────────
+  // AI-assisted drafting: the AI estimate, the AI estimator and the
+  // estimate copilot. They work but are still beta and lean on the core
+  // BOQ, so they sit down here with the other AI surfaces rather than at
+  // the top of Estimating. Collapsed by default to keep them low-key.
+  {
+    id: 'grp_estimating_ai',
+    labelKey: 'sidebar.group.estimating_ai',
+    defaultLabel: 'AI Estimating',
+    defaultOpen: false,
+    hideInSimple: true,
+    items: [
+      { labelKey: 'nav.ai_estimate', to: '/ai-estimate', icon: Sparkles, badge: 'BETA' },
+      { labelKey: 'nav.ai_estimator', to: '/ai-estimator', icon: Wand2, badge: 'BETA' },
+      { labelKey: 'nav.estimate_copilot', to: '/estimate-copilot', icon: Bot, badge: 'BETA' },
     ],
   },
   // ── 20b. RATE BUILD-UP (beta, in development) ──────────────────────

@@ -441,9 +441,15 @@ export function PipelinesPage() {
     <div
       data-testid="pipelines-page"
       data-tour="pipelines"
-      className="flex h-[calc(100vh-var(--oe-header-height,56px))] w-full overflow-hidden bg-surface-primary"
+      className="flex flex-col -mx-4 -mt-6 -mb-4 h-[calc(100vh-var(--oe-header-height,56px))] overflow-hidden bg-surface-primary sm:-mx-7"
     >
-      <BetaBanner moduleKey="pipelines" className="mt-3" />
+      {/* BETA notice stacks on TOP of the editor. It must not be a sibling of
+          the palette / canvas / inspector row: as a row child it collapsed into
+          a sliver column and broke the 3-zone layout (and the page also skipped
+          the full-bleed -mx negation, so it was inset by the app padding). The
+          row now lives in its own flex child below and the root is full-bleed. */}
+      <BetaBanner moduleKey="pipelines" className="mx-3 mt-3 shrink-0" />
+      <div className="flex min-h-0 flex-1 overflow-hidden">
       <NodePalette
         nodeTypes={nodeTypes}
         loading={nodeTypesQuery.isLoading}
@@ -505,6 +511,7 @@ export function PipelinesPage() {
         onToggleCollapsed={() => setInspectorCollapsed((v) => !v)}
         summary={explainSummary}
       />
+      </div>
 
       <OnboardingTour steps={tourSteps} />
     </div>

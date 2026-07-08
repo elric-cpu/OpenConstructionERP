@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import {
   Eye, EyeOff, Mail, Lock, Globe, ChevronDown, X, Github, Users, ArrowUpRight, Pencil,
-  ShieldCheck, Zap, Brain,
+  ShieldCheck, Zap, Brain, Info,
   FileSpreadsheet, CalendarClock, TrendingUp, Boxes, Database,
   BarChart3, Upload, FileCheck,
   Box, Ruler, Layers,
@@ -117,6 +117,7 @@ export function LoginPage() {
   const [showInfo, setShowInfo] = useState(false);
   const [brandOpen, setBrandOpen] = useState(false);
   const [demoOpen, setDemoOpen] = useState(true);
+  const [demoHint, setDemoHint] = useState(false);
   const [demoLoading, setDemoLoading] = useState<string | null>(null);
   // null = not probed yet; the demo block renders only once the server
   // confirms demo accounts are available (see the first-run effect below).
@@ -263,7 +264,7 @@ export function LoginPage() {
 
   const demoAccounts = [
     { email: 'demo@openconstructionerp.com', name: 'Admin', role: t('auth.demo_role_admin', 'Administrator'), color: 'bg-blue-500', letter: 'A' },
-    { email: 'manager@openconstructionerp.com', name: 'Thomas Müller', role: t('auth.demo_role_manager', 'Manager'), color: 'bg-[#7cd0ff]', letter: 'M' },
+    { email: 'manager@openconstructionerp.com', name: 'Michael Carter', role: t('auth.demo_role_manager', 'Manager'), color: 'bg-[#7cd0ff]', letter: 'M' },
   ];
 
   const handleDemoLogin = async (demoEmail: string) => {
@@ -867,16 +868,42 @@ export function LoginPage() {
                     'linear-gradient(90deg, transparent, rgba(255,255,255,0.95), transparent)',
                 }}
               />
-              <button
-                type="button"
-                onClick={() => setDemoOpen(!demoOpen)}
-                aria-expanded={demoOpen}
-                className="flex w-full items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold text-oe-blue hover:bg-oe-blue/[0.04] transition-all"
-              >
-                <Zap size={14} className="text-oe-blue" />
-                <span>{t('auth.try_demo', { defaultValue: 'Try demo (no signup)' })}</span>
-                <ChevronDown size={14} className={`text-oe-blue/70 transition-transform duration-200 ${demoOpen ? 'rotate-180' : ''}`} />
-              </button>
+              <div className="relative flex w-full items-center">
+                <button
+                  type="button"
+                  onClick={() => setDemoOpen(!demoOpen)}
+                  aria-expanded={demoOpen}
+                  className="flex flex-1 items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold text-oe-blue hover:bg-oe-blue/[0.04] transition-all"
+                >
+                  <Zap size={14} className="text-oe-blue" />
+                  <span>{t('auth.try_demo', { defaultValue: 'Try demo (no signup)' })}</span>
+                  <ChevronDown size={14} className={`text-oe-blue/70 transition-transform duration-200 ${demoOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {/* Info affordance: the demo sign-in is optional and can be shown
+                    or hidden from Settings. Hover reveals the hint; click pins it
+                    (touch / keyboard). Kept OUTSIDE the toggle button so it is not
+                    a nested interactive control, and absolutely placed to the
+                    right so the "Try demo" label stays centred. */}
+                <div className="group absolute right-2 top-1/2 -translate-y-1/2">
+                  <button
+                    type="button"
+                    aria-label={t('auth.demo_hint_aria', { defaultValue: 'About the demo sign-in block' })}
+                    onClick={() => setDemoHint((v) => !v)}
+                    className="flex h-6 w-6 items-center justify-center rounded-full text-oe-blue/50 hover:text-oe-blue hover:bg-oe-blue/[0.08] transition-colors"
+                  >
+                    <Info size={14} />
+                  </button>
+                  <div
+                    role="tooltip"
+                    className={`pointer-events-none absolute right-0 top-full z-20 mt-1.5 w-60 rounded-lg border border-border-light bg-surface-elevated px-3 py-2 text-left text-xs leading-relaxed text-content-secondary shadow-lg transition-opacity duration-150 ${demoHint ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                  >
+                    {t('auth.demo_hint', {
+                      defaultValue:
+                        'This demo sign-in is optional. You can show or hide it anytime in Settings.',
+                    })}
+                  </div>
+                </div>
+              </div>
 
               {demoOpen && (
                 <div className="border-t border-border-light/60 px-3 py-2.5 space-y-1.5 animate-stagger-in">
