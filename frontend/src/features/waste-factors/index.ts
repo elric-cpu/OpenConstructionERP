@@ -1,0 +1,1 @@
+export { WasteFactorsPage } from './WasteFactorsPage';
