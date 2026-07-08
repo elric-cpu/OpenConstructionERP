@@ -39,6 +39,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.match_service.boosts import classifier as boost_classifier
+from app.core.match_service.boosts import prior_pick as boost_prior_pick
 from app.core.match_service.boosts import region as boost_region
 from app.core.match_service.boosts import unit as boost_unit
 from app.core.match_service.config import (
@@ -78,8 +79,14 @@ logger = logging.getLogger(__name__)
 
 # Narrow boost stack - see module docstring for the reasoning. Order
 # follows "most explainable first" so the API response's
-# ``boosts_applied`` dict is human-readable.
+# ``boosts_applied`` dict is human-readable. ``prior_pick`` leads: a code
+# the team already confirmed for this signature is the most explainable
+# signal there is, and lifting it here (before the confidence band is
+# derived) makes a repeat read as high confidence rather than a mid-list
+# guess. It is a no-op unless the match-elements service bound a
+# per-group context for the current ranker call.
 _BOOSTS = (
+    boost_prior_pick.boost,
     boost_classifier.boost,
     boost_unit.boost,
     boost_region.boost,

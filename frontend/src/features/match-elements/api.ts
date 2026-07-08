@@ -357,6 +357,15 @@ export interface MatchTemplate {
   created_at: string;
 }
 
+/** Bulk signature -> prior-confirmed template lookup. Mirrors backend
+ *  ``TemplateLookupResponse`` (match_elements/schemas.py): a map keyed by
+ *  the group signature so the wizard can show a "previously matched"
+ *  hint before running a fresh search. Signatures with no confirmed
+ *  mapping are simply absent from ``matches``. */
+export interface TemplateLookupResponse {
+  matches: Record<string, MatchTemplate>;
+}
+
 /** Vector DB readiness for the project's language. Surfaced on the page
  *  so the user can see whether the cwicr_<lang>_v3 collection is loaded
  *  and which collection a match query will hit. */
@@ -766,6 +775,17 @@ export const matchElementsApi = {
   // ── Templates ────────────────────────────────────────────────────────
 
   listTemplates: () => call<MatchTemplate[]>('/templates'),
+
+  /** Bulk lookup of prior-confirmed mappings for a set of group
+   *  signatures. Powers the "previously matched" hint: the wizard can
+   *  ask, before running a search, which groups the team already
+   *  confirmed a code for. Ownership-scoped server-side, so a user only
+   *  ever sees their own library. */
+  lookupTemplates: (signatures: string[]) =>
+    call<TemplateLookupResponse>('/templates/lookup', {
+      method: 'POST',
+      body: JSON.stringify({ signatures }),
+    }),
 
   deleteTemplate: (id: string) =>
     call<void>(`/templates/${id}`, { method: 'DELETE' }),
