@@ -236,3 +236,67 @@ class RomEstimateRecord(BaseModel):
     )
     def _ser(self, v: Decimal) -> str | None:
         return _serialise_money(v)
+
+
+# ── Reconciliation (concept vs live detailed BOQ) ────────────────────────────
+
+
+class RomReconciliation(BaseModel):
+    """Read-side reconciliation of the conceptual total against the live BOQ.
+
+    Compares the project's most-recent saved conceptual (ROM) total to the sum of
+    its detailed BOQ grand totals (converted to the project base currency by the
+    BOQ module's FX-aware rollup) and reports the drift, so the concept number
+    stays a live benchmark through design development. This is classic
+    design-development cost control: does the detailed design still track the
+    number the whole project was approved on?
+
+    Money and percentage values follow the platform contract: Decimal in Python,
+    emitted as plain decimal strings in JSON. ``conceptual_total`` /
+    ``variance_amount`` / ``variance_pct`` are ``null`` when there is no usable
+    conceptual baseline to compare against (``status`` is then ``no_baseline``).
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    project_id: UUID
+    status: str = Field(description="Reconciliation band: no_baseline | on_track | over | under.")
+    conceptual_total: Decimal | None = Field(
+        default=None, description="Most-recent saved conceptual total, or null when none is stored."
+    )
+    detailed_total: Decimal = Field(
+        default=Decimal("0"), description="Sum of the project's BOQ grand totals in the base currency."
+    )
+    variance_amount: Decimal | None = Field(
+        default=None, description="detailed_total - conceptual_total, or null with no baseline."
+    )
+    variance_pct: Decimal | None = Field(
+        default=None, description="Variance as a signed percent of the conceptual total, or null."
+    )
+    tolerance_pct: Decimal = Field(
+        default=Decimal("10"), description="On-track tolerance band (absolute percent) used for the status."
+    )
+    currency: str = Field(default="", description="Currency the reconciliation is expressed in (BOQ base currency).")
+    conceptual_currency: str = Field(default="", description="Currency label stored on the conceptual estimate.")
+    currency_mismatch: bool = Field(
+        default=False, description="True when the two currencies differ, so the comparison mixes currencies."
+    )
+    boq_count: int = Field(default=0, description="Number of BOQs summed into the detailed total.")
+    conceptual_estimate_id: UUID | None = Field(
+        default=None, description="Id of the baseline conceptual estimate, or null."
+    )
+    conceptual_name: str = Field(default="", description="Name of the baseline conceptual estimate.")
+    conceptual_created_at: datetime | None = Field(
+        default=None, description="When the baseline conceptual estimate was saved."
+    )
+
+    @field_serializer(
+        "conceptual_total",
+        "detailed_total",
+        "variance_amount",
+        "variance_pct",
+        "tolerance_pct",
+        when_used="json",
+    )
+    def _ser(self, v: Decimal | None) -> str | None:
+        return _serialise_money(v)

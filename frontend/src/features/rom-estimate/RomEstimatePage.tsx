@@ -1,10 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Calculator, AlertTriangle } from 'lucide-react';
+import {
+  Calculator,
+  AlertTriangle,
+  Scale,
+  TrendingUp,
+  TrendingDown,
+  CheckCircle2,
+  type LucideIcon,
+} from 'lucide-react';
 import { Card, CardHeader, CardContent } from '@/shared/ui';
 import { formatCurrency, toNum } from '@/shared/lib/money';
-import { romEstimateApi, type RomEstimateResult } from './api';
+import { useActiveProjectId } from '@/shared/hooks/useActiveProjectId';
+import { romEstimateApi, type RomEstimateResult, type RomReconciliation } from './api';
 
 /**
  * Conceptual (ROM) estimate page.
@@ -88,6 +97,8 @@ export function RomEstimatePage() {
           })}
         </p>
       </div>
+
+      <RomReconciliationPanel />
 
       <Card>
         <CardHeader title={t('romEstimate.inputs_title', { defaultValue: 'Project basics' })} />
@@ -352,6 +363,209 @@ function RomResultView({ result }: { result: RomEstimateResult }) {
           </p>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+/** Traffic-light treatment per reconciliation status. */
+const RECONCILE_STATUS_STYLE: Record<
+  RomReconciliation['status'],
+  { pill: string; accent: string; Icon: LucideIcon }
+> = {
+  on_track: {
+    pill: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+    accent: 'text-emerald-600 dark:text-emerald-400',
+    Icon: CheckCircle2,
+  },
+  over: {
+    pill: 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+    accent: 'text-red-600 dark:text-red-400',
+    Icon: TrendingUp,
+  },
+  under: {
+    pill: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+    accent: 'text-amber-600 dark:text-amber-400',
+    Icon: TrendingDown,
+  },
+  no_baseline: {
+    pill: 'bg-surface-secondary text-content-tertiary',
+    accent: 'text-content-tertiary',
+    Icon: Scale,
+  },
+};
+
+/** Prefix a positive money string with '+'; negatives already carry a minus. */
+function signedMoney(value: string | null, currency: string): string {
+  if (value === null) return '';
+  const formatted = formatCurrency(value, currency, undefined, { maximumFractionDigits: 0 });
+  return toNum(value) > 0 ? `+${formatted}` : formatted;
+}
+
+/**
+ * Project-scoped reconciliation of the conceptual baseline against the live BOQ.
+ *
+ * Answers the design-development question the concept number was losing: is the
+ * detailed estimate still tracking the number the project was approved on? It
+ * reads the backend reconciliation for the active project and shows conceptual
+ * vs detailed, the variance amount and percent, and a traffic-light band. It
+ * renders nothing when no project is active (the calculator is usable stand-alone).
+ *
+ * All money and percentages come straight from the API as Decimal strings and
+ * are only ever formatted, never float-mathed, here.
+ */
+export function RomReconciliationPanel() {
+  const { t } = useTranslation();
+  const projectId = useActiveProjectId();
+
+  const query = useQuery({
+    queryKey: ['rom-estimate', 'reconciliation', projectId],
+    queryFn: () => romEstimateApi.reconciliation(projectId),
+    enabled: Boolean(projectId),
+    staleTime: 30 * 1000,
+  });
+
+  if (!projectId) return null;
+
+  const rec = query.data;
+
+  return (
+    <Card>
+      <CardHeader
+        title={
+          <span className="flex items-center gap-2">
+            <Scale size={18} />
+            {t('romEstimate.reconcile.title', { defaultValue: 'Concept vs detailed estimate' })}
+          </span>
+        }
+      />
+      <CardContent>
+        {query.isLoading && (
+          <p className="text-sm text-content-tertiary">
+            {t('romEstimate.reconcile.loading', { defaultValue: 'Loading reconciliation…' })}
+          </p>
+        )}
+        {query.isError && (
+          <p className="text-sm text-semantic-error">
+            {t('romEstimate.reconcile.error', {
+              defaultValue: 'Could not load the reconciliation for this project.',
+            })}
+          </p>
+        )}
+        {rec && <RomReconciliationView rec={rec} />}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Read-only rendering of a reconciliation payload. */
+function RomReconciliationView({ rec }: { rec: RomReconciliation }) {
+  const { t } = useTranslation();
+  const style = RECONCILE_STATUS_STYLE[rec.status] ?? RECONCILE_STATUS_STYLE.no_baseline;
+  const { Icon } = style;
+  const currency = rec.currency || '';
+  const hasBaseline = rec.status !== 'no_baseline' && rec.conceptual_total !== null;
+
+  const statusLabel = t(`romEstimate.reconcile.status_${rec.status}`, {
+    defaultValue: {
+      on_track: 'On track',
+      over: 'Over concept',
+      under: 'Under concept',
+      no_baseline: 'No baseline',
+    }[rec.status],
+  });
+  const statusDesc = t(`romEstimate.reconcile.desc_${rec.status}`, {
+    defaultValue: {
+      on_track: 'The detailed estimate is tracking the conceptual budget.',
+      over: 'The detailed estimate is running above the conceptual budget.',
+      under: 'The detailed estimate is below the conceptual budget.',
+      no_baseline:
+        'No conceptual baseline is saved for this project yet. Save a conceptual estimate to track the detailed design against it.',
+    }[rec.status],
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <span
+          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${style.pill}`}
+        >
+          <Icon size={14} />
+          {statusLabel}
+        </span>
+        <span className="text-sm text-content-secondary">{statusDesc}</span>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {/* Conceptual baseline */}
+        <div className="rounded-xl bg-surface-secondary p-4">
+          <div className="mb-1 text-2xs font-medium uppercase tracking-wider text-content-tertiary">
+            {t('romEstimate.reconcile.conceptual', { defaultValue: 'Conceptual baseline' })}
+          </div>
+          <div className="text-xl font-bold tabular-nums text-content-primary">
+            {hasBaseline
+              ? formatCurrency(rec.conceptual_total, currency, undefined, { maximumFractionDigits: 0 })
+              : t('romEstimate.reconcile.not_set', { defaultValue: 'Not set' })}
+          </div>
+          {rec.conceptual_name && (
+            <div className="mt-1 truncate text-2xs text-content-tertiary" title={rec.conceptual_name}>
+              {rec.conceptual_name}
+            </div>
+          )}
+        </div>
+
+        {/* Live detailed total */}
+        <div className="rounded-xl border border-border-light bg-surface-elevated/90 p-4">
+          <div className="mb-1 text-2xs font-medium uppercase tracking-wider text-content-tertiary">
+            {t('romEstimate.reconcile.detailed', { defaultValue: 'Detailed BOQ total' })}
+          </div>
+          <div className="text-xl font-bold tabular-nums text-content-primary">
+            {formatCurrency(rec.detailed_total, currency, undefined, { maximumFractionDigits: 0 })}
+          </div>
+          <div className="mt-1 text-2xs text-content-tertiary">
+            {t('romEstimate.reconcile.boq_count', {
+              defaultValue: '{{n}} bill(s) of quantities',
+              n: rec.boq_count,
+            })}
+          </div>
+        </div>
+
+        {/* Variance */}
+        <div className="rounded-xl border border-border-light bg-surface-elevated/90 p-4">
+          <div className="mb-1 text-2xs font-medium uppercase tracking-wider text-content-tertiary">
+            {t('romEstimate.reconcile.variance', { defaultValue: 'Variance' })}
+          </div>
+          <div className={`text-xl font-bold tabular-nums ${hasBaseline ? style.accent : 'text-content-tertiary'}`}>
+            {hasBaseline
+              ? signedMoney(rec.variance_amount, currency)
+              : t('romEstimate.reconcile.not_set', { defaultValue: 'Not set' })}
+          </div>
+          {hasBaseline && rec.variance_pct !== null && (
+            <div className={`mt-1 text-2xs font-medium tabular-nums ${style.accent}`}>
+              {formatPct(rec.variance_pct)}{' '}
+              <span className="text-content-tertiary">
+                {t('romEstimate.reconcile.tolerance', {
+                  defaultValue: 'vs concept (band ±{{pct}}%)',
+                  pct: toNum(rec.tolerance_pct).toFixed(0),
+                })}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {rec.currency_mismatch && (
+        <div className="flex items-start gap-2 rounded-lg bg-amber-50 p-3 text-2xs text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <span>
+            {t('romEstimate.reconcile.currency_mismatch', {
+              defaultValue:
+                'The concept ({{concept}}) and detailed estimate ({{detailed}}) use different currencies, so the comparison mixes currencies. Align them for an exact variance.',
+              concept: rec.conceptual_currency || '?',
+              detailed: rec.currency || '?',
+            })}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

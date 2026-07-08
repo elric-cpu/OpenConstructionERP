@@ -95,10 +95,49 @@ export interface RomEstimateResult {
   notes: string;
 }
 
+/** Reconciliation status band. */
+export type RomReconciliationStatus = 'no_baseline' | 'on_track' | 'over' | 'under';
+
+/**
+ * Read-side reconciliation of the project's conceptual baseline against its live
+ * detailed BOQ total. Money and percentage fields are Decimal strings (or null
+ * when there is no usable baseline); render them verbatim, never float-mathed.
+ */
+export interface RomReconciliation {
+  project_id: string;
+  status: RomReconciliationStatus;
+  /** Most-recent saved conceptual total, or null when none is stored. */
+  conceptual_total: string | null;
+  /** Sum of the project's BOQ grand totals in the base currency ("0" with no BOQ). */
+  detailed_total: string;
+  /** detailed_total - conceptual_total, or null with no baseline. */
+  variance_amount: string | null;
+  /** Variance as a signed percent of the conceptual total, or null. */
+  variance_pct: string | null;
+  /** On-track tolerance band (absolute percent) used for the status. */
+  tolerance_pct: string;
+  /** Currency the reconciliation is expressed in (BOQ base currency). */
+  currency: string;
+  /** Currency label stored on the conceptual estimate. */
+  conceptual_currency: string;
+  /** True when the two currencies differ, so the comparison mixes currencies. */
+  currency_mismatch: boolean;
+  /** Number of BOQs summed into the detailed total. */
+  boq_count: number;
+  conceptual_estimate_id: string | null;
+  conceptual_name: string;
+  conceptual_created_at: string | null;
+}
+
 export const romEstimateApi = {
   /** Reference table for the form (building types, quality levels, regions, elements). */
   reference: () => apiGet<RomReference>('/v1/rom-estimate/reference/'),
   /** Produce an instant order-of-magnitude estimate (stateless, no persistence). */
   generate: (body: RomEstimateRequest) =>
     apiPost<RomEstimateResult, RomEstimateRequest>('/v1/rom-estimate/generate/', body),
+  /** Reconcile the project's saved conceptual baseline against its live detailed BOQ total. */
+  reconciliation: (projectId: string) =>
+    apiGet<RomReconciliation>(
+      `/v1/rom-estimate/projects/${encodeURIComponent(projectId)}/reconciliation/`,
+    ),
 };

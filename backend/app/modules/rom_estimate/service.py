@@ -27,7 +27,9 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from decimal import ROUND_HALF_UP, Decimal
+from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,8 +49,12 @@ from app.modules.rom_estimate.schemas import (
     RomEstimateRequest,
     RomEstimateResult,
     RomFactorOption,
+    RomReconciliation,
     RomReferenceResponse,
 )
+
+if TYPE_CHECKING:
+    from app.modules.boq.service import BOQService
 
 _CENTS = Decimal("0.01")
 
@@ -500,6 +506,137 @@ def rom_result_to_row_kwargs(
     }
 
 
+# ── Reconciliation (concept vs live detailed BOQ) ────────────────────────────
+# Once a detailed BOQ exists, nobody sees whether the design still tracks the
+# concept it was approved on. These pure helpers turn a stored conceptual total
+# and the live detailed total into an explicit drift with a traffic-light band,
+# so the concept number stays a live benchmark (design-development cost control).
+
+STATUS_NO_BASELINE: str = "no_baseline"
+STATUS_ON_TRACK: str = "on_track"
+STATUS_OVER: str = "over"
+STATUS_UNDER: str = "under"
+
+# Default on-track tolerance. Design-development cost control classically flags
+# drift beyond roughly +-10% of the approved concept, so 10% is the sensible
+# worldwide default; it is a plain percentage (not a fraction).
+DEFAULT_RECONCILE_TOLERANCE_PCT: Decimal = Decimal("10")
+
+
+def _parse_money(value: str | Decimal | None) -> Decimal | None:
+    """Parse a stored money string to a finite Decimal, or ``None`` when unusable.
+
+    Args:
+        value: A Decimal-as-string (the storage convention), a Decimal, or None.
+
+    Returns:
+        The finite Decimal value, or ``None`` when the input is missing or does
+        not parse to a finite number.
+    """
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return value if value.is_finite() else None
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+    return parsed if parsed.is_finite() else None
+
+
+def build_reconciliation(
+    *,
+    project_id: uuid.UUID,
+    conceptual_total: Decimal | None,
+    detailed_total: Decimal,
+    currency: str = "",
+    conceptual_currency: str = "",
+    boq_count: int = 0,
+    conceptual_estimate_id: uuid.UUID | None = None,
+    conceptual_name: str = "",
+    conceptual_created_at: datetime | None = None,
+    tolerance_pct: Decimal = DEFAULT_RECONCILE_TOLERANCE_PCT,
+) -> RomReconciliation:
+    """Reconcile a conceptual total against the live detailed BOQ total (pure).
+
+    The variance is ``detailed_total - conceptual_total`` and the percentage is
+    that variance over the conceptual total. The status band is:
+
+    - ``no_baseline`` when there is no conceptual total, or it is not positive
+      (a zero baseline is not a usable benchmark for percentage drift);
+    - ``over`` when the detailed total exceeds the concept by more than the
+      tolerance;
+    - ``under`` when it falls short by more than the tolerance;
+    - ``on_track`` otherwise.
+
+    Args:
+        project_id: The project the reconciliation is for.
+        conceptual_total: The stored conceptual baseline total, or ``None``.
+        detailed_total: The live detailed BOQ total (``Decimal("0")`` with no BOQ).
+        currency: Currency the reconciliation is expressed in (BOQ base currency).
+        conceptual_currency: Currency label stored on the conceptual estimate.
+        boq_count: Number of BOQs summed into the detailed total.
+        conceptual_estimate_id: Id of the baseline estimate, or ``None``.
+        conceptual_name: Name of the baseline estimate.
+        conceptual_created_at: When the baseline estimate was saved.
+        tolerance_pct: On-track tolerance band (absolute percent).
+
+    Returns:
+        A fully populated :class:`RomReconciliation`.
+    """
+    detailed = detailed_total if detailed_total is not None else Decimal("0")
+    tolerance = abs(tolerance_pct)
+    base_currency = (currency or "").strip().upper()
+    concept_currency = (conceptual_currency or "").strip().upper()
+    reconciliation_currency = base_currency or concept_currency
+    mismatch = bool(base_currency and concept_currency and base_currency != concept_currency)
+
+    common = {
+        "project_id": project_id,
+        "detailed_total": detailed,
+        "tolerance_pct": tolerance,
+        "currency": reconciliation_currency,
+        "conceptual_currency": concept_currency,
+        "currency_mismatch": mismatch,
+        "boq_count": boq_count,
+        "conceptual_estimate_id": conceptual_estimate_id,
+        "conceptual_name": conceptual_name,
+        "conceptual_created_at": conceptual_created_at,
+    }
+
+    # No usable baseline (missing, non-positive, or non-finite): report the
+    # detailed side honestly but leave the variance null - there is nothing
+    # meaningful to divide by. This is the zero / again-zero guard.
+    if conceptual_total is None or not conceptual_total.is_finite() or conceptual_total <= 0:
+        return RomReconciliation(
+            status=STATUS_NO_BASELINE,
+            conceptual_total=conceptual_total,
+            variance_amount=None,
+            variance_pct=None,
+            **common,
+        )
+
+    variance_amount = detailed - conceptual_total
+    variance_pct = _round_money(variance_amount / conceptual_total * Decimal("100"))
+    if variance_pct > tolerance:
+        status = STATUS_OVER
+    elif variance_pct < -tolerance:
+        status = STATUS_UNDER
+    else:
+        status = STATUS_ON_TRACK
+
+    return RomReconciliation(
+        status=status,
+        conceptual_total=conceptual_total,
+        variance_amount=variance_amount,
+        variance_pct=variance_pct,
+        **common,
+    )
+
+
+# ── Persistence (session-bound) ──────────────────────────────────────────────
+
+
 @dataclass
 class RomEstimateService:
     """Session-bound persistence for saved conceptual estimates."""
@@ -561,3 +698,115 @@ class RomEstimateService:
         if row is not None:
             await self.session.delete(row)
             await self.session.flush()
+
+    async def latest_estimate(self, project_id: uuid.UUID) -> RomEstimate | None:
+        """Return the most-recent saved conceptual estimate for a project (or None).
+
+        This is the baseline the detailed design is reconciled against: the last
+        concept the team saved for the project.
+        """
+        stmt = (
+            select(RomEstimate)
+            .where(RomEstimate.project_id == project_id)
+            .order_by(RomEstimate.created_at.desc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
+    async def _collect_project_boq_ids(
+        self,
+        boq_service: BOQService,
+        project_id: uuid.UUID,
+    ) -> list[uuid.UUID]:
+        """Collect every BOQ id for a project, paging the BOQ list to avoid a cap.
+
+        Pages through :meth:`BOQService.list_boqs_for_project` so a project with
+        many BOQs still contributes its full detailed total (the single-page
+        default limit would silently truncate it).
+        """
+        ids: list[uuid.UUID] = []
+        offset = 0
+        page = 200
+        while True:
+            boqs, total = await boq_service.list_boqs_for_project(project_id, offset=offset, limit=page)
+            ids.extend(boq.id for boq in boqs)
+            offset += len(boqs)
+            if not boqs or offset >= total:
+                break
+        return ids
+
+    async def _sum_detailed_total(
+        self,
+        boq_service: BOQService,
+        boq_ids: list[uuid.UUID],
+    ) -> tuple[Decimal, str]:
+        """Sum the FX-correct grand total of every BOQ into the project base currency.
+
+        Reuses :meth:`BOQService.compute_boq_totals`, the same currency-aware
+        rollup the BOQ list / detail / export paths use, so the detailed number
+        is comparable to nothing but itself elsewhere in the app. Each per-BOQ
+        ``grand_total`` is already quantized to cents, so bridging it through
+        ``Decimal(str(...))`` is exact (no binary-float drift), and the sum stays
+        Decimal throughout.
+
+        Returns:
+            ``(detailed_total, base_currency)`` - the summed total and the project
+            base currency reported by the rollup (empty when there is no BOQ).
+        """
+        if not boq_ids:
+            return Decimal("0"), ""
+        breakdown = await boq_service.compute_boq_totals(boq_ids)
+        total = Decimal("0")
+        base_currency = ""
+        for data in breakdown.values():
+            total += Decimal(str(data.get("grand_total", 0) or 0))
+            if not base_currency:
+                base_currency = str(data.get("base_currency") or "")
+        return _round_money(total), base_currency
+
+    async def reconcile_with_boq(
+        self,
+        project_id: uuid.UUID,
+        *,
+        tolerance_pct: Decimal = DEFAULT_RECONCILE_TOLERANCE_PCT,
+    ) -> RomReconciliation:
+        """Reconcile the project's conceptual baseline against its live BOQ total.
+
+        Reads the most-recent saved conceptual (ROM) estimate and the FX-correct
+        sum of the project's detailed BOQ grand totals, then computes the drift.
+        Read only - it persists nothing. Degrades gracefully: with no saved
+        conceptual estimate the status is ``no_baseline``; with no BOQ the
+        detailed total is ``0``.
+
+        Args:
+            project_id: The project to reconcile.
+            tolerance_pct: On-track tolerance band (absolute percent).
+
+        Returns:
+            The computed :class:`RomReconciliation`.
+        """
+        # Local import: the BOQ service is only needed for this read path and a
+        # module-level import would couple module load order unnecessarily.
+        from app.modules.boq.service import BOQService
+
+        baseline = await self.latest_estimate(project_id)
+        conceptual_total = _parse_money(baseline.total_cost) if baseline is not None else None
+        conceptual_currency = baseline.currency if baseline is not None else ""
+
+        boq_service = BOQService(self.session)
+        boq_ids = await self._collect_project_boq_ids(boq_service, project_id)
+        detailed_total, base_currency = await self._sum_detailed_total(boq_service, boq_ids)
+
+        return build_reconciliation(
+            project_id=project_id,
+            conceptual_total=conceptual_total,
+            detailed_total=detailed_total,
+            currency=base_currency,
+            conceptual_currency=conceptual_currency,
+            boq_count=len(boq_ids),
+            conceptual_estimate_id=baseline.id if baseline is not None else None,
+            conceptual_name=baseline.name if baseline is not None else "",
+            conceptual_created_at=baseline.created_at if baseline is not None else None,
+            tolerance_pct=tolerance_pct,
+        )

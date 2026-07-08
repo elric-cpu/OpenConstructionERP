@@ -21,6 +21,7 @@ from app.modules.rom_estimate.schemas import (
     RomEstimateRecord,
     RomEstimateRequest,
     RomEstimateResult,
+    RomReconciliation,
     RomReferenceResponse,
 )
 from app.modules.rom_estimate.service import (
@@ -124,6 +125,30 @@ async def list_estimates(
     await verify_project_access(project_id, user_id, session)
     rows = await service.list_estimates(project_id, offset=offset, limit=limit)
     return [_row_to_record(row) for row in rows]
+
+
+@router.get(
+    "/projects/{project_id}/reconciliation/",
+    response_model=RomReconciliation,
+    dependencies=[Depends(RequirePermission("rom_estimate.read"))],
+)
+async def get_reconciliation(
+    project_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: RomEstimateService = Depends(_get_service),
+) -> RomReconciliation:
+    """Reconcile the project's conceptual baseline against its live detailed BOQ.
+
+    Compares the most-recent saved conceptual (ROM) total to the FX-correct sum
+    of the project's detailed BOQ grand totals and returns the drift: the
+    conceptual total, the detailed total, the variance amount and percentage, the
+    reconciliation currency and a traffic-light status band (on_track / over /
+    under). Degrades gracefully - with no saved conceptual estimate the status is
+    ``no_baseline`` and the variance is null; with no BOQ the detailed total is 0.
+    """
+    await verify_project_access(project_id, user_id, session)
+    return await service.reconcile_with_boq(project_id)
 
 
 @router.post(

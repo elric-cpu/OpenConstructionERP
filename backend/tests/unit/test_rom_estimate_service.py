@@ -18,9 +18,16 @@ import pytest
 from app.modules.rom_estimate.schemas import RomEstimateRequest
 from app.modules.rom_estimate.service import (
     BUILDING_TYPES,
+    DEFAULT_RECONCILE_TOLERANCE_PCT,
     ELEMENT_KEYS,
     QUALITY_LEVELS,
     REGIONS,
+    STATUS_NO_BASELINE,
+    STATUS_ON_TRACK,
+    STATUS_OVER,
+    STATUS_UNDER,
+    _parse_money,
+    build_reconciliation,
     build_reference,
     build_rom_estimate,
     rom_result_to_row_kwargs,
@@ -212,3 +219,154 @@ def test_result_json_emits_money_as_strings() -> None:
     assert all(isinstance(line["amount"], str) for line in payload["elements"])
     # The string total round-trips to the same Decimal.
     assert Decimal(payload["total"]) == build_rom_estimate(_req(currency="EUR")).total
+
+
+# ── Reconciliation: concept vs live detailed BOQ (pure) ──────────────────────
+
+
+def _reconcile(**kwargs: object) -> object:
+    """Build a reconciliation with sensible defaults for the field under test."""
+    base: dict[str, object] = {
+        "project_id": uuid.uuid4(),
+        "conceptual_total": Decimal("1000000"),
+        "detailed_total": Decimal("1000000"),
+    }
+    base.update(kwargs)
+    return build_reconciliation(**base)  # type: ignore[arg-type]
+
+
+def test_variance_is_detailed_minus_conceptual() -> None:
+    """Variance amount is exactly detailed - conceptual, Decimal-exact."""
+    rec = _reconcile(conceptual_total=Decimal("1000000"), detailed_total=Decimal("1234567.89"))
+    assert rec.variance_amount == Decimal("234567.89")
+
+
+def test_over_when_detailed_exceeds_concept_beyond_tolerance() -> None:
+    """A detailed total 20% above the concept lands in the 'over' band."""
+    rec = _reconcile(conceptual_total=Decimal("1000000"), detailed_total=Decimal("1200000"))
+    assert rec.status == STATUS_OVER
+    assert rec.variance_amount == Decimal("200000")
+    assert rec.variance_pct == Decimal("20.00")
+
+
+def test_under_when_detailed_below_concept_beyond_tolerance() -> None:
+    """A detailed total 20% below the concept lands in the 'under' band."""
+    rec = _reconcile(conceptual_total=Decimal("1000000"), detailed_total=Decimal("800000"))
+    assert rec.status == STATUS_UNDER
+    assert rec.variance_amount == Decimal("-200000")
+    assert rec.variance_pct == Decimal("-20.00")
+
+
+def test_on_track_within_tolerance() -> None:
+    """Drift inside the tolerance band is on_track."""
+    rec = _reconcile(conceptual_total=Decimal("1000000"), detailed_total=Decimal("1050000"))
+    assert rec.status == STATUS_ON_TRACK
+    assert rec.variance_pct == Decimal("5.00")
+
+
+def test_tolerance_boundary_is_on_track() -> None:
+    """Exactly at the tolerance (+10%) is on_track, not over (strict comparison)."""
+    rec = _reconcile(conceptual_total=Decimal("1000000"), detailed_total=Decimal("1100000"))
+    assert rec.variance_pct == Decimal("10.00")
+    assert rec.status == STATUS_ON_TRACK
+
+
+def test_no_baseline_when_conceptual_is_none() -> None:
+    """No stored concept -> conceptual_total null, variance null, no_baseline."""
+    rec = _reconcile(conceptual_total=None, detailed_total=Decimal("500000"))
+    assert rec.status == STATUS_NO_BASELINE
+    assert rec.conceptual_total is None
+    assert rec.variance_amount is None
+    assert rec.variance_pct is None
+    # The detailed side is still reported honestly.
+    assert rec.detailed_total == Decimal("500000")
+
+
+def test_no_baseline_when_conceptual_is_zero() -> None:
+    """A zero concept is not a usable benchmark: no_baseline, variance null (again-zero guard)."""
+    rec = _reconcile(conceptual_total=Decimal("0"), detailed_total=Decimal("500000"))
+    assert rec.status == STATUS_NO_BASELINE
+    assert rec.variance_amount is None
+    assert rec.variance_pct is None
+
+
+def test_no_baseline_when_conceptual_is_negative() -> None:
+    """A defensive guard: a negative stored concept also yields no_baseline."""
+    rec = _reconcile(conceptual_total=Decimal("-100"), detailed_total=Decimal("500000"))
+    assert rec.status == STATUS_NO_BASELINE
+    assert rec.variance_pct is None
+
+
+def test_detailed_zero_with_a_concept_reads_as_fully_under() -> None:
+    """With a concept but no BOQ, detailed is 0 and the design is 100% under."""
+    rec = _reconcile(conceptual_total=Decimal("1000000"), detailed_total=Decimal("0"), boq_count=0)
+    assert rec.detailed_total == Decimal("0")
+    assert rec.variance_amount == Decimal("-1000000")
+    assert rec.variance_pct == Decimal("-100.00")
+    assert rec.status == STATUS_UNDER
+
+
+def test_currency_prefers_base_and_flags_mismatch() -> None:
+    """The reconciliation currency is the BOQ base; a differing concept currency is flagged."""
+    rec = _reconcile(currency="EUR", conceptual_currency="USD")
+    assert rec.currency == "EUR"
+    assert rec.currency_mismatch is True
+
+
+def test_currency_no_mismatch_when_equal_or_absent() -> None:
+    """Matching currencies (or a blank one) are not flagged as a mismatch."""
+    same = _reconcile(currency="EUR", conceptual_currency="eur")
+    assert same.currency == "EUR"
+    assert same.currency_mismatch is False
+    # No base currency (no BOQ) falls back to the concept currency, still no flag.
+    fallback = _reconcile(currency="", conceptual_currency="GBP")
+    assert fallback.currency == "GBP"
+    assert fallback.currency_mismatch is False
+
+
+def test_tolerance_is_configurable_and_absolute() -> None:
+    """A custom (even negative) tolerance is applied as an absolute band."""
+    rec = _reconcile(
+        conceptual_total=Decimal("1000000"),
+        detailed_total=Decimal("1070000"),
+        tolerance_pct=Decimal("-5"),
+    )
+    assert rec.tolerance_pct == Decimal("5")
+    assert rec.status == STATUS_OVER  # +7% drift exceeds the 5% band
+
+
+def test_default_tolerance_is_ten_percent() -> None:
+    assert Decimal("10") == DEFAULT_RECONCILE_TOLERANCE_PCT
+
+
+def test_reconciliation_json_emits_money_and_pct_as_strings() -> None:
+    """Money and percentage fields serialise as Decimal strings; nulls stay null."""
+    payload = _reconcile(
+        conceptual_total=Decimal("1000000"),
+        detailed_total=Decimal("1200000"),
+    ).model_dump(mode="json")
+    for key in ("conceptual_total", "detailed_total", "variance_amount", "variance_pct", "tolerance_pct"):
+        assert isinstance(payload[key], str), key
+    assert Decimal(payload["variance_amount"]) == Decimal("200000")
+
+    null_payload = _reconcile(conceptual_total=None).model_dump(mode="json")
+    assert null_payload["conceptual_total"] is None
+    assert null_payload["variance_amount"] is None
+    assert null_payload["variance_pct"] is None
+    # The detailed total is never null - it is "0" at worst.
+    assert isinstance(null_payload["detailed_total"], str)
+
+
+# ── Money parsing helper ─────────────────────────────────────────────────────
+
+
+def test_parse_money_reads_decimal_strings() -> None:
+    assert _parse_money("1234.56") == Decimal("1234.56")
+    assert _parse_money(Decimal("10")) == Decimal("10")
+
+
+def test_parse_money_rejects_unusable_values() -> None:
+    assert _parse_money(None) is None
+    assert _parse_money("not-a-number") is None
+    assert _parse_money("NaN") is None
+    assert _parse_money("Infinity") is None

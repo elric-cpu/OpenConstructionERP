@@ -33,11 +33,23 @@ vi.mock('react-i18next', () => ({
 }));
 
 /* ── API mock ──────────────────────────────────────────────────────────────── */
-const apiMocks = vi.hoisted(() => ({ referenceMock: vi.fn(), generateMock: vi.fn() }));
+const apiMocks = vi.hoisted(() => ({
+  referenceMock: vi.fn(),
+  generateMock: vi.fn(),
+  reconciliationMock: vi.fn(),
+}));
 const { referenceMock, generateMock } = apiMocks;
 vi.mock('./api', () => ({
-  romEstimateApi: { reference: apiMocks.referenceMock, generate: apiMocks.generateMock },
+  romEstimateApi: {
+    reference: apiMocks.referenceMock,
+    generate: apiMocks.generateMock,
+    reconciliation: apiMocks.reconciliationMock,
+  },
 }));
+
+// No active project in these tests, so the reconciliation panel stays hidden and
+// this suite exercises only the calculator.
+vi.mock('@/shared/hooks/useActiveProjectId', () => ({ useActiveProjectId: () => '' }));
 
 import { RomEstimatePage } from './RomEstimatePage';
 
