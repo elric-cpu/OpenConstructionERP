@@ -121,7 +121,7 @@ export function ApprovalRoutesPage() {
   }, [routesQuery.data]);
 
   return (
-    <div className="px-4 py-4 animate-fade-in">
+    <div className="animate-fade-in">
       <Breadcrumb
         items={[
           { label: t('nav.dashboard', { defaultValue: 'Dashboard' }), to: '/' },

@@ -84,7 +84,7 @@ export function RomEstimatePage() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-4">
+    <div className="space-y-6">
       <div>
         <h1 className="flex items-center gap-2 text-xl font-semibold text-content-primary">
           <Calculator size={22} />

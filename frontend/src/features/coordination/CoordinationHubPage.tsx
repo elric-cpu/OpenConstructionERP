@@ -412,7 +412,7 @@ export function CoordinationHubPage() {
         className="pointer-events-none absolute -bottom-40 -right-40 -z-10 h-96 w-96 rounded-full bg-gradient-radial from-emerald-400/15 to-transparent blur-3xl"
       />
 
-      <div className="space-y-5 px-4 py-5 lg:px-6 lg:py-6">
+      <div className="space-y-5 py-5 lg:py-6">
         <Breadcrumb
           items={[
             ...(projectName
