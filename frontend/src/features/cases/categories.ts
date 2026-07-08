@@ -39,8 +39,10 @@ export interface CategoryTint {
   accent: string;
   /** Very faint full-card wash in the same hue as the accent rail, layered under
    *  the card content so cards are easy to tell apart at a glance without the
-   *  colour ever fighting the text. Kept lower opacity than the tile. */
-  softBg: string;
+   *  colour ever fighting the text. Kept lower opacity than the tile. Optional:
+   *  only the discipline category tints (drawn behind case cards) set it; the
+   *  company, role and stage picker-chip tints have no card wash and omit it. */
+  softBg?: string;
   /** Plain coloured text for small eyebrow labels. */
   text: string;
 }
