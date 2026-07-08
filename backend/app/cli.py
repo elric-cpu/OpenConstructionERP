@@ -221,10 +221,19 @@ def _setup_env(data_dir: Path, host: str, port: int) -> None:
             # actionable message instead of limping along on a different engine.
             print(
                 _red(_u("✗ ", "X "))
-                + "Embedded PostgreSQL could not start. Reinstall the package "
-                + "(pip install --upgrade --force-reinstall openconstructionerp), run "
-                + "'openconstructionerp doctor' for details, or set DATABASE_URL to an "
-                + "external PostgreSQL."
+                + "Embedded PostgreSQL could not start (already retried a few times). "
+                + "Reinstall the package (pip install --upgrade --force-reinstall "
+                + "openconstructionerp), run 'openconstructionerp doctor' for details, or "
+                + "set DATABASE_URL to an external PostgreSQL."
+            )
+            print(
+                _dim(
+                    "  The underlying error is in the log at "
+                    + str(data_dir / "pgdata" / "log")
+                    + " (and "
+                    + str(Path.home() / ".openestimate" / "desktop-launcher.log")
+                    + "). If it keeps happening, send those logs to info@datadrivenconstruction.io."
+                )
             )
             raise SystemExit(1)
 

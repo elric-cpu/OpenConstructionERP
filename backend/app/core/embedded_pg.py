@@ -29,6 +29,7 @@ import logging
 import os
 import time
 from pathlib import Path
+from types import ModuleType
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,9 @@ _server = None
 
 _TRUTHY = {"1", "true", "yes", "on"}
 _FALSY = {"0", "false", "no", "off"}
+
+#: Support contact surfaced (in the log) when embedded PostgreSQL cannot start.
+_CONTACT_EMAIL = "info@datadrivenconstruction.io"
 
 
 def emit_stage(stage: str, status: str, detail: str = "") -> None:
@@ -181,63 +185,59 @@ def boot(data_dir: Path | str) -> bool:
 
     # Window for the whole bring-up, including a possibly slow crash recovery.
     # Override with OE_PG_BOOT_TIMEOUT (seconds) for very large clusters or slow
-    # disks. 600s comfortably covers multi-minute fsync-based recovery.
+    # disks. 600s comfortably covers multi-minute fsync-based recovery. This is
+    # the PATIENT budget a genuinely recovering cluster gets; it is SHARED across
+    # the bounded retry below, so retrying never multiplies the total wait.
     boot_timeout = _int_env("OE_PG_BOOT_TIMEOUT", 600)
     deadline = time.monotonic() + boot_timeout
 
-    srv = None
+    # Bounded retry around the bring-up. A transient failure to come up (a brief
+    # file lock, an antivirus scan mid-start, a leftover "server does not shut
+    # down" pidfile) is retried a few times with a short backoff before we give
+    # up, so one flaky start becomes a clean retry instead of an opaque crash.
+    # Capped by OE_PG_BOOT_ATTEMPTS (default 3, hard-limited to 1..5) so we never
+    # loop forever; the only added wait is the short backoff between attempts. A
+    # genuinely recovering cluster never reaches a second attempt - _boot_once
+    # waits it out patiently within the shared deadline and returns success.
+    attempts = min(max(_int_env("OE_PG_BOOT_ATTEMPTS", 3), 1), 5)
+    srv: object | None = None
     last_exc: Exception | None = None
-    attempt = 0
-    while time.monotonic() < deadline:
-        attempt += 1
-        try:
-            srv = pgserver.get_server(str(pgdata))
+    for attempt in range(1, attempts + 1):
+        # A leftover pidfile from a dead postmaster (force-kill / crash / the
+        # "server does not shut down" case) pushes pixeltable onto its slow path;
+        # clear it before every attempt so each retry starts from a clean state.
+        _clear_stale_pidfile(resolved_pgdata)
+        srv, last_exc = _boot_once(pgserver, pgdata, resolved_pgdata, _PS, deadline)
+        if srv is not None:
             break
-        except Exception as exc:  # noqa: BLE001
-            last_exc = exc
-            # The first get_server() launches the postmaster, which keeps
-            # recovering in the background even though pg_ctl/the parser raised.
-            # Evict the half-built handle pixeltable cached (keyed by resolved
-            # pgdata) so the next get_server() re-reads the now-progressing
-            # cluster instead of returning the broken handle.
-            if _PS is not None:
-                try:
-                    _PS._instances.pop(resolved_pgdata, None)
-                except Exception:  # noqa: BLE001
-                    pass
-
-            remaining = int(deadline - time.monotonic())
+        if attempt < attempts and time.monotonic() < deadline:
+            backoff = min(1.5 * attempt, 3.0)
             logger.warning(
-                "embedded PostgreSQL not ready yet (attempt %d, %ds left); crash recovery "
-                "may be replaying WAL -- waiting: %r",
+                "embedded PostgreSQL bring-up attempt %d/%d failed (%r); retrying in %.1fs",
                 attempt,
-                max(remaining, 0),
-                exc,
+                attempts,
+                last_exc,
+                backoff,
             )
             emit_stage(
                 "pg",
                 "progress",
-                f"Recovering the local database, this can take a few minutes ({max(remaining, 0)}s left)",
+                f"Restarting the local database (attempt {attempt + 1} of {attempts})",
             )
-
-            # Wait for the postmaster to actually accept connections (recovery
-            # complete). When it does, loop straight back into get_server(),
-            # which now attaches cleanly. If it never does within the window we
-            # fall through to the failure path below.
-            if not _wait_until_connectable(resolved_pgdata, deadline):
-                break
-            # A short floor between get_server() retries: if the port is already
-            # open but get_server() still raised (a brief pidfile race), this
-            # keeps the loop from spinning hot while the pidfile finishes.
-            time.sleep(1.0)
+            time.sleep(backoff)
 
     if srv is None:
         emit_stage("pg", "fail", _pg_failure_detail(resolved_pgdata, last_exc))
         logger.error(
-            "embedded PostgreSQL failed to start at %s within %ds: %r",
+            "embedded PostgreSQL failed to start at %s after %d attempt(s): %r. The real "
+            "cause is in the PostgreSQL log at %s and the launcher log at %s. If this keeps "
+            "happening, reinstall the package or send those two logs to %s.",
             pgdata,
-            boot_timeout,
+            attempts,
             last_exc,
+            resolved_pgdata / "log",
+            _launcher_log_path(),
+            _CONTACT_EMAIL,
         )
         return False
 
@@ -287,6 +287,80 @@ def boot(data_dir: Path | str) -> bool:
     _server = srv
     logger.info("embedded PostgreSQL ready (data dir: %s)", pgdata)
     return True
+
+
+def _boot_once(
+    pgserver: ModuleType,
+    pgdata: Path,
+    resolved_pgdata: Path,
+    ps_cls: type | None,
+    deadline: float,
+) -> tuple[object | None, Exception | None]:
+    """One embedded-PostgreSQL bring-up attempt, sharing the overall ``deadline``.
+
+    Returns ``(server, None)`` as soon as ``get_server()`` hands back a live
+    cluster, or ``(None, last_exc)`` when this attempt could not bring one up.
+
+    A ``get_server()`` failure is triaged before we decide how long to wait:
+
+    * If a **live postmaster** owns the data dir, the cluster is replaying WAL
+      (slow crash recovery), so we wait it out patiently until the shared
+      deadline, then re-attach - the existing, deliberate behaviour.
+    * If **no live postmaster** is there, the bring-up genuinely failed (a
+      missing binary, an antivirus lock, a half-written data dir). We return at
+      once so the caller can reset and retry, instead of blocking the whole
+      recovery window on a cluster that never started - the old code's opaque
+      multi-minute hang on exactly this class of transient failure.
+    """
+    last_exc: Exception | None = None
+    probe = 0
+    while time.monotonic() < deadline:
+        probe += 1
+        try:
+            return pgserver.get_server(str(pgdata)), None
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            # The first get_server() launches the postmaster, which keeps
+            # recovering in the background even though pg_ctl/the parser raised.
+            # Evict the half-built handle pixeltable cached (keyed by resolved
+            # pgdata) so the next get_server() re-reads the cluster state.
+            if ps_cls is not None:
+                try:
+                    ps_cls._instances.pop(resolved_pgdata, None)
+                except Exception:  # noqa: BLE001
+                    pass
+
+            # No live postmaster => not a slow recovery but a hard/transient
+            # bring-up failure. Fail this attempt fast so the caller can fully
+            # reset (clear leftovers) and retry within the shared window.
+            if not _postmaster_recovering(resolved_pgdata):
+                return None, last_exc
+
+            remaining = int(deadline - time.monotonic())
+            logger.warning(
+                "embedded PostgreSQL not ready yet (probe %d, %ds left); crash recovery "
+                "may be replaying WAL -- waiting: %r",
+                probe,
+                max(remaining, 0),
+                exc,
+            )
+            emit_stage(
+                "pg",
+                "progress",
+                f"Recovering the local database, this can take a few minutes ({max(remaining, 0)}s left)",
+            )
+
+            # Wait for the postmaster to actually accept connections (recovery
+            # complete). When it does, loop straight back into get_server(),
+            # which now attaches cleanly. If it never does within the window we
+            # return the failure so the caller can decide whether to retry.
+            if not _wait_until_connectable(resolved_pgdata, deadline):
+                return None, last_exc
+            # A short floor between get_server() retries: if the port is already
+            # open but get_server() still raised (a brief pidfile race), this
+            # keeps the loop from spinning hot while the pidfile finishes.
+            time.sleep(1.0)
+    return None, last_exc
 
 
 def _int_env(name: str, default: int) -> int:
@@ -344,6 +418,26 @@ def _clear_stale_pidfile(pgdata: Path) -> None:
         logger.info("removed stale postmaster.pid (dead pid %d) in %s", pid, pgdata)
     except OSError as exc:
         logger.warning("could not remove stale postmaster.pid in %s: %r", pgdata, exc)
+
+
+def _postmaster_recovering(pgdata: Path) -> bool:
+    """True when a live postmaster owns ``pgdata`` (start or crash recovery in progress).
+
+    ``get_server()`` can raise while PostgreSQL is still replaying WAL: the
+    postmaster process is alive and has written its pidfile, but it has not yet
+    opened its listen socket, so that case must be waited out patiently. A
+    bring-up that never produced a live postmaster (a missing binary, an
+    antivirus lock, a half-written data dir) has no live pid here, so the caller
+    can fail fast and retry instead of blocking the whole recovery window.
+
+    Conservative by design: with no pidfile the answer is ``False`` (retry), and
+    when process liveness cannot be determined (:func:`_pid_alive` has no psutil)
+    it stays ``True``, preserving the historical patient-wait behaviour.
+    """
+    pid = _read_pidfile_pid(pgdata)
+    if pid is None:
+        return False
+    return _pid_alive(pid)
 
 
 #: Locale overrides forced onto every embedded-PG child process. PostgreSQL's
@@ -520,11 +614,30 @@ def _wait_until_connectable(pgdata: Path, deadline: float) -> bool:
     return False
 
 
+def _launcher_log_path() -> Path:
+    """Best-effort path to the desktop launcher log the STAGE markers land in.
+
+    The Tauri desktop shell pumps this process's stdout (where :func:`emit_stage`
+    writes) into ``~/.openestimate/desktop-launcher.log``. Naming it in the fatal
+    log line points a stuck user straight at the file that holds the real cause.
+    """
+    return Path.home() / ".openestimate" / "desktop-launcher.log"
+
+
 def _pg_failure_detail(pgdata: Path, last_exc: Exception | None) -> str:
-    """Build a short human-readable reason for an embedded-PG boot failure."""
+    """Build a short human-readable reason for an embedded-PG boot failure.
+
+    Carries the REAL underlying error (exception type and its message, not just
+    the class name) plus the tail of the PostgreSQL log, so the ``STAGE:pg:fail``
+    marker the launcher shows names an actionable cause instead of an opaque one.
+    """
     detail = "Could not start the local database"
     if last_exc is not None:
-        detail += f": {type(last_exc).__name__}"
+        message = str(last_exc).replace("\n", " ").replace("\r", " ").strip()
+        if message and message != type(last_exc).__name__:
+            detail += f": {type(last_exc).__name__}: {message[:200]}"
+        else:
+            detail += f": {type(last_exc).__name__}"
     log = pgdata / "log"
     try:
         if log.exists():
