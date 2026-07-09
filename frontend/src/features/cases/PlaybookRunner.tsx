@@ -25,11 +25,11 @@ import {
   useRef,
   type KeyboardEvent,
   type ReactElement,
-} from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
-import clsx from 'clsx';
+} from "react";
+import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+import { useQuery } from "@tanstack/react-query";
+import clsx from "clsx";
 import {
   ArrowLeft,
   ArrowRight,
@@ -39,17 +39,17 @@ import {
   CheckCircle2,
   LogIn,
   LogOut,
-} from 'lucide-react';
-import { Button, Badge } from '@/shared/ui';
-import { projectsApi, type Project } from '@/features/projects/api';
-import { useProjectContextStore } from '@/stores/useProjectContextStore';
-import type { Playbook, PlaybookStep } from './types';
-import { tintFor, CATEGORY_BY_ID } from './categories';
-import { iconFor } from './icons';
-import { CaseArt } from './CaseArt';
-import { StepScene } from './StepScene';
-import { StepProcessScene, hasProcessScene } from './processScenes';
-import { useCasesStore, EMPTY_PROGRESS } from './useCasesStore';
+} from "lucide-react";
+import { Button, Badge } from "@/shared/ui";
+import { projectsApi, type Project } from "@/features/projects/api";
+import { useProjectContextStore } from "@/stores/useProjectContextStore";
+import type { Playbook, PlaybookStep } from "./types";
+import { tintFor, CATEGORY_BY_ID } from "./categories";
+import { iconFor } from "./icons";
+import { CaseArt } from "./CaseArt";
+import { StepScene } from "./StepScene";
+import { StepProcessScene, hasProcessScene } from "./processScenes";
+import { useCasesStore, EMPTY_PROGRESS } from "./useCasesStore";
 import {
   clampStepIndex,
   completedCount,
@@ -60,7 +60,7 @@ import {
   resolveStepRoute,
   runKey,
   toggleStep,
-} from './progress';
+} from "./progress";
 
 /** Returns true for seeded sample projects (they carry `metadata.demo_id`). */
 function isDemoProject(p: Project): boolean {
@@ -77,9 +77,9 @@ function FlowSide({
 }: {
   label: string;
   items: string[];
-  tone: 'in' | 'out';
+  tone: "in" | "out";
 }): ReactElement {
-  const Icon = tone === 'in' ? LogIn : LogOut;
+  const Icon = tone === "in" ? LogIn : LogOut;
   return (
     <div className="flex-1 rounded-xl border border-border-light bg-surface-secondary/40 p-3">
       <p className="mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
@@ -94,8 +94,8 @@ function FlowSide({
           >
             <span
               className={clsx(
-                'mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full',
-                tone === 'in' ? 'bg-content-quaternary' : 'bg-semantic-success',
+                "mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full",
+                tone === "in" ? "bg-content-quaternary" : "bg-semantic-success",
               )}
               aria-hidden="true"
             />
@@ -121,6 +121,22 @@ function FlowConnector(): ReactElement {
   );
 }
 
+/** The small filmstrip thumbnail for one step in the process strip: the step's
+ *  bespoke process scene when it has one, otherwise its icon scene, framed to
+ *  match the stage so the strip reads as a row of pictures of the actual work. */
+function StepThumb({ step }: { step: PlaybookStep }): ReactElement {
+  const cls = "aspect-[5/3] w-full";
+  return step.scene && hasProcessScene(step.scene) ? (
+    <StepProcessScene
+      sceneId={step.scene}
+      rounded="rounded-lg"
+      className={cls}
+    />
+  ) : (
+    <StepScene icon={step.icon} rounded="rounded-lg" className={cls} />
+  );
+}
+
 export interface PlaybookRunnerProps {
   playbook: Playbook;
   /** Optional handler for the "All cases" back control. */
@@ -140,7 +156,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
 
   /* ── Sample-project picker ────────────────────────────────────────────── */
   const { data: projects } = useQuery({
-    queryKey: ['projects'],
+    queryKey: ["projects"],
     queryFn: projectsApi.list,
     retry: false,
     staleTime: 5 * 60_000,
@@ -158,26 +174,36 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
     });
   }, [projects]);
 
-  const selectedRaw = useCasesStore((s) => s.selected[playbook.id]) ?? '';
+  const selectedRaw = useCasesStore((s) => s.selected[playbook.id]) ?? "";
   const projectsLoaded = projects !== undefined;
   // Validate the persisted selection against the live list. A stale id (the
   // sample project was deleted or re-seeded) resolves to null, so "Go" never
   // navigates into a dead /projects/<id> route and the picker shows the truth.
   const selectedProject = useMemo(
-    () => (selectedRaw ? (sortedProjects.find((p) => p.id === selectedRaw) ?? null) : null),
+    () =>
+      selectedRaw
+        ? (sortedProjects.find((p) => p.id === selectedRaw) ?? null)
+        : null,
     [sortedProjects, selectedRaw],
   );
   // Until the list loads, trust the stored id so progress keeps its run key;
   // once loaded, only a project that still exists scopes the run.
-  const projectId = selectedProject?.id ?? (projectsLoaded ? null : selectedRaw || null);
+  const projectId =
+    selectedProject?.id ?? (projectsLoaded ? null : selectedRaw || null);
 
   // Drop a persisted selection that no longer resolves to a live project, so the
   // store does not keep a dead id and the picker settles on "no sample project".
   useEffect(() => {
     if (projectsLoaded && selectedRaw && !selectedProject) {
-      setSelectedProject(playbook.id, '');
+      setSelectedProject(playbook.id, "");
     }
-  }, [projectsLoaded, selectedRaw, selectedProject, setSelectedProject, playbook.id]);
+  }, [
+    projectsLoaded,
+    selectedRaw,
+    selectedProject,
+    setSelectedProject,
+    playbook.id,
+  ]);
 
   /* ── Progress for the active run ──────────────────────────────────────── */
   const key = runKey(playbook.id, projectId);
@@ -199,7 +225,9 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
       // Scope the chosen sample project so unscoped module pages (Takeoff,
       // Validation, Reports) also follow it, exactly as the journey map does.
       if (projectId && selectedProject) {
-        useProjectContextStore.getState().setActiveProject(projectId, selectedProject.name);
+        useProjectContextStore
+          .getState()
+          .setActiveProject(projectId, selectedProject.name);
       }
       navigate(resolveStepRoute(step.to, projectId));
     },
@@ -213,7 +241,12 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
       // When the step was just completed, advance focus to the next gap so the
       // user keeps moving without an extra click.
       if (isStepDone(updated, step.id)) {
-        setCurrentStep(playbook.id, projectId, nextStepIndex(updated, playbook), total);
+        setCurrentStep(
+          playbook.id,
+          projectId,
+          nextStepIndex(updated, playbook),
+          total,
+        );
       }
     },
     [progress, toggleStepDone, setCurrentStep, playbook, projectId, total],
@@ -223,10 +256,12 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
     (e: KeyboardEvent, index: number) => {
       let target: number | null = null;
       // The strip is a single sequence, so both axes walk it.
-      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') target = clampStepIndex(index + 1, total);
-      else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') target = clampStepIndex(index - 1, total);
-      else if (e.key === 'Home') target = 0;
-      else if (e.key === 'End') target = total - 1;
+      if (e.key === "ArrowDown" || e.key === "ArrowRight")
+        target = clampStepIndex(index + 1, total);
+      else if (e.key === "ArrowUp" || e.key === "ArrowLeft")
+        target = clampStepIndex(index - 1, total);
+      else if (e.key === "Home") target = 0;
+      else if (e.key === "End") target = total - 1;
       if (target === null) return;
       e.preventDefault();
       selectStep(target);
@@ -247,13 +282,13 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
     const el = stageRef.current;
     if (!el) return;
     if (el.getBoundingClientRect().top > window.innerHeight - 120) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }, []);
 
   // Resolve a flow item list (input / output) to display strings once.
   const resolveFlow = useCallback(
-    (step: PlaybookStep | undefined, side: 'inputs' | 'outputs'): string[] =>
+    (step: PlaybookStep | undefined, side: "inputs" | "outputs"): string[] =>
       (step?.[side] ?? []).map((it) =>
         it.labelKey ? t(it.labelKey, { defaultValue: it.label }) : it.label,
       ),
@@ -263,8 +298,8 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
   const title = t(playbook.titleKey, { defaultValue: playbook.titleDefault });
   const desc = t(playbook.descKey, { defaultValue: playbook.descDefault });
   const selectId = `cases-run-on-${playbook.id}`;
-  const progressLabel = t('cases.steps_progress', {
-    defaultValue: '{{done}} of {{total}} steps',
+  const progressLabel = t("cases.steps_progress", {
+    defaultValue: "{{done}} of {{total}} steps",
     done: doneCount,
     total,
   });
@@ -280,11 +315,11 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
       icon={<RotateCcw size={13} />}
       onClick={() => reset(playbook.id, projectId)}
       disabled={doneCount === 0 && progress.currentStepIndex === 0}
-      title={t('cases.reset_hint', {
-        defaultValue: 'Clear progress for this case and start over',
+      title={t("cases.reset_hint", {
+        defaultValue: "Clear progress for this case and start over",
       })}
     >
-      {t('cases.reset', { defaultValue: 'Reset progress' })}
+      {t("cases.reset", { defaultValue: "Reset progress" })}
     </Button>
   );
   const currentStep = playbook.steps[currentIndex];
@@ -292,14 +327,14 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
   const curDone = currentStep ? isStepDone(progress, currentStep.id) : false;
   const curTitle = currentStep
     ? t(currentStep.titleKey, { defaultValue: currentStep.titleDefault })
-    : '';
+    : "";
   const curModule = currentStep
     ? currentStep.moduleLabelKey
       ? t(currentStep.moduleLabelKey, { defaultValue: currentStep.moduleLabel })
       : currentStep.moduleLabel
-    : '';
-  const curInputs = resolveFlow(currentStep, 'inputs');
-  const curOutputs = resolveFlow(currentStep, 'outputs');
+    : "";
+  const curInputs = resolveFlow(currentStep, "inputs");
+  const curOutputs = resolveFlow(currentStep, "outputs");
   const hasFlow = curInputs.length > 0 || curOutputs.length > 0;
 
   const StageScene =
@@ -310,7 +345,11 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
         className="aspect-[10/7] w-full"
       />
     ) : (
-      <StepScene icon={currentStep?.icon} title={curTitle} className="aspect-[10/7] w-full" />
+      <StepScene
+        icon={currentStep?.icon}
+        title={curTitle}
+        className="aspect-[10/7] w-full"
+      />
     );
 
   return (
@@ -318,11 +357,11 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
       {/* ── Back ────────────────────────────────────────────────────────── */}
       <button
         type="button"
-        onClick={onBack ?? (() => navigate('/cases'))}
+        onClick={onBack ?? (() => navigate("/cases"))}
         className="inline-flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-xs font-medium text-content-secondary transition-colors hover:text-content-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
       >
         <ArrowLeft size={14} />
-        {t('cases.back_to_list', { defaultValue: 'All cases' })}
+        {t("cases.back_to_list", { defaultValue: "All cases" })}
       </button>
 
       {/* ── Header: title + meta left, a small framed case image right ────── */}
@@ -331,7 +370,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
           <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
             <span
               className={clsx(
-                'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-2xs font-medium',
+                "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-2xs font-medium",
                 tint.chip,
               )}
             >
@@ -339,13 +378,16 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
               {t(cat.labelKey, { defaultValue: cat.labelDefault })}
             </span>
             <span className="text-2xs font-medium text-content-tertiary">
-              {t('cases.card.minutes', {
-                defaultValue: 'about {{count}} min',
+              {t("cases.card.minutes", {
+                defaultValue: "about {{count}} min",
                 count: playbook.estMinutes,
               })}
             </span>
             <span className="text-2xs font-medium text-content-tertiary">
-              {t('cases.card.steps', { defaultValue: '{{count}} steps', count: total })}
+              {t("cases.card.steps", {
+                defaultValue: "{{count}} steps",
+                count: total,
+              })}
             </span>
           </div>
           <h1 className="text-xl font-semibold tracking-tight text-content-primary sm:text-2xl">
@@ -361,7 +403,12 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
             established illustration surface. */}
         <div className="w-32 shrink-0 sm:w-40 lg:w-44">
           <div className="aspect-[4/3] w-full overflow-hidden rounded-xl border border-border-light bg-gradient-to-b from-white to-slate-50 ring-1 ring-inset ring-slate-900/[0.04]">
-            <CaseArt id={playbook.id} fallbackIcon={PlaybookIcon} fallbackClass={tint.text} alt="" />
+            <CaseArt
+              id={playbook.id}
+              fallbackIcon={PlaybookIcon}
+              fallbackClass={tint.text}
+              alt=""
+            />
           </div>
         </div>
       </div>
@@ -375,11 +422,13 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
           aria-valuemax={total}
           aria-valuenow={doneCount}
           aria-valuetext={progressLabel}
-          aria-label={t('cases.progress_label', { defaultValue: 'Case progress' })}
+          aria-label={t("cases.progress_label", {
+            defaultValue: "Case progress",
+          })}
           aria-live="polite"
         >
           <span className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
-            {t('cases.progress_label', { defaultValue: 'Case progress' })}
+            {t("cases.progress_label", { defaultValue: "Case progress" })}
           </span>
           <div className="h-2 min-w-[5rem] flex-1 overflow-hidden rounded-full bg-surface-secondary">
             <div
@@ -397,7 +446,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
             htmlFor={selectId}
             className="shrink-0 text-2xs font-semibold uppercase tracking-wide text-content-tertiary"
           >
-            {t('cases.run_on', { defaultValue: 'Run on' })}
+            {t("cases.run_on", { defaultValue: "Run on" })}
           </label>
           <select
             id={selectId}
@@ -406,14 +455,14 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
             className="h-8 max-w-[16rem] rounded-lg border border-border bg-surface-primary px-2.5 text-xs text-content-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
           >
             <option value="">
-              {t('cases.run_on_none', {
-                defaultValue: 'No sample project (just open the module)',
+              {t("cases.run_on_none", {
+                defaultValue: "No sample project (just open the module)",
               })}
             </option>
             {sortedProjects.map((p) => {
               const label = isDemoProject(p)
-                ? t('cases.run_on_sample_option', {
-                    defaultValue: '{{name}} (sample)',
+                ? t("cases.run_on_sample_option", {
+                    defaultValue: "{{name}} (sample)",
                     name: p.name,
                   })
                 : p.name;
@@ -429,14 +478,16 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
       </div>
 
       {/* ── The process: a compact clickable strip of the ordered steps ──── */}
-      <section aria-label={t('cases.the_process', { defaultValue: 'The process' })}>
+      <section
+        aria-label={t("cases.the_process", { defaultValue: "The process" })}
+      >
         <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
           <p className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
-            {t('cases.the_process', { defaultValue: 'The process' })}
+            {t("cases.the_process", { defaultValue: "The process" })}
           </p>
           <p className="text-xs text-content-tertiary">
-            {t('cases.process_help', {
-              defaultValue: 'Choose a step to see what happens and why',
+            {t("cases.process_help", {
+              defaultValue: "Choose a step to see what happens and why",
             })}
           </p>
         </div>
@@ -444,9 +495,11 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
           {playbook.steps.map((step, i) => {
             const done = isStepDone(progress, step.id);
             const isCurrent = i === currentIndex;
-            const stepTitle = t(step.titleKey, { defaultValue: step.titleDefault });
+            const stepTitle = t(step.titleKey, {
+              defaultValue: step.titleDefault,
+            });
             return (
-              <li key={step.id} className="min-w-[8rem] flex-1">
+              <li key={step.id} className="min-w-[8.5rem] flex-1">
                 <button
                   type="button"
                   ref={(el) => {
@@ -457,29 +510,38 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                     if (e.detail !== 0) revealStage();
                   }}
                   onKeyDown={(e) => onStepKeyDown(e, i)}
-                  aria-current={isCurrent ? 'step' : undefined}
+                  aria-current={isCurrent ? "step" : undefined}
                   className={clsx(
-                    'group flex h-full w-full items-center gap-2.5 rounded-xl border p-2 text-left transition-all',
-                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40',
+                    "group flex h-full w-full flex-col gap-1.5 rounded-xl border p-1.5 text-left transition-all",
+                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40",
                     isCurrent
-                      ? 'border-oe-blue bg-oe-blue-subtle shadow-sm ring-1 ring-inset ring-oe-blue/30'
-                      : 'border-border-light bg-surface-primary hover:border-oe-blue/40 hover:bg-surface-secondary/40',
+                      ? "border-oe-blue bg-oe-blue-subtle shadow-sm ring-1 ring-inset ring-oe-blue/30"
+                      : "border-border-light bg-surface-primary hover:border-oe-blue/40 hover:bg-surface-secondary/40",
                   )}
                 >
+                  {/* The picture of the step, with its number (or a done check)
+                      in the corner, so the strip reads as a filmstrip of the
+                      work rather than a bare list of titles. */}
+                  <div className="relative">
+                    <StepThumb step={step} />
+                    <span
+                      className={clsx(
+                        "absolute left-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full text-2xs font-bold shadow-sm",
+                        done || isCurrent
+                          ? "bg-oe-blue text-white"
+                          : "bg-white/90 text-content-secondary ring-1 ring-inset ring-border-light",
+                      )}
+                      aria-hidden="true"
+                    >
+                      {done ? <Check size={11} strokeWidth={2.5} /> : i + 1}
+                    </span>
+                  </div>
                   <span
                     className={clsx(
-                      'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-2xs font-bold',
-                      done
-                        ? 'bg-oe-blue text-white'
-                        : isCurrent
-                          ? 'bg-oe-blue/15 text-oe-blue-text ring-1 ring-inset ring-oe-blue/30'
-                          : 'bg-surface-secondary text-content-tertiary',
+                      "block min-w-0 px-1 pb-0.5 text-xs font-medium leading-snug line-clamp-2",
+                      isCurrent ? "text-oe-blue-text" : "text-content-primary",
                     )}
-                    aria-hidden="true"
                   >
-                    {done ? <Check size={12} strokeWidth={2.5} /> : i + 1}
-                  </span>
-                  <span className="block min-w-0 flex-1 text-xs font-medium leading-snug text-content-primary line-clamp-2">
                     {stepTitle}
                   </span>
                 </button>
@@ -499,8 +561,8 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
             {/* Eyebrow: step counter + module chip */}
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <span className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
-                {t('cases.step_counter', {
-                  defaultValue: 'Step {{n}} of {{total}}',
+                {t("cases.step_counter", {
+                  defaultValue: "Step {{n}} of {{total}}",
                   n: currentIndex + 1,
                   total,
                 })}
@@ -515,14 +577,18 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
             <div className="mb-4 flex items-start gap-2.5">
               <span
                 className={clsx(
-                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold',
+                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold",
                   curDone
-                    ? 'bg-oe-blue text-white'
-                    : 'bg-oe-blue/15 text-oe-blue-text ring-1 ring-inset ring-oe-blue/30',
+                    ? "bg-oe-blue text-white"
+                    : "bg-oe-blue/15 text-oe-blue-text ring-1 ring-inset ring-oe-blue/30",
                 )}
                 aria-hidden="true"
               >
-                {curDone ? <Check size={16} strokeWidth={2.5} /> : currentIndex + 1}
+                {curDone ? (
+                  <Check size={16} strokeWidth={2.5} />
+                ) : (
+                  currentIndex + 1
+                )}
               </span>
               <h2 className="mt-0.5 text-lg font-semibold leading-snug text-content-primary sm:text-xl">
                 {curTitle}
@@ -534,7 +600,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
             {hasFlow ? (
               <div className="flex flex-col items-stretch gap-2 lg:flex-row lg:items-center lg:gap-4">
                 <FlowSide
-                  label={t('cases.flow.in', { defaultValue: 'Goes in' })}
+                  label={t("cases.flow.in", { defaultValue: "Goes in" })}
                   items={curInputs}
                   tone="in"
                 />
@@ -548,7 +614,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                 </div>
                 <FlowConnector />
                 <FlowSide
-                  label={t('cases.flow.out', { defaultValue: 'Comes out' })}
+                  label={t("cases.flow.out", { defaultValue: "Comes out" })}
                   items={curOutputs}
                   tone="out"
                 />
@@ -561,18 +627,22 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               <div>
                 <p className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
-                  {t('cases.step.what', { defaultValue: 'What you do' })}
+                  {t("cases.step.what", { defaultValue: "What you do" })}
                 </p>
                 <p className="mt-1 text-sm leading-relaxed text-content-secondary">
-                  {t(currentStep.whatKey, { defaultValue: currentStep.whatDefault })}
+                  {t(currentStep.whatKey, {
+                    defaultValue: currentStep.whatDefault,
+                  })}
                 </p>
               </div>
               <div>
                 <p className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
-                  {t('cases.step.why', { defaultValue: 'Why' })}
+                  {t("cases.step.why", { defaultValue: "Why" })}
                 </p>
                 <p className="mt-1 text-sm leading-relaxed text-content-secondary">
-                  {t(currentStep.whyKey, { defaultValue: currentStep.whyDefault })}
+                  {t(currentStep.whyKey, {
+                    defaultValue: currentStep.whyDefault,
+                  })}
                 </p>
               </div>
             </div>
@@ -586,25 +656,27 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                   icon={<ArrowRight size={13} />}
                   iconPosition="right"
                   onClick={() => handleGo(currentStep)}
-                  aria-label={t('cases.step.go_to', {
-                    defaultValue: 'Go to {{module}}',
+                  aria-label={t("cases.step.go_to", {
+                    defaultValue: "Go to {{module}}",
                     module: curModule,
                   })}
                 >
-                  {t('cases.step.go_to_module', {
-                    defaultValue: 'Open {{module}}',
+                  {t("cases.step.go_to_module", {
+                    defaultValue: "Open {{module}}",
                     module: curModule,
                   })}
                 </Button>
                 <Button
-                  variant={curDone ? 'ghost' : 'secondary'}
+                  variant={curDone ? "ghost" : "secondary"}
                   size="sm"
                   icon={curDone ? <RotateCcw size={13} /> : <Check size={13} />}
                   onClick={() => handleToggle(currentStep)}
                 >
                   {curDone
-                    ? t('cases.step.mark_undone', { defaultValue: 'Mark not done' })
-                    : t('cases.step.mark_done', { defaultValue: 'Mark done' })}
+                    ? t("cases.step.mark_undone", {
+                        defaultValue: "Mark not done",
+                      })
+                    : t("cases.step.mark_done", { defaultValue: "Mark done" })}
                 </Button>
               </div>
               <div className="flex items-center gap-1">
@@ -612,20 +684,24 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                   variant="ghost"
                   size="sm"
                   icon={<ArrowLeft size={13} />}
-                  onClick={() => selectStep(clampStepIndex(currentIndex - 1, total))}
+                  onClick={() =>
+                    selectStep(clampStepIndex(currentIndex - 1, total))
+                  }
                   disabled={currentIndex === 0}
                 >
-                  {t('cases.prev_step', { defaultValue: 'Previous' })}
+                  {t("cases.prev_step", { defaultValue: "Previous" })}
                 </Button>
                 <Button
                   variant="ghost"
                   size="sm"
                   icon={<ArrowRight size={13} />}
                   iconPosition="right"
-                  onClick={() => selectStep(clampStepIndex(currentIndex + 1, total))}
+                  onClick={() =>
+                    selectStep(clampStepIndex(currentIndex + 1, total))
+                  }
                   disabled={currentIndex === total - 1}
                 >
-                  {t('cases.next_step', { defaultValue: 'Next' })}
+                  {t("cases.next_step", { defaultValue: "Next" })}
                 </Button>
               </div>
             </div>
@@ -639,15 +715,18 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
           role="status"
           className="flex items-start gap-3 rounded-xl border border-semantic-success/40 bg-semantic-success-bg px-4 py-3 animate-card-in"
         >
-          <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-semantic-success" />
+          <CheckCircle2
+            size={18}
+            className="mt-0.5 shrink-0 text-semantic-success"
+          />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-content-primary">
-              {t('cases.all_done_title', { defaultValue: 'Case complete' })}
+              {t("cases.all_done_title", { defaultValue: "Case complete" })}
             </p>
             <p className="mt-0.5 text-xs leading-relaxed text-content-secondary">
-              {t('cases.all_done_body', {
+              {t("cases.all_done_body", {
                 defaultValue:
-                  'You have stepped through every part of this case. Reset it to run again, or pick another case.',
+                  "You have stepped through every part of this case. Reset it to run again, or pick another case.",
               })}
             </p>
           </div>

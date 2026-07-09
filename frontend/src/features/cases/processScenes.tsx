@@ -406,8 +406,11 @@ interface StepProcessSceneProps {
   /** Accent colour (hex) for the one key element per scene. Defaults to the
    *  sparing amber process accent. */
   accent?: string;
-  /** Extra classes for the tile (height / width / rounding). */
+  /** Extra classes for the tile (height / width). */
   className?: string;
+  /** Tailwind rounding class for the tile. Defaults to a large radius; the
+   *  process strip passes a smaller one for its filmstrip thumbnails. */
+  rounded?: string;
   /** Accessible label; the scene is decorative when omitted. */
   title?: string;
 }
@@ -421,6 +424,7 @@ export function StepProcessScene({
   sceneId,
   accent = ACCENT,
   className,
+  rounded = "rounded-2xl",
   title,
 }: StepProcessSceneProps): ReactElement | null {
   const scene = PROCESS_SCENES[sceneId];
@@ -428,7 +432,8 @@ export function StepProcessScene({
   return (
     <div
       className={clsx(
-        "relative flex items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-white to-slate-50 ring-1 ring-inset ring-slate-900/[0.06]",
+        "relative flex items-center justify-center overflow-hidden bg-gradient-to-br from-white to-slate-50 ring-1 ring-inset ring-slate-900/[0.06]",
+        rounded,
         className,
       )}
       role={title ? "img" : undefined}
