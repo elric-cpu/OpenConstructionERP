@@ -429,8 +429,17 @@ const ADVISOR_REGION_OPTIONS = new Set([
   'CA_TORONTO',
   'FR_PARIS',
   'ES_BARCELONA',
+  'ZH_CHINA',
+  'TR_NATIONAL',
   'AE_DUBAI',
   'SA_RIYADH',
+  // Authentic national / regional official bases (own local parquet)
+  'BR_NATIONAL',
+  'ES_ANDALUCIA',
+  'IT_TOSCANA',
+  'VN_NATIONAL',
+  'ID_NATIONAL',
+  'GR_NATIONAL',
 ]);
 
 export function AdvisorPage() {
@@ -731,8 +740,16 @@ export function AdvisorPage() {
               <option value="CA_TORONTO">{t('ai.region_ca_toronto', { defaultValue: 'Canada (Toronto)' })}</option>
               <option value="FR_PARIS">{t('ai.region_fr_paris', { defaultValue: 'France (Paris)' })}</option>
               <option value="ES_BARCELONA">{t('ai.region_es_barcelona', { defaultValue: 'Spain (Barcelona)' })}</option>
+              <option value="ZH_CHINA">{t('ai.region_zh_china', { defaultValue: 'China (National)' })}</option>
+              <option value="TR_NATIONAL">{t('ai.region_tr_national', { defaultValue: 'Türkiye (National)' })}</option>
               <option value="AE_DUBAI">{t('ai.region_ae_dubai', { defaultValue: 'UAE (Dubai)' })}</option>
               <option value="SA_RIYADH">{t('ai.region_sa_riyadh', { defaultValue: 'Saudi Arabia' })}</option>
+              <option value="BR_NATIONAL">{t('ai.region_br_national', { defaultValue: 'Brazil (SINAPI)' })}</option>
+              <option value="ES_ANDALUCIA">{t('ai.region_es_andalucia', { defaultValue: 'Spain (Andalucía)' })}</option>
+              <option value="IT_TOSCANA">{t('ai.region_it_toscana', { defaultValue: 'Italy (Toscana)' })}</option>
+              <option value="VN_NATIONAL">{t('ai.region_vn_national', { defaultValue: 'Vietnam (Dinh Muc)' })}</option>
+              <option value="ID_NATIONAL">{t('ai.region_id_national', { defaultValue: 'Indonesia (AHSP)' })}</option>
+              <option value="GR_NATIONAL">{t('ai.region_gr_national', { defaultValue: 'Greece (GGDE)' })}</option>
             </select>
           </div>
 
