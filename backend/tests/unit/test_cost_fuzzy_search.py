@@ -107,10 +107,13 @@ async def test_fuzzy_tolerates_typo(session):
 
     svc = CostItemService(session)
 
-    # "concreet foundation" is not a substring, so only trigram recall finds it.
-    assert "P-100" in await _codes(svc, q="concreet foundation", fuzzy=True, limit=10)
-    # With fuzzy off the same typo yields nothing (pure ILIKE substring).
-    assert "P-100" not in await _codes(svc, q="concreet foundation", fuzzy=False, limit=10)
+    # "concrte" is a misspelling of "concrete": not a substring and not a known
+    # vocabulary word, so the synonym/ILIKE matcher cannot bridge it. Only
+    # trigram recall does. (A whole real word like "foundation" would match the
+    # non-fuzzy synonym path, which is why the typo carries no correct token.)
+    assert "P-100" in await _codes(svc, q="concrte", fuzzy=True, limit=10)
+    # With fuzzy off the same typo has no substring or synonym match, so nothing.
+    assert "P-100" not in await _codes(svc, q="concrte", fuzzy=False, limit=10)
 
 
 # ── ranking ──────────────────────────────────────────────────────────────────
