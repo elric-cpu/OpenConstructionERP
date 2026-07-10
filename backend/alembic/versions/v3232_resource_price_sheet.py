@@ -28,8 +28,8 @@ runtime already auto-created) is a no-op. Additive: no existing table is touched
 GUID columns are VARCHAR(36) (the app.database.GUID TypeDecorator impl).
 PostgreSQL-only, no SQLite shims.
 
-Revision ID: v3187_resource_price_sheet
-Revises: v3186_payroll_deductions_net
+Revision ID: v3232_resource_price_sheet
+Revises: v3231_prefab_unit_cost_link
 Create Date: 2026-07-10
 """
 
@@ -38,8 +38,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "v3187_resource_price_sheet"
-down_revision = "v3186_payroll_deductions_net"
+revision = "v3232_resource_price_sheet"
+down_revision = "v3231_prefab_unit_cost_link"
 branch_labels = None
 depends_on = None
 

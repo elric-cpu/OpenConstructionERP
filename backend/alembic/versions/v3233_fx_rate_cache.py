@@ -25,8 +25,8 @@ Rate/factor columns are Numeric(18, 6) ratios; timestamps default to now().
 GUID columns are VARCHAR(36) (the app.database.GUID TypeDecorator impl).
 PostgreSQL-only, no SQLite shims.
 
-Revision ID: v3188_fx_rate_cache
-Revises: v3187_resource_price_sheet
+Revision ID: v3233_fx_rate_cache
+Revises: v3232_resource_price_sheet
 Create Date: 2026-07-10
 """
 
@@ -35,8 +35,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "v3188_fx_rate_cache"
-down_revision = "v3187_resource_price_sheet"
+revision = "v3233_fx_rate_cache"
+down_revision = "v3232_resource_price_sheet"
 branch_labels = None
 depends_on = None
 

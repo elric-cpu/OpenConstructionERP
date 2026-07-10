@@ -27,8 +27,8 @@ query-time detection; this migration is for external-PostgreSQL deployments that
 manage schema with Alembic. Additive: no existing table is touched. PostgreSQL
 only, no SQLite shims.
 
-Revision ID: v3189_cost_search_trgm
-Revises: v3188_fx_rate_cache
+Revision ID: v3234_cost_search_trgm
+Revises: v3233_fx_rate_cache
 Create Date: 2026-07-10
 """
 
@@ -37,8 +37,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "v3189_cost_search_trgm"
-down_revision = "v3188_fx_rate_cache"
+revision = "v3234_cost_search_trgm"
+down_revision = "v3233_fx_rate_cache"
 branch_labels = None
 depends_on = None
 
