@@ -735,14 +735,14 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
           class="flex flex-1 flex-wrap items-center gap-1.5 min-w-0"
         >
           <button
-            aria-controls="whatsnew-chip-journey-popover"
+            aria-controls="whatsnew-chip-issues-hub-popover"
             aria-expanded="false"
             class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
-            title="Project journey map in the top bar"
+            title="One issues hub across the project"
             type="button"
           >
             <svg
-              class="lucide lucide-map"
+              class="lucide lucide-list-checks"
               fill="none"
               height="11"
               stroke="currentColor"
@@ -754,28 +754,34 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
               xmlns="http://www.w3.org/2000/svg"
             >
               <path
-                d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"
+                d="m3 17 2 2 4-4"
               />
               <path
-                d="M15 5.764v15"
+                d="m3 7 2 2 4-4"
               />
               <path
-                d="M9 3.236v15"
+                d="M13 6h8"
+              />
+              <path
+                d="M13 12h8"
+              />
+              <path
+                d="M13 18h8"
               />
             </svg>
             <span>
-              Journey map
+              Issues hub
             </span>
           </button>
           <button
-            aria-controls="whatsnew-chip-fx-popover"
+            aria-controls="whatsnew-chip-model-issues-popover"
             aria-expanded="false"
             class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
-            title="Currency inversion guard"
+            title="Raise issues on the 3D model"
             type="button"
           >
             <svg
-              class="lucide lucide-arrow-left-right"
+              class="lucide lucide-boxes"
               fill="none"
               height="11"
               stroke="currentColor"
@@ -787,31 +793,55 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
               xmlns="http://www.w3.org/2000/svg"
             >
               <path
-                d="M8 3 4 7l4 4"
+                d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z"
               />
               <path
-                d="M4 7h16"
+                d="m7 16.5-4.74-2.85"
               />
               <path
-                d="m16 21 4-4-4-4"
+                d="m7 16.5 5-3"
               />
               <path
-                d="M20 17H4"
+                d="M7 16.5v5.17"
+              />
+              <path
+                d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z"
+              />
+              <path
+                d="m17 16.5-5-3"
+              />
+              <path
+                d="m17 16.5 4.74-2.85"
+              />
+              <path
+                d="M17 16.5v5.17"
+              />
+              <path
+                d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z"
+              />
+              <path
+                d="M12 8 7.26 5.15"
+              />
+              <path
+                d="m12 8 4.74-2.85"
+              />
+              <path
+                d="M12 13.5V8"
               />
             </svg>
             <span>
-              FX guard
+              Model issues
             </span>
           </button>
           <button
-            aria-controls="whatsnew-chip-bim-popover"
+            aria-controls="whatsnew-chip-punch-photos-popover"
             aria-expanded="false"
             class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
-            title="BIM bulk-import validation"
+            title="Punch photos and pins on the drawing"
             type="button"
           >
             <svg
-              class="lucide lucide-shield-check"
+              class="lucide lucide-camera"
               fill="none"
               height="11"
               stroke="currentColor"
@@ -823,25 +853,59 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
               xmlns="http://www.w3.org/2000/svg"
             >
               <path
-                d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
+                d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"
+              />
+              <circle
+                cx="12"
+                cy="13"
+                r="3"
+              />
+            </svg>
+            <span>
+              Punch photos
+            </span>
+          </button>
+          <button
+            aria-controls="whatsnew-chip-closure-popover"
+            aria-expanded="false"
+            class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
+            title="A closure trail on every item"
+            type="button"
+          >
+            <svg
+              class="lucide lucide-circle-check"
+              fill="none"
+              height="11"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2.25"
+              viewBox="0 0 24 24"
+              width="11"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <circle
+                cx="12"
+                cy="12"
+                r="10"
               />
               <path
                 d="m9 12 2 2 4-4"
               />
             </svg>
             <span>
-              BIM import
+              Closure trail
             </span>
           </button>
           <button
-            aria-controls="whatsnew-chip-takeoff-popover"
+            aria-controls="whatsnew-chip-markup-issue-popover"
             aria-expanded="false"
             class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
-            title="Takeoff flags scanned pages"
+            title="Turn a mark-up into a tracked issue"
             type="button"
           >
             <svg
-              class="lucide lucide-scan-line"
+              class="lucide lucide-pen-tool"
               fill="none"
               height="11"
               stroke="currentColor"
@@ -853,34 +917,33 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
               xmlns="http://www.w3.org/2000/svg"
             >
               <path
-                d="M3 7V5a2 2 0 0 1 2-2h2"
+                d="M15.707 21.293a1 1 0 0 1-1.414 0l-1.586-1.586a1 1 0 0 1 0-1.414l5.586-5.586a1 1 0 0 1 1.414 0l1.586 1.586a1 1 0 0 1 0 1.414z"
               />
               <path
-                d="M17 3h2a2 2 0 0 1 2 2v2"
+                d="m18 13-1.375-6.874a1 1 0 0 0-.746-.776L3.235 2.028a1 1 0 0 0-1.207 1.207L5.35 15.879a1 1 0 0 0 .776.746L13 18"
               />
               <path
-                d="M21 17v2a2 2 0 0 1-2 2h-2"
+                d="m2.3 2.3 7.286 7.286"
               />
-              <path
-                d="M7 21H5a2 2 0 0 1-2-2v-2"
-              />
-              <path
-                d="M7 12h10"
+              <circle
+                cx="11"
+                cy="11"
+                r="2"
               />
             </svg>
             <span>
-              Scanned pages
+              Mark-up to issue
             </span>
           </button>
           <button
-            aria-controls="whatsnew-chip-din276-popover"
+            aria-controls="whatsnew-chip-field-capture-popover"
             aria-expanded="false"
             class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
-            title="DIN 276 dotted CAD codes"
+            title="Raise a defect offline from the field"
             type="button"
           >
             <svg
-              class="lucide lucide-list-tree"
+              class="lucide lucide-wifi-off"
               fill="none"
               height="11"
               stroke="currentColor"
@@ -892,62 +955,29 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
               xmlns="http://www.w3.org/2000/svg"
             >
               <path
-                d="M21 12h-8"
+                d="M12 20h.01"
               />
               <path
-                d="M21 6H8"
+                d="M8.5 16.429a5 5 0 0 1 7 0"
               />
               <path
-                d="M21 18h-8"
+                d="M5 12.859a10 10 0 0 1 5.17-2.69"
               />
               <path
-                d="M3 6v4c0 1.1.9 2 2 2h3"
+                d="M19 12.859a10 10 0 0 0-2.007-1.523"
               />
               <path
-                d="M3 10v6c0 1.1.9 2 2 2h3"
+                d="M2 8.82a15 15 0 0 1 4.177-2.643"
+              />
+              <path
+                d="M22 8.82a15 15 0 0 0-11.288-3.764"
+              />
+              <path
+                d="m2 2 20 20"
               />
             </svg>
             <span>
-              DIN 276
-            </span>
-          </button>
-          <button
-            aria-controls="whatsnew-chip-fixes-popover"
-            aria-expanded="false"
-            class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
-            title="Comment and DWG preview fixes"
-            type="button"
-          >
-            <svg
-              class="lucide lucide-file-text"
-              fill="none"
-              height="11"
-              stroke="currentColor"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2.25"
-              viewBox="0 0 24 24"
-              width="11"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"
-              />
-              <path
-                d="M14 2v4a2 2 0 0 0 2 2h4"
-              />
-              <path
-                d="M10 9H8"
-              />
-              <path
-                d="M16 13H8"
-              />
-              <path
-                d="M16 17H8"
-              />
-            </svg>
-            <span>
-              Fixes
+              Field capture
             </span>
           </button>
         </div>
