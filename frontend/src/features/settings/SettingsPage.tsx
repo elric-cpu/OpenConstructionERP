@@ -45,7 +45,7 @@ import { settingsGuide } from './settingsGuide';
 import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 import { DashboardLayoutManager } from '@/features/dashboard/DashboardLayoutManager';
 import { UpdateNotification } from '@/shared/ui/UpdateChecker';
-import { apiGet, apiPatch, apiPost, apiDelete } from '@/shared/lib/api';
+import { apiGet, apiPatch, apiPost, apiPut, apiDelete } from '@/shared/lib/api';
 import { SUPPORTED_LANGUAGES } from '@/app/i18n';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useThemeStore } from '@/stores/useThemeStore';
@@ -1093,6 +1093,126 @@ function ProfileCard({ profile, loading, editing, setEditing, formName, setFormN
   );
 }
 
+// ── Demo account login (admin) ────────────────────────────────────────────────
+
+interface DemoLoginSetting {
+  /** The admin's explicit on/off choice (persisted server-side). */
+  enabled: boolean;
+  /** Whether any demo account is installed on this server at all. */
+  seeded: boolean;
+  /** What the sign-in screen honours: enabled AND seeded. */
+  effective: boolean;
+}
+
+/**
+ * Admin-only row that turns the password-free "Try demo" sign-in on or off.
+ *
+ * Rendered only for admins (the parent gates on role), so its query runs only
+ * for a caller allowed to read the setting. The switch flips optimistically and
+ * rolls back if the server rejects the change.
+ */
+function DemoLoginAdminRow() {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const addToast = useToastStore((s) => s.addToast);
+
+  const { data, isPending, isError } = useQuery({
+    queryKey: ['demo-login-setting'],
+    queryFn: () => apiGet<DemoLoginSetting>('/v1/users/auth/demo-login/settings/'),
+    retry: false,
+    staleTime: 30_000,
+  });
+
+  const mutation = useMutation({
+    mutationFn: (enabled: boolean) =>
+      apiPut<DemoLoginSetting, { enabled: boolean }>(
+        '/v1/users/auth/demo-login/settings/',
+        { enabled },
+      ),
+    // Optimistic flip so the switch responds instantly; roll back on error.
+    onMutate: async (enabled) => {
+      await queryClient.cancelQueries({ queryKey: ['demo-login-setting'] });
+      const prev = queryClient.getQueryData<DemoLoginSetting>(['demo-login-setting']);
+      if (prev) {
+        queryClient.setQueryData<DemoLoginSetting>(['demo-login-setting'], {
+          ...prev,
+          enabled,
+          effective: enabled && prev.seeded,
+        });
+      }
+      return { prev };
+    },
+    onError: (err: Error, _enabled, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(['demo-login-setting'], ctx.prev);
+      addToast({
+        type: 'error',
+        title: t('settings.demo_login_save_failed', { defaultValue: 'Could not update demo login' }),
+        message: err.message,
+      });
+    },
+    onSuccess: (result) => {
+      queryClient.setQueryData(['demo-login-setting'], result);
+      addToast({
+        type: 'success',
+        title: result.enabled
+          ? t('settings.demo_login_on_toast', { defaultValue: 'Demo login turned on' })
+          : t('settings.demo_login_off_toast', { defaultValue: 'Demo login turned off' }),
+      });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['demo-login-setting'] });
+    },
+  });
+
+  // Hide the row entirely if the setting could not be read (e.g. an older
+  // backend without the endpoint) so a non-admin-relevant error never shows.
+  if (isError) return null;
+
+  const enabled = data?.enabled ?? false;
+  const busy = isPending || mutation.isPending;
+
+  return (
+    <div className="mt-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 rounded-lg border border-border-light bg-surface-elevated px-4 py-3">
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-content-primary">
+          {t('settings.demo_login_title', { defaultValue: 'Public demo account login' })}
+        </p>
+        <p className="text-xs text-content-secondary mt-0.5">
+          {t('settings.demo_login_desc', {
+            defaultValue:
+              'Controls the one-tap "Try demo" button on the sign-in screen, which lets anyone in with the shared demo account and no password. Turn it off to require real credentials. Your own accounts are not affected.',
+          })}
+        </p>
+        {data && !data.seeded && (
+          <p className="text-xs text-content-tertiary mt-1">
+            {t('settings.demo_login_not_seeded', {
+              defaultValue:
+                'No demo account is installed on this server, so the demo button stays hidden whatever this is set to.',
+            })}
+          </p>
+        )}
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={enabled}
+        aria-label={t('settings.demo_login_title', { defaultValue: 'Public demo account login' })}
+        disabled={busy}
+        onClick={() => mutation.mutate(!enabled)}
+        className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-normal ease-oe focus:outline-none focus:ring-2 focus:ring-oe-blue/40 disabled:opacity-50 disabled:cursor-not-allowed ${
+          enabled ? 'bg-oe-blue' : 'bg-surface-tertiary'
+        }`}
+      >
+        <span
+          className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform duration-normal ease-oe ${
+            enabled ? 'translate-x-5' : 'translate-x-0.5'
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
 // ── Tab definitions ──────────────────────────────────────────────────────────
 
 type SettingsTab = 'general' | 'dashboard' | 'team' | 'account' | 'regional' | 'converters' | 'ai' | 'security' | 'integrations' | 'advanced';
@@ -1615,6 +1735,8 @@ export function SettingsPage() {
                       </Button>
                     </div>
                   )}
+
+                  {profile?.role === 'admin' && <DemoLoginAdminRow />}
 
                   <div className="mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border border-semantic-error/20 bg-surface-elevated px-4 py-3">
                     <div className="min-w-0">

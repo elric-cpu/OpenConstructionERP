@@ -368,16 +368,22 @@ def register_dispatchers() -> None:
 
     Idempotent: subscribing the same handler twice would duplicate
     sends, so we no-op when the bus already has each handler.
+
+    The check is by function IDENTITY, not by ``__qualname__``. The
+    integrations connector bridge subscribes its OWN module-level
+    ``_on_notification_created`` to ``notifications.notification.created``,
+    sharing the identical bare qualname with this module's WS-push handler.
+    A qualname check would let whichever module loads second skip its own
+    handler (the root cause of issue #342); comparing the actual objects
+    keeps both wired regardless of load order.
     """
     handlers_to_register = [
         ("notifications.dispatch.email", _on_dispatch_email),
         ("notifications.dispatch.webhook", _on_dispatch_webhook),
         ("notifications.notification.created", _on_notification_created),
     ]
-    existing = event_bus.list_handlers()
     for event_name, handler in handlers_to_register:
-        names = existing.get(event_name, [])
-        if handler.__qualname__ in names:
+        if handler in event_bus._handlers.get(event_name, []):
             continue
         event_bus.subscribe(event_name, handler)
     logger.info("Notifications dispatchers wired (email/webhook/ws)")

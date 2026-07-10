@@ -271,6 +271,7 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.estimate_basis', to: '/estimate-basis', icon: FileText, advancedOnly: true },
       { labelKey: 'nav.preliminaries', to: '/preliminaries', icon: ClipboardList, advancedOnly: true },
       { labelKey: 'nav.allowances', to: '/allowances', icon: Wallet, advancedOnly: true },
+      { labelKey: 'nav.design_options', to: '/design-options', icon: Scale, advancedOnly: true },
     ],
   },
   // ── 4. COST DATA ───────────────────────────────────────────────────
@@ -866,6 +867,7 @@ const ROUTE_BACKEND_MODULE: Record<string, string> = {
   '/variations': 'oe_variations',
   '/moc': 'oe_moc',
   '/supplier-catalogs': 'oe_supplier_catalogs',
+  '/design-options': 'oe_design_options',
   // Real estate development
   '/property-dev': 'oe_property_dev',
   '/accommodation': 'oe_accommodation',
@@ -1075,6 +1077,11 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { isModuleEnabled } = useModuleStore();
+  // Hidden whole-sections (nav groups) the user has switched off via the
+  // "Edit menu". Persisted in useModuleStore alongside module state; here we
+  // read the list and the bulk setter the Save action commits to.
+  const hiddenGroups = useModuleStore((s) => s.hiddenGroups);
+  const setHiddenGroups = useModuleStore((s) => s.setHiddenGroups);
   const isAdvanced = useViewModeStore((s) => s.isAdvanced);
   const setViewMode = useViewModeStore((s) => s.setMode);
   const badgeCounts = useSidebarBadges();
@@ -1168,29 +1175,46 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   // `editMode` is the transient "Edit menu" toggle.
   // `editingHidden` is the in-memory working copy users edit while in
   // edit mode; only committed to `hiddenModules` on Save.
+  // Two independent working copies: one for individual rows (`editingHidden`,
+  // routes) and one for whole sections (`editingHiddenGroups`, group ids).
+  // Both are seeded on entry and committed together on Save, so hiding a
+  // module and hiding a section share one Save/Cancel gesture.
   const { hiddenModules, setHiddenModules } = useHiddenModules();
   const [editMode, setEditMode] = useState(false);
   const [editingHidden, setEditingHidden] = useState<string[]>([]);
+  const [editingHiddenGroups, setEditingHiddenGroups] = useState<string[]>([]);
 
   const enterEditMode = useCallback(() => {
     setEditingHidden(hiddenModules);
+    setEditingHiddenGroups(hiddenGroups);
     setEditMode(true);
-  }, [hiddenModules]);
+  }, [hiddenModules, hiddenGroups]);
 
   const cancelEditMode = useCallback(() => {
     setEditMode(false);
     setEditingHidden([]);
+    setEditingHiddenGroups([]);
   }, []);
 
   const saveEditMode = useCallback(() => {
     setHiddenModules(editingHidden);
+    setHiddenGroups(editingHiddenGroups);
     setEditMode(false);
     setEditingHidden([]);
-  }, [editingHidden, setHiddenModules]);
+    setEditingHiddenGroups([]);
+  }, [editingHidden, editingHiddenGroups, setHiddenModules, setHiddenGroups]);
 
   const toggleItemHidden = useCallback((route: string) => {
     setEditingHidden((prev) =>
       prev.includes(route) ? prev.filter((r) => r !== route) : [...prev, route],
+    );
+  }, []);
+
+  // Flip a whole section's hidden state inside the working copy. Committed to
+  // the store (and localStorage) only when the user hits Save.
+  const toggleGroupHidden = useCallback((groupId: string) => {
+    setEditingHiddenGroups((prev) =>
+      prev.includes(groupId) ? prev.filter((g) => g !== groupId) : [...prev, groupId],
     );
   }, []);
 
@@ -1199,6 +1223,10 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   // normal mode actually filters. The visual "muted" state is driven by
   // `editingHidden` so re-enabled rows visually un-mute immediately.
   const effectiveHidden = editMode ? [] : hiddenModules;
+  // Same idea for whole sections: in normal mode a hidden group (its header
+  // and every row) drops out entirely; in edit mode this is empty so the
+  // group still renders — dimmed — and the user can switch it back on.
+  const effectiveHiddenGroups = editMode ? [] : hiddenGroups;
 
   // Custom-module request dialog — opens from the "Request a custom
   // module" CTA at the bottom of the nav (below the "+ Add module"
@@ -1592,6 +1620,13 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           // Hide entire group in simple mode if flagged
           if (group.hideInSimple && !isAdvanced) return null;
 
+          // Menu-editor: a section the user has hidden drops out completely
+          // (header + every row) in normal mode. In edit mode
+          // `effectiveHiddenGroups` is empty, so the section still renders and
+          // shows dimmed via `editingHiddenGroups` (see NavGroupSection) with
+          // an eye control to switch it back on.
+          if (effectiveHiddenGroups.includes(group.id)) return null;
+
           // Merge static items + dynamic module items for this group.
           // Most groups inject by their own `id`; `grp_reality` overrides
           // with `dynamicGroupKey: 'reality'` so `oe_pointcloud`'s manifest
@@ -1669,6 +1704,9 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
               isCollapsed={isCollapsed}
               onToggle={() => toggleGroup(group.id)}
               iconified={iconified}
+              editMode={editMode}
+              isGroupHidden={editingHiddenGroups.includes(group.id)}
+              onToggleGroupHidden={() => toggleGroupHidden(group.id)}
             >
               <ul className="space-y-0.5">
                 {visibleItems.map((item, i) => {
@@ -1744,11 +1782,11 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                   <X size={12} strokeWidth={2.25} />
                   <span>{t('sidebar.cancel', { defaultValue: 'Cancel' })}</span>
                 </button>
-                {editingHidden.length > 0 && (
+                {editingHidden.length + editingHiddenGroups.length > 0 && (
                   <span className="shrink-0 text-2xs text-content-tertiary tabular-nums">
                     {t('sidebar.hidden_count', {
                       defaultValue: '{{count}} hidden',
-                      count: editingHidden.length,
+                      count: editingHidden.length + editingHiddenGroups.length,
                     })}
                   </span>
                 )}
@@ -1766,14 +1804,14 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                   <Pencil size={12} strokeWidth={2} />
                   <span>{t('sidebar.edit_menu', { defaultValue: 'Edit menu' })}</span>
                 </button>
-                {hiddenModules.length > 0 && (
+                {hiddenModules.length + hiddenGroups.length > 0 && (
                   <span
                     className="shrink-0 rounded-full bg-surface-tertiary/70 px-1.5 py-px text-[10px] font-medium text-content-tertiary tabular-nums"
                     title={t('sidebar.show_hidden', { defaultValue: 'Show hidden' })}
                   >
                     {t('sidebar.hidden_count', {
                       defaultValue: '{{count}} hidden',
-                      count: hiddenModules.length,
+                      count: hiddenModules.length + hiddenGroups.length,
                     })}
                   </span>
                 )}
@@ -2027,6 +2065,9 @@ function NavGroupSection({
   onToggle,
   children,
   iconified,
+  editMode,
+  isGroupHidden,
+  onToggleGroupHidden,
 }: {
   label: string;
   description?: string;
@@ -2034,6 +2075,12 @@ function NavGroupSection({
   onToggle: () => void;
   children: React.ReactNode;
   iconified?: boolean;
+  /** When true, the header shows an Eye / EyeOff control that hides or
+   *  restores this whole section in one click, and the section renders
+   *  dimmed while hidden — the section-level twin of the per-row toggle. */
+  editMode?: boolean;
+  isGroupHidden?: boolean;
+  onToggleGroupHidden?: () => void;
 }) {
   const { t } = useTranslation();
   // In icon-only mode there is no room for the group header chevron;
@@ -2055,7 +2102,11 @@ function NavGroupSection({
   // keyboard focus shows a clean ring without bleeding outside the
   // padded box.
   return (
-    <div className="mt-3 mb-0.5">
+    <div className={clsx('mt-3 mb-0.5', editMode && isGroupHidden && 'opacity-50')}>
+      {/* Header row — the collapse toggle plus, in Edit-menu mode, a
+          section-level Eye / EyeOff control. Kept as sibling buttons (not
+          nested) so both stay valid, focusable controls. */}
+      <div className="mb-0.5 flex items-center gap-0.5">
       <button
         onClick={onToggle}
         aria-expanded={!isCollapsed}
@@ -2065,7 +2116,7 @@ function NavGroupSection({
             : t('common.collapse_section', { defaultValue: 'Collapse {{label}}', label })
         }
         className={clsx(
-          'mb-0.5 flex w-full items-center justify-between gap-2 rounded-md',
+          'flex flex-1 min-w-0 items-center justify-between gap-2 rounded-md',
           'px-2 py-1 group cursor-pointer text-left',
           'hover:bg-surface-secondary/60 focus-visible:outline-none',
           'focus-visible:ring-1 focus-visible:ring-oe-blue/40',
@@ -2099,6 +2150,35 @@ function NavGroupSection({
           aria-hidden
         />
       </button>
+      {editMode && onToggleGroupHidden && (
+        <button
+          type="button"
+          onClick={onToggleGroupHidden}
+          aria-label={
+            isGroupHidden
+              ? t('sidebar.show_group', { defaultValue: 'Show {{label}} section', label })
+              : t('sidebar.hide_group', { defaultValue: 'Hide {{label}} section', label })
+          }
+          title={
+            isGroupHidden
+              ? t('sidebar.show_group', { defaultValue: 'Show {{label}} section', label })
+              : t('sidebar.hide_group', { defaultValue: 'Hide {{label}} section', label })
+          }
+          className={clsx(
+            'flex h-6 w-6 shrink-0 items-center justify-center rounded-md',
+            'text-content-tertiary hover:text-oe-blue hover:bg-oe-blue/10',
+            'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-oe-blue/40',
+            'transition-colors duration-150',
+          )}
+        >
+          {isGroupHidden ? (
+            <EyeOff size={12} strokeWidth={2} />
+          ) : (
+            <Eye size={12} strokeWidth={2} />
+          )}
+        </button>
+      )}
+      </div>
       {!isCollapsed && description && (
         <p className="mb-1 px-2 text-[10px] leading-snug text-content-quaternary">
           {description}

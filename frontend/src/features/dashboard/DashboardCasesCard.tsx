@@ -60,6 +60,17 @@ export function DashboardCasesCard() {
     ? t(ROLE_BY_ID[role]?.labelKey ?? '', { defaultValue: ROLE_BY_ID[role]?.labelDefault ?? '' })
     : '';
 
+  // Frame the preview chips by what they actually are: something half-finished
+  // to resume, a role-tuned pick, or - the default on a fresh workspace - the
+  // most popular cases to start from. The ranking in `picks` is unchanged; this
+  // only labels it.
+  const anyInProgress = picks.some((p) => p.inProgress);
+  const framingLabel = anyInProgress
+    ? t('cases.dashboard_card.resume_hint', { defaultValue: 'Pick up where you left off' })
+    : role
+      ? t('cases.dashboard_card.for_role', { defaultValue: 'Picked for you' })
+      : t('cases.dashboard_card.popular', { defaultValue: 'Popular starting points' });
+
   return (
     <div
       data-testid="dashboard-cases-card"
@@ -71,9 +82,19 @@ export function DashboardCasesCard() {
           <GraduationCap size={20} strokeWidth={1.9} />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-content-primary">
-            {t('cases.dashboard_card.title', { defaultValue: 'Start here - learn by example' })}
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-content-primary">
+              {t('cases.dashboard_card.title', { defaultValue: 'Start here - learn by example' })}
+            </p>
+            {/* Total library size, so the card advertises the full breadth of
+                guided cases even while it only previews a handful. */}
+            <span className="inline-flex shrink-0 items-center rounded-full bg-oe-blue/10 px-2 py-0.5 text-2xs font-semibold text-oe-blue ring-1 ring-inset ring-oe-blue/20">
+              {t('cases.dashboard_card.total', {
+                defaultValue: '{{count}} cases in total',
+                count: PLAYBOOKS.length,
+              })}
+            </span>
+          </div>
           <p className="mt-0.5 text-xs leading-relaxed text-content-secondary">
             {role
               ? t('cases.dashboard_card.body_role', {
@@ -98,7 +119,17 @@ export function DashboardCasesCard() {
 
       {/* Quick-launch: jump straight into a case */}
       {picks.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-3">
+          {/* Adaptive eyebrow: resume / role-tuned / popular starting points. */}
+          <div className="mb-1.5 flex items-center gap-1 text-2xs font-medium text-content-tertiary">
+            {anyInProgress ? (
+              <PlayCircle size={11} className="text-oe-blue" aria-hidden="true" />
+            ) : (
+              <Sparkles size={11} className="text-oe-blue" aria-hidden="true" />
+            )}
+            {framingLabel}
+          </div>
+          <div className="flex flex-wrap gap-2">
           {picks.map(({ pb, best, total, inProgress }) => {
             const Icon = iconFor(pb.icon);
             const tint = tintFor(pb.category);
@@ -141,12 +172,7 @@ export function DashboardCasesCard() {
               </button>
             );
           })}
-          {role && (
-            <span className="inline-flex items-center gap-1 self-center pl-1 text-2xs font-medium text-content-tertiary">
-              <Sparkles size={11} className="text-oe-blue" aria-hidden="true" />
-              {t('cases.dashboard_card.for_role', { defaultValue: 'Picked for you' })}
-            </span>
-          )}
+          </div>
         </div>
       )}
     </div>

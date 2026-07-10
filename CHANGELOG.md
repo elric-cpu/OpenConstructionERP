@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [10.10.0] - 2026-07-10
+
+This release opens the platform up to the wider world of cost data and adds a way to compare whole design options by what they cost.
+
+The cost side now works with many national price bases at once. Eight world cost bases are wired in for loading, and you can scope a search or a comparison across several of them together. A rate code can be compared across regional bases side by side, and search is more forgiving: a descriptive phrase returns the closest partial matches and a typo still finds the right work through fuzzy ranking, with semantic indexing behind it. Several bases ship as browsable resource catalogs, and a resource price sheet turns a coefficient base, one that carries labour, material and plant quantities but no money, into something you can price. Because bases can be priced in different currencies, a view in one currency toggle converts them for reading using live European Central Bank reference rates with a purchasing-power fallback, shown as a rough guide and never written into a bill.
+
+A new Design Options workspace compares competing designs for the same project. You attach a model to each option, generate its bill, and read the options side by side on total cost, the delta by trade and cost per square metre, with a transparent recommendation and a fairness banner that flags when two options are not being compared on equal terms. Every option is converted to one project base currency before it is summed, so a mixed-currency comparison stays honest.
+
+This release also gives builders the platform itself. A Module SDK package and a set of builder guides explain the module system, manifests, events, hooks and permissions, and walk through shipping your own module without editing the core. A full user documentation set covers the main workflows end to end, from takeoff and estimating through validation, tendering and the field.
+
+Three community-reported issues are fixed. Chat-connector notifications, for the supported messaging channels, now forward once connected, where before only the test button worked. The client portal shared model viewer no longer bounces a portal guest to the login screen. The property developer sales-target form lays out correctly. Alongside these, an administrator can now turn the public demo account login on or off from settings, which also closes a path that let the demo account in when it should have been disabled. You can hide whole sections of the left menu, not just single modules, and the project journey shows how many worked cases touch each module with a link into them.
+
 ## [10.9.0] - 2026-07-10
 
 This release turns site issue management into one connected workflow, from a defect spotted on a drawing or in the 3D model through to its documented closure, and it deepens another wave of delivery modules.

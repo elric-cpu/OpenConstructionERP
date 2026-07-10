@@ -7343,20 +7343,20 @@ function DevelopmentFormBody({
           })}
           span={2}
         >
-          <div className="flex gap-2">
+          <div className="grid grid-cols-[1fr_5rem] gap-2 items-start">
             <input
               type="number"
               min={0}
               step="0.01"
               value={devForm.sales_target_amount}
               onChange={(e) => set('sales_target_amount', e.target.value)}
-              className={`${inputCls} flex-1`}
+              className={inputCls}
               placeholder="0"
             />
             <input
               value={devForm.currency}
               onChange={(e) => set('currency', e.target.value.toUpperCase().slice(0, 3))}
-              className={`${inputCls} w-24`}
+              className={inputCls}
               placeholder="EUR"
               maxLength={3}
               aria-label={t('propdev.development.currency', {

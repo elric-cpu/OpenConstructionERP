@@ -272,11 +272,24 @@ def register_integration_notification_bridge() -> None:
     Idempotent: the event bus stores handlers in a list and would invoke a
     duplicate twice, so we no-op when this exact handler is already wired.
     Called from the integrations module ``on_startup`` hook.
+
+    Idempotency is checked by function IDENTITY, not by ``__qualname__``. The
+    notifications dispatcher subscribes its OWN module-level function - also
+    named ``_on_notification_created`` (its WebSocket push) - to the SAME
+    event. Both bare qualnames are the identical string
+    ``"_on_notification_created"``, so a qualname check saw the dispatcher's
+    handler "already present" and wrongly skipped wiring THIS bridge whenever
+    the notifications module loaded first (it does - it is pulled in early as a
+    dependency). The connector then stayed write-only: the Test button worked
+    but no real platform notification ever reached Telegram / Slack / Teams /
+    Discord / WhatsApp (issue #342). Comparing the actual handler objects
+    distinguishes the two functions and still resets when a test calls
+    ``event_bus.clear()``.
     """
-    existing = event_bus.list_handlers().get("notifications.notification.created", [])
-    if _on_notification_created.__qualname__ in existing:
+    event_name = "notifications.notification.created"
+    if _on_notification_created in event_bus._handlers.get(event_name, []):
         return
-    event_bus.subscribe("notifications.notification.created", _on_notification_created)
+    event_bus.subscribe(event_name, _on_notification_created)
     logger.info("Integrations: chat-connector notification bridge wired")
 
 

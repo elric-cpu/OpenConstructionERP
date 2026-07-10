@@ -81,20 +81,20 @@ function FlowSide({
 }): ReactElement {
   const Icon = tone === "in" ? LogIn : LogOut;
   return (
-    <div className="flex-1 rounded-xl border border-border-light bg-surface-secondary/40 p-3">
-      <p className="mb-2 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
-        <Icon size={12} strokeWidth={2.2} aria-hidden="true" />
+    <div className="flex flex-1 flex-col rounded-xl border border-border-light bg-surface-secondary/40 p-4">
+      <p className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-content-secondary">
+        <Icon size={16} strokeWidth={2.2} aria-hidden="true" />
         {label}
       </p>
-      <ul className="space-y-1.5">
+      <ul className="flex-1 space-y-2">
         {items.map((text, i) => (
           <li
             key={i}
-            className="flex items-start gap-2 text-xs leading-snug text-content-secondary"
+            className="flex items-start gap-2.5 text-sm leading-snug text-content-secondary"
           >
             <span
               className={clsx(
-                "mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full",
+                "mt-[7px] h-2 w-2 shrink-0 rounded-full",
                 tone === "in" ? "bg-content-quaternary" : "bg-semantic-success",
               )}
               aria-hidden="true"
@@ -600,16 +600,16 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
             {/* IN -> ACTION -> OUT. When a step has no flow data yet, the scene
                 shows on its own so the stage still reads. */}
             {hasFlow ? (
-              <div className="flex flex-col items-stretch gap-2 lg:flex-row lg:items-center lg:gap-4">
+              <div className="mx-auto flex w-full max-w-3xl flex-col items-stretch gap-3 lg:flex-row lg:gap-4">
                 <FlowSide
                   label={t("cases.flow.in", { defaultValue: "Goes in" })}
                   items={curInputs}
                   tone="in"
                 />
                 <FlowConnector />
-                <div className="mx-auto w-full max-w-[220px] shrink-0">
+                <div className="mx-auto flex w-full max-w-[220px] shrink-0 flex-col items-center justify-center">
                   {StageScene}
-                  <p className="mt-1.5 flex items-center justify-center gap-1 text-2xs font-medium text-content-tertiary">
+                  <p className="mt-2 flex items-center justify-center gap-1 text-xs font-medium text-content-tertiary">
                     <CurIcon size={11} strokeWidth={2} aria-hidden="true" />
                     {curModule}
                   </p>
@@ -650,12 +650,12 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
             </div>
 
             {/* Actions + step-to-step navigation */}
-            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border-light pt-4">
-              <div className="flex flex-wrap items-center gap-2">
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border-light pt-5">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <Button
                   variant="primary"
-                  size="sm"
-                  icon={<ArrowRight size={13} />}
+                  size="md"
+                  icon={<ArrowRight size={16} />}
                   iconPosition="right"
                   onClick={() => handleGo(currentStep)}
                   aria-label={t("cases.step.go_to", {
@@ -670,8 +670,8 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                 </Button>
                 <Button
                   variant={curDone ? "ghost" : "secondary"}
-                  size="sm"
-                  icon={curDone ? <RotateCcw size={13} /> : <Check size={13} />}
+                  size="md"
+                  icon={curDone ? <RotateCcw size={16} /> : <Check size={16} />}
                   onClick={() => handleToggle(currentStep)}
                 >
                   {curDone
@@ -681,11 +681,11 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                     : t("cases.step.mark_done", { defaultValue: "Mark done" })}
                 </Button>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1.5">
                 <Button
                   variant="ghost"
-                  size="sm"
-                  icon={<ArrowLeft size={13} />}
+                  size="md"
+                  icon={<ArrowLeft size={16} />}
                   onClick={() =>
                     selectStep(clampStepIndex(currentIndex - 1, total))
                   }
@@ -695,8 +695,8 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                 </Button>
                 <Button
                   variant="ghost"
-                  size="sm"
-                  icon={<ArrowRight size={13} />}
+                  size="md"
+                  icon={<ArrowRight size={16} />}
                   iconPosition="right"
                   onClick={() =>
                     selectStep(clampStepIndex(currentIndex + 1, total))

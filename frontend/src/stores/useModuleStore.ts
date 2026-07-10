@@ -14,6 +14,20 @@ import { apiGet, apiPatch } from '@/shared/lib/api';
 
 const STORE_KEY = 'oe_enabled_modules';
 
+/**
+ * localStorage key for the set of sidebar nav GROUPS (whole sections) the
+ * user has hidden via the sidebar "Edit menu". Mirrors STORE_KEY's strategy:
+ * a single JSON blob, read once at store init and rewritten on every change.
+ *
+ * Group hiding is a pure client-side convenience layer - it never disables a
+ * backend module, it only collapses an entire nav section out of view - so,
+ * unlike module ENABLE state, it is intentionally NOT mirrored to the server:
+ * there is no server-side field for it and this store must not reach into the
+ * backend for it. A missing or malformed key yields an empty list, so state
+ * persisted by older builds (which never wrote this key) loads unchanged.
+ */
+const HIDDEN_GROUPS_KEY = 'oe_hidden_groups';
+
 /** Modules that are ALWAYS shown in sidebar — cannot be disabled. */
 const CORE_MODULES = new Set([
   'dashboard',
@@ -72,6 +86,30 @@ function readState(): Record<string, boolean> {
   return { ...OPTIONAL_DEFAULTS };
 }
 
+/** Read the persisted hidden-groups list. Backward compatible: a missing or
+ *  malformed key returns an empty list rather than throwing. */
+function readHiddenGroups(): string[] {
+  try {
+    const raw = localStorage.getItem(HIDDEN_GROUPS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((g): g is string => typeof g === 'string');
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+function writeHiddenGroups(list: string[]): void {
+  try {
+    localStorage.setItem(HIDDEN_GROUPS_KEY, JSON.stringify(list));
+  } catch {
+    // ignore
+  }
+}
+
 /* ── Server sync helpers ─────────────────────────────────────────────── */
 
 /** Debounce timer for saving preferences to server. */
@@ -83,6 +121,20 @@ interface ModuleStore {
   enabledModules: Record<string, boolean>;
   isModuleEnabled: (moduleKey: string) => boolean;
   setModuleEnabled: (moduleKey: string, enabled: boolean) => void;
+
+  /* ── Sidebar group visibility (Edit menu) ──────────────────────────── */
+  /** Nav group ids the user has hidden as whole sections via the sidebar
+   *  "Edit menu". Persisted to localStorage (see HIDDEN_GROUPS_KEY). */
+  hiddenGroups: string[];
+  /** True when the given nav group id is in the hidden set. */
+  isGroupHidden: (groupId: string) => boolean;
+  /** Hide or restore a single nav group (persists immediately). */
+  setGroupHidden: (groupId: string, hidden: boolean) => void;
+  /** Flip a single nav group's hidden state (persists immediately). */
+  toggleGroupHidden: (groupId: string) => void;
+  /** Replace the whole hidden-groups list at once. Used by the Edit menu
+   *  Save action, mirroring how `setHiddenModules` commits hidden rows. */
+  setHiddenGroups: (groupIds: string[]) => void;
 
   /** Get enabled modules that depend on the given module key. */
   getEnabledDependents: (moduleKey: string) => string[];
@@ -120,6 +172,50 @@ export const useModuleStore = create<ModuleStore>((set, get) => ({
     });
     // Persist to server (debounced)
     get().saveToServer();
+  },
+
+  /* ── Sidebar group visibility (Edit menu) ──────────────────────────── */
+
+  hiddenGroups: readHiddenGroups(),
+
+  isGroupHidden: (groupId: string) => get().hiddenGroups.includes(groupId),
+
+  setGroupHidden: (groupId: string, hidden: boolean) => {
+    set((state) => {
+      const has = state.hiddenGroups.includes(groupId);
+      if (hidden === has) return state; // no-op: keep the same reference
+      const next = hidden
+        ? [...state.hiddenGroups, groupId]
+        : state.hiddenGroups.filter((g) => g !== groupId);
+      writeHiddenGroups(next);
+      return { hiddenGroups: next };
+    });
+  },
+
+  toggleGroupHidden: (groupId: string) => {
+    set((state) => {
+      const next = state.hiddenGroups.includes(groupId)
+        ? state.hiddenGroups.filter((g) => g !== groupId)
+        : [...state.hiddenGroups, groupId];
+      writeHiddenGroups(next);
+      return { hiddenGroups: next };
+    });
+  },
+
+  setHiddenGroups: (groupIds: string[]) => {
+    // De-dupe and drop empties / non-strings so a runaway caller can't
+    // bloat localStorage or persist junk group ids.
+    const seen = new Set<string>();
+    const cleaned: string[] = [];
+    for (const g of groupIds) {
+      if (typeof g !== 'string') continue;
+      const v = g.trim();
+      if (!v || seen.has(v)) continue;
+      seen.add(v);
+      cleaned.push(v);
+    }
+    writeHiddenGroups(cleaned);
+    set({ hiddenGroups: cleaned });
   },
 
   /* ── Dependency tracking ───────────────────────────────────────────── */

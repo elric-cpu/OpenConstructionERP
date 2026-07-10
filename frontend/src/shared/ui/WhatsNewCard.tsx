@@ -38,10 +38,11 @@ import {
   ArrowRight,
   ListChecks,
   Boxes,
-  Camera,
-  CheckCircle2,
-  PenTool,
-  WifiOff,
+  Globe,
+  Search,
+  Coins,
+  Scale,
+  Blocks,
   type LucideIcon,
 } from 'lucide-react';
 import { APP_VERSION } from '@/shared/lib/version';
@@ -83,129 +84,129 @@ interface Section {
   bullets: { key: string; default: string }[];
 }
 
-/* ── v8.2.0 release content ─────────────────────────────────────────────
-   Six chips for the v10.9 wave: the cross-project issues hub (headline),
-   issues raised on the 3D model, punch photos and drawing pins, the closure
-   trail, mark-up to tracked issue, and offline field capture.
+/* ── v10.10.0 release content ────────────────────────────────────────────
+   Six chips for the v10.10 wave: the world national cost bases (headline),
+   compare and search across bases, resource price sheets, read bases in one
+   currency, compare design options by cost, and build on the platform.
    Bullets surface only when the chip is expanded. */
-const SECTIONS_V1090: Section[] = [
+const SECTIONS_V1100: Section[] = [
   {
-    id: 'issues-hub',
+    id: 'cost-bases',
+    icon: Globe,
+    titleKey: 'whatsnew.v1100.bases.title',
+    titleDefault: 'The world national cost bases',
+    chipKey: 'whatsnew.v1100.bases.chip',
+    chipDefault: 'World cost bases',
+    bullets: [
+      {
+        key: 'whatsnew.v1100.bases.b1',
+        default:
+          'Work with many national price bases at once, with eight wired in for loading out of the box.',
+      },
+      {
+        key: 'whatsnew.v1100.bases.b2',
+        default:
+          'Scope a search or a comparison across several bases together, not one at a time.',
+      },
+    ],
+  },
+  {
+    id: 'compare-search',
+    icon: Search,
+    titleKey: 'whatsnew.v1100.search.title',
+    titleDefault: 'Compare and search across bases',
+    chipKey: 'whatsnew.v1100.search.chip',
+    chipDefault: 'Cross-base search',
+    bullets: [
+      {
+        key: 'whatsnew.v1100.search.b1',
+        default:
+          'Compare a rate code across regional price bases side by side.',
+      },
+      {
+        key: 'whatsnew.v1100.search.b2',
+        default:
+          'A descriptive phrase or a typo still finds the right work through fuzzy ranking and semantic search.',
+      },
+    ],
+  },
+  {
+    id: 'resource-price',
     icon: ListChecks,
-    titleKey: 'whatsnew.v1090.issues.title',
-    titleDefault: 'One issues hub across the project',
-    chipKey: 'whatsnew.v1090.issues.chip',
-    chipDefault: 'Issues hub',
+    titleKey: 'whatsnew.v1100.resource.title',
+    titleDefault: 'Price a coefficient base',
+    chipKey: 'whatsnew.v1100.resource.chip',
+    chipDefault: 'Resource price sheet',
     bullets: [
       {
-        key: 'whatsnew.v1090.issues.b1',
+        key: 'whatsnew.v1100.resource.b1',
         default:
-          'Punch items, non-conformances, clashes, mark-ups and model coordination topics gather into one open-issues list.',
+          'A resource price sheet turns a base of labour, material and plant quantities into one you can price.',
       },
       {
-        key: 'whatsnew.v1090.issues.b2',
+        key: 'whatsnew.v1100.resource.b2',
         default:
-          'Filter by source, owner, priority or overdue, and jump straight back to where each item lives.',
+          'Several bases now ship as browsable resource catalogs.',
       },
     ],
   },
   {
-    id: 'model-issues',
-    icon: Boxes,
-    titleKey: 'whatsnew.v1090.model.title',
-    titleDefault: 'Raise issues on the 3D model',
-    chipKey: 'whatsnew.v1090.model.chip',
-    chipDefault: 'Model issues',
+    id: 'one-currency',
+    icon: Coins,
+    titleKey: 'whatsnew.v1100.currency.title',
+    titleDefault: 'Read bases in one currency',
+    chipKey: 'whatsnew.v1100.currency.chip',
+    chipDefault: 'One currency',
     bullets: [
       {
-        key: 'whatsnew.v1090.model.b1',
+        key: 'whatsnew.v1100.currency.b1',
         default:
-          'File a coordination topic on the model with a priority, an assignee and a due date, and discuss it in a comment thread.',
+          'A view in one currency toggle converts bases for reading using live European Central Bank reference rates.',
       },
       {
-        key: 'whatsnew.v1090.model.b2',
+        key: 'whatsnew.v1100.currency.b2',
         default:
-          'A captured viewpoint and snapshot travel in the open BIM Collaboration Format, so a topic imports and exports as a standard file.',
+          'It is shown as a rough guide only and never written into a bill of quantities.',
       },
     ],
   },
   {
-    id: 'punch-photos',
-    icon: Camera,
-    titleKey: 'whatsnew.v1090.punch.title',
-    titleDefault: 'Punch photos and pins on the drawing',
-    chipKey: 'whatsnew.v1090.punch.chip',
-    chipDefault: 'Punch photos',
+    id: 'design-options',
+    icon: Scale,
+    titleKey: 'whatsnew.v1100.design.title',
+    titleDefault: 'Compare design options by cost',
+    chipKey: 'whatsnew.v1100.design.chip',
+    chipDefault: 'Design options',
     bullets: [
       {
-        key: 'whatsnew.v1090.punch.b1',
+        key: 'whatsnew.v1100.design.b1',
         default:
-          'Add site photos to a punch item straight from a phone camera, shown as a thumbnail gallery you can add to and prune.',
+          'Attach a model to each option and read them side by side on total, by-trade delta and cost per square metre.',
       },
       {
-        key: 'whatsnew.v1090.punch.b2',
+        key: 'whatsnew.v1100.design.b2',
         default:
-          'Place the pin visually on the drawing sheet instead of typing coordinates, with every open item shown as a numbered pin.',
+          'Every option converts to one project base currency first, and a fairness banner flags an uneven comparison.',
       },
     ],
   },
   {
-    id: 'closure',
-    icon: CheckCircle2,
-    titleKey: 'whatsnew.v1090.closure.title',
-    titleDefault: 'A closure trail on every item',
-    chipKey: 'whatsnew.v1090.closure.chip',
-    chipDefault: 'Closure trail',
+    id: 'build-platform',
+    icon: Blocks,
+    titleKey: 'whatsnew.v1100.platform.title',
+    titleDefault: 'Build on the platform',
+    chipKey: 'whatsnew.v1100.platform.chip',
+    chipDefault: 'Module SDK',
     bullets: [
       {
-        key: 'whatsnew.v1090.closure.b1',
+        key: 'whatsnew.v1100.platform.b1',
         default:
-          'A closure stepper walks the full path from open through assigned, in progress, resolved and verified to closed.',
+          'A Module SDK and builder guides explain manifests, events, hooks and permissions and walk through shipping your own module.',
       },
       {
-        key: 'whatsnew.v1090.closure.b2',
+        key: 'whatsnew.v1100.platform.b2',
         default:
-          'Nothing is marked done without the trail behind it.',
-      },
-    ],
-  },
-  {
-    id: 'markup-issue',
-    icon: PenTool,
-    titleKey: 'whatsnew.v1090.markup.title',
-    titleDefault: 'Turn a mark-up into a tracked issue',
-    chipKey: 'whatsnew.v1090.markup.chip',
-    chipDefault: 'Mark-up to issue',
-    bullets: [
-      {
-        key: 'whatsnew.v1090.markup.b1',
-        default:
-          'Give a drawing mark-up a priority and a due date and convert it into a tracked issue in one click.',
-      },
-      {
-        key: 'whatsnew.v1090.markup.b2',
-        default:
-          'A cloud drawn on a plan becomes a photographed, assignable, closable item.',
-      },
-    ],
-  },
-  {
-    id: 'field-capture',
-    icon: WifiOff,
-    titleKey: 'whatsnew.v1090.field.title',
-    titleDefault: 'Raise a defect offline from the field',
-    chipKey: 'whatsnew.v1090.field.chip',
-    chipDefault: 'Field capture',
-    bullets: [
-      {
-        key: 'whatsnew.v1090.field.b1',
-        default:
-          'From the field shell a site worker raises a defect with a photo even with no signal.',
-      },
-      {
-        key: 'whatsnew.v1090.field.b2',
-        default:
-          'It syncs when the connection returns, so nothing is lost on site.',
+          'A full user documentation set covers the main workflows end to end.',
       },
     ],
   },
@@ -331,7 +332,7 @@ export function WhatsNewCard({ forceShow = false, versionOverride }: WhatsNewCar
     navigate('/about#changelog');
   }, [navigate, handleDismiss]);
 
-  const sections = useMemo(() => SECTIONS_V1090, []);
+  const sections = useMemo(() => SECTIONS_V1100, []);
 
   if (mode === null) return null;
 

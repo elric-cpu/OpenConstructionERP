@@ -308,6 +308,24 @@ export interface BIMViewerProps {
    * unaffected.
    */
   readOnly?: boolean;
+  /**
+   * Portal mode - the viewer is embedded in the external client portal, where
+   * the caller authenticates with a magic-link SESSION token (NOT the internal
+   * JWT) and can only reach the token-scoped `/api/v1/portal/me/bim-models/*`
+   * endpoints. In this mode every panel/overlay that reads from an
+   * internal-JWT-gated endpoint is suppressed, because such a request carries
+   * no usable credential, returns 401, and the shared API client would react to
+   * that 401 by tearing down the (non-existent) internal session and hard-
+   * redirecting the whole page to `/login` - i.e. bouncing the client out of
+   * their own portal. Suppressed here: the scan-vs-design DeviationOverlay
+   * (`/v1/pointcloud/deviation`), the CWICR Match tab (`/v1/match/*`,
+   * `/v1/costs/*`) and the on-demand "all properties" Parquet fetch
+   * (`/v1/bim_hub/*`). Geometry and the skeleton element list still load,
+   * because those ride the portal token (geometry via a `?token=` query param,
+   * elements via the portal API client). Defaults to `false` so the internal
+   * BIM page is completely unaffected.
+   */
+  portal?: boolean;
 }
 
 /* ── Properties Table ──────────────────────────────────────────────────── */
@@ -684,6 +702,7 @@ export function BIMViewer({
   focusPoint = null,
   smartViewEvalResult = null,
   readOnly = false,
+  portal = false,
 }: BIMViewerProps) {
   // View-only mode (portal shared-model viewer): every authoring callback is
   // treated as absent so the properties panel and context menu render their
@@ -2291,6 +2310,15 @@ export function BIMViewer({
   // per revitId in `parquetCacheRef` — re-clicking the same element is
   // instant and shows no skeleton flash.
   useEffect(() => {
+    // Portal mode has no internal JWT, so the `/v1/bim_hub/.../dataframe/query`
+    // properties fetch would always 401. Skip it entirely: the read-only key
+    // panel renders from the skeleton element already loaded with the portal
+    // token, and no wasted always-failing request is fired.
+    if (portal) {
+      setParquetProps(null);
+      setParquetLoading(false);
+      return;
+    }
     if (!selectedElement || !modelId) {
       setParquetProps(null);
       setParquetLoading(false);
@@ -2342,11 +2370,14 @@ export function BIMViewer({
     return () => {
       ac.abort();
     };
-  }, [selectedElement, modelId, revitIdOf]);
+  }, [selectedElement, modelId, revitIdOf, portal]);
 
   /** Kept for the legacy "All properties" refresh button so it still
    *  force-refetches on demand, bypassing the cache. */
   const handleFetchAllProperties = useCallback(async () => {
+    // Portal mode cannot reach the internal `/v1/bim_hub` properties endpoint
+    // (no internal JWT); skip the always-401 fetch.
+    if (portal) return;
     if (!selectedElement || !modelId) return;
     const revitId = revitIdOf(selectedElement);
     if (!revitId) {
@@ -2372,7 +2403,7 @@ export function BIMViewer({
         setParquetExpanded(true);
       }
     }
-  }, [selectedElement, modelId, revitIdOf]);
+  }, [selectedElement, modelId, revitIdOf, portal]);
 
   const handleToggleGrid = useCallback(() => {
     sceneRef.current?.toggleGrid();
@@ -4061,8 +4092,11 @@ export function BIMViewer({
       {/* Scan-vs-design deviation overlay (bottom-left). Self-gating: renders
           nothing unless a laser scan has been aligned to this model, so it is
           safe to always mount. Surfaces the already-computed as-built-vs-
-          design deviation verdict as a colour legend + headline. */}
-      {projectId && modelId && (
+          design deviation verdict as a colour legend + headline. Skipped in
+          `portal` mode: its `/v1/pointcloud/deviation` fetch rides the internal
+          JWT (which a portal client does not have), so it would 401 and hard-
+          redirect the whole page to /login the instant a shared model opens. */}
+      {!portal && projectId && modelId && (
         <DeviationOverlay projectId={projectId} modelId={modelId} />
       )}
 
@@ -4794,7 +4828,14 @@ export function BIMViewer({
             </div>
           )}
 
-          {/* Tab bar */}
+          {/* Tab bar. Hidden in portal mode: the Links / Check / Match tabs all
+              surface internal-JWT-gated data a portal client cannot reach, and
+              the Match tab in particular auto-fetches `/v1/match/*` +
+              `/v1/costs/loaded-databases/` through the shared API client, whose
+              401 handler would hard-redirect the whole page to /login. Only the
+              read-only Properties (key) panel is shown; it renders entirely
+              from the skeleton element already loaded with the portal token. */}
+          {!portal && (
           <div className="flex border-b border-border-light shrink-0">
             {([
               ['key', t('bim.tab_properties', { defaultValue: 'Properties' })] as const,
@@ -4830,6 +4871,7 @@ export function BIMViewer({
               </button>
             ))}
           </div>
+          )}
 
           <div className="overflow-y-auto p-3 space-y-3 bg-white/40 dark:bg-white/5">
             {/* ── Tab: Properties (merged Key + All) ──────────────────── */}

@@ -4048,6 +4048,7 @@ const resource = {
     "nav.estimate_basis": "Basis of Estimate",
     "nav.preliminaries": "Preliminaries",
     "nav.allowances": "Allowances & Contingency",
+    "nav.design_options": "Design Options",
     "nav.price_index": "Price Index",
     "nav.labor_rates": "Labor Rates",
     "nav.resource_summary": "Resource Summary",

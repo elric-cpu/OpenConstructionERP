@@ -3894,6 +3894,7 @@ const resource = {
     "nav.tendering": "Ausschreibung",
     "nav.sustainability": "Nachhaltigkeit",
     "nav.takeoff": "PDF-Aufmaß",
+    "nav.design_options": "Entwurfsvarianten",
     "nav.pdf_measurements": "PDF-Messungen",
     "nav.dwg_takeoff": "DWG-Aufmaß",
     "nav.pdf_documents": "PDF-Dokumente & KI",

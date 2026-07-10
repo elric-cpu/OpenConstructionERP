@@ -10,6 +10,7 @@ import {
   ArrowRight,
   Sparkles,
   MapPin,
+  GraduationCap,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -22,6 +23,12 @@ import {
   type JourneyModule,
 } from './projectJourneyData';
 import { useModuleStore } from '@/stores/useModuleStore';
+
+// The case registry eagerly bundles ~85 playbook data files, so it is loaded
+// LAZILY (dynamic import when the panel opens) to keep it out of the always-on
+// app-shell chunk that hosts this top-bar control. Once loaded, it tells the
+// map which guided cases touch each module route.
+type CaseModuleIndex = typeof import('@/features/cases/playbookModules');
 
 // Journey chips for plugin-backed routes must hide when their module is
 // disabled, exactly as the Sidebar does. Otherwise the chip is a dead link:
@@ -157,6 +164,29 @@ function ProjectJourneyPanel({
     return () => document.removeEventListener('keydown', handler);
   }, [onClose]);
 
+  // Load the case<->route index once the map opens. Lazy on purpose: the case
+  // data must not weigh down the app-shell chunk, and the map is fully usable
+  // before it resolves - the "N cases" pills simply appear a moment later.
+  const [caseIndex, setCaseIndex] = useState<CaseModuleIndex | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void import('@/features/cases/playbookModules').then((mod) => {
+      if (alive) setCaseIndex(mod);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Cases that touch a module route: one pill navigates to the single case
+  // when a module has exactly one, otherwise to the full library. The Cases
+  // hub does not read a module query param, so multi-case modules open the
+  // hub rather than a filtered view that would not filter.
+  const casesForModule = useCallback(
+    (to: string) => (caseIndex ? caseIndex.playbooksForRoute(to) : []),
+    [caseIndex],
+  );
+
   const go = useCallback(
     (to: string) => {
       navigate(to);
@@ -226,6 +256,15 @@ function ProjectJourneyPanel({
                 })}
               </span>
             )}
+            {/* One clear route from the map into the guided case library. */}
+            <button
+              type="button"
+              onClick={() => go('/cases')}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-oe-blue/30 bg-oe-blue/5 px-2.5 py-1 text-2xs font-semibold text-oe-blue transition-colors hover:border-oe-blue/50 hover:bg-oe-blue/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+            >
+              <GraduationCap size={12} strokeWidth={2} aria-hidden />
+              {t('journey.browse_cases', { defaultValue: 'Browse cases' })}
+            </button>
             <button
               ref={closeRef}
               type="button"
@@ -321,14 +360,30 @@ function ProjectJourneyPanel({
                             {t(phase.descKey, { defaultValue: phase.desc })}
                           </p>
                           <div className="mt-2.5 flex flex-wrap gap-1.5">
-                            {phase.modules.filter((m) => chipEnabled(m.to)).map((m) => (
-                              <ModuleChip
-                                key={m.to}
-                                module={m}
-                                active={isOnRoute(location.pathname, m.to)}
-                                onClick={() => go(m.to)}
-                              />
-                            ))}
+                            {phase.modules.filter((m) => chipEnabled(m.to)).map((m) => {
+                              const cases = casesForModule(m.to);
+                              return (
+                                <span key={m.to} className="inline-flex items-center gap-1">
+                                  <ModuleChip
+                                    module={m}
+                                    active={isOnRoute(location.pathname, m.to)}
+                                    onClick={() => go(m.to)}
+                                  />
+                                  {cases.length > 0 && (
+                                    <CasesPill
+                                      count={cases.length}
+                                      onClick={() =>
+                                        go(
+                                          cases.length === 1
+                                            ? `/cases/${cases[0]!.id}`
+                                            : '/cases',
+                                        )
+                                      }
+                                    />
+                                  )}
+                                </span>
+                              );
+                            })}
                           </div>
                         </div>
                       </div>
@@ -358,14 +413,26 @@ function ProjectJourneyPanel({
               </span>
             </div>
             <div className="mt-2.5 flex flex-wrap gap-1.5">
-              {JOURNEY_ALWAYS_ON.filter((m) => chipEnabled(m.to)).map((m) => (
-                <ModuleChip
-                  key={m.to}
-                  module={m}
-                  active={isOnRoute(location.pathname, m.to)}
-                  onClick={() => go(m.to)}
-                />
-              ))}
+              {JOURNEY_ALWAYS_ON.filter((m) => chipEnabled(m.to)).map((m) => {
+                const cases = casesForModule(m.to);
+                return (
+                  <span key={m.to} className="inline-flex items-center gap-1">
+                    <ModuleChip
+                      module={m}
+                      active={isOnRoute(location.pathname, m.to)}
+                      onClick={() => go(m.to)}
+                    />
+                    {cases.length > 0 && (
+                      <CasesPill
+                        count={cases.length}
+                        onClick={() =>
+                          go(cases.length === 1 ? `/cases/${cases[0]!.id}` : '/cases')
+                        }
+                      />
+                    )}
+                  </span>
+                );
+              })}
             </div>
           </section>
         </div>
@@ -402,6 +469,35 @@ function ModuleChip({
         className="shrink-0 opacity-0 transition-opacity group-hover:opacity-60"
         aria-hidden
       />
+    </button>
+  );
+}
+
+/**
+ * A tiny graduation-cap + count pill sitting beside a module chip when one or
+ * more guided cases visit that module. It is its own button (never nested in
+ * the chip button) so a click opens the case library instead of the module,
+ * and it stays quiet: it only appears where cases exist, so the map is never a
+ * wall of pills.
+ */
+function CasesPill({ count, onClick }: { count: number; onClick: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={t('journey.cases_pill', { defaultValue: '{{count}} cases', count })}
+      title={t('journey.cases_pill_title', {
+        defaultValue: 'Guided cases that use this module - open the case library',
+      })}
+      className={clsx(
+        'inline-flex shrink-0 items-center gap-0.5 rounded-md border border-oe-blue/25 bg-oe-blue/5 px-1.5 py-1',
+        'text-2xs font-semibold tabular-nums text-oe-blue transition-colors',
+        'hover:border-oe-blue/50 hover:bg-oe-blue/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40',
+      )}
+    >
+      <GraduationCap size={11} strokeWidth={2} aria-hidden />
+      {count}
     </button>
   );
 }

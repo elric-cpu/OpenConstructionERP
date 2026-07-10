@@ -4590,6 +4590,7 @@ const resource = {
     "nav.settings": "Настройки",
     "nav.sustainability": "Экологичность",
     "nav.takeoff": "Подсчёт по PDF",
+    "nav.design_options": "Варианты проекта",
     "nav.pdf_measurements": "PDF-измерения",
     "nav.dwg_takeoff": "Подсчёт по DWG",
     "nav.pdf_documents": "PDF-документы и ИИ",

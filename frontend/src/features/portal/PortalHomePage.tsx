@@ -1030,6 +1030,14 @@ function ModelCard({
  * geometry streams from the dedicated portal geometry endpoint, which
  * authenticates via the session token carried on the URL (the browser's
  * glTF/COLLADA loader cannot send an Authorization header).
+ *
+ * It is also rendered with `portal` so the viewer suppresses every panel and
+ * overlay that reads from an internal-JWT-gated endpoint (scan-vs-design
+ * deviation, the CWICR Match tab, the on-demand Parquet properties fetch). A
+ * portal client holds only the magic-link session token, so any such request
+ * would 401 and the shared API client would react by hard-redirecting the
+ * whole page to /login - which is exactly the "opening a shared model bounces
+ * me to the login page" defect this guards against.
  */
 function ModelViewerModal({
   model,
@@ -1103,6 +1111,7 @@ function ModelViewerModal({
           }
           geometryUrl={geometryUrl}
           readOnly
+          portal
         />
       </div>
     </div>,

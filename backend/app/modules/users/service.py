@@ -402,11 +402,15 @@ class UserService:
         # no-password login to a seeded manager/estimator account by simply
         # forgetting to set the env flag.
         from app.config import get_settings as _get_settings
+        from app.core.demo_login import demo_login_enabled as _demo_login_enabled
 
-        _demo_allowed = not _get_settings().is_production and os.environ.get("SEED_DEMO", "true").lower() not in (
-            "false",
-            "0",
-            "no",
+        _demo_allowed = (
+            not _get_settings().is_production
+            and os.environ.get("SEED_DEMO", "true").lower() not in ("false", "0", "no")
+            # An admin who switched the demo login off must not leave a
+            # password-free back door open through the normal login form: fall
+            # through to the real password-verify path instead of the shortcut.
+            and _demo_login_enabled()
         )
         if email_norm in _DEMO_EMAIL_WHITELIST and _demo_allowed:
             return await self.demo_login(email_norm)
@@ -509,7 +513,23 @@ class UserService:
         only verifies the row exists and is active, then mints the same
         JWT pair as :meth:`login`. Bumps ``last_login_at`` with the same
         60-second throttle so heavy demo traffic doesn't hammer Postgres.
+
+        Authoritative gate for the admin demo-login switch: this is the single
+        sink both entry points funnel through (the ``/auth/demo-login`` endpoint
+        and the password-free shortcut in :meth:`login`), so refusing here when
+        an admin has turned the demo login off closes every path in one place.
         """
+        from app.core.demo_login import demo_login_enabled as _demo_login_enabled
+
+        if not _demo_login_enabled():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "The demo account login is currently switched off by the "
+                    "administrator. Please sign in with your own account."
+                ),
+            )
+
         user = await self.user_repo.get_by_email(email)
         if user is None or not user.is_active:
             # The seeder must have failed (rare) or the row was manually
@@ -586,14 +606,18 @@ class UserService:
 
         has_real_user = await self.user_repo.has_real_active_user()
 
+        from app.core.demo_login import demo_login_enabled
         from app.core.demo_seed import seed_demo_enabled
 
+        # The login page hides its "Try demo" block unless BOTH hold: a demo
+        # account is seeded to sign into AND the admin has not switched the demo
+        # login off. Combine them here so the affordance tracks either lever.
         return FirstRunResponse(
             desktop_mode=is_desktop,
             fresh_install=not has_real_user,
             has_local_account=has_local_account,
             onboarding_completed=onboarding_completed,
-            demo_enabled=seed_demo_enabled(),
+            demo_enabled=seed_demo_enabled() and demo_login_enabled(),
         )
 
     async def desktop_bootstrap(self) -> TokenResponse:
