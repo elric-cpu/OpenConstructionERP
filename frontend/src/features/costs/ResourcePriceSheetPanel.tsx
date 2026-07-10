@@ -459,7 +459,7 @@ export function ResourcePriceSheetPanel({
                   <span>
                     {t('costs.resource_prices.still_unpriced', {
                       defaultValue: '{{count}} resources still need a local price.',
-                      count: stats.unpriced.toLocaleString(),
+                      count: stats.unpriced,
                     })}
                   </span>
                 </>
@@ -747,7 +747,7 @@ export function ResourcePriceSheetPanel({
                 <p className="mt-1.5 text-2xs text-content-tertiary">
                   {t('costs.resource_prices.preview_missing', {
                     defaultValue: '{{count}} resources still need a price, for example: {{sample}}',
-                    count: preview.missing_resource_count.toLocaleString(),
+                    count: preview.missing_resource_count,
                     sample: preview.missing_resources_sample.slice(0, 5).join(', '),
                   })}
                 </p>
