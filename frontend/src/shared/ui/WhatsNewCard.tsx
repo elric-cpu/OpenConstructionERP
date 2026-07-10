@@ -37,7 +37,6 @@ import {
   X,
   ArrowRight,
   ListChecks,
-  Boxes,
   Globe,
   Search,
   Coins,

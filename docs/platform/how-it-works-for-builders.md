@@ -292,9 +292,27 @@ points, not a way to intercept arbitrary functions.
 
 ## The module SDK
 
-There is no separate package to install. The SDK is the set of stable core
-primitives your module imports, plus the scaffolder and the template. In one
-place:
+The SDK ships as a small package, `oe-sdk`, that gives a module author one clean
+import surface for the platform building blocks. It is a thin, faithful facade:
+every name you import from `oe_sdk` is the same object the running platform uses,
+so `from oe_sdk import event_bus` and `from app.core.events import event_bus`
+return the same singleton. There is no second implementation to drift out of
+sync.
+
+Install it next to the backend. Locally, install both editable so nothing is
+downloaded:
+
+```bash
+pip install -e ./backend
+pip install -e ./packages/oe-sdk
+```
+
+Standalone, `pip install oe-sdk` pulls the backend in as a dependency. Run
+`oe-sdk info` to check the core resolved, and `oe-sdk new oe_site_log` to
+scaffold a full module (models, schemas, repository, service, router, a
+migration and tests); the CLI wraps the platform's own generator.
+
+Through that one import you reach:
 
 - Data and web layer: `Base` and `GUID` from `app.database`; the shared
   dependencies `SessionDep`, `CurrentUserId`, `RequirePermission`,
@@ -302,14 +320,12 @@ place:
 - Extension singletons: `event_bus` from `app.core.events`, `hooks` from
   `app.core.hooks`, `rule_registry` from `app.core.validation.engine`,
   `permission_registry` and `Role` from `app.core.permissions`.
-- Scaffolding: the template at `modules/oe-module-template/` and the generator
-  at `backend/app/scripts/scaffold_module.py`, run as `make module-new`.
+- The manifest builder `module_manifest`, plus the template at
+  `modules/oe-module-template/` and `make module-new`.
 
-The `packages/oe-sdk` directory named in the architecture overview is a reserved
-placeholder today. The working SDK is the in-repo core above. Everything the
-tutorial uses is one of these imports, so you are always building against
-documented, stable core surfaces rather than reaching into another module's
-internals.
+Everything the tutorial uses is one of these names, so you are always building
+against documented, stable core surfaces rather than reaching into another
+module's internals.
 
 ## Validation is a first-class extension point
 

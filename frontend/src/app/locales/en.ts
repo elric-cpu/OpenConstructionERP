@@ -5697,6 +5697,7 @@ const resource = {
     "onboarding.mod_group_field": "Field",
     "onboarding.mod_group_analytics": "Analytics & Extras",
     "onboarding.mod_boq_desc": "Bill of Quantities editor with hierarchical positions",
+    "onboarding.mod_design_options_desc": "Compare alternative design options side by side on total, by-trade delta and cost per m2",
     "onboarding.mod_projects_desc": "Project management and organization",
     "onboarding.mod_costs_desc": "Cost databases and rate management",
     "onboarding.mod_assemblies_desc": "Composite rate recipes and templates",

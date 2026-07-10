@@ -303,7 +303,7 @@ function RecommendationBanner({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-semibold">
-              {t('designOptions.recommendation', { defaultValue: 'Recommendation' })}
+              {t('designOptions.recommendationTitle', { defaultValue: 'Recommendation' })}
             </p>
             <Badge
               variant={
@@ -418,7 +418,7 @@ export function DesignOptionComparisonTable({
               <th
                 className={`whitespace-nowrap px-3 py-2.5 text-left font-semibold text-content-primary ${stickyCol} z-20`}
               >
-                {t('designOptions.trade', { defaultValue: 'Trade / element' })}
+                {t('designOptions.tradeHeader', { defaultValue: 'Trade / element' })}
               </th>
               {options.map((o) => {
                 const isBaseline = o.option_id === baseline_option_id;
@@ -470,7 +470,9 @@ export function DesignOptionComparisonTable({
                     <td
                       className={`px-3 py-2.5 ${stickyCol} z-20 group-hover:bg-surface-secondary/30`}
                     >
-                      <span className="text-content-primary">{row.label || '-'}</span>
+                      <span className="text-content-primary">
+                        {t(`designOptions.trade.${row.key}`, { defaultValue: row.label || '-' })}
+                      </span>
                       {sys && (
                         <span className="ml-2 text-xs text-content-tertiary">{sys}</span>
                       )}

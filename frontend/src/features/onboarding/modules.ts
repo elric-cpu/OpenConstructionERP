@@ -69,6 +69,7 @@ export const ALL_MODULES: ModuleDef[] = [
 
   // ── Estimation ───────────────────────────────────────────────────────
   { key: 'boq', labelKey: 'boq.title', descriptionKey: 'onboarding.mod_boq_desc', group: 'estimation' },
+  { key: 'design_options', labelKey: 'nav.design_options', descriptionKey: 'onboarding.mod_design_options_desc', group: 'estimation' },
   { key: 'costs', labelKey: 'costs.title', descriptionKey: 'onboarding.mod_costs_desc', group: 'estimation', core: true },
   { key: 'assemblies', labelKey: 'nav.assemblies', descriptionKey: 'onboarding.mod_assemblies_desc', group: 'estimation', core: true },
   { key: 'catalog', labelKey: 'catalog.title', descriptionKey: 'onboarding.mod_catalog_desc', group: 'estimation', core: true },

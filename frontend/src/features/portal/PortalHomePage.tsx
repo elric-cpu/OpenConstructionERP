@@ -406,7 +406,7 @@ const CO_STATUS_VARIANT: Record<string, 'neutral' | 'blue' | 'warning' | 'succes
 };
 
 function money(amount: string | null, currency: string): string {
-  if (amount === null) return '—';
+  if (amount === null) return '-';
   return currency ? `${currency} ${amount}` : amount;
 }
 
@@ -496,7 +496,7 @@ function ChangeOrderCard({ co }: { co: PortalChangeOrder }) {
                   defaultValue: '{{count}} days',
                   count: co.approved_time_days,
                 })
-              : '—'}
+              : '-'}
           </dd>
         </div>
         <div>
@@ -504,7 +504,7 @@ function ChangeOrderCard({ co }: { co: PortalChangeOrder }) {
             {t('homeportal.co_approved_at', { defaultValue: 'Approved' })}
           </dt>
           <dd className="text-content-secondary">
-            {co.approved_at ? <DateDisplay value={co.approved_at} /> : '—'}
+            {co.approved_at ? <DateDisplay value={co.approved_at} /> : '-'}
           </dd>
         </div>
       </dl>
@@ -597,7 +597,7 @@ function InvoiceCard({ inv }: { inv: PortalInvoice }) {
             {t('homeportal.inv_date', { defaultValue: 'Invoice date' })}
           </dt>
           <dd className="text-content-secondary">
-            {inv.invoice_date ? <DateDisplay value={inv.invoice_date} /> : '—'}
+            {inv.invoice_date ? <DateDisplay value={inv.invoice_date} /> : '-'}
           </dd>
         </div>
         <div>
@@ -605,7 +605,7 @@ function InvoiceCard({ inv }: { inv: PortalInvoice }) {
             {t('homeportal.inv_due', { defaultValue: 'Due' })}
           </dt>
           <dd className="text-content-secondary">
-            {inv.due_date ? <DateDisplay value={inv.due_date} /> : '—'}
+            {inv.due_date ? <DateDisplay value={inv.due_date} /> : '-'}
           </dd>
         </div>
       </dl>

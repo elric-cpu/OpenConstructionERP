@@ -141,7 +141,7 @@ def upgrade() -> None:
             if _table_exists(bind, table) and not _index_exists(bind, table, name):
                 op.create_index(name, table, list(cols))
 
-    logger.info("v3233 design options: schema ensured")
+    logger.info("v3235 design options: schema ensured")
 
 
 def downgrade() -> None:
@@ -156,4 +156,4 @@ def downgrade() -> None:
                 op.drop_index(name, table_name=table)
         op.drop_table(table)
 
-    logger.info("v3233 design options: reverted")
+    logger.info("v3235 design options: reverted")

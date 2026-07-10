@@ -172,7 +172,9 @@ def test_flag_store_round_trip(tmp_path) -> None:
     assert demo_login_enabled(tmp_path) is True
 
 
-def test_flag_store_ignores_corrupt_file(tmp_path) -> None:
-    """A hand-corrupted flag file degrades to the safe "enabled" default."""
+def test_flag_store_fails_closed_on_corrupt_file(tmp_path) -> None:
+    """A corrupt flag file fails closed: the demo login is treated as off rather
+    than silently re-opening a password-free login the admin may have switched
+    off. Only a genuinely absent file keeps the historical "enabled" default."""
     demo_login_flag_path(tmp_path).write_text("{ not json", encoding="utf-8")
-    assert demo_login_enabled(tmp_path) is True
+    assert demo_login_enabled(tmp_path) is False

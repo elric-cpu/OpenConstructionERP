@@ -224,6 +224,12 @@ def _render_fairness(warning: DesignOptionFairnessWarning) -> str:
     """Human-readable fairness notice, interpolating its context values."""
     template = _FAIRNESS_TEXT.get(warning.key)
     if template is None:
+        # No offline template for this key (e.g. a validation-derived notice):
+        # prefer the human-readable message the warning already carries before
+        # falling back to a de-camel-cased slug, so the real finding is not lost.
+        message = (warning.context or {}).get("message")
+        if message:
+            return str(message)
         return _decamel(warning.key.rsplit(".", 1)[-1])
     try:
         return template.format(**(warning.context or {}))

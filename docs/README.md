@@ -1,6 +1,6 @@
 # OpenConstructionERP documentation
 
-OpenConstructionERP is an open, self-hosted platform for construction estimating and project delivery. It covers the whole job in one place: build a bill of quantities, take off quantities from drawings and models, price the work against national cost bases, turn a BIM model into cost and carbon, run a tender, plan and control the programme, and capture what happens on site. It is modular, so you enable only the parts you need, and more than 110 modules ship in the box.
+OpenConstructionERP is an open, self-hosted platform for construction estimating and project delivery. It covers the whole job in one place: build a bill of quantities, take off quantities from drawings and models, price the work against national cost bases, turn a BIM model into cost and carbon, run a tender, plan and control the programme, and capture what happens on site. It is modular, so you enable only the parts you need, and more than 150 modules ship in the box.
 
 This is the written documentation. If you prefer to watch first, the project README links a short walkthrough video. If you just want to try it, install the desktop app or run `pip install openconstructionerp`, then sign in with the demo account and open a sample project.
 

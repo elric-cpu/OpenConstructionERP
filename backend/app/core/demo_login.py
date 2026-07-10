@@ -58,10 +58,13 @@ def demo_login_flag_path(data_dir: Path | None = None) -> Path:
 def demo_login_enabled(data_dir: Path | None = None) -> bool:
     """Return whether the public demo login is currently switched on.
 
-    Reads the persisted admin choice. Returns ``True`` when no choice has been
-    recorded (the historical default) and on any read/parse error, so a missing
-    or corrupt file never silently locks demo users out beyond the explicit
-    :func:`app.core.demo_seed.seed_demo_enabled` gate.
+    Reads the persisted admin choice. Returns ``True`` only when no choice has
+    ever been recorded (the historical default). This is a security control, so
+    it fails closed: if the flag file exists but cannot be read or parsed, or
+    holds no usable boolean, the demo login is treated as off rather than
+    silently re-opening a password-free login the admin may have switched off.
+    A genuinely absent file still defaults to on, gated as always by
+    :func:`app.core.demo_seed.seed_demo_enabled`.
 
     Args:
         data_dir: Explicit data dir override (tests); ``None`` uses the active
@@ -75,19 +78,23 @@ def demo_login_enabled(data_dir: Path | None = None) -> bool:
     try:
         raw = path.read_text(encoding="utf-8")
     except FileNotFoundError:
+        # Never configured -> historical default: the demo login is available.
         return True
     except OSError as exc:
-        logger.warning("Could not read demo-login flag at %s: %s", path, exc)
-        return True
+        # The file exists but cannot be read. Fail closed: do not re-open a demo
+        # login the admin may have turned off just because we hit a read error.
+        logger.warning("Could not read demo-login flag at %s, treating demo login as off: %s", path, exc)
+        return False
     try:
         data = json.loads(raw)
     except ValueError:
-        logger.warning("Ignoring corrupt demo-login flag file at %s", path)
-        return True
+        logger.warning("Corrupt demo-login flag file at %s, treating demo login as off", path)
+        return False
     value = data.get("enabled") if isinstance(data, dict) else None
     if isinstance(value, bool):
         return value
-    return True
+    # File present but no usable boolean -> fail closed rather than assume on.
+    return False
 
 
 def set_demo_login_enabled(enabled: bool, data_dir: Path | None = None) -> bool:
