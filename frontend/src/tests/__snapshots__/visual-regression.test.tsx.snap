@@ -735,10 +735,77 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
           class="flex flex-1 flex-wrap items-center gap-1.5 min-w-0"
         >
           <button
-            aria-controls="whatsnew-chip-issues-hub-popover"
+            aria-controls="whatsnew-chip-cost-bases-popover"
             aria-expanded="false"
             class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
-            title="One issues hub across the project"
+            title="The world national cost bases"
+            type="button"
+          >
+            <svg
+              class="lucide lucide-globe"
+              fill="none"
+              height="11"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2.25"
+              viewBox="0 0 24 24"
+              width="11"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <circle
+                cx="12"
+                cy="12"
+                r="10"
+              />
+              <path
+                d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"
+              />
+              <path
+                d="M2 12h20"
+              />
+            </svg>
+            <span>
+              World cost bases
+            </span>
+          </button>
+          <button
+            aria-controls="whatsnew-chip-compare-search-popover"
+            aria-expanded="false"
+            class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
+            title="Compare and search across bases"
+            type="button"
+          >
+            <svg
+              class="lucide lucide-search"
+              fill="none"
+              height="11"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2.25"
+              viewBox="0 0 24 24"
+              width="11"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <circle
+                cx="11"
+                cy="11"
+                r="8"
+              />
+              <path
+                d="m21 21-4.3-4.3"
+              />
+            </svg>
+            <span>
+              Cross-base search
+            </span>
+          </button>
+          <button
+            aria-controls="whatsnew-chip-resource-price-popover"
+            aria-expanded="false"
+            class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
+            title="Price a coefficient base"
             type="button"
           >
             <svg
@@ -770,110 +837,18 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
               />
             </svg>
             <span>
-              Issues hub
+              Resource price sheet
             </span>
           </button>
           <button
-            aria-controls="whatsnew-chip-model-issues-popover"
+            aria-controls="whatsnew-chip-one-currency-popover"
             aria-expanded="false"
             class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
-            title="Raise issues on the 3D model"
+            title="Read bases in one currency"
             type="button"
           >
             <svg
-              class="lucide lucide-boxes"
-              fill="none"
-              height="11"
-              stroke="currentColor"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2.25"
-              viewBox="0 0 24 24"
-              width="11"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z"
-              />
-              <path
-                d="m7 16.5-4.74-2.85"
-              />
-              <path
-                d="m7 16.5 5-3"
-              />
-              <path
-                d="M7 16.5v5.17"
-              />
-              <path
-                d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z"
-              />
-              <path
-                d="m17 16.5-5-3"
-              />
-              <path
-                d="m17 16.5 4.74-2.85"
-              />
-              <path
-                d="M17 16.5v5.17"
-              />
-              <path
-                d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z"
-              />
-              <path
-                d="M12 8 7.26 5.15"
-              />
-              <path
-                d="m12 8 4.74-2.85"
-              />
-              <path
-                d="M12 13.5V8"
-              />
-            </svg>
-            <span>
-              Model issues
-            </span>
-          </button>
-          <button
-            aria-controls="whatsnew-chip-punch-photos-popover"
-            aria-expanded="false"
-            class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
-            title="Punch photos and pins on the drawing"
-            type="button"
-          >
-            <svg
-              class="lucide lucide-camera"
-              fill="none"
-              height="11"
-              stroke="currentColor"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2.25"
-              viewBox="0 0 24 24"
-              width="11"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"
-              />
-              <circle
-                cx="12"
-                cy="13"
-                r="3"
-              />
-            </svg>
-            <span>
-              Punch photos
-            </span>
-          </button>
-          <button
-            aria-controls="whatsnew-chip-closure-popover"
-            aria-expanded="false"
-            class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
-            title="A closure trail on every item"
-            type="button"
-          >
-            <svg
-              class="lucide lucide-circle-check"
+              class="lucide lucide-coins"
               fill="none"
               height="11"
               stroke="currentColor"
@@ -885,27 +860,33 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
               xmlns="http://www.w3.org/2000/svg"
             >
               <circle
-                cx="12"
-                cy="12"
-                r="10"
+                cx="8"
+                cy="8"
+                r="6"
               />
               <path
-                d="m9 12 2 2 4-4"
+                d="M18.09 10.37A6 6 0 1 1 10.34 18"
+              />
+              <path
+                d="M7 6h1v4"
+              />
+              <path
+                d="m16.71 13.88.7.71-2.82 2.82"
               />
             </svg>
             <span>
-              Closure trail
+              One currency
             </span>
           </button>
           <button
-            aria-controls="whatsnew-chip-markup-issue-popover"
+            aria-controls="whatsnew-chip-design-options-popover"
             aria-expanded="false"
             class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
-            title="Turn a mark-up into a tracked issue"
+            title="Compare design options by cost"
             type="button"
           >
             <svg
-              class="lucide lucide-pen-tool"
+              class="lucide lucide-scale"
               fill="none"
               height="11"
               stroke="currentColor"
@@ -917,33 +898,34 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
               xmlns="http://www.w3.org/2000/svg"
             >
               <path
-                d="M15.707 21.293a1 1 0 0 1-1.414 0l-1.586-1.586a1 1 0 0 1 0-1.414l5.586-5.586a1 1 0 0 1 1.414 0l1.586 1.586a1 1 0 0 1 0 1.414z"
+                d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"
               />
               <path
-                d="m18 13-1.375-6.874a1 1 0 0 0-.746-.776L3.235 2.028a1 1 0 0 0-1.207 1.207L5.35 15.879a1 1 0 0 0 .776.746L13 18"
+                d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"
               />
               <path
-                d="m2.3 2.3 7.286 7.286"
+                d="M7 21h10"
               />
-              <circle
-                cx="11"
-                cy="11"
-                r="2"
+              <path
+                d="M12 3v18"
+              />
+              <path
+                d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"
               />
             </svg>
             <span>
-              Mark-up to issue
+              Design options
             </span>
           </button>
           <button
-            aria-controls="whatsnew-chip-field-capture-popover"
+            aria-controls="whatsnew-chip-build-platform-popover"
             aria-expanded="false"
             class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
-            title="Raise a defect offline from the field"
+            title="Build on the platform"
             type="button"
           >
             <svg
-              class="lucide lucide-wifi-off"
+              class="lucide lucide-blocks"
               fill="none"
               height="11"
               stroke="currentColor"
@@ -954,30 +936,19 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
               width="11"
               xmlns="http://www.w3.org/2000/svg"
             >
-              <path
-                d="M12 20h.01"
+              <rect
+                height="7"
+                rx="1"
+                width="7"
+                x="14"
+                y="3"
               />
               <path
-                d="M8.5 16.429a5 5 0 0 1 7 0"
-              />
-              <path
-                d="M5 12.859a10 10 0 0 1 5.17-2.69"
-              />
-              <path
-                d="M19 12.859a10 10 0 0 0-2.007-1.523"
-              />
-              <path
-                d="M2 8.82a15 15 0 0 1 4.177-2.643"
-              />
-              <path
-                d="M22 8.82a15 15 0 0 0-11.288-3.764"
-              />
-              <path
-                d="m2 2 20 20"
+                d="M10 21V8a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5a1 1 0 0 0-1-1H3"
               />
             </svg>
             <span>
-              Field capture
+              Module SDK
             </span>
           </button>
         </div>
@@ -1682,11 +1653,20 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
         <div
           class="min-w-0 flex-1"
         >
-          <p
-            class="text-sm font-semibold text-content-primary"
+          <div
+            class="flex flex-wrap items-center gap-2"
           >
-            Start here - learn by example
-          </p>
+            <p
+              class="text-sm font-semibold text-content-primary"
+            >
+              Start here - learn by example
+            </p>
+            <span
+              class="inline-flex shrink-0 items-center rounded-full bg-oe-blue/10 px-2 py-0.5 text-2xs font-semibold text-oe-blue ring-1 ring-inset ring-oe-blue/20"
+            >
+              85 cases in total
+            </span>
+          </div>
           <p
             class="mt-0.5 text-xs leading-relaxed text-content-secondary"
           >
@@ -1721,242 +1701,280 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
         </button>
       </div>
       <div
-        class="mt-3 flex flex-wrap gap-2"
+        class="mt-3"
       >
-        <button
-          class="group flex max-w-[15rem] items-center gap-2 rounded-lg border border-border-light bg-surface-primary px-2.5 py-1.5 text-left transition-all hover:-translate-y-0.5 hover:border-oe-blue/40 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
-          title="Set up a project and hand it over"
-          type="button"
+        <div
+          class="mb-1.5 flex items-center gap-1 text-2xs font-medium text-content-tertiary"
         >
-          <span
+          <svg
             aria-hidden="true"
-            class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md ring-1 ring-inset bg-sky-500/10 text-sky-600 ring-sky-500/20 dark:text-sky-400"
+            class="lucide lucide-sparkles text-oe-blue"
+            fill="none"
+            height="11"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="11"
+            xmlns="http://www.w3.org/2000/svg"
           >
-            <svg
-              class="lucide lucide-layers"
-              fill="none"
-              height="13"
-              stroke="currentColor"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              viewBox="0 0 24 24"
-              width="13"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"
-              />
-              <path
-                d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"
-              />
-              <path
-                d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"
-              />
-            </svg>
-          </span>
-          <span
-            class="min-w-0"
-          >
-            <span
-              class="block truncate text-xs font-medium text-content-primary"
-            >
-              Set up a project and hand it over
-            </span>
-            <span
-              class="flex items-center gap-1 text-2xs text-content-tertiary"
-            >
-              5 steps
-            </span>
-          </span>
-        </button>
-        <button
-          class="group flex max-w-[15rem] items-center gap-2 rounded-lg border border-border-light bg-surface-primary px-2.5 py-1.5 text-left transition-all hover:-translate-y-0.5 hover:border-oe-blue/40 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
-          title="Price a building from a PDF"
-          type="button"
+            <path
+              d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"
+            />
+            <path
+              d="M20 3v4"
+            />
+            <path
+              d="M22 5h-4"
+            />
+            <path
+              d="M4 17v2"
+            />
+            <path
+              d="M5 18H3"
+            />
+          </svg>
+          Popular starting points
+        </div>
+        <div
+          class="flex flex-wrap gap-2"
         >
-          <span
-            aria-hidden="true"
-            class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md ring-1 ring-inset bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400"
-          >
-            <svg
-              class="lucide lucide-file-spreadsheet"
-              fill="none"
-              height="13"
-              stroke="currentColor"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              viewBox="0 0 24 24"
-              width="13"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"
-              />
-              <path
-                d="M14 2v4a2 2 0 0 0 2 2h4"
-              />
-              <path
-                d="M8 13h2"
-              />
-              <path
-                d="M14 13h2"
-              />
-              <path
-                d="M8 17h2"
-              />
-              <path
-                d="M14 17h2"
-              />
-            </svg>
-          </span>
-          <span
-            class="min-w-0"
+          <button
+            class="group flex max-w-[15rem] items-center gap-2 rounded-lg border border-border-light bg-surface-primary px-2.5 py-1.5 text-left transition-all hover:-translate-y-0.5 hover:border-oe-blue/40 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+            title="Set up a project and hand it over"
+            type="button"
           >
             <span
-              class="block truncate text-xs font-medium text-content-primary"
+              aria-hidden="true"
+              class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md ring-1 ring-inset bg-sky-500/10 text-sky-600 ring-sky-500/20 dark:text-sky-400"
             >
-              Price a building from a PDF
+              <svg
+                class="lucide lucide-layers"
+                fill="none"
+                height="13"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                width="13"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"
+                />
+                <path
+                  d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"
+                />
+                <path
+                  d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"
+                />
+              </svg>
             </span>
             <span
-              class="flex items-center gap-1 text-2xs text-content-tertiary"
+              class="min-w-0"
             >
-              5 steps
+              <span
+                class="block truncate text-xs font-medium text-content-primary"
+              >
+                Set up a project and hand it over
+              </span>
+              <span
+                class="flex items-center gap-1 text-2xs text-content-tertiary"
+              >
+                5 steps
+              </span>
             </span>
-          </span>
-        </button>
-        <button
-          class="group flex max-w-[15rem] items-center gap-2 rounded-lg border border-border-light bg-surface-primary px-2.5 py-1.5 text-left transition-all hover:-translate-y-0.5 hover:border-oe-blue/40 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
-          title="Check an estimate before you send it"
-          type="button"
-        >
-          <span
-            aria-hidden="true"
-            class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md ring-1 ring-inset bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400"
-          >
-            <svg
-              class="lucide lucide-calculator"
-              fill="none"
-              height="13"
-              stroke="currentColor"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              viewBox="0 0 24 24"
-              width="13"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <rect
-                height="20"
-                rx="2"
-                width="16"
-                x="4"
-                y="2"
-              />
-              <line
-                x1="8"
-                x2="16"
-                y1="6"
-                y2="6"
-              />
-              <line
-                x1="16"
-                x2="16"
-                y1="14"
-                y2="18"
-              />
-              <path
-                d="M16 10h.01"
-              />
-              <path
-                d="M12 10h.01"
-              />
-              <path
-                d="M8 10h.01"
-              />
-              <path
-                d="M12 14h.01"
-              />
-              <path
-                d="M8 14h.01"
-              />
-              <path
-                d="M12 18h.01"
-              />
-              <path
-                d="M8 18h.01"
-              />
-            </svg>
-          </span>
-          <span
-            class="min-w-0"
+          </button>
+          <button
+            class="group flex max-w-[15rem] items-center gap-2 rounded-lg border border-border-light bg-surface-primary px-2.5 py-1.5 text-left transition-all hover:-translate-y-0.5 hover:border-oe-blue/40 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+            title="Price a building from a PDF"
+            type="button"
           >
             <span
-              class="block truncate text-xs font-medium text-content-primary"
+              aria-hidden="true"
+              class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md ring-1 ring-inset bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400"
             >
-              Check an estimate before you send it
+              <svg
+                class="lucide lucide-file-spreadsheet"
+                fill="none"
+                height="13"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                width="13"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"
+                />
+                <path
+                  d="M14 2v4a2 2 0 0 0 2 2h4"
+                />
+                <path
+                  d="M8 13h2"
+                />
+                <path
+                  d="M14 13h2"
+                />
+                <path
+                  d="M8 17h2"
+                />
+                <path
+                  d="M14 17h2"
+                />
+              </svg>
             </span>
             <span
-              class="flex items-center gap-1 text-2xs text-content-tertiary"
+              class="min-w-0"
             >
-              3 steps
+              <span
+                class="block truncate text-xs font-medium text-content-primary"
+              >
+                Price a building from a PDF
+              </span>
+              <span
+                class="flex items-center gap-1 text-2xs text-content-tertiary"
+              >
+                5 steps
+              </span>
             </span>
-          </span>
-        </button>
-        <button
-          class="group flex max-w-[15rem] items-center gap-2 rounded-lg border border-border-light bg-surface-primary px-2.5 py-1.5 text-left transition-all hover:-translate-y-0.5 hover:border-oe-blue/40 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
-          title="Run a tender from a BOQ"
-          type="button"
-        >
-          <span
-            aria-hidden="true"
-            class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md ring-1 ring-inset bg-violet-500/10 text-violet-600 ring-violet-500/20 dark:text-violet-400"
+          </button>
+          <button
+            class="group flex max-w-[15rem] items-center gap-2 rounded-lg border border-border-light bg-surface-primary px-2.5 py-1.5 text-left transition-all hover:-translate-y-0.5 hover:border-oe-blue/40 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+            title="Check an estimate before you send it"
+            type="button"
           >
-            <svg
-              class="lucide lucide-handshake"
-              fill="none"
-              height="13"
-              stroke="currentColor"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              viewBox="0 0 24 24"
-              width="13"
-              xmlns="http://www.w3.org/2000/svg"
+            <span
+              aria-hidden="true"
+              class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md ring-1 ring-inset bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400"
             >
-              <path
-                d="m11 17 2 2a1 1 0 1 0 3-3"
-              />
-              <path
-                d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"
-              />
-              <path
-                d="m21 3 1 11h-2"
-              />
-              <path
-                d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"
-              />
-              <path
-                d="M3 4h8"
-              />
-            </svg>
-          </span>
-          <span
-            class="min-w-0"
+              <svg
+                class="lucide lucide-calculator"
+                fill="none"
+                height="13"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                width="13"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <rect
+                  height="20"
+                  rx="2"
+                  width="16"
+                  x="4"
+                  y="2"
+                />
+                <line
+                  x1="8"
+                  x2="16"
+                  y1="6"
+                  y2="6"
+                />
+                <line
+                  x1="16"
+                  x2="16"
+                  y1="14"
+                  y2="18"
+                />
+                <path
+                  d="M16 10h.01"
+                />
+                <path
+                  d="M12 10h.01"
+                />
+                <path
+                  d="M8 10h.01"
+                />
+                <path
+                  d="M12 14h.01"
+                />
+                <path
+                  d="M8 14h.01"
+                />
+                <path
+                  d="M12 18h.01"
+                />
+                <path
+                  d="M8 18h.01"
+                />
+              </svg>
+            </span>
+            <span
+              class="min-w-0"
+            >
+              <span
+                class="block truncate text-xs font-medium text-content-primary"
+              >
+                Check an estimate before you send it
+              </span>
+              <span
+                class="flex items-center gap-1 text-2xs text-content-tertiary"
+              >
+                3 steps
+              </span>
+            </span>
+          </button>
+          <button
+            class="group flex max-w-[15rem] items-center gap-2 rounded-lg border border-border-light bg-surface-primary px-2.5 py-1.5 text-left transition-all hover:-translate-y-0.5 hover:border-oe-blue/40 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+            title="Run a tender from a BOQ"
+            type="button"
           >
             <span
-              class="block truncate text-xs font-medium text-content-primary"
+              aria-hidden="true"
+              class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md ring-1 ring-inset bg-violet-500/10 text-violet-600 ring-violet-500/20 dark:text-violet-400"
             >
-              Run a tender from a BOQ
+              <svg
+                class="lucide lucide-handshake"
+                fill="none"
+                height="13"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                width="13"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="m11 17 2 2a1 1 0 1 0 3-3"
+                />
+                <path
+                  d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"
+                />
+                <path
+                  d="m21 3 1 11h-2"
+                />
+                <path
+                  d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"
+                />
+                <path
+                  d="M3 4h8"
+                />
+              </svg>
             </span>
             <span
-              class="flex items-center gap-1 text-2xs text-content-tertiary"
+              class="min-w-0"
             >
-              5 steps
+              <span
+                class="block truncate text-xs font-medium text-content-primary"
+              >
+                Run a tender from a BOQ
+              </span>
+              <span
+                class="flex items-center gap-1 text-2xs text-content-tertiary"
+              >
+                5 steps
+              </span>
             </span>
-          </span>
-        </button>
+          </button>
+        </div>
       </div>
     </div>
     <div
