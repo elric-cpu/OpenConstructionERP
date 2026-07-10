@@ -14,6 +14,15 @@
   // for "draw the on-brand SVG placeholder".
   var ARTICLES = [
     {
+      slug: 'v10-9-0',
+      href: '/news/v10-9-0.html',
+      title: 'v10.9.0 - From v7.0.0 to v10.9.0, the complete construction ERP.',
+      date: '2026-07-10',
+      tag: 'Release',
+      tagClass: 'release',
+      thumb: '/news/assets/v10-9-0-1.webp'
+    },
+    {
       slug: 'v8-8-2',
       href: '/news/v8-8-2.html',
       title: 'v8.8.2 - BIM and CAD converters that install themselves, and currency-correct BOQ totals.',
