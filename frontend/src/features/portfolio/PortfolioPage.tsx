@@ -225,7 +225,12 @@ export function PortfolioPage() {
   const flat = useMemo(() => flattenTree(treeQ.data ?? []), [treeQ.data]);
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-6">
+    // Full-width page frame, matching every other module surface. The app
+    // shell (<main> in AppLayout) already supplies the horizontal gutter and
+    // top padding, so pages must not re-cap their width or double the padding;
+    // Portfolio used to wrap at max-w-7xl mx-auto, which rendered it narrower
+    // and off-centre relative to the rest of the app.
+    <div className="w-full">
       <PageHeader
         srTitle={t('portfolio.title', { defaultValue: 'Portfolio' })}
         subtitle={t('portfolio.subtitle', {

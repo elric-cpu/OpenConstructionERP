@@ -69,7 +69,9 @@ export function ConstructionControlPage() {
   ];
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-6">
+    // Full-width frame to match every other module surface (the app shell
+    // already provides the gutter and top padding, see AppLayout <main>).
+    <div className="w-full">
       <PageHeader
         srTitle={t('construction_control.title', { defaultValue: 'Construction Control' })}
         subtitle={t('construction_control.subtitle', {

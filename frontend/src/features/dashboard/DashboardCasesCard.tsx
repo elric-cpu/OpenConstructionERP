@@ -22,6 +22,12 @@ import { completedCount } from '@/features/cases/progress';
 import { tintFor } from '@/features/cases/categories';
 import { rolesForPlaybook, ROLE_BY_ID } from '@/features/cases/roles';
 import { iconFor } from '@/features/cases/icons';
+import { CaseArt } from '@/features/cases/CaseArt';
+
+// How many cases to preview as picture tiles. Eight fills a clean two-row grid
+// (four across on a wide dashboard), so the block reads as a small gallery of
+// what the case library offers rather than a thin strip of chips.
+const PREVIEW_COUNT = 8;
 
 export function DashboardCasesCard() {
   const { t } = useTranslation();
@@ -53,7 +59,7 @@ export function DashboardCasesCard() {
       if (am !== bm) return bm - am;
       return a.pb.order - b.pb.order;
     });
-    return scored.slice(0, 4);
+    return scored.slice(0, PREVIEW_COUNT);
   }, [runs, role, companyType]);
 
   const roleLabel = role
@@ -110,10 +116,13 @@ export function DashboardCasesCard() {
         <button
           type="button"
           onClick={() => navigate('/cases')}
-          className="group inline-flex shrink-0 items-center gap-1 rounded-lg border border-oe-blue/30 bg-surface-primary px-3 py-1.5 text-xs font-semibold text-oe-blue transition-colors hover:border-oe-blue/50 hover:bg-oe-blue/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+          className="group inline-flex shrink-0 items-center gap-2 rounded-lg bg-oe-blue px-4 py-2.5 text-sm font-semibold text-content-inverse shadow-sm transition-all hover:bg-oe-blue-hover hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
         >
-          {t('cases.dashboard_card.cta', { defaultValue: 'Browse cases' })}
-          <ArrowRight size={13} className="transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+          {t('cases.dashboard_card.cta_all', {
+            defaultValue: 'Browse all {{count}} cases',
+            count: PLAYBOOKS.length,
+          })}
+          <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
         </button>
       </div>
 
@@ -129,32 +138,46 @@ export function DashboardCasesCard() {
             )}
             {framingLabel}
           </div>
-          <div className="flex flex-wrap gap-2">
+          {/* Picture gallery: each case leads with its line-art illustration on
+              an always-light tile (the same art the Cases hub uses), so the
+              block previews the library visually. Eight tiles land as two rows
+              of four on a wide dashboard, reflowing to three or two columns on
+              narrower screens. */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {picks.map(({ pb, best, total, inProgress }) => {
             const Icon = iconFor(pb.icon);
             const tint = tintFor(pb.category);
+            const title = t(pb.titleKey, { defaultValue: pb.titleDefault });
             return (
               <button
                 key={pb.id}
                 type="button"
                 onClick={() => navigate(`/cases/${pb.id}`)}
-                title={t(pb.titleKey, { defaultValue: pb.titleDefault })}
-                className="group flex max-w-[15rem] items-center gap-2 rounded-lg border border-border-light bg-surface-primary px-2.5 py-1.5 text-left transition-all hover:-translate-y-0.5 hover:border-oe-blue/40 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+                title={title}
+                className="group relative isolate flex flex-col overflow-hidden rounded-lg border border-border-light bg-surface-primary text-left shadow-xs transition duration-200 hover:-translate-y-0.5 hover:border-oe-blue/40 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
               >
+                {/* Faint discipline wash behind the whole tile. */}
                 <span
-                  className={clsx(
-                    'flex h-6 w-6 shrink-0 items-center justify-center rounded-md ring-1 ring-inset',
-                    tint.tile,
-                  )}
                   aria-hidden="true"
-                >
-                  <Icon size={13} strokeWidth={2} />
-                </span>
-                <span className="min-w-0">
-                  <span className="block truncate text-xs font-medium text-content-primary">
-                    {t(pb.titleKey, { defaultValue: pb.titleDefault })}
+                  className={clsx('pointer-events-none absolute inset-0 -z-10', tint.softBg)}
+                />
+                {/* Line-art banner on an always-light tile so the linework reads
+                    the same in light and dark theme. */}
+                <div className="relative aspect-[16/9] w-full overflow-hidden border-b border-border-light bg-gradient-to-b from-white to-slate-50 ring-1 ring-inset ring-slate-900/[0.04]">
+                  <CaseArt id={pb.id} fallbackIcon={Icon} fallbackClass={tint.text} alt={title} />
+                  {inProgress && (
+                    <span
+                      className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-oe-blue shadow-sm ring-2 ring-white"
+                      title={t('cases.card.in_progress', { defaultValue: 'In progress' })}
+                      aria-hidden="true"
+                    />
+                  )}
+                </div>
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5 px-2.5 py-2">
+                  <span className="line-clamp-2 text-xs font-semibold leading-snug text-content-primary">
+                    {title}
                   </span>
-                  <span className="flex items-center gap-1 text-2xs text-content-tertiary">
+                  <span className="mt-auto flex items-center gap-1 text-2xs text-content-tertiary">
                     {inProgress ? (
                       <>
                         <PlayCircle size={10} className="text-oe-blue" aria-hidden="true" />
@@ -168,7 +191,7 @@ export function DashboardCasesCard() {
                       t('cases.card.steps', { defaultValue: '{{count}} steps', count: total })
                     )}
                   </span>
-                </span>
+                </div>
               </button>
             );
           })}

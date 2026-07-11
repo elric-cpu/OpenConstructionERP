@@ -108,8 +108,21 @@ function FlowSide({
 }
 
 /** The connector between flow columns: points right on desktop (In -> Out reads
- *  left to right) and down when the columns stack on narrow screens. */
-function FlowConnector(): ReactElement {
+ *  left to right) and down when the columns stack on narrow screens. Pass
+ *  `vertical` to force the down arrow, e.g. when the flow runs as a vertical
+ *  In -> Action -> Out pipeline inside the step's right-hand visualisation
+ *  column. */
+function FlowConnector({ vertical = false }: { vertical?: boolean }): ReactElement {
+  if (vertical) {
+    return (
+      <div
+        className="flex shrink-0 items-center justify-center text-content-tertiary"
+        aria-hidden="true"
+      >
+        <ArrowDown size={16} strokeWidth={2.2} />
+      </div>
+    );
+  }
   return (
     <div
       className="flex shrink-0 items-center justify-center text-content-tertiary"
@@ -597,55 +610,64 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
               </h2>
             </div>
 
-            {/* IN -> ACTION -> OUT. When a step has no flow data yet, the scene
-                shows on its own so the stage still reads. */}
-            {hasFlow ? (
-              <div className="mx-auto flex w-full max-w-3xl flex-col items-stretch gap-3 lg:flex-row lg:gap-4">
-                <FlowSide
-                  label={t("cases.flow.in", { defaultValue: "Goes in" })}
-                  items={curInputs}
-                  tone="in"
-                />
-                <FlowConnector />
-                <div className="mx-auto flex w-full max-w-[220px] shrink-0 flex-col items-center justify-center">
-                  {StageScene}
-                  <p className="mt-2 flex items-center justify-center gap-1 text-xs font-medium text-content-tertiary">
-                    <CurIcon size={11} strokeWidth={2} aria-hidden="true" />
-                    {curModule}
+            {/* Two columns on desktop: the plain-language explanation on the
+                left, larger and high-contrast so the "what and why" reads
+                clearly, and the visualisation on the right. They stack on narrow
+                screens (explanation first). */}
+            <div className="mt-1 grid gap-5 lg:grid-cols-2 lg:items-start lg:gap-8">
+              {/* LEFT: What you do + Why, in larger, readable prose. */}
+              <div className="space-y-5">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-oe-blue-text">
+                    {t("cases.step.what", { defaultValue: "What you do" })}
+                  </p>
+                  <p className="mt-1.5 text-base leading-relaxed text-content-primary">
+                    {t(currentStep.whatKey, {
+                      defaultValue: currentStep.whatDefault,
+                    })}
                   </p>
                 </div>
-                <FlowConnector />
-                <FlowSide
-                  label={t("cases.flow.out", { defaultValue: "Comes out" })}
-                  items={curOutputs}
-                  tone="out"
-                />
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-content-tertiary">
+                    {t("cases.step.why", { defaultValue: "Why" })}
+                  </p>
+                  <p className="mt-1.5 text-base leading-relaxed text-content-secondary">
+                    {t(currentStep.whyKey, {
+                      defaultValue: currentStep.whyDefault,
+                    })}
+                  </p>
+                </div>
               </div>
-            ) : (
-              <div className="mx-auto w-full max-w-md">{StageScene}</div>
-            )}
 
-            {/* What + Why */}
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <div>
-                <p className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
-                  {t("cases.step.what", { defaultValue: "What you do" })}
-                </p>
-                <p className="mt-1 text-sm leading-relaxed text-content-secondary">
-                  {t(currentStep.whatKey, {
-                    defaultValue: currentStep.whatDefault,
-                  })}
-                </p>
-              </div>
-              <div>
-                <p className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
-                  {t("cases.step.why", { defaultValue: "Why" })}
-                </p>
-                <p className="mt-1 text-sm leading-relaxed text-content-secondary">
-                  {t(currentStep.whyKey, {
-                    defaultValue: currentStep.whyDefault,
-                  })}
-                </p>
+              {/* RIGHT: the visualisation. With flow data it runs as a vertical
+                  In -> Action -> Out pipeline that fits the column; without it the
+                  scene shows on its own. */}
+              <div className="lg:pl-2">
+                {hasFlow ? (
+                  <div className="mx-auto flex w-full max-w-sm flex-col items-stretch gap-3">
+                    <FlowSide
+                      label={t("cases.flow.in", { defaultValue: "Goes in" })}
+                      items={curInputs}
+                      tone="in"
+                    />
+                    <FlowConnector vertical />
+                    <div className="mx-auto flex w-full max-w-[240px] flex-col items-center justify-center">
+                      {StageScene}
+                      <p className="mt-2 flex items-center justify-center gap-1 text-xs font-medium text-content-tertiary">
+                        <CurIcon size={11} strokeWidth={2} aria-hidden="true" />
+                        {curModule}
+                      </p>
+                    </div>
+                    <FlowConnector vertical />
+                    <FlowSide
+                      label={t("cases.flow.out", { defaultValue: "Comes out" })}
+                      items={curOutputs}
+                      tone="out"
+                    />
+                  </div>
+                ) : (
+                  <div className="mx-auto w-full max-w-sm">{StageScene}</div>
+                )}
               </div>
             </div>
 
