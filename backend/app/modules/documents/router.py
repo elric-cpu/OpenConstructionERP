@@ -1448,9 +1448,21 @@ async def get_document(
 # ── Download ─────────────────────────────────────────────────────────────────
 
 
+# The app runs with ``redirect_slashes=False`` (see app/main.py), so a bare
+# ``/download`` (no trailing slash) does NOT auto-redirect to ``/download/``.
+# The frontend downloader (features/documents/api.ts ``downloadDocumentBlob``)
+# and the Geo "place drawing" picker both call the no-slash form, so the
+# trailing-slash-only route 404'd at the router before the handler ever ran -
+# which surfaced as "Could not place this drawing" on the map. Register BOTH
+# path forms so either spelling resolves to this handler.
+@router.get(
+    "/{document_id}/download",
+    dependencies=[Depends(RequirePermission("documents.read"))],
+)
 @router.get(
     "/{document_id}/download/",
     dependencies=[Depends(RequirePermission("documents.read"))],
+    include_in_schema=False,
 )
 async def download_document(
     document_id: uuid.UUID,
@@ -1474,7 +1486,17 @@ async def download_document(
     # blob can be pruned independently. For those we materialize a typed stub
     # on demand rather than 404, so every /files row downloads something valid.
     is_mirror = bool(meta.get("source_module"))
-    placeholder_eligible = is_demo or is_mirror
+    # Seed/showcase rows (flagship, demo-asset and retail bundles) tag their
+    # metadata source as "*_seed" and their blobs often never shipped in the
+    # wheel. Treat them like demo rows so a missing blob materializes a valid
+    # stub instead of a 404. That 404 was silently breaking every feature that
+    # re-downloads a stored document - Geo "place drawing" on the map, build a
+    # BIM model from a document, and PDF/DWG takeoff - on the demo projects.
+    # Real user uploads never carry a "*_seed" source, so they still get the
+    # truthful "file missing" 404.
+    src = str(meta.get("source", "")).lower()
+    is_seed = src.endswith("_seed") or "demo" in src
+    placeholder_eligible = is_demo or is_mirror or is_seed
 
     # file_path stored in DB may be relative (demo seed records) or absolute
     # (real uploads). Normalize relatives against UPLOAD_BASE before resolving
