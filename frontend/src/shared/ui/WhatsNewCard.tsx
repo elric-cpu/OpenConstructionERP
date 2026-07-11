@@ -38,12 +38,12 @@ import {
   Sparkles,
   X,
   ArrowRight,
-  ListChecks,
-  Globe,
-  Search,
+  Scissors,
+  Ruler,
+  Mountain,
+  Camera,
   Coins,
-  Scale,
-  Blocks,
+  GraduationCap,
   type LucideIcon,
 } from 'lucide-react';
 import { APP_VERSION } from '@/shared/lib/version';
@@ -85,129 +85,125 @@ interface Section {
   bullets: { key: string; default: string }[];
 }
 
-/* ── v10.10.0 release content ────────────────────────────────────────────
-   Six chips for the v10.10 wave: the world national cost bases (headline),
-   compare and search across bases, resource price sheets, read bases in one
-   currency, compare design options by cost, and build on the platform.
-   Bullets surface only when the chip is expanded. */
-const SECTIONS_V1100: Section[] = [
+/* ── v11.0.0 release content ────────────────────────────────────────────
+   Six chips for the v11.0 wave: the new point cloud review tools take the
+   headline (section a scan, measure on it, colour it by height, snapshot a
+   view), then onboarding that leads with the cost base, and the start-here
+   worked cases now translated into every language. Bullets surface only
+   when the chip is expanded. */
+const SECTIONS_V1110: Section[] = [
   {
-    id: 'cost-bases',
-    icon: Globe,
-    titleKey: 'whatsnew.v1100.bases.title',
-    titleDefault: 'The world national cost bases',
-    chipKey: 'whatsnew.v1100.bases.chip',
-    chipDefault: 'World cost bases',
+    id: 'pc-section',
+    icon: Scissors,
+    titleKey: 'whatsnew.v1110.section.title',
+    titleDefault: 'Slice a point cloud',
+    chipKey: 'whatsnew.v1110.section.chip',
+    chipDefault: 'Section a scan',
     bullets: [
       {
-        key: 'whatsnew.v1100.bases.b1',
+        key: 'whatsnew.v1110.section.b1',
         default:
-          'Work with many national price bases at once, with eight wired in for loading out of the box.',
+          'Cut a reality-capture scan to a height band and read just that slice.',
       },
       {
-        key: 'whatsnew.v1100.bases.b2',
+        key: 'whatsnew.v1110.section.b2',
         default:
-          'Scope a search or a comparison across several bases together, not one at a time.',
+          'Switch the slice to a top-down plan view to work it like a floor plan.',
       },
     ],
   },
   {
-    id: 'compare-search',
-    icon: Search,
-    titleKey: 'whatsnew.v1100.search.title',
-    titleDefault: 'Compare and search across bases',
-    chipKey: 'whatsnew.v1100.search.chip',
-    chipDefault: 'Cross-base search',
+    id: 'pc-measure',
+    icon: Ruler,
+    titleKey: 'whatsnew.v1110.measure.title',
+    titleDefault: 'Measure on the cloud',
+    chipKey: 'whatsnew.v1110.measure.chip',
+    chipDefault: 'Measure points',
     bullets: [
       {
-        key: 'whatsnew.v1100.search.b1',
+        key: 'whatsnew.v1110.measure.b1',
         default:
-          'Compare a rate code across regional price bases side by side.',
+          'Measure point to point and read the distance with its horizontal and vertical parts in millimetres.',
       },
       {
-        key: 'whatsnew.v1100.search.b2',
+        key: 'whatsnew.v1110.measure.b2',
         default:
-          'A descriptive phrase or a typo still finds the right work through fuzzy ranking and semantic search.',
+          'Box off a region with a clip box to isolate part of a scan.',
       },
     ],
   },
   {
-    id: 'resource-price',
-    icon: ListChecks,
-    titleKey: 'whatsnew.v1100.resource.title',
-    titleDefault: 'Price a coefficient base',
-    chipKey: 'whatsnew.v1100.resource.chip',
-    chipDefault: 'Resource price sheet',
+    id: 'pc-elevation',
+    icon: Mountain,
+    titleKey: 'whatsnew.v1110.elevation.title',
+    titleDefault: 'Colour points by height',
+    chipKey: 'whatsnew.v1110.elevation.chip',
+    chipDefault: 'Elevation colours',
     bullets: [
       {
-        key: 'whatsnew.v1100.resource.b1',
+        key: 'whatsnew.v1110.elevation.b1',
         default:
-          'A resource price sheet turns a base of labour, material and plant quantities into one you can price.',
+          'Colour the cloud by elevation with a legend from the lowest to the highest point.',
       },
       {
-        key: 'whatsnew.v1100.resource.b2',
+        key: 'whatsnew.v1110.elevation.b2',
         default:
-          'Several bases now ship as browsable resource catalogs.',
+          'Pin a height band to hold the colour range while you look around.',
       },
     ],
   },
   {
-    id: 'one-currency',
+    id: 'pc-snapshot',
+    icon: Camera,
+    titleKey: 'whatsnew.v1110.snapshot.title',
+    titleDefault: 'Save the view',
+    chipKey: 'whatsnew.v1110.snapshot.chip',
+    chipDefault: 'Snapshot',
+    bullets: [
+      {
+        key: 'whatsnew.v1110.snapshot.b1',
+        default:
+          'Save the current point cloud view as a PNG image in one click.',
+      },
+    ],
+  },
+  {
+    id: 'onboarding-base',
     icon: Coins,
-    titleKey: 'whatsnew.v1100.currency.title',
-    titleDefault: 'Read bases in one currency',
-    chipKey: 'whatsnew.v1100.currency.chip',
-    chipDefault: 'One currency',
+    titleKey: 'whatsnew.v1110.onboarding.title',
+    titleDefault: 'Onboarding leads with the cost base',
+    chipKey: 'whatsnew.v1110.onboarding.chip',
+    chipDefault: 'Cost base first',
     bullets: [
       {
-        key: 'whatsnew.v1100.currency.b1',
+        key: 'whatsnew.v1110.onboarding.b1',
         default:
-          'A view in one currency toggle converts bases for reading using live European Central Bank reference rates.',
+          'Choose your national price base first, right at the start of setup.',
       },
       {
-        key: 'whatsnew.v1100.currency.b2',
+        key: 'whatsnew.v1110.onboarding.b2',
         default:
-          'It is shown as a rough guide only and never written into a bill of quantities.',
+          'The left menu is rebuilt to the company profile you pick, so the app opens shaped to how you work.',
       },
     ],
   },
   {
-    id: 'design-options',
-    icon: Scale,
-    titleKey: 'whatsnew.v1100.design.title',
-    titleDefault: 'Compare design options by cost',
-    chipKey: 'whatsnew.v1100.design.chip',
-    chipDefault: 'Design options',
+    id: 'start-here',
+    icon: GraduationCap,
+    titleKey: 'whatsnew.v1110.cases.title',
+    titleDefault: 'Learn by example',
+    chipKey: 'whatsnew.v1110.cases.chip',
+    chipDefault: 'Start-here cases',
     bullets: [
       {
-        key: 'whatsnew.v1100.design.b1',
+        key: 'whatsnew.v1110.cases.b1',
         default:
-          'Attach a model to each option and read them side by side on total, by-trade delta and cost per square metre.',
+          'A start-here row on the dashboard opens worked cases you can follow step by step.',
       },
       {
-        key: 'whatsnew.v1100.design.b2',
+        key: 'whatsnew.v1110.cases.b2',
         default:
-          'Every option converts to one project base currency first, and a fairness banner flags an uneven comparison.',
-      },
-    ],
-  },
-  {
-    id: 'build-platform',
-    icon: Blocks,
-    titleKey: 'whatsnew.v1100.platform.title',
-    titleDefault: 'Build on the platform',
-    chipKey: 'whatsnew.v1100.platform.chip',
-    chipDefault: 'Module SDK',
-    bullets: [
-      {
-        key: 'whatsnew.v1100.platform.b1',
-        default:
-          'A Module SDK and builder guides explain manifests, events, hooks and permissions and walk through shipping your own module.',
-      },
-      {
-        key: 'whatsnew.v1100.platform.b2',
-        default:
-          'A full user documentation set covers the main workflows end to end.',
+          'The full case library is translated into every language.',
       },
     ],
   },
@@ -333,7 +329,7 @@ export function WhatsNewCard({ forceShow = false, versionOverride }: WhatsNewCar
     navigate('/about#changelog');
   }, [navigate, handleDismiss]);
 
-  const sections = useMemo(() => SECTIONS_V1100, []);
+  const sections = useMemo(() => SECTIONS_V1110, []);
 
   if (mode === null) return null;
 
