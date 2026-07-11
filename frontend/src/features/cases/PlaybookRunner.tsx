@@ -74,18 +74,28 @@ function FlowSide({
   label,
   items,
   tone,
+  hint,
 }: {
   label: string;
   items: string[];
   tone: "in" | "out";
+  hint?: string;
 }): ReactElement {
   const Icon = tone === "in" ? LogIn : LogOut;
   return (
     <div className="flex flex-1 flex-col rounded-xl border border-border-light bg-surface-secondary/40 p-4">
-      <p className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-content-secondary">
+      <p
+        className={clsx(
+          "flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-content-secondary",
+          hint ? "mb-1" : "mb-3",
+        )}
+      >
         <Icon size={16} strokeWidth={2.2} aria-hidden="true" />
         {label}
       </p>
+      {hint ? (
+        <p className="mb-3 text-2xs leading-relaxed text-content-tertiary">{hint}</p>
+      ) : null}
       <ul className="flex-1 space-y-2">
         {items.map((text, i) => (
           <li
@@ -116,20 +126,36 @@ function FlowConnector({ vertical = false }: { vertical?: boolean }): ReactEleme
   if (vertical) {
     return (
       <div
-        className="flex shrink-0 items-center justify-center text-content-tertiary"
+        className="flex shrink-0 flex-col items-center justify-center"
         aria-hidden="true"
       >
-        <ArrowDown size={16} strokeWidth={2.2} />
+        <span className="h-3 w-px bg-oe-blue/30" />
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-oe-blue/10 text-oe-blue-text ring-1 ring-inset ring-oe-blue/25">
+          <ArrowDown size={13} strokeWidth={2.4} />
+        </span>
+        <span className="h-3 w-px bg-oe-blue/30" />
       </div>
     );
   }
   return (
-    <div
-      className="flex shrink-0 items-center justify-center text-content-tertiary"
-      aria-hidden="true"
-    >
-      <ArrowRight size={18} strokeWidth={2.2} className="hidden lg:block" />
-      <ArrowDown size={16} strokeWidth={2.2} className="lg:hidden" />
+    <div className="flex shrink-0 items-center justify-center" aria-hidden="true">
+      {/* Desktop: a short gradient rail into a soft circular arrow node, so the
+          hand-off between blocks reads as a deliberate step, not a bare arrow. */}
+      <div className="hidden items-center lg:flex">
+        <span className="h-px w-2.5 bg-gradient-to-r from-transparent to-oe-blue/40" />
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-oe-blue/10 text-oe-blue-text shadow-sm ring-1 ring-inset ring-oe-blue/25">
+          <ArrowRight size={14} strokeWidth={2.4} />
+        </span>
+        <span className="h-px w-2.5 bg-gradient-to-r from-oe-blue/40 to-transparent" />
+      </div>
+      {/* Mobile: the same node, stacked between rows. */}
+      <div className="flex flex-col items-center lg:hidden">
+        <span className="h-3 w-px bg-oe-blue/30" />
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-oe-blue/10 text-oe-blue-text ring-1 ring-inset ring-oe-blue/25">
+          <ArrowDown size={13} strokeWidth={2.4} />
+        </span>
+        <span className="h-3 w-px bg-oe-blue/30" />
+      </div>
     </div>
   );
 }
@@ -621,7 +647,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                   <p className="text-xs font-semibold uppercase tracking-wide text-oe-blue-text">
                     {t("cases.step.what", { defaultValue: "What you do" })}
                   </p>
-                  <p className="mt-1.5 text-base leading-relaxed text-content-primary">
+                  <p className="mt-1.5 text-lg leading-relaxed text-content-primary">
                     {t(currentStep.whatKey, {
                       defaultValue: currentStep.whatDefault,
                     })}
@@ -631,7 +657,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                   <p className="text-xs font-semibold uppercase tracking-wide text-content-tertiary">
                     {t("cases.step.why", { defaultValue: "Why" })}
                   </p>
-                  <p className="mt-1.5 text-base leading-relaxed text-content-secondary">
+                  <p className="mt-1.5 text-lg leading-relaxed text-content-secondary">
                     {t(currentStep.whyKey, {
                       defaultValue: currentStep.whyDefault,
                     })}
@@ -646,9 +672,12 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                   vertically on narrow screens. */}
               <div className="min-w-0">
                 {hasFlow ? (
-                  <div className="flex flex-col items-stretch gap-3 lg:flex-row lg:gap-4">
+                  <div className="flex flex-col items-stretch gap-3 lg:flex-row lg:items-stretch lg:gap-2">
                     <FlowSide
                       label={t("cases.flow.in", { defaultValue: "Goes in" })}
+                      hint={t("cases.flow.in_hint", {
+                        defaultValue: "What this step needs to start",
+                      })}
                       items={curInputs}
                       tone="in"
                     />
@@ -682,6 +711,9 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                     <FlowConnector />
                     <FlowSide
                       label={t("cases.flow.out", { defaultValue: "Comes out" })}
+                      hint={t("cases.flow.out_hint", {
+                        defaultValue: "What you have when it is done",
+                      })}
                       items={curOutputs}
                       tone="out"
                     />

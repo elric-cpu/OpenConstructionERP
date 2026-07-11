@@ -143,7 +143,7 @@ export function DashboardCasesCard() {
               block previews the library visually. Eight compact tiles land as a
               single row on a wide dashboard, reflowing to six, four or two on
               narrower screens. */}
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-9">
           {picks.map(({ pb, best, total, inProgress }) => {
             const Icon = iconFor(pb.icon);
             const tint = tintFor(pb.category);
@@ -174,7 +174,7 @@ export function DashboardCasesCard() {
                   )}
                 </div>
                 <div className="flex min-w-0 flex-1 flex-col gap-0.5 px-2 py-1.5">
-                  <span className="line-clamp-2 text-xs font-semibold leading-snug text-content-primary">
+                  <span className="truncate text-xs font-semibold leading-snug text-content-primary">
                     {title}
                   </span>
                   <span className="mt-auto flex items-center gap-1 text-2xs text-content-tertiary">
@@ -195,6 +195,27 @@ export function DashboardCasesCard() {
               </button>
             );
           })}
+          {/* Final tile: a compact call to open the whole library, so the row
+              always ends on an obvious way to see more cases. */}
+          <button
+            type="button"
+            onClick={() => navigate('/cases')}
+            title={t('cases.dashboard_card.cta_all', {
+              defaultValue: 'Browse all {{count}} cases',
+              count: PLAYBOOKS.length,
+            })}
+            className="group relative isolate flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-oe-blue/40 bg-oe-blue/[0.05] px-2 py-3 text-center transition duration-200 hover:-translate-y-0.5 hover:border-oe-blue/60 hover:bg-oe-blue/10 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+          >
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-oe-blue/10 text-oe-blue ring-1 ring-inset ring-oe-blue/20 transition-transform group-hover:scale-105">
+              <ArrowRight size={18} strokeWidth={2} aria-hidden="true" />
+            </span>
+            <span className="text-xs font-semibold leading-snug text-oe-blue-text">
+              {t('cases.dashboard_card.more_tile', {
+                defaultValue: 'All {{count}} cases',
+                count: PLAYBOOKS.length,
+              })}
+            </span>
+          </button>
           </div>
         </div>
       )}
