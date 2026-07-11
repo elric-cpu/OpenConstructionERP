@@ -163,7 +163,7 @@ export function DashboardCasesCard() {
                 />
                 {/* Line-art banner on an always-light tile so the linework reads
                     the same in light and dark theme. */}
-                <div className="relative aspect-[16/9] w-full overflow-hidden border-b border-border-light bg-gradient-to-b from-white to-slate-50 ring-1 ring-inset ring-slate-900/[0.04]">
+                <div className="relative aspect-[16/9] w-full overflow-hidden border-b border-border-light bg-white ring-1 ring-inset ring-slate-900/[0.04]">
                   <CaseArt id={pb.id} fallbackIcon={Icon} fallbackClass={tint.text} alt={title} />
                   {inProgress && (
                     <span
