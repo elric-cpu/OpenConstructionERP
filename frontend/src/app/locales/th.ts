@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "ปัจจัยนำเข้า",
+    "cases.flow.in_hint": "สิ่งที่ขั้นตอนนี้ต้องใช้เพื่อเริ่ม",
+    "cases.flow.out": "ผลลัพธ์",
+    "cases.flow.out_hint": "สิ่งที่คุณได้เมื่อเสร็จสิ้น",
+    "cases.step.go_to_module": "เปิด {{module}}",
+    "cases.dashboard_card.more_tile": "ทั้งหมด {{count}} กรณี",
+    "cases.dashboard_card.cta_all": "เรียกดูทั้งหมด {{count}} กรณี",
     "cases.answer_an_rfi.desc": "เปลี่ยนคำถามจากหน้างานให้เป็นคำขอที่ติดตามได้ ส่งไปยังผู้รับผิดชอบที่ต้องตอบ แล้วบันทึกคำตอบเก็บไว้เป็นส่วนหนึ่งของประวัติโครงการ",
     "cases.answer_an_rfi.step.chase.in.party": "ผู้รับผิดชอบ",
     "cases.answer_an_rfi.step.chase.in.rfi": "RFI ที่เปิดอยู่",

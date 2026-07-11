@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "In entrata",
+    "cases.flow.in_hint": "Ciò che serve per iniziare questo passaggio",
+    "cases.flow.out": "In uscita",
+    "cases.flow.out_hint": "Ciò che ottieni al termine",
+    "cases.step.go_to_module": "Apri {{module}}",
+    "cases.dashboard_card.more_tile": "Tutti i {{count}} casi",
+    "cases.dashboard_card.cta_all": "Sfoglia tutti i {{count}} casi",
     "cases.answer_an_rfi.desc": "Trasforma una domanda dal fronte lavori in una richiesta tracciata, indirizzala a chi deve dare la risposta e archivia la risposta perché diventi parte della documentazione.",
     "cases.answer_an_rfi.step.chase.in.party": "Responsabile della risposta",
     "cases.answer_an_rfi.step.chase.in.rfi": "RFI aperta",

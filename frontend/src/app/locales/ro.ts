@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "Intrare",
+    "cases.flow.in_hint": "De ce are nevoie acest pas pentru a începe",
+    "cases.flow.out": "Rezultat",
+    "cases.flow.out_hint": "Ce ai când este gata",
+    "cases.step.go_to_module": "Deschide {{module}}",
+    "cases.dashboard_card.more_tile": "Toate cazurile ({{count}})",
+    "cases.dashboard_card.cta_all": "Vezi toate cazurile ({{count}})",
     "cases.answer_an_rfi.desc": "Transformă o întrebare de pe șantier într-o cerere urmărită, directeaz-o către partea care deține răspunsul și înregistrează răspunsul astfel încât să devină parte din dosarul proiectului.",
     "cases.answer_an_rfi.step.chase.in.party": "Parte responsabilă",
     "cases.answer_an_rfi.step.chase.in.rfi": "RFI deschis",

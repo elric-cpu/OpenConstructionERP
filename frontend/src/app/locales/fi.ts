@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "Syöte",
+    "cases.flow.in_hint": "Mitä tämä vaihe tarvitsee alkaakseen",
+    "cases.flow.out": "Tulos",
+    "cases.flow.out_hint": "Mitä sinulla on, kun se on valmis",
+    "cases.step.go_to_module": "Avaa {{module}}",
+    "cases.dashboard_card.more_tile": "Kaikki {{count}} tapausta",
+    "cases.dashboard_card.cta_all": "Selaa kaikkia {{count}} tapausta",
     "cases.answer_an_rfi.desc": "Muuta työmaalta tuleva kysymys seurattavaksi pyynnöksi, ohjaa se sen osapuolen käsittelyyn, joka vastaa vastauksesta, ja arkistoi vastaus osaksi projektin dokumentaatiota.",
     "cases.answer_an_rfi.step.chase.in.party": "Vastuutaho",
     "cases.answer_an_rfi.step.chase.in.rfi": "Avoin RFI",

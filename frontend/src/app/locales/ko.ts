@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "입력",
+    "cases.flow.in_hint": "이 단계를 시작하는 데 필요한 것",
+    "cases.flow.out": "결과",
+    "cases.flow.out_hint": "완료되면 갖게 되는 것",
+    "cases.step.go_to_module": "{{module}} 열기",
+    "cases.dashboard_card.more_tile": "전체 {{count}}개 사례",
+    "cases.dashboard_card.cta_all": "{{count}}개 사례 모두 보기",
     "cases.answer_an_rfi.desc": "현장에서 나온 질문을 추적 가능한 요청으로 전환하고, 답변 책임자에게 전달하여, 회신 내용을 기록으로 남깁니다.",
     "cases.answer_an_rfi.step.chase.in.party": "책임 담당자",
     "cases.answer_an_rfi.step.chase.in.rfi": "미결 RFI",

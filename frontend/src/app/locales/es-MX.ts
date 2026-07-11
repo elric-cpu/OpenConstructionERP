@@ -5,6 +5,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "Entrada",
+    "cases.flow.in_hint": "Lo que necesita este paso para empezar",
+    "cases.flow.out": "Resultado",
+    "cases.flow.out_hint": "Lo que obtienes al terminar",
+    "cases.step.go_to_module": "Abrir {{module}}",
+    "cases.dashboard_card.more_tile": "Todos los {{count}} casos",
+    "cases.dashboard_card.cta_all": "Explorar todos los {{count}} casos",
     "cases.answer_an_rfi.desc": "Convierte una pregunta del frente de trabajo en una solicitud rastreable, dirigela a quien tiene la respuesta y archiva la respuesta para que forme parte del expediente.",
     "cases.answer_an_rfi.step.chase.in.party": "Parte responsable",
     "cases.answer_an_rfi.step.chase.in.rfi": "RFI abierto",

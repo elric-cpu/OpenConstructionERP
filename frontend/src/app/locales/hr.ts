@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "Ulaz",
+    "cases.flow.in_hint": "Što je potrebno za početak ovog koraka",
+    "cases.flow.out": "Rezultat",
+    "cases.flow.out_hint": "Što imate kada je gotovo",
+    "cases.step.go_to_module": "Otvori {{module}}",
+    "cases.dashboard_card.more_tile": "Svi slučajevi ({{count}})",
+    "cases.dashboard_card.cta_all": "Pregledaj sve slučajeve ({{count}})",
     "cases.answer_an_rfi.desc": "Pretvorite pitanje s gradilišta u praćeni zahtjev, proslijedite ga strani koja treba dati odgovor i pohranite odgovor kako bi postao dio evidencije.",
     "cases.answer_an_rfi.step.chase.in.party": "Odgovorna strana",
     "cases.answer_an_rfi.step.chase.in.rfi": "Otvoren RFI",

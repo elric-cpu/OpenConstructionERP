@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "Goes in",
+    "cases.flow.in_hint": "What this step needs to start",
+    "cases.flow.out": "Comes out",
+    "cases.flow.out_hint": "What you have when it is done",
+    "cases.step.go_to_module": "Open {{module}}",
+    "cases.dashboard_card.more_tile": "All {{count}} cases",
+    "cases.dashboard_card.cta_all": "Browse all {{count}} cases",
     "homeportal.documents_tab": "Documents",
     "homeportal.documents_load_failed": "Could not load documents",
     "homeportal.documents_empty": "No documents shared with you yet",

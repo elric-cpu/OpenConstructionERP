@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "Eingang",
+    "cases.flow.in_hint": "Was dieser Schritt zum Start braucht",
+    "cases.flow.out": "Ergebnis",
+    "cases.flow.out_hint": "Was Sie am Ende haben",
+    "cases.step.go_to_module": "{{module}} öffnen",
+    "cases.dashboard_card.more_tile": "Alle {{count}} Fälle",
+    "cases.dashboard_card.cta_all": "Alle {{count}} Fälle ansehen",
     "cases.answer_an_rfi.desc": "Verwandeln Sie eine Frage von der Baustelle in eine nachverfolgte Anfrage, leiten Sie sie an die zuständige Partei weiter und legen Sie die Antwort ab, damit sie Teil der Dokumentation wird.",
     "cases.answer_an_rfi.step.chase.in.party": "Zuständige Partei",
     "cases.answer_an_rfi.step.chase.in.rfi": "Offenes RFI",

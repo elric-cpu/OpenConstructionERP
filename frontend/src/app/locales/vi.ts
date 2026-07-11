@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "Đầu vào",
+    "cases.flow.in_hint": "Những gì bước này cần để bắt đầu",
+    "cases.flow.out": "Đầu ra",
+    "cases.flow.out_hint": "Những gì bạn có khi hoàn thành",
+    "cases.step.go_to_module": "Mở {{module}}",
+    "cases.dashboard_card.more_tile": "Tất cả {{count}} trường hợp",
+    "cases.dashboard_card.cta_all": "Xem tất cả {{count}} trường hợp",
     "cases.answer_an_rfi.desc": "Biến một câu hỏi từ hiện trường thành yêu cầu được theo dõi, chuyển đến bên chịu trách nhiệm trả lời, và lưu hồ sơ phản hồi để trở thành một phần của hồ sơ dự án.",
     "cases.answer_an_rfi.step.chase.in.party": "Bên chịu trách nhiệm",
     "cases.answer_an_rfi.step.chase.in.rfi": "RFI đang mở",

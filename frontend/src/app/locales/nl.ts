@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "Invoer",
+    "cases.flow.in_hint": "Wat deze stap nodig heeft om te starten",
+    "cases.flow.out": "Resultaat",
+    "cases.flow.out_hint": "Wat je hebt als het klaar is",
+    "cases.step.go_to_module": "{{module}} openen",
+    "cases.dashboard_card.more_tile": "Alle {{count}} cases",
+    "cases.dashboard_card.cta_all": "Bekijk alle {{count}} cases",
     "cases.answer_an_rfi.desc": "Zet een vraag vanaf de werkvloer om in een bijgehouden verzoek, stuur het naar de partij die het antwoord moet geven, en leg de reactie vast zodat ze deel wordt van het dossier.",
     "cases.answer_an_rfi.step.chase.in.party": "Verantwoordelijke partij",
     "cases.answer_an_rfi.step.chase.in.rfi": "Open RFI",

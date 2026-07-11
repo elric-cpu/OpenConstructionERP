@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "入力",
+    "cases.flow.in_hint": "このステップの開始に必要なもの",
+    "cases.flow.out": "出力",
+    "cases.flow.out_hint": "完了したときに手元に残るもの",
+    "cases.step.go_to_module": "{{module}}を開く",
+    "cases.dashboard_card.more_tile": "全{{count}}件の事例",
+    "cases.dashboard_card.cta_all": "{{count}}件の事例をすべて見る",
     "cases.answer_an_rfi.desc": "現場からの疑問を追跡可能な依頼に変換し、回答の責任者まで確実に届け、記録として残るように回答をファイルします。",
     "cases.answer_an_rfi.step.chase.in.party": "回答責任者",
     "cases.answer_an_rfi.step.chase.in.rfi": "未回答のRFI",

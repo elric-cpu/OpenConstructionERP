@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "Masukan",
+    "cases.flow.in_hint": "Yang dibutuhkan langkah ini untuk mulai",
+    "cases.flow.out": "Hasil",
+    "cases.flow.out_hint": "Yang Anda miliki setelah selesai",
+    "cases.step.go_to_module": "Buka {{module}}",
+    "cases.dashboard_card.more_tile": "Semua {{count}} kasus",
+    "cases.dashboard_card.cta_all": "Jelajahi semua {{count}} kasus",
     "cases.answer_an_rfi.desc": "Ubah pertanyaan dari lapangan menjadi permintaan terlacak, arahkan ke pihak yang berwenang menjawab, dan arsipkan jawabannya agar menjadi bagian dari catatan proyek.",
     "cases.answer_an_rfi.step.chase.in.party": "Pihak penanggung jawab",
     "cases.answer_an_rfi.step.chase.in.rfi": "RFI terbuka",

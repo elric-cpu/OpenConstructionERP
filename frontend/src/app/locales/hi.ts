@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "इनपुट",
+    "cases.flow.in_hint": "इस चरण को शुरू करने के लिए क्या चाहिए",
+    "cases.flow.out": "परिणाम",
+    "cases.flow.out_hint": "पूरा होने पर आपके पास क्या होगा",
+    "cases.step.go_to_module": "{{module}} खोलें",
+    "cases.dashboard_card.more_tile": "सभी {{count}} केस",
+    "cases.dashboard_card.cta_all": "सभी {{count}} केस देखें",
     "cases.answer_an_rfi.desc": "साइट से आए किसी सवाल को एक ट्रैक की गई रिक्वेस्ट में बदलें, उसे जवाब देने वाले पक्ष तक पहुंचाएं, और मिले जवाब को दर्ज करें ताकि वह रिकॉर्ड का हिस्सा बन जाए।",
     "cases.answer_an_rfi.step.chase.in.party": "जिम्मेदार पक्ष",
     "cases.answer_an_rfi.step.chase.in.rfi": "खुला RFI",

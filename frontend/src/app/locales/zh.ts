@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "输入",
+    "cases.flow.in_hint": "此步骤开始所需的内容",
+    "cases.flow.out": "成果",
+    "cases.flow.out_hint": "完成后你所拥有的成果",
+    "cases.step.go_to_module": "打开{{module}}",
+    "cases.dashboard_card.more_tile": "全部 {{count}} 个案例",
+    "cases.dashboard_card.cta_all": "浏览全部 {{count}} 个案例",
     "cases.answer_an_rfi.desc": "将现场提出的问题转化为可跟踪的请求,推动到负责给出答复的一方,并将回复归档,使其成为项目记录的一部分。",
     "cases.answer_an_rfi.step.chase.in.party": "责任方",
     "cases.answer_an_rfi.step.chase.in.rfi": "待处理的信息请求(RFI)",

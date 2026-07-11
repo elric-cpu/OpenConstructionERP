@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "Input",
+    "cases.flow.in_hint": "Hvad dette trin skal bruge for at starte",
+    "cases.flow.out": "Resultat",
+    "cases.flow.out_hint": "Hvad du har, når det er færdigt",
+    "cases.step.go_to_module": "Åbn {{module}}",
+    "cases.dashboard_card.more_tile": "Alle {{count}} cases",
+    "cases.dashboard_card.cta_all": "Se alle {{count}} cases",
     "cases.answer_an_rfi.desc": "Lav et spørgsmål fra byggepladsen om til en sporbar forespørgsel, send den til den part der har svaret, og arkivér svaret, så det bliver en del af sagen.",
     "cases.answer_an_rfi.step.chase.in.party": "Ansvarlig part",
     "cases.answer_an_rfi.step.chase.in.rfi": "Åben RFI",

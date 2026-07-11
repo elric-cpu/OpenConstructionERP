@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "Girdi",
+    "cases.flow.in_hint": "Bu adımın başlamak için ihtiyaç duyduğu şey",
+    "cases.flow.out": "Çıktı",
+    "cases.flow.out_hint": "Bittiğinde elinizde ne olur",
+    "cases.step.go_to_module": "{{module}} aç",
+    "cases.dashboard_card.more_tile": "Tüm {{count}} vaka",
+    "cases.dashboard_card.cta_all": "Tüm {{count}} vakaya göz atın",
     "cases.answer_an_rfi.desc": "Saha çalışmasından gelen bir soruyu izlenebilir bir talebe dönüştürün, cevabı vermekle sorumlu tarafa yönlendirin ve yanıtı dosyalayın, böylece kayıtların bir parçası haline gelsin.",
     "cases.answer_an_rfi.step.chase.in.party": "Sorumlu taraf",
     "cases.answer_an_rfi.step.chase.in.rfi": "Açık RFI",

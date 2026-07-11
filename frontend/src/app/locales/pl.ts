@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "Wejście",
+    "cases.flow.in_hint": "Czego potrzebuje ten krok na start",
+    "cases.flow.out": "Wynik",
+    "cases.flow.out_hint": "Co masz po zakończeniu",
+    "cases.step.go_to_module": "Otwórz {{module}}",
+    "cases.dashboard_card.more_tile": "Wszystkie przypadki ({{count}})",
+    "cases.dashboard_card.cta_all": "Przeglądaj wszystkie przypadki ({{count}})",
     "cases.answer_an_rfi.desc": "Zamień pytanie z frontu robót w śledzone zapytanie, przekaż je stronie odpowiedzialnej za odpowiedź i zarejestruj odpowiedź tak, by stała się częścią dokumentacji.",
     "cases.answer_an_rfi.step.chase.in.party": "Strona odpowiedzialna",
     "cases.answer_an_rfi.step.chase.in.rfi": "Otwarte zapytanie RFI",

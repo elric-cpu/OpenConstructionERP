@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "Vstup",
+    "cases.flow.in_hint": "Co tento krok potřebuje k zahájení",
+    "cases.flow.out": "Výstup",
+    "cases.flow.out_hint": "Co máte po dokončení",
+    "cases.step.go_to_module": "Otevřít {{module}}",
+    "cases.dashboard_card.more_tile": "Všechny případy ({{count}})",
+    "cases.dashboard_card.cta_all": "Procházet všechny případy ({{count}})",
     "cases.answer_an_rfi.desc": "Přeměňte otázku ze stavby na sledovaný požadavek, doručte ji straně, která má odpověď na starosti, a odpověď založte tak, aby se stala součástí dokumentace.",
     "cases.answer_an_rfi.step.chase.in.party": "Odpovědná strana",
     "cases.answer_an_rfi.step.chase.in.rfi": "Otevřené RFI",

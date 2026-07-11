@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "Indata",
+    "cases.flow.in_hint": "Vad det här steget behöver för att starta",
+    "cases.flow.out": "Resultat",
+    "cases.flow.out_hint": "Vad du har när det är klart",
+    "cases.step.go_to_module": "Öppna {{module}}",
+    "cases.dashboard_card.more_tile": "Alla {{count}} fall",
+    "cases.dashboard_card.cta_all": "Bläddra bland alla {{count}} fall",
     "cases.answer_an_rfi.desc": "Omvandla en fråga från arbetsplatsen till en spårad förfrågan, driv den till den part som äger svaret, och arkivera svaret så att det blir en del av dokumentationen.",
     "cases.answer_an_rfi.step.chase.in.party": "Ansvarig part",
     "cases.answer_an_rfi.step.chase.in.rfi": "Öppen RFI",

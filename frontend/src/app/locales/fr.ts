@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "Entrée",
+    "cases.flow.in_hint": "Ce dont cette étape a besoin pour démarrer",
+    "cases.flow.out": "Résultat",
+    "cases.flow.out_hint": "Ce que vous obtenez à la fin",
+    "cases.step.go_to_module": "Ouvrir {{module}}",
+    "cases.dashboard_card.more_tile": "Les {{count}} cas",
+    "cases.dashboard_card.cta_all": "Parcourir les {{count}} cas",
     "cases.answer_an_rfi.desc": "Transformez une question venant du terrain en demande suivie, faites-la parvenir au responsable de la réponse et archivez la réponse pour qu'elle intègre les archives du projet.",
     "cases.answer_an_rfi.step.chase.in.party": "Partie responsable",
     "cases.answer_an_rfi.step.chase.in.rfi": "DDI ouverte",

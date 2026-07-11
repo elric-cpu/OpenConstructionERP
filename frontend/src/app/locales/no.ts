@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "Inndata",
+    "cases.flow.in_hint": "Hva dette trinnet trenger for å starte",
+    "cases.flow.out": "Resultat",
+    "cases.flow.out_hint": "Hva du har når det er ferdig",
+    "cases.step.go_to_module": "Åpne {{module}}",
+    "cases.dashboard_card.more_tile": "Alle {{count}} caser",
+    "cases.dashboard_card.cta_all": "Se alle {{count}} caser",
     "cases.answer_an_rfi.desc": "Gjør et spørsmål fra byggeplassen til en sporbar forespørsel, send den til parten som eier svaret, og arkiver svaret slik at det blir en del av prosjektjournalen.",
     "cases.answer_an_rfi.step.chase.in.party": "Ansvarlig part",
     "cases.answer_an_rfi.step.chase.in.rfi": "Åpen RFI",

@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "Оролт",
+    "cases.flow.in_hint": "Энэ алхмыг эхлүүлэхэд юу шаардлагатай вэ",
+    "cases.flow.out": "Үр дүн",
+    "cases.flow.out_hint": "Дуусахад та юутай болох вэ",
+    "cases.step.go_to_module": "{{module}} нээх",
+    "cases.dashboard_card.more_tile": "Бүх {{count}} тохиолдол",
+    "cases.dashboard_card.cta_all": "Бүх {{count}} тохиолдлыг үзэх",
     "cases.answer_an_rfi.desc": "Ажлын талбайгаас гарсан асуултыг хянагдаж буй хүсэлт болгож, хариулт өгөх этгээд рүү дамжуулж, ирсэн хариултыг бүртгэлд оруулна.",
     "cases.answer_an_rfi.step.chase.in.party": "Хариуцах этгээд",
     "cases.answer_an_rfi.step.chase.in.rfi": "Нээлттэй RFI",

@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "المدخلات",
+    "cases.flow.in_hint": "ما تحتاجه هذه الخطوة للبدء",
+    "cases.flow.out": "المخرجات",
+    "cases.flow.out_hint": "ما ستحصل عليه عند الانتهاء",
+    "cases.step.go_to_module": "فتح {{module}}",
+    "cases.dashboard_card.more_tile": "كل الحالات ({{count}})",
+    "cases.dashboard_card.cta_all": "استعرض كل الحالات ({{count}})",
     "cases.answer_an_rfi.desc": "حوّل سؤالاً من موقع العمل إلى طلب متتبَّع، ووجّهه إلى الطرف المسؤول عن الإجابة، ثم احفظ الرد ليصبح جزءاً من السجل.",
     "cases.answer_an_rfi.step.chase.in.party": "الطرف المسؤول",
     "cases.answer_an_rfi.step.chase.in.rfi": "RFI مفتوح",

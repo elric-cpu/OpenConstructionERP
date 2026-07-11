@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "Вход",
+    "cases.flow.in_hint": "Какво е нужно за започване на стъпката",
+    "cases.flow.out": "Резултат",
+    "cases.flow.out_hint": "Какво получавате накрая",
+    "cases.step.go_to_module": "Отваряне на {{module}}",
+    "cases.dashboard_card.more_tile": "Всички {{count}} случая",
+    "cases.dashboard_card.cta_all": "Разгледайте всички {{count}} случая",
     "cases.answer_an_rfi.desc": "Превърнете въпрос от работния фронт в проследима заявка, насочете я към страната, която отговаря за отговора, и заведете отговора, за да стане част от документацията.",
     "cases.answer_an_rfi.step.chase.in.party": "Отговорна страна",
     "cases.answer_an_rfi.step.chase.in.rfi": "Отворено RFI",

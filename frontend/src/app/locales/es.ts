@@ -3,6 +3,13 @@
 
 const resource = {
   "translation": {
+    "cases.flow.in": "Entrada",
+    "cases.flow.in_hint": "Lo que necesita este paso para empezar",
+    "cases.flow.out": "Resultado",
+    "cases.flow.out_hint": "Lo que obtienes al terminar",
+    "cases.step.go_to_module": "Abrir {{module}}",
+    "cases.dashboard_card.more_tile": "Todos los {{count}} casos",
+    "cases.dashboard_card.cta_all": "Ver todos los {{count}} casos",
     "cases.answer_an_rfi.desc": "Convierte una pregunta surgida en el tajo en una solicitud registrada, dirígela a la parte responsable de responder y archiva la respuesta para que quede como parte del historial.",
     "cases.answer_an_rfi.step.chase.in.party": "Parte responsable",
     "cases.answer_an_rfi.step.chase.in.rfi": "RFI abierta",
