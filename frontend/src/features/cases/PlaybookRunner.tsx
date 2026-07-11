@@ -610,11 +610,11 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
               </h2>
             </div>
 
-            {/* Two columns on desktop: the plain-language explanation on the
-                left, larger and high-contrast so the "what and why" reads
-                clearly, and the visualisation on the right. They stack on narrow
-                screens (explanation first). */}
-            <div className="mt-1 grid gap-5 lg:grid-cols-2 lg:items-start lg:gap-8">
+            {/* Two columns on desktop: a slim ~30% explanation rail on the left
+                (the plain-language "what and why"), and a wide ~70% visualisation
+                on the right that runs the step as a horizontal In -> Action -> Out
+                flow. They stack on narrow screens (explanation first). */}
+            <div className="mt-1 grid gap-5 lg:grid-cols-[3fr_7fr] lg:items-start lg:gap-6">
               {/* LEFT: What you do + Why, in larger, readable prose. */}
               <div className="space-y-5">
                 <div>
@@ -639,26 +639,47 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                 </div>
               </div>
 
-              {/* RIGHT: the visualisation. With flow data it runs as a vertical
-                  In -> Action -> Out pipeline that fits the column; without it the
-                  scene shows on its own. */}
-              <div className="lg:pl-2">
+              {/* RIGHT (70%): the visualisation as a horizontal In ->
+                  Action -> Out flow. The Goes-in and Comes-out blocks sit either
+                  side of the module scene, and the scene itself is a button into
+                  the module, so it is obvious where the work happens. Stacks
+                  vertically on narrow screens. */}
+              <div className="min-w-0">
                 {hasFlow ? (
-                  <div className="mx-auto flex w-full max-w-sm flex-col items-stretch gap-3">
+                  <div className="flex flex-col items-stretch gap-3 lg:flex-row lg:gap-4">
                     <FlowSide
                       label={t("cases.flow.in", { defaultValue: "Goes in" })}
                       items={curInputs}
                       tone="in"
                     />
-                    <FlowConnector vertical />
-                    <div className="mx-auto flex w-full max-w-[240px] flex-col items-center justify-center">
-                      {StageScene}
-                      <p className="mt-2 flex items-center justify-center gap-1 text-xs font-medium text-content-tertiary">
-                        <CurIcon size={11} strokeWidth={2} aria-hidden="true" />
-                        {curModule}
-                      </p>
+                    <FlowConnector />
+                    <div className="flex shrink-0 flex-col items-center justify-center lg:w-[32%]">
+                      <button
+                        type="button"
+                        onClick={() => handleGo(currentStep)}
+                        title={t("cases.step.go_to", {
+                          defaultValue: "Go to {{module}}",
+                          module: curModule,
+                        })}
+                        className="group w-full max-w-[240px] rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+                      >
+                        {StageScene}
+                        <span className="mt-2 inline-flex w-full items-center justify-center gap-1 text-xs font-semibold text-oe-blue-text transition-colors group-hover:text-oe-blue">
+                          <CurIcon size={12} strokeWidth={2} aria-hidden="true" />
+                          {t("cases.step.go_to_module", {
+                            defaultValue: "Open {{module}}",
+                            module: curModule,
+                          })}
+                          <ArrowRight
+                            size={12}
+                            strokeWidth={2.2}
+                            className="transition-transform group-hover:translate-x-0.5"
+                            aria-hidden="true"
+                          />
+                        </span>
+                      </button>
                     </div>
-                    <FlowConnector vertical />
+                    <FlowConnector />
                     <FlowSide
                       label={t("cases.flow.out", { defaultValue: "Comes out" })}
                       items={curOutputs}
@@ -666,7 +687,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                     />
                   </div>
                 ) : (
-                  <div className="mx-auto w-full max-w-sm">{StageScene}</div>
+                  <div className="mx-auto w-full max-w-md">{StageScene}</div>
                 )}
               </div>
             </div>
