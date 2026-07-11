@@ -4,15 +4,15 @@
 
 ### A leading open-source workspace for construction project management
 
-Professional BOQ, 4D scheduling, 5D cost model, and tendering - all in one open-source platform.
+Professional BOQ, CAD and BIM takeoff, 4D scheduling, 5D cost model, and tendering - all in one self-hosted platform.
 
 **Like WordPress for construction companies** - pick modules from the marketplace, drop in your own, or replace ours with custom-built ones. Same plug-and-play model, but for BOQ, scheduling, cost control, BIM, and tendering.
 
 [▶ Watch the 12-min walkthrough](https://www.youtube.com/watch?v=X06cIaroAeI) · [Demo](https://openconstructionerp.com) · [Documentation](https://openconstructionerp.com/docs) · [Discussions](https://t.me/datadrivenconstruction) · [Report Bug](https://github.com/datadrivenconstruction/OpenConstructionERP/issues)
 
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
-[![Version](https://img.shields.io/github/v/release/datadrivenconstruction/OpenConstructionERP?label=version&color=green&v=7.3.0)](https://github.com/datadrivenconstruction/OpenConstructionERP/releases/latest)
-[![PyPI](https://img.shields.io/pypi/v/openconstructionerp?color=informational&label=pypi&v=7.3.0)](https://pypi.org/project/openconstructionerp/)
+[![Version](https://img.shields.io/github/v/release/datadrivenconstruction/OpenConstructionERP?label=version&color=green&v=10.10.0)](https://github.com/datadrivenconstruction/OpenConstructionERP/releases/latest)
+[![PyPI](https://img.shields.io/pypi/v/openconstructionerp?color=informational&label=pypi&v=10.10.0)](https://pypi.org/project/openconstructionerp/)
 [![Downloads (pepy · per month)](https://static.pepy.tech/personalized-badge/openconstructionerp?period=month&units=international_system&left_color=grey&right_color=blue&left_text=downloads%20(pepy%20%C2%B7%20per%20month))](https://pepy.tech/project/openconstructionerp)
 [![Stars](https://img.shields.io/github/stars/datadrivenconstruction/OpenConstructionERP?style=flat&logo=github)](https://github.com/datadrivenconstruction/OpenConstructionERP/stargazers)
 <br/>
@@ -51,10 +51,10 @@ Professional BOQ, 4D scheduling, 5D cost model, and tendering - all in one open-
 <table>
 <tr>
 <td align="center" width="16.66%"><b>55K+</b><br/><sub>cost&nbsp;items</sub></td>
-<td align="center" width="16.66%"><b>24</b><br/><sub>languages</sub></td>
+<td align="center" width="16.66%"><b>27</b><br/><sub>languages</sub></td>
 <td align="center" width="16.66%"><b>48</b><br/><sub>regions</sub></td>
 <td align="center" width="16.66%"><b>6</b><br/><sub>CAD&nbsp;formats</sub></td>
-<td align="center" width="16.66%"><b>100+</b><br/><sub>modules</sub></td>
+<td align="center" width="16.66%"><b>161</b><br/><sub>modules</sub></td>
 <td align="center" width="16.66%"><b>12</b><br/><sub>sections</sub></td>
 </tr>
 </table>
@@ -576,7 +576,7 @@ Bottom-right floating chat on every page - talks to the entire ERP database thro
  └────────┘        └──────────────┘     └──────────────┘     └──────────┘
 ```
 
-- **Always-on** - Mounted in `AppLayout`, available on every route (Dashboard, BOQ, BIM, Geo, PropDev, Accommodation, all 111 modules)
+- **Always-on** - Mounted in `AppLayout`, available on every route (Dashboard, BOQ, BIM, Geo, PropDev, Accommodation, all 161 modules)
 - **Real ERP access** - Reads/writes through tools, not LLM guesswork: `get_all_projects`, `get_project_summary`, `get_boq_items`, `get_schedule`, `get_validation_results`, `get_risk_register`, `search_cwicr_database`, `get_cost_model`, `compare_projects`, `run_validation`, `create_boq_item`, `search_boq_positions`, `search_documents`, `search_tasks`, `search_risks`, `search_bim_elements`, `search_anything`
 - **Streamed responses** - Tool-call cards (risk register table, BOQ summary, etc.) render inline as the model produces them
 - **Provider-agnostic** - Anthropic / OpenAI / Gemini / Mistral / Groq / DeepSeek behind the same tool interface
@@ -929,7 +929,7 @@ env vars **before the first boot**:
 |-------|-----------|---------|
 | Backend | Python 3.12+ / FastAPI | Async API, Pydantic v2 validation, modular architecture |
 | Frontend | React 18 / TypeScript / Vite | SPA with code splitting, 27 language bundles |
-| Database | PostgreSQL 16+ / SQLite (dev) | OLTP with JSON columns, zero-config SQLite for development |
+| Database | PostgreSQL 16+ (only) | OLTP with JSON columns; an embedded PostgreSQL starts automatically for local dev, so there is no Docker, no separate database, and nothing to configure |
 | UI | Tailwind CSS / AG Grid | Professional data grid, responsive design, dark mode |
 | AI | Any LLM via REST API | Anthropic, OpenAI, Gemini, Mistral, Groq, DeepSeek |
 | Vector Search | LanceDB (embedded) / Qdrant | Semantic cost item search, 384d or 3072d embeddings |
@@ -962,7 +962,7 @@ This pipeline is the reason OpenConstructionERP can replace several commercial p
 flowchart TB
     UI["Frontend SPA<br>React 18, TypeScript, Vite<br>AG Grid, Tailwind, PDF.js"]
 
-    subgraph Backend ["FastAPI Backend, 111 modules"]
+    subgraph Backend ["FastAPI Backend, 161 modules"]
         CORE["Core<br>Module loader, Event bus, Hooks, RBAC<br>Validation, FSM + audit log"]
         ESTIM["Estimating<br>BOQ, Costs, Catalog, Assemblies<br>Takeoff, BIM Hub, Match-Elements, 5D"]
         FIELD["Field Operations<br>Service, Equipment, Daily Diary<br>Portal, Resources & Crew"]
@@ -977,7 +977,7 @@ flowchart TB
     end
 
     subgraph Data ["Data layer"]
-        PG[("PostgreSQL 16<br>SQLite in dev")]
+        PG[("PostgreSQL 16<br>embedded in dev")]
         VEC[("Vector DB<br>LanceDB / Qdrant")]
         S3[("MinIO / S3<br>files, CAD, PDFs")]
     end
@@ -1015,7 +1015,7 @@ flowchart TB
                    │ REST + SSE
 ┌──────────────────┴───────────────────────────────┐
 │  Backend (FastAPI)                               │
-│  111 auto-discovered modules · Plugin system     │
+│  161 auto-discovered modules · Plugin system     │
 ├──────────────────────────────────────────────────┤
 │  BOQ · Costs · Schedule · 5D · Validation · AI   │
 │  Takeoff · Tendering · Risk · Reports · Catalog  │
@@ -1023,7 +1023,7 @@ flowchart TB
 │  PropDev · Geo Hub · Coordination · Clash AI     │
 │  Accommodation · Floating Chat · 10 widgets      │
 ├──────────────────────────────────────────────────┤
-│  Database (PostgreSQL / SQLite)                  │
+│  Database (PostgreSQL, embedded in dev)          │
 │  Vector DB (LanceDB / Qdrant)                    │
 │  CAD Converters (DDC cad2data)                   │
 │  CV Pipeline (PaddleOCR + YOLOv11)               │
