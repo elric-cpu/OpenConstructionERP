@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Field mutation queue wiring — the concrete `MutationQueue` instance the field
  * shell uses, plus the HTTP sender that maps a replay response to a

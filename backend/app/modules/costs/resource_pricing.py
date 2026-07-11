@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Resource price sheet: make coefficient cost bases calculable locally.
 
 CWICR describes each work item (a rate_code) THROUGH its resources: the labour,

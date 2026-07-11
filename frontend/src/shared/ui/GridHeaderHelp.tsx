@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * <GridHeaderHelp> — an AG Grid `headerComponent` that puts the same
  * glossary (i) help into a column header, so field-level help reaches

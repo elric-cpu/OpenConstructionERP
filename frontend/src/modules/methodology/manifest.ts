@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import { lazy } from 'react';
 import { Layers3 } from 'lucide-react';
 import type { ModuleManifest } from '../_types';

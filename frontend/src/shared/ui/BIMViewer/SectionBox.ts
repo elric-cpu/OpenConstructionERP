@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * SectionBox — six oriented clipping planes auto-fitted to an AABB
  * (selection, model, or arbitrary box), built on

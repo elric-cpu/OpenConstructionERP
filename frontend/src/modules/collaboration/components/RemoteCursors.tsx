@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import { useEffect, useState, useCallback } from 'react';
 import type { CollabUser, CursorPosition } from '../types';
 

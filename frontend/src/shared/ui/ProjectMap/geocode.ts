@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Address-to-Nominatim query builder, factored out of ``ProjectMap.tsx``
  * so that consumers can call it without pulling in the full ``react-map-gl``

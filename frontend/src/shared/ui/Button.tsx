@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import { forwardRef, type ButtonHTMLAttributes } from 'react';
 import clsx from 'clsx';
 

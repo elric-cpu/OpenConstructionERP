@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Markdown - a small, dependency-free Markdown renderer tuned for in-app
  * documentation pages: a real heading hierarchy with anchor ids (so #hash

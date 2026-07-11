@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import { lazy } from 'react';
 import { Leaf } from 'lucide-react';
 import type { ModuleManifest } from '../_types';
@@ -8,6 +10,7 @@ const SustainabilityPage = lazy(() =>
   })),
 );
 
+// build ref: ddc-lineage:a17f93c4-sustain-01
 export const manifest: ModuleManifest = {
   id: 'sustainability',
   name: 'modules.sustainability.name',

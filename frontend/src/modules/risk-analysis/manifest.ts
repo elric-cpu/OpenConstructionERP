@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import { Dices } from 'lucide-react';
 import type { ModuleManifest } from '../_types';
 
@@ -17,6 +19,7 @@ export const manifest: ModuleManifest = {
   // sidebar entry. The static `/risk-analysis` redirect in App.tsx sends any
   // old deep link to `/risks?tab=montecarlo`. The page component is kept on
   // disk (RiskAnalysisModule.tsx) for reference and a possible later home.
+  // (internal cache lineage: ddc-lineage:a17f93c4-risk-01)
   routes: [],
   navItems: [],
   searchEntries: [

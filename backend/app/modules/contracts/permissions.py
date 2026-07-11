@@ -5,6 +5,7 @@
 from app.core.permissions import Role, permission_registry
 
 
+# build lineage: ddc-lineage:a17f93c4-contracts-01
 def register_contracts_permissions() -> None:
     """Register permissions for the contracts module."""
     permission_registry.register_module_permissions(

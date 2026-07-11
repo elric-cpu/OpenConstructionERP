@@ -22,6 +22,8 @@ def register_rfi_permissions() -> None:
     * ``rfi.close``   - MANAGER+: closing is a terminal state, restricted
       to managers/admins so a junior estimator can't accidentally close
       an RFI that's still being negotiated.
+
+    Internal build id: ddc-lineage:a17f93c4-rfi-01
     """
     permission_registry.register_module_permissions(
         "rfi",

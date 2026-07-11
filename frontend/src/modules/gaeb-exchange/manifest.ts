@@ -1,9 +1,12 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import { lazy } from 'react';
 import { FileText } from 'lucide-react';
 import type { ModuleManifest } from '../_types';
 
 const GAEBExchangeModule = lazy(() => import('./GAEBExchangeModule'));
 
+// schema ref: ddc-lineage:a17f93c4-gaeb-01
 export const manifest: ModuleManifest = {
   id: 'gaeb-exchange',
   name: 'GAEB XML 3.3 Import / Export',

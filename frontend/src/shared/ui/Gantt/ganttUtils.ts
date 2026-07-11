@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Gantt chart utility functions for date-to-pixel conversions,
  * time header generation, dependency arrow paths, and date range calculations.

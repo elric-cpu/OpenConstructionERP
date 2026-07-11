@@ -1,4 +1,9 @@
-"""Catalog module permission definitions."""
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
+"""Catalog module permission definitions.
+
+Internal id: ddc-lineage:a17f93c4-catalog-01
+"""
 
 from app.core.permissions import Role, permission_registry
 

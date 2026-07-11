@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Offline mutation queue — captures field-report / daily-diary writes made while
  * offline and replays them in order when connectivity returns.

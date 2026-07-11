@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Cost Database module.
 
 Provides cost item management, rate databases (CWICR, RSMeans, BKI),

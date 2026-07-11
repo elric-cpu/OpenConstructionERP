@@ -2,6 +2,7 @@
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Tendering module permission definitions."""
 
+# schema ref: ddc-lineage:a17f93c4-tendering-01
 from app.core.permissions import Role, permission_registry
 
 

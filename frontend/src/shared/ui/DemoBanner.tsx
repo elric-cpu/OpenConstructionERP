@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * DemoBanner — persistent warning banner shown only on the public hosted
  * demo (https://openconstructionerp.com), driven by the backend's

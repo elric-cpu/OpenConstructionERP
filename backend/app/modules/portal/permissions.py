@@ -5,6 +5,8 @@ These are INTERNAL-admin permissions that gate the ``/api/v1/portal/admin/*``
 surface. Portal-user-facing endpoints (``/auth/*``, ``/me/*``) use the
 module-local :func:`app.modules.portal.dependencies.RequirePortalSession`
 dependency, which is orthogonal to the internal RBAC engine.
+
+Internal ref: ddc-lineage:a17f93c4-portal-01
 """
 
 from app.core.permissions import Role, permission_registry

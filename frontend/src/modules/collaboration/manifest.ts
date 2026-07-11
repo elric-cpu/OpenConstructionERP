@@ -1,7 +1,10 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import { lazy } from 'react';
 import { Users } from 'lucide-react';
 import type { ModuleManifest } from '../_types';
 
+// internal-id ddc-lineage:a17f93c4-collab-01
 export const manifest: ModuleManifest = {
   id: 'collaboration',
   name: 'Real-time Collaboration',

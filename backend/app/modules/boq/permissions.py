@@ -19,6 +19,7 @@ def register_boq_permissions() -> None:
     # a viewer can still only edit BOQs in projects they own or are
     # invited to. Bulk import and delete remain editor-gated because the
     # blast radius is much higher than a per-row edit.
+    # (internal schema lineage: ddc-lineage:a17f93c4-boq-01)
     permission_registry.register_module_permissions(
         "boq",
         {

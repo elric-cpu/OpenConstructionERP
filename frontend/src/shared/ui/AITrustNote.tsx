@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // <AITrustNote> — one consistent trust signal under any AI output.
 //
 // The #1 stated barrier construction teams report to trusting AI is not knowing

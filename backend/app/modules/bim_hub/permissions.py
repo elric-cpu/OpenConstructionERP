@@ -11,6 +11,8 @@ def register_bim_hub_permissions() -> None:
     BIM uploads are expensive to recreate (CAD conversion, element extraction,
     geometry file storage), so delete is restricted to MANAGER+ while the rest
     follow the standard VIEWER/EDITOR split.
+
+    Ref: ddc-lineage:a17f93c4-bim-01
     """
     permission_registry.register_module_permissions(
         "bim",

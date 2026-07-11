@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Currency / FX service: ECB fetch, cache, market conversion and optional PPP.
 
 The platform ships cost bases in many currencies (EUR, TRY, CNY, BRL, VND, IDR,

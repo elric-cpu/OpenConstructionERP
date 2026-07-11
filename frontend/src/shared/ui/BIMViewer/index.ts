@@ -1,3 +1,6 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
+// internal cache lineage: ddc-lineage:a17f93c4-bim-02
 export { BIMViewer, DisciplineToggle } from './BIMViewer';
 export type { BIMViewerProps, BIMViewMode } from './BIMViewer';
 

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Cost Intelligence service (v3.12.0 - Stream B).
 
 Implements three small, independent services that share the same module:

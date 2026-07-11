@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * PostgresMigrationNotice - a one-time top strip shown on version 6 installs
  * that are running on PostgreSQL.

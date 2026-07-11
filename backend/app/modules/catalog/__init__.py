@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Product & Resource Catalog module.
 
 Provides a curated catalog of materials, equipment, labor, and operators

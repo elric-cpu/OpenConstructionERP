@@ -15,6 +15,8 @@
 // in the data files - they are NEVER added to en.ts. Only the framework chrome
 // (page title, runner buttons, labels) is seeded into en.ts. Translators pick
 // the inline-default content keys up later.
+//
+// Internal ref: ddc-lineage:a17f93c4-cases-01
 
 /**
  * One item on the in -> out flow of a step: a short label for a piece of data or

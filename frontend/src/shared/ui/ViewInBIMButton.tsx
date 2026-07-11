@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * ViewInBIMButton — small reusable button that navigates to the BIM 3D
  * viewer with a set of elements isolated.  Used across Schedule, Tasks,

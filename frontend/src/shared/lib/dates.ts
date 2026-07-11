@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Local-date helpers — strictly use the viewer's local calendar fields,
  * NEVER ``new Date().toISOString().slice(0,10)`` (that returns the UTC

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import clsx from 'clsx';
 import { usePreferencesStore } from '../../stores/usePreferencesStore';
 import { convertUnit, getDisplayUnit, isMetricUnit } from '../lib/unitConversion';

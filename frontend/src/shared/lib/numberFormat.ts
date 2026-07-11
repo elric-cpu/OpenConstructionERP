@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * numberFormat — Intl-backed value formatter shared by the Data Explorer
  * charts and any other surface that lets the user choose between a raw

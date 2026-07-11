@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """CWICR cost-database German→localized vocabulary translation.
 
 The CWICR parquet files carry several columns whose values are frozen-German

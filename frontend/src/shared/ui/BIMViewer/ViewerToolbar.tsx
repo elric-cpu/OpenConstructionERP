@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * ViewerToolbar - floating overlay surfacing the three BIM-coordination-tool-style
  * tools added by this slice: Section Box, Walk mode, Measure.

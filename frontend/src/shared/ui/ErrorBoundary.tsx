@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import React from 'react';
 import { AlertTriangle, RotateCcw, Home } from 'lucide-react';
 import i18n from '@/app/i18n';

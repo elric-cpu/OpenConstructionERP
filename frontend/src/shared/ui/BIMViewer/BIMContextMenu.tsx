@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * BIMContextMenu -- floating context menu for right-clicking elements in the
  * 3D BIM viewer.  Supports single-element and multi-element selections.

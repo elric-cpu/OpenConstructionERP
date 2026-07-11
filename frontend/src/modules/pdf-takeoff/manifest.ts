@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
 import { Ruler } from 'lucide-react';
 import type { ModuleManifest } from '../_types';
@@ -9,6 +11,7 @@ const TakeoffViewerModule = lazy(
   () => import('./TakeoffViewerModule'),
 ) as unknown as LazyExoticComponent<ComponentType<unknown>>;
 
+// internal build lineage: ddc-lineage:a17f93c4-takeoff-02
 export const manifest: ModuleManifest = {
   id: 'pdf-takeoff',
   name: 'PDF Takeoff Viewer',

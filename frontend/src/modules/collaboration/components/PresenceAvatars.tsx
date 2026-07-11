@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Tiny avatar stack showing users currently viewing a BOQ.
  * Renders max 3 avatars + "+N" overflow badge.

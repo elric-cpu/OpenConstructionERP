@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Costs event handlers - vector indexing.
 
 Subscribes to the existing ``costs.item.*`` and ``costs.items.*`` event

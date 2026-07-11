@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // @ts-nocheck
 // Pin the test process to UTC so any test that formats dates with local-time
 // getters (e.g. buildExportFilename) is timezone-stable, regardless of the

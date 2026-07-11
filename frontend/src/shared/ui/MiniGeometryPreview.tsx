@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * MiniGeometryPreview — lightweight Three.js component that renders a small
  * auto-rotating 3D preview of specific BIM elements from a model's geometry.

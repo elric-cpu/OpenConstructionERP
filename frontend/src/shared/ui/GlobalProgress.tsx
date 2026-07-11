@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * GlobalProgress — thin animated bar at top of viewport for long operations.
  * Usage: useProgressStore.getState().start() / .done()
