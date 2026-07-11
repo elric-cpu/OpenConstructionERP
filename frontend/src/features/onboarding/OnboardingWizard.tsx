@@ -3128,42 +3128,11 @@ function StepDataSetup({
       </p>
 
       <div className="mt-6 w-full max-w-2xl space-y-4">
-        {/* ── Partner packs: the lead, one-click full-workspace install ──── */}
-        <PartnerPackInstaller onActivateLocale={applyLocale} />
-
-        {/* ── Other countries: generic presets (language + classification) ── */}
-        <CountryPackCard
-          packs={COUNTRY_PACKS}
-          selectedPack={selectedPack}
-          onSelectPack={handleSelectPack}
-          onInstallPack={handleInstallPack}
-          onPackLocale={handlePackLocale}
-          onPackDb={handlePackDb}
-          installing={packInstalling}
-          localeState={packLocaleState}
-          dbState={packDbState}
-          customizeOpen={packCustomizeOpen}
-          onToggleCustomize={() => setPackCustomizeOpen((v) => !v)}
-          recordedClassification={recordedClassification}
-        />
-
-        {/* ── Advanced / manual setup ──────────────────────────────────── */}
-        <details className="group rounded-2xl bg-surface-elevated/60 shadow-sm shadow-black/[0.04]">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 text-sm font-medium text-content-secondary hover:text-content-primary transition-colors">
-            <span className="flex items-center gap-2">
-              <Settings2 size={16} className="text-content-tertiary" />
-              {t('onboarding.advanced_manual_setup', {
-                defaultValue: 'Advanced - pick a region manually or connect AI',
-              })}
-            </span>
-            <ChevronDown
-              size={16}
-              className="text-content-tertiary transition-transform duration-200 group-open:rotate-180"
-            />
-          </summary>
-
-          <div className="space-y-4 p-4 pt-0">
-        {/* Card 1: Cost Database — full width */}
+        {/* Cost base first: pick the regional pricing base(s) you estimate
+            with. This leads the step so the choice of bases comes before
+            anything else; the ready-made country packs just below can set the
+            same thing up in one click once the region is known. */}
+        {/* Card 1: Cost Database - full width */}
         <div className="rounded-2xl bg-surface-elevated shadow-sm shadow-black/[0.04] p-6">
           <div className="flex items-center gap-3 mb-4">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-oe-blue-subtle text-oe-blue-text">
@@ -3260,7 +3229,43 @@ function StepDataSetup({
           </div>
         </div>
 
-        {/* Card 2: Demo Project — full width, simple toggle */}
+        {/* Or install a ready-made country pack: language, both cost
+            databases, and example projects in one click. Offered after the
+            manual base picker so the user chooses bases first. */}
+        <PartnerPackInstaller onActivateLocale={applyLocale} />
+        <CountryPackCard
+          packs={COUNTRY_PACKS}
+          selectedPack={selectedPack}
+          onSelectPack={handleSelectPack}
+          onInstallPack={handleInstallPack}
+          onPackLocale={handlePackLocale}
+          onPackDb={handlePackDb}
+          installing={packInstalling}
+          localeState={packLocaleState}
+          dbState={packDbState}
+          customizeOpen={packCustomizeOpen}
+          onToggleCustomize={() => setPackCustomizeOpen((v) => !v)}
+          recordedClassification={recordedClassification}
+        />
+
+        {/* Advanced: optional demo project and AI provider. The cost-base
+            picker used to live here; it now leads the step above. */}
+        <details className="group rounded-2xl bg-surface-elevated/60 shadow-sm shadow-black/[0.04]">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 text-sm font-medium text-content-secondary hover:text-content-primary transition-colors">
+            <span className="flex items-center gap-2">
+              <Settings2 size={16} className="text-content-tertiary" />
+              {t('onboarding.advanced_extras_setup', {
+                defaultValue: 'Advanced - install a demo project or connect AI',
+              })}
+            </span>
+            <ChevronDown
+              size={16}
+              className="text-content-tertiary transition-transform duration-200 group-open:rotate-180"
+            />
+          </summary>
+
+          <div className="space-y-4 p-4 pt-0">
+        {/* Card 2: Demo Project - full width, simple toggle */}
         <div className="rounded-2xl bg-surface-elevated shadow-sm shadow-black/[0.04] p-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -3523,7 +3528,7 @@ function StepFinish({
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const setModuleEnabled = useModuleStore((s) => s.setModuleEnabled);
+  const syncFromServer = useModuleStore((s) => s.syncFromServer);
   const setViewMode = useViewModeStore((s) => s.setMode);
   const text = usePresetText();
   const [saving, setSaving] = useState(false);
@@ -3552,15 +3557,9 @@ function StepFinish({
       return;
     }
 
-    // 1. Apply module preferences to the store
-    const allModuleKeys = ALL_MODULES.map((m) => m.key);
-    for (const key of allModuleKeys) {
-      if (!CORE_MODULE_KEYS.has(key)) {
-        setModuleEnabled(key, enabledModules.has(key));
-      }
-    }
-
-    // 2. Save onboarding state to server
+    // 1. Persist the onboarding state. The backend turns the chosen profile
+    //    into the canonical module_preferences map, which is what the sidebar,
+    //    module routes and Project Journey read back to reshape the menu.
     try {
       await apiPost('/v1/users/me/onboarding/', {
         company_type: companyType ?? 'full_enterprise',
@@ -3568,16 +3567,25 @@ function StepFinish({
         interface_mode: 'advanced',
         completed: true,
       });
+      // 2. Reconcile the reactive module store straight from the server, the
+      //    same sequence the Modules > Company Profiles switch uses. This is
+      //    what actually rebuilds the menu to the picked profile. The old
+      //    per-key setModuleEnabled loop scheduled a debounced PATCH that raced
+      //    this POST on the same JSON and left the menu unchanged.
+      await syncFromServer();
     } catch {
-      // Non-critical -- local state is already applied
+      // Non-critical -- the profile choice is still remembered locally below.
     }
 
-    // 3. Mark completed locally
+    // 3. Remember the active profile so the Modules page opens on it too.
+    localStorage.setItem('oe_company_type', companyType ?? 'full_enterprise');
+
+    // 4. Mark completed locally (fires the guided-tour gating event).
     markOnboardingCompleted();
 
     setSaving(false);
     navigate('/');
-  }, [companyType, enabledModules, navigate, packInstalled, setModuleEnabled, setViewMode]);
+  }, [companyType, enabledModules, navigate, packInstalled, syncFromServer, setViewMode]);
 
   return (
     <div className="flex flex-col items-center justify-center text-center">

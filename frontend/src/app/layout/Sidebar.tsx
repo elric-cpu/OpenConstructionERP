@@ -1654,13 +1654,17 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           // the menu tidy.
           const allItems = [...group.items, ...dynamicItems];
           const visibleItems = allItems.filter((item) => {
-            // Company Profiles / onboarding packs PRE-SELECT modules, they do
-            // not remove them. Every module stays listed in the menu whatever
-            // profile was chosen during onboarding, so nothing a company might
-            // need is ever hidden by its profile. The per-project focus gate
-            // below only annotates rows with a sequence number; it never drops
-            // them either.
+            // A company profile (picked in onboarding, or switched on the
+            // Modules > Company Profiles tab) now shapes the menu: a row whose
+            // `moduleKey` maps to a module the profile disabled drops out, so
+            // the sidebar matches the profile the company chose. Core modules
+            // are never disabled and `isModuleEnabled` is fail-open, so nothing
+            // essential disappears, and any module can be switched back on from
+            // the Modules page. In menu-edit mode we skip this gate so every row
+            // stays reachable to toggle. The per-project focus gate below only
+            // annotates rows with a sequence number; it never drops them.
             return (
+              (editMode || !item.moduleKey || isModuleEnabled(item.moduleKey)) &&
               (!item.advancedOnly || isAdvanced) &&
               (!item.adminOnly || userRole === 'admin') &&
               // Backend-disabled gate - a System Module a company admin has
