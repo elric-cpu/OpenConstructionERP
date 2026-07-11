@@ -56,6 +56,7 @@ from app.dependencies import (
     SessionDep,
     verify_project_access,
 )
+from app.modules.costs import base_registry
 from app.modules.costs.cwicr_v3_catalogue import CWICR_V3_CATALOGUES
 from app.modules.costs.intelligence import (
     CostCertaintyService,
@@ -4080,51 +4081,16 @@ async def import_cost_file(
 # GitHub repository info for downloading CWICR parquet files
 _GITHUB_CWICR_BASE_URL = "https://github.com/datadrivenconstruction/OpenConstructionEstimate-DDC-CWICR/raw/main"
 
-# Mapping from db_id to the GitHub folder/filename structure
-_GITHUB_CWICR_FILES: dict[str, str] = {
-    "USA_USD": "US___DDC_CWICR/USA_USD_workitems_costs_resources_DDC_CWICR.parquet",
-    "UK_GBP": "UK___DDC_CWICR/UK_GBP_workitems_costs_resources_DDC_CWICR.parquet",
-    "DE_BERLIN": "DE___DDC_CWICR/DE_BERLIN_workitems_costs_resources_DDC_CWICR.parquet",
-    "ENG_TORONTO": "EN___DDC_CWICR/ENG_TORONTO_workitems_costs_resources_DDC_CWICR.parquet",
-    # CA_TORONTO is the canonical internal id for Canada (used by the demo
-    # packs, the batimatech-ca partner pack, _REGION_CURRENCY and
-    # region_language). It serves the same upstream EN/Toronto parquet so
-    # load-cwicr resolves the Canadian cost DB instead of 404ing.
-    "CA_TORONTO": "EN___DDC_CWICR/ENG_TORONTO_workitems_costs_resources_DDC_CWICR.parquet",
-    "FR_PARIS": "FR___DDC_CWICR/FR_PARIS_workitems_costs_resources_DDC_CWICR.parquet",
-    "SP_BARCELONA": "ES___DDC_CWICR/SP_BARCELONA_workitems_costs_resources_DDC_CWICR.parquet",
-    "PT_SAOPAULO": "PT___DDC_CWICR/PT_SAOPAULO_workitems_costs_resources_DDC_CWICR.parquet",
-    "RU_STPETERSBURG": "RU___DDC_CWICR/RU_STPETERSBURG_workitems_costs_resources_DDC_CWICR.parquet",
-    "AR_DUBAI": "AR___DDC_CWICR/AR_DUBAI_workitems_costs_resources_DDC_CWICR.parquet",
-    "ZH_SHANGHAI": "ZH___DDC_CWICR/ZH_SHANGHAI_workitems_costs_resources_DDC_CWICR.parquet",
-    "HI_MUMBAI": "HI___DDC_CWICR/HI_MUMBAI_workitems_costs_resources_DDC_CWICR.parquet",
-    # New regions added 2026-04-28 - DDC CWICR repo grew from 11 to 30 country
-    # folders.  Each entry is a single 55K-row parquet keyed on a stable
-    # ``{LANG}_{CITY}`` id; the city portion matches the upstream filename so
-    # the resolver in `_find_cwicr_file` keeps working for local DDC_Toolkit
-    # checkouts as well as for the GitHub-cache fallback.
-    "AU_SYDNEY": "AU___DDC_CWICR/AU_SYDNEY_workitems_costs_resources_DDC_CWICR.parquet",
-    "BG_SOFIA": "BG___DDC_CWICR/BG_SOFIA_workitems_costs_resources_DDC_CWICR.parquet",
-    "CS_PRAGUE": "CS___DDC_CWICR/CS_PRAGUE_workitems_costs_resources_DDC_CWICR.parquet",
-    "HR_ZAGREB": "HR___DDC_CWICR/HR_ZAGREB_workitems_costs_resources_DDC_CWICR.parquet",
-    "ID_JAKARTA": "ID___DDC_CWICR/ID_JAKARTA_workitems_costs_resources_DDC_CWICR.parquet",
-    "IT_ROME": "IT___DDC_CWICR/IT_ROME_workitems_costs_resources_DDC_CWICR.parquet",
-    "JA_TOKYO": "JA___DDC_CWICR/JA_TOKYO_workitems_costs_resources_DDC_CWICR.parquet",
-    "KO_SEOUL": "KO___DDC_CWICR/KO_SEOUL_workitems_costs_resources_DDC_CWICR.parquet",
-    "MX_MEXICOCITY": "MX___DDC_CWICR/MX_MEXICOCITY_workitems_costs_resources_DDC_CWICR.parquet",
-    "NG_LAGOS": "NG___DDC_CWICR/NG_LAGOS_workitems_costs_resources_DDC_CWICR.parquet",
-    "NL_AMSTERDAM": "NL___DDC_CWICR/NL_AMSTERDAM_workitems_costs_resources_DDC_CWICR.parquet",
-    "NZ_AUCKLAND": "NZ___DDC_CWICR/NZ_AUCKLAND_workitems_costs_resources_DDC_CWICR.parquet",
-    "PL_WARSAW": "PL___DDC_CWICR/PL_WARSAW_workitems_costs_resources_DDC_CWICR.parquet",
-    "RO_BUCHAREST": "RO___DDC_CWICR/RO_BUCHAREST_workitems_costs_resources_DDC_CWICR.parquet",
-    "SV_STOCKHOLM": "SV___DDC_CWICR/SV_STOCKHOLM_workitems_costs_resources_DDC_CWICR.parquet",
-    "TH_BANGKOK": "TH___DDC_CWICR/TH_BANGKOK_workitems_costs_resources_DDC_CWICR.parquet",
-    "TR_ISTANBUL": "TR___DDC_CWICR/TR_ISTANBUL_workitems_costs_resources_DDC_CWICR.parquet",
-    "TR_NATIONAL": "TR___DDC_CWICR/TR_NATIONAL_workitems_costs_resources_DDC_CWICR.parquet",
-    "VI_HANOI": "VI___DDC_CWICR/VI_HANOI_workitems_costs_resources_DDC_CWICR.parquet",
-    "ZA_JOHANNESBURG": "ZA___DDC_CWICR/ZA_JOHANNESBURG_workitems_costs_resources_DDC_CWICR.parquet",
-    "ZH_CHINA": "ZH___DDC_CWICR/ZH_CHINA_workitems_costs_resources_DDC_CWICR.parquet",
-}
+# Mapping from db_id to the work-item parquet path under the CWICR repo, built
+# from the single-source base registry (app.modules.costs.base_registry) so this
+# map, the resource-catalog folder map in app.modules.catalog.router and the
+# /base-catalog API can never drift. The registry carries the current nested
+# layout: the 30 global-CWICR markets live under CIS-Russia-GESN-FER-TER/ and
+# each national base under its own folder. CA_TORONTO is the canonical internal
+# id for Canada (demo packs, the batimatech-ca partner pack, region_language); it
+# shares the EN/Toronto parquet so load-cwicr resolves it instead of 404ing.
+_GITHUB_CWICR_FILES: dict[str, str] = base_registry.github_workitems_files()
+_GITHUB_CWICR_FILES.setdefault("CA_TORONTO", _GITHUB_CWICR_FILES["ENG_TORONTO"])
 
 CWICR_SEARCH_PATHS = [
     "../../DDC_Toolkit/pricing/data/excel",
@@ -4349,6 +4315,34 @@ async def _find_cwicr_file(db_id: str) -> Path | None:
         return downloaded
 
     return None
+
+
+@router.get(
+    "/base-catalog",
+    dependencies=[Depends(RequirePermission("costs.read"))],
+)
+@router.get(
+    # The app runs with redirect_slashes=False, so register both path forms.
+    "/base-catalog/",
+    dependencies=[Depends(RequirePermission("costs.read"))],
+    include_in_schema=False,
+)
+async def get_base_catalog(session: SessionDep) -> dict:
+    """Return the full catalog of loadable CWICR cost bases.
+
+    Enumerates the nine base families and every loadable market variant with its
+    work-item ("position") count, currency, language and flag, so the import
+    page, database setup and onboarding can all render one consistent, honest
+    picker before anything is downloaded. Merges the live loaded counts from
+    ``oe_costs_item`` so a base that is already imported shows its real figure
+    and a "loaded" badge.
+    """
+    from sqlalchemy import func
+
+    stmt = select(CostItem.region, func.count()).where(CostItem.is_active.is_(True)).group_by(CostItem.region)
+    rows = (await session.execute(stmt)).all()
+    loaded_counts = {region: int(count) for region, count in rows if region}
+    return base_registry.public_catalog(loaded_counts)
 
 
 @router.post(

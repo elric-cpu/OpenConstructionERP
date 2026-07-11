@@ -68,6 +68,8 @@ import { useBrandingStore } from '@/stores/useBrandingStore';
 import { BrandingEditorModal } from '@/app/layout/CustomBranding';
 import { aiApi, type AIProvider } from '@/features/ai/api';
 import { apiGet, apiPost, extractErrorMessageFromBody } from '@/shared/lib/api';
+import { useBaseCatalog } from '@/features/costs/baseCatalog';
+import { BaseCatalogBrowser } from '@/features/costs/BaseCatalogBrowser';
 import {
   ALL_MODULES,
   MODULE_GROUPS,
@@ -3100,23 +3102,10 @@ function StepDataSetup({
   // Show all regions
   const [aiExpanded, setAiExpanded] = useState(false);
 
-  // Region filter (added 2026-04-28: with 30 regions the full grid is too tall
-  // for a single onboarding step; the filter lets the user narrow down quickly
-  // by name / city / currency / language before scrolling).
-  const [regionQuery, setRegionQuery] = useState('');
-  const filteredRegions = (() => {
-    const q = regionQuery.trim().toLowerCase();
-    if (!q) return CWICR_DATABASES;
-    return CWICR_DATABASES.filter((db) => {
-      return (
-        db.name.toLowerCase().includes(q) ||
-        db.city.toLowerCase().includes(q) ||
-        db.currency.toLowerCase().includes(q) ||
-        db.lang.toLowerCase().includes(q) ||
-        db.id.toLowerCase().includes(q)
-      );
-    });
-  })();
+  // The full base catalog (9 families, 38 cost bases) with real work-item
+  // counts, shared with the import page and database setup. The browser has its
+  // own search, so no local region filter is needed here.
+  const { data: baseCatalog } = useBaseCatalog();
 
   return (
     <div className="flex flex-col items-center">
@@ -3150,55 +3139,28 @@ function StepDataSetup({
             </div>
           </div>
 
-          {/* Region filter — keeps the 30-region grid manageable */}
-          <div className="mb-2">
-            <input
-              type="search"
-              value={regionQuery}
-              onChange={(e) => setRegionQuery(e.target.value)}
-              placeholder={t('onboarding.region_filter_placeholder', {
-                defaultValue: 'Filter by country, city, or currency…',
-              })}
-              disabled={loadingDb || !!loadedDb}
-              className="w-full rounded-lg bg-surface-secondary/70 px-3 py-1.5 text-xs text-content-primary placeholder:text-content-quaternary border border-transparent focus:border-oe-blue/40 focus:outline-none focus:bg-surface-secondary disabled:opacity-50"
-            />
-          </div>
-
-          {/* All regions as selectable cards (scrollable for 30 entries) */}
-          <div className="max-h-72 overflow-y-auto pr-1 -mr-1 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mb-3">
-            {filteredRegions.length === 0 && (
-              <div className="col-span-full py-6 text-center text-xs text-content-tertiary">
-                {t('onboarding.region_filter_no_results', {
-                  defaultValue: 'No regions match "{{q}}"',
-                  q: regionQuery,
-                })}
+          {/* All 9 base families (30 global markets + 8 national bases) with
+              real work-item counts. Selecting one arms the Load button below;
+              the browser carries its own search across every base. */}
+          {!loadedDb &&
+            (baseCatalog ? (
+              <div className="max-h-96 overflow-y-auto pr-1 -mr-1 mb-3">
+                <BaseCatalogBrowser
+                  catalog={baseCatalog}
+                  mode="select"
+                  selectedRegion={selectedRegion}
+                  onSelect={(v) => {
+                    if (!loadingDb) setSelectedRegion(v.region);
+                  }}
+                  loadingRegion={loadingDb ? selectedRegion : null}
+                />
               </div>
-            )}
-            {filteredRegions.map((db) => {
-              const isSelected = selectedRegion === db.id;
-              return (
-                <button
-                  key={db.id}
-                  onClick={() => !loadingDb && !loadedDb && setSelectedRegion(db.id)}
-                  disabled={loadingDb || !!loadedDb}
-                  className={clsx(
-                    'flex items-center gap-2 rounded-xl px-3 py-2 text-left transition-all duration-200',
-                    isSelected
-                      ? 'bg-oe-blue-subtle/50 ring-2 ring-oe-blue/40 shadow-sm'
-                      : 'bg-surface-secondary/70 hover:bg-surface-secondary hover:shadow-sm',
-                    (loadingDb || !!loadedDb) && 'opacity-60 cursor-not-allowed',
-                  )}
-                >
-                  <CountryFlag code={db.flagId} size={18} className="shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-medium text-content-primary truncate">{db.name}</div>
-                    <div className="text-2xs text-content-quaternary">{db.currency}</div>
-                  </div>
-                  {isSelected && <Check size={14} className="text-oe-blue shrink-0" />}
-                </button>
-              );
-            })}
-          </div>
+            ) : (
+              <div className="flex items-center justify-center gap-2 py-8 text-xs text-content-tertiary">
+                <Loader2 size={14} className="animate-spin" />
+                {t('onboarding.base_loading_catalog', { defaultValue: 'Loading cost bases...' })}
+              </div>
+            ))}
 
           {/* Load button / progress / success */}
           <div>

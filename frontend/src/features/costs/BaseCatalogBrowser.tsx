@@ -1,0 +1,358 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
+//
+// One reusable browser for the whole CWICR cost-base catalog. It groups every
+// loadable base into the flagship Global CWICR family (30 markets) and the eight
+// authentic national bases, shows the real work-item count on every card, and
+// lets a user search, load or pick a base. The same component renders on the
+// import page, the database-setup page and onboarding so the three surfaces
+// never drift. It is presentational: the parent owns the load logic and passes
+// it in via onLoad, so each page keeps its own progress, toasts and retry.
+
+import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Check, ChevronDown, Download, Globe, Loader2, Search, Building2 } from 'lucide-react';
+import { CountryFlag } from '@/shared/ui';
+import type { BaseCatalog, BaseVariant } from './baseCatalog';
+import { variantMatches } from './baseCatalog';
+
+interface BaseCatalogBrowserProps {
+  /** The catalog payload from useBaseCatalog(). */
+  catalog: BaseCatalog;
+  /** Authoritative set of currently-loaded region ids (fresher than the API
+   *  snapshot after a just-completed load). Falls back to variant.loaded. */
+  loadedRegions?: Set<string>;
+  /** Region id currently importing (spinner + disables the others). */
+  loadingRegion?: string | null;
+  /** Region id currently marked active (blue accent). */
+  activeRegion?: string | null;
+  /** 'load' shows a Load button per card; 'select' turns cards into a picker. */
+  mode?: 'load' | 'select';
+  /** Selected region id in 'select' mode. */
+  selectedRegion?: string | null;
+  /** Load a base (mode='load'). Parent runs load-cwicr + toasts + state. */
+  onLoad?: (variant: BaseVariant) => void;
+  /** Pick a base (mode='select'). */
+  onSelect?: (variant: BaseVariant) => void;
+  /** Make a loaded base the active one. */
+  onSetActive?: (region: string) => void;
+  /** Seconds elapsed on the in-flight import, for the spinner label. */
+  elapsedSeconds?: number;
+  className?: string;
+}
+
+function positionsLabel(n: number): string {
+  return n.toLocaleString('en-US');
+}
+
+interface CardProps {
+  variant: BaseVariant;
+  title: string;
+  /** Small chip under the title: norm system (national) or language (global). */
+  chip: string;
+  loaded: boolean;
+  loading: boolean;
+  active: boolean;
+  selected: boolean;
+  disabled: boolean;
+  mode: 'load' | 'select';
+  onLoad?: (variant: BaseVariant) => void;
+  onSelect?: (variant: BaseVariant) => void;
+  onSetActive?: (region: string) => void;
+  elapsedSeconds?: number;
+}
+
+function BaseVariantCard({
+  variant,
+  title,
+  chip,
+  loaded,
+  loading,
+  active,
+  selected,
+  disabled,
+  mode,
+  onLoad,
+  onSelect,
+  onSetActive,
+  elapsedSeconds,
+}: CardProps) {
+  const { t } = useTranslation();
+  const shownPositions = loaded && variant.loaded_positions > 0 ? variant.loaded_positions : variant.positions;
+
+  const border = selected
+    ? 'border-oe-blue/60 bg-oe-blue-subtle/25 ring-1 ring-oe-blue/30'
+    : loaded
+      ? active
+        ? 'border-oe-blue/40 bg-oe-blue-subtle/20'
+        : 'border-semantic-success/30 bg-semantic-success-bg/40'
+      : loading
+        ? 'border-oe-blue/40 bg-oe-blue-subtle/30'
+        : 'border-border-light bg-surface-elevated hover:border-border hover:bg-surface-secondary';
+
+  const clickable = mode === 'select' && !disabled;
+
+  return (
+    <div
+      className={`relative flex flex-col rounded-xl border p-3 transition-all duration-normal ease-oe ${border} ${
+        disabled && !loading ? 'pointer-events-none opacity-40' : ''
+      } ${clickable ? 'cursor-pointer' : ''}`}
+      onClick={clickable ? () => onSelect?.(variant) : undefined}
+    >
+      {/* Header: flag + title + top-right status badge */}
+      <div className="flex items-start gap-2.5">
+        <CountryFlag code={variant.flag} size={30} className="mt-0.5 shrink-0 rounded shadow-xs border border-black/5" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold text-content-primary" title={title}>
+            {title}
+          </div>
+          <div className="truncate text-xs text-content-tertiary">
+            {variant.city !== 'National' ? `${variant.city} · ` : ''}
+            {chip}
+          </div>
+        </div>
+        {loaded && (
+          <span
+            className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+              active ? 'bg-oe-blue/15 text-oe-blue' : 'bg-semantic-success/15 text-semantic-success'
+            }`}
+          >
+            {active
+              ? t('costs.base_active', { defaultValue: 'Active' })
+              : t('costs.base_loaded', { defaultValue: 'Loaded' })}
+          </span>
+        )}
+        {!loaded && variant.bundled && (
+          <span className="shrink-0 rounded-full bg-surface-secondary px-2 py-0.5 text-[10px] font-medium text-content-tertiary">
+            {t('costs.base_included', { defaultValue: 'Included' })}
+          </span>
+        )}
+      </div>
+
+      {/* Count + currency + coefficient marker */}
+      <div className="mt-2.5 flex items-end justify-between gap-2">
+        <div>
+          <div className="text-lg font-bold leading-none tabular-nums text-content-primary">
+            {positionsLabel(shownPositions)}
+          </div>
+          <div className="text-[11px] text-content-tertiary">
+            {t('costs.base_positions', { defaultValue: 'positions' })}
+          </div>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <span className="rounded bg-surface-secondary px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-content-secondary">
+            {variant.currency}
+          </span>
+          {variant.coefficient && (
+            <span className="text-[10px] text-content-quaternary">
+              {t('costs.base_coefficient', { defaultValue: 'coefficient base' })}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Action */}
+      {mode === 'load' && (
+        <div className="mt-3">
+          {loaded ? (
+            <button
+              type="button"
+              disabled={active}
+              onClick={() => onSetActive?.(variant.region)}
+              className="w-full rounded-lg border border-border-light px-2.5 py-1.5 text-xs font-medium text-content-secondary transition-colors hover:bg-surface-secondary disabled:cursor-default disabled:opacity-60"
+            >
+              {active
+                ? t('costs.base_is_active', { defaultValue: 'Active database' })
+                : t('costs.base_set_active', { defaultValue: 'Set as active' })}
+            </button>
+          ) : loading ? (
+            <div className="flex w-full items-center justify-center gap-2 rounded-lg bg-oe-blue/10 px-2.5 py-1.5 text-xs font-medium text-oe-blue">
+              <Loader2 size={13} className="animate-spin" />
+              {t('costs.base_loading', { defaultValue: 'Loading' })}
+              {typeof elapsedSeconds === 'number' && elapsedSeconds > 0 ? ` ${elapsedSeconds}s` : ''}
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onLoad?.(variant)}
+              className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-oe-blue px-2.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-oe-blue/90 disabled:opacity-50"
+            >
+              <Download size={13} />
+              {variant.bundled
+                ? t('costs.base_load', { defaultValue: 'Load' })
+                : t('costs.base_download', { defaultValue: 'Download' })}
+            </button>
+          )}
+        </div>
+      )}
+
+      {mode === 'select' && selected && (
+        <div className="mt-3 flex items-center justify-center gap-1.5 rounded-lg bg-oe-blue/10 px-2.5 py-1.5 text-xs font-semibold text-oe-blue">
+          <Check size={13} />
+          {t('costs.base_selected', { defaultValue: 'Selected' })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function BaseCatalogBrowser({
+  catalog,
+  loadedRegions,
+  loadingRegion = null,
+  activeRegion = null,
+  mode = 'load',
+  selectedRegion = null,
+  onLoad,
+  onSelect,
+  onSetActive,
+  elapsedSeconds,
+  className = '',
+}: BaseCatalogBrowserProps) {
+  const { t } = useTranslation();
+  const [query, setQuery] = useState('');
+  const [globalOpen, setGlobalOpen] = useState(true);
+
+  const isLoaded = (v: BaseVariant) => (loadedRegions ? loadedRegions.has(v.region) : v.loaded);
+  const anyLoading = loadingRegion !== null;
+
+  const globalFamily = catalog.families.find((f) => f.key === 'global');
+  const nationalFamilies = catalog.families.filter((f) => f.key !== 'global');
+
+  const filteredGlobal = useMemo(
+    () => (globalFamily ? globalFamily.variants.filter((v) => variantMatches(v, globalFamily, query)) : []),
+    [globalFamily, query],
+  );
+  const filteredNationals = useMemo(
+    () => nationalFamilies.filter((f) => f.variants.some((v) => variantMatches(v, f, query))),
+    [nationalFamilies, query],
+  );
+
+  const loadedTotal = catalog.families.reduce(
+    (acc, f) => acc + f.variants.filter((v) => isLoaded(v)).length,
+    0,
+  );
+  const noResults = filteredGlobal.length === 0 && filteredNationals.length === 0;
+  // Collapsing the 30-market family hides matches while searching - force it open.
+  const showGlobal = globalFamily && filteredGlobal.length > 0 && (globalOpen || query.trim() !== '');
+
+  const renderCard = (variant: BaseVariant, title: string, chip: string) => (
+    <BaseVariantCard
+      key={variant.region}
+      variant={variant}
+      title={title}
+      chip={chip}
+      loaded={isLoaded(variant)}
+      loading={loadingRegion === variant.region}
+      active={activeRegion === variant.region}
+      selected={selectedRegion === variant.region}
+      disabled={anyLoading && loadingRegion !== variant.region}
+      mode={mode}
+      onLoad={onLoad}
+      onSelect={onSelect}
+      onSetActive={onSetActive}
+      elapsedSeconds={elapsedSeconds}
+    />
+  );
+
+  return (
+    <div className={className}>
+      {/* Search + summary */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[200px] flex-1">
+          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-content-quaternary" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t('costs.base_search_placeholder', {
+              defaultValue: 'Search country, city, currency, language or norm...',
+            })}
+            className="w-full rounded-lg border border-transparent bg-surface-secondary/70 py-2 pl-9 pr-3 text-sm text-content-primary placeholder:text-content-quaternary focus:border-oe-blue/40 focus:bg-surface-secondary focus:outline-none"
+          />
+        </div>
+        <span className="shrink-0 text-xs text-content-tertiary tabular-nums">
+          {t('costs.base_summary', {
+            defaultValue: '{{families}} base families · {{bases}} cost bases · {{loaded}} loaded',
+            families: catalog.total_families,
+            bases: catalog.total_bases,
+            loaded: loadedTotal,
+          })}
+        </span>
+      </div>
+
+      {noResults && (
+        <div className="py-10 text-center text-sm text-content-tertiary">
+          {t('costs.base_no_results', { defaultValue: 'No cost bases match "{{q}}"', q: query })}
+        </div>
+      )}
+
+      {/* Global CWICR family: 30 markets */}
+      {globalFamily && filteredGlobal.length > 0 && (
+        <section className="mb-6">
+          <button
+            type="button"
+            onClick={() => setGlobalOpen((o) => !o)}
+            className="mb-3 flex w-full items-center gap-3 rounded-xl border border-oe-blue/20 bg-oe-blue-subtle/10 p-3 text-left transition-colors hover:bg-oe-blue-subtle/20"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-oe-blue/10 text-oe-blue">
+              <Globe size={18} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-content-primary">{globalFamily.name}</span>
+                <span className="rounded bg-oe-blue/10 px-1.5 py-0.5 text-[10px] font-medium text-oe-blue">
+                  {globalFamily.norm_system}
+                </span>
+              </div>
+              <div className="truncate text-xs text-content-tertiary">{globalFamily.description}</div>
+            </div>
+            <div className="hidden shrink-0 text-right sm:block">
+              <div className="text-sm font-bold tabular-nums text-content-primary">
+                {positionsLabel(globalFamily.positions)}
+              </div>
+              <div className="text-[11px] text-content-tertiary">
+                {t('costs.base_family_markets', {
+                  defaultValue: '{{count}} markets',
+                  count: globalFamily.market_count,
+                })}
+              </div>
+            </div>
+            <ChevronDown
+              size={18}
+              className={`shrink-0 text-content-tertiary transition-transform ${showGlobal ? '' : '-rotate-90'}`}
+            />
+          </button>
+          {showGlobal && (
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {filteredGlobal.map((v) => renderCard(v, v.market, v.language))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* National bases */}
+      {filteredNationals.length > 0 && (
+        <section>
+          <div className="mb-3 flex items-center gap-2.5 px-1">
+            <Building2 size={16} className="text-content-tertiary" />
+            <span className="text-sm font-semibold text-content-primary">
+              {t('costs.base_national_title', { defaultValue: 'National bases' })}
+            </span>
+            <span className="text-xs text-content-tertiary">
+              {t('costs.base_national_sub', {
+                defaultValue: 'Built from official government norm systems',
+              })}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+            {filteredNationals.map((f) =>
+              f.variants.map((v) => renderCard(v, f.name, f.norm_system)),
+            )}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}

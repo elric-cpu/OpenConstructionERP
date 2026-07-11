@@ -29,6 +29,8 @@ import { formatFileSize } from '@/shared/lib/formatters';
 import { COMMON_CURRENCIES } from '@/features/boq/boqHelpers';
 import { fetchCostCatalogs, type CostCatalog } from './api';
 import { ResourcePriceSheetPanel } from './ResourcePriceSheetPanel';
+import { BaseCatalogBrowser } from './BaseCatalogBrowser';
+import { useBaseCatalog, flattenVariants, type BaseVariant } from './baseCatalog';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -351,33 +353,6 @@ const CWICR_DATABASES: CWICRDatabase[] = [
   { id: 'GR_NATIONAL', name: 'Greece (GGDE)', city: 'National', lang: 'Ellinika', currency: 'EUR', flagId: 'gr', parquetName: 'GR' },
 ];
 
-// Databases that may only be available via GitHub download (not in local DDC_Toolkit).
-// All 19 regions added 2026-04-28 are GitHub-only — they were never shipped in the
-// local DDC_Toolkit/pricing/data/excel directory, so the resolver must fall through
-// to the GitHub-cache path on first load.
-const GITHUB_ONLY_DBS = new Set([
-  'UK_GBP',
-  'USA_USD',
-  'AU_SYDNEY',
-  'NZ_AUCKLAND',
-  'IT_ROME',
-  'NL_AMSTERDAM',
-  'PL_WARSAW',
-  'CS_PRAGUE',
-  'HR_ZAGREB',
-  'BG_SOFIA',
-  'RO_BUCHAREST',
-  'SV_STOCKHOLM',
-  'JA_TOKYO',
-  'KO_SEOUL',
-  'TH_BANGKOK',
-  'VI_HANOI',
-  'ID_JAKARTA',
-  'MX_MEXICOCITY',
-  'ZA_JOHANNESBURG',
-  'NG_LAGOS',
-]);
-
 /** Mini flag component — uses bundled inline SVGs */
 function MiniFlag({ code }: { code: string }) {
   return <CountryFlag code={code} size={32} className="shadow-xs border border-black/5" />;
@@ -394,10 +369,15 @@ function CWICRDatabaseGrid(_props: { onLoadDatabase: (file: File) => void }) {
     skipped: number;
     file: string;
   } | null>(null);
-  const [lastLoadedDb, setLastLoadedDb] = useState<CWICRDatabase | null>(null);
+  const [lastLoadedDb, setLastLoadedDb] = useState<BaseVariant | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [activeDb, setActiveDb] = useState<string | null>(() => getActiveDatabase());
   const addToast = useToastStore((s) => s.addToast);
+
+  // The whole loadable catalog (9 base families, 38 cost bases) with real
+  // work-item counts, from the single-source backend registry. The browser
+  // renders it; this component keeps the load/progress/toast logic.
+  const { data: baseCatalog } = useBaseCatalog();
 
   // The timeout-recovery poll below can run for ~a minute after a slow import.
   // If the user navigates away from /costs/import during that window we must
@@ -409,22 +389,6 @@ function CWICRDatabaseGrid(_props: { onLoadDatabase: (file: File) => void }) {
       mountedRef.current = false;
     };
   }, []);
-
-  // Region filter — added 2026-04-28 when the registry grew from 11 to 30
-  // entries. Without it the grid scrolls past one viewport on small laptops.
-  const [regionQuery, setRegionQuery] = useState('');
-  const filteredDatabases = (() => {
-    const q = regionQuery.trim().toLowerCase();
-    if (!q) return CWICR_DATABASES;
-    return CWICR_DATABASES.filter(
-      (db) =>
-        db.name.toLowerCase().includes(q) ||
-        db.city.toLowerCase().includes(q) ||
-        db.currency.toLowerCase().includes(q) ||
-        db.lang.toLowerCase().includes(q) ||
-        db.id.toLowerCase().includes(q),
-    );
-  })();
 
   // Sync loaded state with actual backend data
   const { data: regionStats } = useQuery({
@@ -455,25 +419,26 @@ function CWICRDatabaseGrid(_props: { onLoadDatabase: (file: File) => void }) {
   }, [loading]);
 
   const handleSetActive = useCallback(
-    (dbId: string) => {
-      setActiveDatabase(dbId);
-      setActiveDb(dbId);
+    (region: string) => {
+      setActiveDatabase(region);
+      setActiveDb(region);
+      const name = flattenVariants(baseCatalog).find((v) => v.region === region)?.market ?? region;
       addToast({
         type: 'success',
         title: t('costs.active_db_changed', { defaultValue: 'Active database changed' }),
-        message: `${CWICR_DATABASES.find((d) => d.id === dbId)?.name ?? dbId} ${t('costs.is_now_active', { defaultValue: 'is now the active database' })}`,
+        message: `${name} ${t('costs.is_now_active', { defaultValue: 'is now the active database' })}`,
       });
     },
-    [addToast, t],
+    [addToast, t, baseCatalog],
   );
 
   const handleLoad = useCallback(
-    async (db: CWICRDatabase) => {
+    async (variant: BaseVariant) => {
+      // Local alias so the load / progress / toast body below reads naturally.
+      const db = { id: variant.region, name: variant.market };
       setLoading(db.id);
       setResult(null);
-      setLastLoadedDb(db);
-
-      void GITHUB_ONLY_DBS; // Referenced in JSX badge
+      setLastLoadedDb(variant);
 
       try {
         // A regional CWICR import reads a ~40 MB parquet, expands 900K rows to
@@ -591,7 +556,7 @@ function CWICRDatabaseGrid(_props: { onLoadDatabase: (file: File) => void }) {
           action: {
             label: t('costs.load_failed_retry', { defaultValue: 'Retry' }),
             onClick: () => {
-              void handleLoad(db);
+              void handleLoad(variant);
             },
           },
         });
@@ -604,130 +569,29 @@ function CWICRDatabaseGrid(_props: { onLoadDatabase: (file: File) => void }) {
 
   return (
     <div>
-      {/* Region filter (30 regions — keep grid navigable) */}
-      <div className="mb-3 flex items-center gap-2">
-        <input
-          type="search"
-          value={regionQuery}
-          onChange={(e) => setRegionQuery(e.target.value)}
-          placeholder={t('costs.region_filter_placeholder', {
-            defaultValue: 'Filter by country, city, currency or language…',
-          })}
-          className="flex-1 rounded-lg bg-surface-secondary/70 px-3 py-2 text-sm text-content-primary placeholder:text-content-quaternary border border-transparent focus:border-oe-blue/40 focus:outline-none focus:bg-surface-secondary"
+      {/* One browser for all 9 base families (30 global markets + 8 national
+          bases), with real work-item counts, search, load and active-set. */}
+      {baseCatalog ? (
+        <BaseCatalogBrowser
+          catalog={baseCatalog}
+          loadedRegions={loaded}
+          loadingRegion={loading}
+          activeRegion={activeDb}
+          onLoad={handleLoad}
+          onSetActive={handleSetActive}
+          elapsedSeconds={elapsed}
         />
-        <span className="shrink-0 text-xs text-content-tertiary tabular-nums">
-          {t('costs.region_filter_count', {
-            defaultValue: '{{shown}} of {{total}}',
-            shown: filteredDatabases.length,
-            total: CWICR_DATABASES.length,
-          })}
-        </span>
-      </div>
-
-      {/* Database grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
-        {filteredDatabases.length === 0 && (
-          <div className="col-span-full py-8 text-center text-sm text-content-tertiary">
-            {t('costs.region_filter_no_results', {
-              defaultValue: 'No regions match "{{q}}"',
-              q: regionQuery,
-            })}
-          </div>
-        )}
-        {filteredDatabases.map((db) => {
-          const isLoading = loading === db.id;
-          const isLoaded = loaded.has(db.id);
-          const isActive = activeDb === db.id;
-          const isGithub = GITHUB_ONLY_DBS.has(db.id);
-
-          return (
-            <div
-              key={db.id}
-              className={`
-                relative flex flex-col rounded-xl
-                border transition-all duration-normal ease-oe
-                ${
-                  isLoaded
-                    ? isActive
-                      ? 'border-oe-blue/40 bg-oe-blue-subtle/20'
-                      : 'border-semantic-success/30 bg-semantic-success-bg/40'
-                    : isLoading
-                      ? 'border-oe-blue/40 bg-oe-blue-subtle/30'
-                      : 'border-border-light bg-surface-elevated hover:border-border hover:bg-surface-secondary'
-                }
-                ${loading !== null && !isLoading ? 'opacity-40 pointer-events-none' : ''}
-              `}
-            >
-              <button
-                onClick={() => handleLoad(db)}
-                disabled={isLoading || loading !== null}
-                className="flex items-center gap-3 px-3.5 py-3 text-left active:scale-[0.98] transition-transform"
-              >
-                <MiniFlag code={db.flagId} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-content-primary">
-                      {db.name}
-                    </span>
-                    {isLoaded && (
-                      <CheckCircle2
-                        size={14}
-                        className="text-semantic-success shrink-0"
-                      />
-                    )}
-                  </div>
-                  <div className="text-2xs text-content-tertiary">
-                    {db.city} &middot; {db.lang} &middot; {db.currency}
-                  </div>
-                  <div className="flex items-center gap-1.5 mt-1">
-                    <span className="text-2xs text-content-quaternary">{t('costs.items_count', { defaultValue: '55,719 items' })}</span>
-                    {isGithub && !isLoaded && (
-                      <Badge variant="blue" size="sm" className="text-2xs px-1.5 py-0">
-                        GitHub
-                      </Badge>
-                    )}
-                    {!isGithub && !isLoaded && (
-                      <Badge variant="neutral" size="sm" className="text-2xs px-1.5 py-0">
-                        Local
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-                {isLoading && (
-                  <Loader2 size={16} className="animate-spin text-oe-blue shrink-0" />
-                )}
-              </button>
-
-              {/* Action row for loaded databases */}
-              {isLoaded && (
-                <div className="flex items-center gap-1.5 px-3.5 pb-2.5 -mt-1">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSetActive(db.id);
-                    }}
-                    className={`
-                      flex items-center gap-1 rounded-md px-2 py-1 text-2xs font-medium transition-colors
-                      ${
-                        isActive
-                          ? 'bg-oe-blue text-white'
-                          : 'bg-surface-secondary text-content-secondary hover:bg-surface-tertiary hover:text-content-primary'
-                      }
-                    `}
-                  >
-                    <Star size={10} className={isActive ? 'fill-current' : ''} />
-                    {isActive ? t('costs.active', { defaultValue: 'Active' }) : t('costs.set_active', { defaultValue: 'Set as Active' })}
-                  </button>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      ) : (
+        <div className="flex items-center justify-center gap-2 py-12 text-sm text-content-tertiary">
+          <Loader2 size={16} className="animate-spin" />
+          {t('costs.base_loading_catalog', { defaultValue: 'Loading cost bases...' })}
+        </div>
+      )}
 
       {/* ── Import Progress Panel ─────────────────────────────────────── */}
       {(loading || result) && (() => {
-        const loadingDb = loading ? CWICR_DATABASES.find((d) => d.id === loading) : lastLoadedDb;
+        const loadingDb =
+          (loading ? flattenVariants(baseCatalog).find((v) => v.region === loading) : null) ?? lastLoadedDb;
         // Simulate phased progress: 0-15s = reading file, 15-30s = parsing, 30+ = writing
         const phase = elapsed < 15 ? 0 : elapsed < 30 ? 1 : elapsed < 120 ? 2 : 3;
         const phaseLabels = [
@@ -760,7 +624,7 @@ function CWICRDatabaseGrid(_props: { onLoadDatabase: (file: File) => void }) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-semibold text-content-primary">
-                      {result ? t('costs.db_installed', { defaultValue: 'Database installed successfully' }) : t('costs.db_installing', { defaultValue: 'Installing {{name}}...', name: loadingDb?.name ?? 'database' })}
+                      {result ? t('costs.db_installed', { defaultValue: 'Database installed successfully' }) : t('costs.db_installing', { defaultValue: 'Installing {{name}}...', name: loadingDb?.market ?? 'database' })}
                     </h3>
                     {!result && (
                       <span className="text-xs text-oe-blue font-mono tabular-nums">

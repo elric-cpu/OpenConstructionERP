@@ -15,6 +15,8 @@ import { Button, Card, CardHeader, CardContent, Badge, Breadcrumb, CountryFlag, 
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { useToastStore } from '@/stores/useToastStore';
 import { apiGet, apiPost } from '@/shared/lib/api';
+import { useBaseCatalog, flattenVariants, type BaseVariant } from '@/features/costs/baseCatalog';
+import { BaseCatalogBrowser } from '@/features/costs/BaseCatalogBrowser';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,55 +39,10 @@ interface DemoInstallResult {
 
 // ── CWICR Database definitions ──────────────────────────────────────────────
 
-interface CWICRDatabase {
-  id: string;
-  name: string;
-  city: string;
-  lang: string;
-  currency: string;
-  flagId: string;
-}
-
-const CWICR_DATABASES: CWICRDatabase[] = [
-  { id: 'DE_BERLIN', name: 'Germany / DACH', city: 'Berlin', lang: 'Deutsch', currency: 'EUR', flagId: 'de' },
-  { id: 'UK_GBP', name: 'United Kingdom', city: 'London', lang: 'English', currency: 'GBP', flagId: 'gb' },
-  { id: 'USA_USD', name: 'United States', city: 'National', lang: 'English', currency: 'USD', flagId: 'us' },
-  { id: 'FR_PARIS', name: 'France', city: 'Paris', lang: 'Francais', currency: 'EUR', flagId: 'fr' },
-  { id: 'SP_BARCELONA', name: 'Spain / Latin America', city: 'Barcelona', lang: 'Espanol', currency: 'EUR', flagId: 'es' },
-  { id: 'PT_SAOPAULO', name: 'Brazil / Portugal', city: 'Sao Paulo', lang: 'Portugues', currency: 'BRL', flagId: 'br' },
-  { id: 'RU_STPETERSBURG', name: 'Russia / CIS', city: 'St. Petersburg', lang: 'Russian', currency: 'RUB', flagId: 'ru' },
-  { id: 'AR_DUBAI', name: 'Middle East / Gulf', city: 'Dubai', lang: 'Arabic', currency: 'AED', flagId: 'ae' },
-  { id: 'ZH_CHINA', name: 'China', city: 'National', lang: 'Chinese', currency: 'CNY', flagId: 'cn' },
-  { id: 'HI_MUMBAI', name: 'India / South Asia', city: 'Mumbai', lang: 'Hindi', currency: 'INR', flagId: 'in' },
-  { id: 'ENG_TORONTO', name: 'Canada / International', city: 'Toronto', lang: 'English', currency: 'CAD', flagId: 'ca' },
-  // Added 2026-04-28 — DDC CWICR repo grew from 11 to 30 country folders.
-  { id: 'AU_SYDNEY', name: 'Australia', city: 'Sydney', lang: 'English', currency: 'AUD', flagId: 'au' },
-  { id: 'NZ_AUCKLAND', name: 'New Zealand', city: 'Auckland', lang: 'English', currency: 'NZD', flagId: 'nz' },
-  { id: 'IT_ROME', name: 'Italy', city: 'Rome', lang: 'Italiano', currency: 'EUR', flagId: 'it' },
-  { id: 'NL_AMSTERDAM', name: 'Netherlands', city: 'Amsterdam', lang: 'Nederlands', currency: 'EUR', flagId: 'nl' },
-  { id: 'PL_WARSAW', name: 'Poland', city: 'Warsaw', lang: 'Polski', currency: 'PLN', flagId: 'pl' },
-  { id: 'CS_PRAGUE', name: 'Czech Republic', city: 'Prague', lang: 'Cestina', currency: 'CZK', flagId: 'cz' },
-  { id: 'HR_ZAGREB', name: 'Croatia', city: 'Zagreb', lang: 'Hrvatski', currency: 'EUR', flagId: 'hr' },
-  { id: 'BG_SOFIA', name: 'Bulgaria', city: 'Sofia', lang: 'Balgarski', currency: 'BGN', flagId: 'bg' },
-  { id: 'RO_BUCHAREST', name: 'Romania', city: 'Bucharest', lang: 'Romana', currency: 'RON', flagId: 'ro' },
-  { id: 'SV_STOCKHOLM', name: 'Sweden', city: 'Stockholm', lang: 'Svenska', currency: 'SEK', flagId: 'se' },
-  { id: 'TR_NATIONAL', name: 'Türkiye', city: 'National', lang: 'Türkçe', currency: 'TRY', flagId: 'tr' },
-  { id: 'JA_TOKYO', name: 'Japan', city: 'Tokyo', lang: 'Nihongo', currency: 'JPY', flagId: 'jp' },
-  { id: 'KO_SEOUL', name: 'South Korea', city: 'Seoul', lang: 'Hangugeo', currency: 'KRW', flagId: 'kr' },
-  { id: 'TH_BANGKOK', name: 'Thailand', city: 'Bangkok', lang: 'Thai', currency: 'THB', flagId: 'th' },
-  { id: 'VI_HANOI', name: 'Vietnam', city: 'Hanoi', lang: 'Tieng Viet', currency: 'VND', flagId: 'vn' },
-  { id: 'ID_JAKARTA', name: 'Indonesia', city: 'Jakarta', lang: 'Bahasa Indonesia', currency: 'IDR', flagId: 'id' },
-  { id: 'MX_MEXICOCITY', name: 'Mexico', city: 'Mexico City', lang: 'Espanol', currency: 'MXN', flagId: 'mx' },
-  { id: 'ZA_JOHANNESBURG', name: 'South Africa', city: 'Johannesburg', lang: 'English', currency: 'ZAR', flagId: 'za' },
-  { id: 'NG_LAGOS', name: 'Nigeria', city: 'Lagos', lang: 'English', currency: 'NGN', flagId: 'ng' },
-  // Authentic national / regional official bases (own local parquet, resource norms)
-  { id: 'BR_NATIONAL', name: 'Brazil (SINAPI)', city: 'National', lang: 'Portugues', currency: 'BRL', flagId: 'br' },
-  { id: 'ES_ANDALUCIA', name: 'Spain (BCCA)', city: 'Andalucia', lang: 'Espanol', currency: 'EUR', flagId: 'es' },
-  { id: 'IT_TOSCANA', name: 'Italy (Toscana)', city: 'Toscana', lang: 'Italiano', currency: 'EUR', flagId: 'it' },
-  { id: 'VN_NATIONAL', name: 'Vietnam (Dinh Muc)', city: 'National', lang: 'Tieng Viet', currency: 'VND', flagId: 'vn' },
-  { id: 'ID_NATIONAL', name: 'Indonesia (AHSP)', city: 'National', lang: 'Bahasa Indonesia', currency: 'IDR', flagId: 'id' },
-  { id: 'GR_NATIONAL', name: 'Greece (GGDE)', city: 'National', lang: 'Ellinika', currency: 'EUR', flagId: 'gr' },
-];
+// CWICR base definitions (all base families and their market variants, with
+// real per-base work-item counts) now come from the shared base-catalog
+// endpoint via useBaseCatalog(); the <BaseCatalogBrowser> renders them. The
+// former hardcoded CWICR_DATABASES array lived here and has been removed.
 
 // ── Demo project definitions ────────────────────────────────────────────────
 
@@ -107,6 +64,7 @@ const DEMO_PROJECTS: DemoProject[] = [
 // ── LocalStorage helpers ────────────────────────────────────────────────────
 
 const LOADED_DBS_KEY = 'oe_loaded_databases';
+const ACTIVE_DB_KEY = 'oe_active_database';
 const INSTALLED_DEMOS_KEY = 'oe_installed_demos';
 
 function getLoadedDatabases(): string[] {
@@ -124,6 +82,24 @@ function addLoadedDatabase(dbId: string): void {
     if (!current.includes(dbId)) {
       localStorage.setItem(LOADED_DBS_KEY, JSON.stringify([...current, dbId]));
     }
+  } catch {
+    // Storage unavailable
+  }
+}
+
+// Active database is a global concept shared with the import page via the same
+// ``oe_active_database`` key, so setting it here keeps both surfaces in sync.
+function getActiveDatabase(): string | null {
+  try {
+    return localStorage.getItem(ACTIVE_DB_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function setActiveDatabase(dbId: string): void {
+  try {
+    localStorage.setItem(ACTIVE_DB_KEY, dbId);
   } catch {
     // Storage unavailable
   }
@@ -153,109 +129,9 @@ function addInstalledDemo(demoId: string): void {
 
 type CardStatus = 'idle' | 'loading' | 'loaded' | 'failed';
 
-function RegionCard({
-  db,
-  status,
-  itemCount,
-  onLoad,
-  disabled,
-}: {
-  db: CWICRDatabase;
-  status: CardStatus;
-  itemCount: number | null;
-  onLoad: () => void;
-  disabled: boolean;
-}) {
-  const { t } = useTranslation();
-
-  return (
-    <div
-      data-region={db.id}
-      className={`
-        relative flex flex-col rounded-xl border transition-all duration-normal ease-oe
-        ${
-          status === 'loaded'
-            ? 'border-semantic-success/30 bg-semantic-success-bg/40'
-            : status === 'loading'
-              ? 'border-oe-blue/40 bg-oe-blue-subtle/30'
-              : status === 'failed'
-                ? 'border-semantic-error/30 bg-semantic-error-bg/40'
-                : 'border-border-light bg-surface-elevated hover:border-border hover:bg-surface-secondary'
-        }
-        ${disabled && status === 'idle' ? 'opacity-40 pointer-events-none' : ''}
-      `}
-    >
-      <button
-        onClick={onLoad}
-        disabled={disabled || status === 'loading'}
-        className="flex items-center gap-3 px-3.5 py-3 text-left active:scale-[0.98] transition-transform"
-      >
-        <CountryFlag code={db.flagId} size={32} className="shadow-xs border border-black/5" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-content-primary truncate">
-              {db.name}
-            </span>
-            {status === 'loaded' && (
-              <CheckCircle2 size={14} className="text-semantic-success shrink-0" />
-            )}
-            {status === 'failed' && (
-              <XCircle size={14} className="text-semantic-error shrink-0" />
-            )}
-          </div>
-          <div className="text-2xs text-content-tertiary">
-            {db.city} &middot; {db.currency}
-          </div>
-          <div className="flex items-center gap-1.5 mt-1">
-            {status === 'loaded' && itemCount != null ? (
-              <span className="text-2xs text-semantic-success font-medium">
-                {itemCount.toLocaleString()} {t('setup.items', { defaultValue: 'items' })}
-              </span>
-            ) : status === 'loading' ? (
-              <span className="text-2xs text-oe-blue font-medium">
-                {t('setup.loading', { defaultValue: 'Loading...' })}
-              </span>
-            ) : status === 'failed' ? (
-              <span className="text-2xs text-semantic-error font-medium">
-                {t('setup.failed', { defaultValue: 'Failed' })}
-              </span>
-            ) : (
-              <span className="text-2xs text-content-quaternary">
-                {t('setup.ready_to_load', { defaultValue: 'Ready to load' })}
-              </span>
-            )}
-          </div>
-        </div>
-        {status === 'loading' && (
-          <Loader2 size={16} className="animate-spin text-oe-blue shrink-0" />
-        )}
-      </button>
-      {status === 'loaded' && (
-        <div className="flex items-center gap-2 px-3.5 pb-2 pt-0">
-          <Link
-            to={`/costs?region=${db.id}`}
-            className="text-2xs text-oe-blue hover:underline font-medium"
-            data-testid={`region-view-costs-${db.id}`}
-          >
-            {t('setup.view_in_costs', {
-              defaultValue: 'View cost items →',
-            })}
-          </Link>
-          <span className="text-2xs text-content-quaternary">·</span>
-          <Link
-            to={`/catalog?region=${db.id}`}
-            className="text-2xs text-oe-blue hover:underline font-medium"
-            data-testid={`region-view-catalog-${db.id}`}
-          >
-            {t('setup.view_in_catalog', {
-              defaultValue: 'View resources →',
-            })}
-          </Link>
-        </div>
-      )}
-    </div>
-  );
-}
+// RegionCard was removed: the shared <BaseCatalogBrowser> now renders every
+// base card (flag, real work-item count, load/active controls) consistently
+// across the import, setup and onboarding surfaces.
 
 // ── Demo Project Card ───────────────────────────────────────────────────────
 
@@ -344,16 +220,16 @@ export function DatabaseSetupPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // ── Database status tracking ──
-  const [dbStatuses, setDbStatuses] = useState<Record<string, CardStatus>>(() => {
-    const initial: Record<string, CardStatus> = {};
-    for (const db of CWICR_DATABASES) {
-      initial[db.id] = 'idle';
-    }
-    return initial;
-  });
-  const [dbItemCounts, setDbItemCounts] = useState<Record<string, number>>({});
-  const [_singleLoading, setSingleLoading] = useState(false);
+  // ── Database load tracking ──
+  // The whole loadable catalog (base families + market variants with real
+  // work-item counts) comes from the single-source backend registry; the
+  // shared <BaseCatalogBrowser> renders it and this page keeps the load,
+  // progress and toast logic.
+  const { data: baseCatalog } = useBaseCatalog();
+  const [loading, setLoading] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState<Set<string>>(() => new Set(getLoadedDatabases()));
+  const [activeDb, setActiveDb] = useState<string | null>(() => getActiveDatabase());
+  const [elapsed, setElapsed] = useState(0);
   const [loadAllActive, setLoadAllActive] = useState(false);
   const loadAllAbortRef = useRef(false);
 
@@ -376,63 +252,78 @@ export function DatabaseSetupPage() {
     refetchOnWindowFocus: true,
   });
 
+  // Backend region stats are the source of truth for which bases are loaded.
   useEffect(() => {
-    if (regionStats && regionStats.length > 0) {
-      const newStatuses = { ...dbStatuses };
-      const newCounts = { ...dbItemCounts };
-      for (const stat of regionStats) {
-        if (stat.count > 0) {
-          newStatuses[stat.region] = 'loaded';
-          newCounts[stat.region] = stat.count;
-        }
-      }
-      setDbStatuses(newStatuses);
-      setDbItemCounts(newCounts);
+    if (regionStats) {
+      setLoaded(new Set(regionStats.map((r) => r.region)));
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [regionStats]);
 
-  // Deep-link from the Match panel: ``?vectorize=DE_BERLIN`` scrolls to
-  // the targeted region card and surfaces a hint toast. We intentionally
-  // do NOT auto-trigger the load — auto-actions on URL params are jarring
-  // when the user lands here from a stale tab. The toast points at the
-  // load button so the action is one obvious click away.
+  // Elapsed-time tick for the in-flight import; drives the browser spinner
+  // label and the Load All progress copy.
   useEffect(() => {
-    const target = searchParams.get('vectorize');
-    if (!target) return;
-    const known = CWICR_DATABASES.find((d) => d.id === target);
-    if (!known) return;
-    const node = document.querySelector(`[data-region="${target}"]`);
-    if (node) {
-      node.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      node.classList.add('ring-2', 'ring-oe-blue', 'ring-offset-2');
-      window.setTimeout(() => {
-        node.classList.remove('ring-2', 'ring-oe-blue', 'ring-offset-2');
-      }, 2400);
+    if (!loading) {
+      setElapsed(0);
+      return;
     }
-    const isLoaded = (regionStats ?? []).some((r) => r.region === target && r.count > 0);
-    addToast({
-      type: 'info',
-      title: t('setup.vectorize_target_title', {
-        defaultValue: `Click "${known.name}" to vectorise`,
-        catalog: known.name,
-      }),
-      message: isLoaded
-        ? t('setup.vectorize_already_loaded', {
-            defaultValue:
-              'Catalogue already loaded - click the card to refresh and (re)build vectors.',
-          })
-        : t('setup.vectorize_not_loaded', {
-            defaultValue:
-              'Catalogue not yet loaded - click the card to load and build vectors.',
-          }),
-    });
+    const start = Date.now();
+    const interval = setInterval(
+      () => setElapsed(Math.floor((Date.now() - start) / 1000)),
+      1000,
+    );
+    return () => clearInterval(interval);
+  }, [loading]);
+
+  // Deep-link from the Match panel: ``?vectorize=DE_BERLIN`` surfaces a hint
+  // toast pointing at the base to load and vectorise. We intentionally do NOT
+  // auto-trigger the load - auto-actions on URL params are jarring when the
+  // user lands here from a stale tab. Resolve the base label once the catalog
+  // is available, fire the toast once, then clear the param.
+  const vectorizeHandledRef = useRef(false);
+  useEffect(() => {
+    if (vectorizeHandledRef.current) return;
+    const target = searchParams.get('vectorize');
+    if (!target || !baseCatalog) return;
+    vectorizeHandledRef.current = true;
+    const known = flattenVariants(baseCatalog).find((v) => v.region === target);
+    if (known) {
+      const isLoaded = loaded.has(target);
+      addToast({
+        type: 'info',
+        title: t('setup.vectorize_target_title', {
+          defaultValue: `Click "${known.market}" to vectorise`,
+          catalog: known.market,
+        }),
+        message: isLoaded
+          ? t('setup.vectorize_already_loaded', {
+              defaultValue:
+                'Catalogue already loaded - click the card to refresh and (re)build vectors.',
+            })
+          : t('setup.vectorize_not_loaded', {
+              defaultValue:
+                'Catalogue not yet loaded - click the card to load and build vectors.',
+            }),
+      });
+    }
     // Clear the param so reloading the page doesn't re-toast.
     searchParams.delete('vectorize');
     setSearchParams(searchParams, { replace: true });
-  // Intentionally one-shot: only on mount with the initial regionStats.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [baseCatalog, searchParams, setSearchParams, addToast, t, loaded]);
+
+  // ── Set the active cost database (shared with the import page). ──
+  const handleSetActive = useCallback(
+    (region: string) => {
+      setActiveDatabase(region);
+      setActiveDb(region);
+      const name = flattenVariants(baseCatalog).find((v) => v.region === region)?.market ?? region;
+      addToast({
+        type: 'success',
+        title: t('setup.active_db_changed', { defaultValue: 'Active database changed' }),
+        message: `${name} ${t('setup.is_now_active', { defaultValue: 'is now the active database' })}`,
+      });
+    },
+    [addToast, t, baseCatalog],
+  );
 
   // ── Load a single region ──
   // One click loads BOTH layers — abstract cost items (oe_costs_item via
@@ -444,11 +335,10 @@ export function DatabaseSetupPage() {
   // version only loaded /costs, so /catalog stayed empty after the
   // success toast — confused users into thinking the load failed.
   const handleLoadRegion = useCallback(
-    async (db: CWICRDatabase) => {
-      if (dbStatuses[db.id] === 'loading') return;
-
-      setDbStatuses((prev) => ({ ...prev, [db.id]: 'loading' }));
-      setSingleLoading(true);
+    async (variant: BaseVariant) => {
+      // Local alias so the load / progress / toast body below reads naturally.
+      const db = { id: variant.region, name: variant.market };
+      setLoading(db.id);
 
       try {
         // Run both imports in parallel. Catalog import is treated as
@@ -470,12 +360,17 @@ export function DatabaseSetupPage() {
         const status = costsData.status as string | undefined;
         const catalogImported = catalogData?.imported ?? 0;
 
-        setDbStatuses((prev) => ({ ...prev, [db.id]: 'loaded' }));
-        setDbItemCounts((prev) => ({ ...prev, [db.id]: totalItems || imported }));
+        setLoaded((prev) => new Set(prev).add(db.id));
         addLoadedDatabase(db.id);
 
-        // Single combined toast with longer duration so the user has
-        // time to follow the "View →" links surfaced on the card.
+        // Auto-set as active if it is the first loaded database.
+        if (getLoadedDatabases().length === 1 || !getActiveDatabase()) {
+          setActiveDatabase(db.id);
+          setActiveDb(db.id);
+        }
+
+        // Single combined toast with longer duration so the user has time to
+        // follow up in the Cost Database / Resource Catalog.
         const lines = [
           `${(totalItems || imported).toLocaleString()} ${t('setup.cost_items', { defaultValue: 'cost items' })}`,
         ];
@@ -490,7 +385,7 @@ export function DatabaseSetupPage() {
             title: status === 'already_loaded'
               ? t('setup.db_already_loaded', { defaultValue: `${db.name} already loaded` })
               : t('setup.db_loaded', { defaultValue: `Loaded ${db.name}` }),
-            message: lines.join(' · '),
+            message: lines.join(' - '),
           },
           { duration: 8000 },
         );
@@ -515,7 +410,7 @@ export function DatabaseSetupPage() {
               action: {
                 label: t('setup.load_failed_retry', { defaultValue: 'Retry' }),
                 onClick: () => {
-                  void handleLoadRegion(db);
+                  void handleLoadRegion(variant);
                 },
               },
             },
@@ -535,7 +430,6 @@ export function DatabaseSetupPage() {
         queryClient.invalidateQueries({ queryKey: ['costs'] });
         queryClient.invalidateQueries({ queryKey: ['catalog'] });
       } catch (err: unknown) {
-        setDbStatuses((prev) => ({ ...prev, [db.id]: 'failed' }));
         // First load downloads the regional data from GitHub, which is the
         // usual point of failure on networks where that host is blocked.
         // Prefer the backend detail (it names the source URL) and fall back
@@ -557,47 +451,47 @@ export function DatabaseSetupPage() {
           action: {
             label: t('setup.load_failed_retry', { defaultValue: 'Retry' }),
             onClick: () => {
-              void handleLoadRegion(db);
+              void handleLoadRegion(variant);
             },
           },
         });
       } finally {
-        setSingleLoading(false);
+        setLoading(null);
       }
     },
-    [dbStatuses, addToast, t, queryClient],
+    [addToast, t, queryClient],
   );
 
-  // ── Load All regions sequentially ──
+  // ── Load All bases sequentially ──
   const handleLoadAll = useCallback(async () => {
+    const variants = flattenVariants(baseCatalog);
     setLoadAllActive(true);
     loadAllAbortRef.current = false;
 
-    const pending = CWICR_DATABASES.filter((db) => dbStatuses[db.id] !== 'loaded');
+    const pending = variants.filter((v) => !loaded.has(v.region));
+    let processed = 0;
 
-    for (const db of pending) {
+    for (const v of pending) {
       if (loadAllAbortRef.current) break;
 
-      setDbStatuses((prev) => ({ ...prev, [db.id]: 'loading' }));
-      setSingleLoading(true);
+      setLoading(v.region);
 
       try {
-        // Run both layers in parallel — same shape as ``handleLoadRegion``.
-        const [data, _catalog] = await Promise.all([
-          apiPost<Record<string, unknown>>(`/v1/costs/load-cwicr/${db.id}`),
+        // Run both layers in parallel - same shape as ``handleLoadRegion``.
+        await Promise.all([
+          apiPost<Record<string, unknown>>(`/v1/costs/load-cwicr/${v.region}`),
           apiPost<{ imported: number; skipped: number; region: string }>(
-            `/v1/catalog/import/${db.id}`,
+            `/v1/catalog/import/${v.region}`,
           ).catch(() => null),
         ]);
 
-        const imported = (data.imported as number) ?? 0;
-        const totalItems = (data.total_items as number) ?? imported;
-
-        setDbStatuses((prev) => ({ ...prev, [db.id]: 'loaded' }));
-        setDbItemCounts((prev) => ({ ...prev, [db.id]: totalItems || imported }));
-        addLoadedDatabase(db.id);
+        setLoaded((prev) => new Set(prev).add(v.region));
+        addLoadedDatabase(v.region);
+        processed += 1;
       } catch {
-        setDbStatuses((prev) => ({ ...prev, [db.id]: 'failed' }));
+        // Skip a failed base and keep going with the rest.
+      } finally {
+        setLoading(null);
       }
     }
 
@@ -607,21 +501,17 @@ export function DatabaseSetupPage() {
     queryClient.invalidateQueries({ queryKey: ['catalog'] });
 
     setLoadAllActive(false);
-    setSingleLoading(false);
-
-    const loadedCount = CWICR_DATABASES.filter(
-      (db) => dbStatuses[db.id] === 'loaded' || pending.some((p) => p.id === db.id),
-    ).length;
+    setLoading(null);
 
     addToast({
       type: 'success',
       title: t('setup.load_all_complete', { defaultValue: 'Batch loading complete' }),
       message: t('setup.load_all_summary', {
         defaultValue: '{{count}} regions processed',
-        count: loadedCount,
+        count: processed,
       }),
     });
-  }, [dbStatuses, addToast, t, queryClient]);
+  }, [baseCatalog, loaded, addToast, t, queryClient]);
 
   // ── Install demo project ──
   const handleInstallDemo = useCallback(
@@ -658,8 +548,10 @@ export function DatabaseSetupPage() {
   );
 
   // ── Computed stats ──
-  const loadedCount = CWICR_DATABASES.filter((db) => dbStatuses[db.id] === 'loaded').length;
-  const totalItems = Object.values(dbItemCounts).reduce((sum, c) => sum + c, 0);
+  const totalBases = baseCatalog?.total_bases ?? 0;
+  const loadedCount = loaded.size;
+  const totalItems = regionStats?.reduce((sum, r) => sum + r.count, 0) ?? 0;
+  const allBasesLoaded = totalBases > 0 && loadedCount >= totalBases;
   const installedDemoCount = DEMO_PROJECTS.filter((d) => demoStatuses[d.id] === 'loaded').length;
 
   return (
@@ -682,7 +574,8 @@ export function DatabaseSetupPage() {
           <div className="hidden sm:flex items-center gap-2">
             {loadedCount > 0 && (
               <Badge variant="success" size="sm">
-                {loadedCount}/{CWICR_DATABASES.length} {t('setup.regions', { defaultValue: 'regions' })}
+                {totalBases > 0 ? `${loadedCount}/${totalBases}` : loadedCount}{' '}
+                {t('setup.regions', { defaultValue: 'regions' })}
               </Badge>
             )}
             {totalItems > 0 && (
@@ -730,7 +623,7 @@ export function DatabaseSetupPage() {
               variant="primary"
               size="sm"
               onClick={handleLoadAll}
-              disabled={loadAllActive || loadedCount === CWICR_DATABASES.length}
+              disabled={loadAllActive || !baseCatalog || allBasesLoaded}
               loading={loadAllActive}
               icon={<Download size={14} />}
             >
@@ -741,18 +634,24 @@ export function DatabaseSetupPage() {
           }
         />
         <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-            {CWICR_DATABASES.map((db) => (
-              <RegionCard
-                key={db.id}
-                db={db}
-                status={dbStatuses[db.id] ?? 'idle'}
-                itemCount={dbItemCounts[db.id] ?? null}
-                onLoad={() => handleLoadRegion(db)}
-                disabled={loadAllActive && dbStatuses[db.id] !== 'loading'}
-              />
-            ))}
-          </div>
+          {/* One browser for all base families (global CWICR markets + national
+              bases), with real work-item counts, search, load and active-set. */}
+          {baseCatalog ? (
+            <BaseCatalogBrowser
+              catalog={baseCatalog}
+              loadedRegions={loaded}
+              loadingRegion={loading}
+              activeRegion={activeDb}
+              onLoad={handleLoadRegion}
+              onSetActive={handleSetActive}
+              elapsedSeconds={elapsed}
+            />
+          ) : (
+            <div className="flex items-center justify-center gap-2 py-12 text-sm text-content-tertiary">
+              <Loader2 size={16} className="animate-spin" />
+              {t('setup.loading_catalog', { defaultValue: 'Loading cost bases...' })}
+            </div>
+          )}
 
           {/* Load all progress indicator */}
           {loadAllActive && (
@@ -761,12 +660,12 @@ export function DatabaseSetupPage() {
                 <div
                   className="h-full rounded-full bg-gradient-to-r from-oe-blue to-blue-500 transition-all duration-500 ease-out"
                   style={{
-                    width: `${Math.round((loadedCount / CWICR_DATABASES.length) * 100)}%`,
+                    width: `${Math.round((loadedCount / (totalBases || 1)) * 100)}%`,
                   }}
                 />
               </div>
               <span className="text-xs text-content-secondary whitespace-nowrap">
-                {loadedCount}/{CWICR_DATABASES.length}
+                {loadedCount}/{totalBases}
               </span>
               <Button
                 variant="ghost"

@@ -58,6 +58,7 @@ from app.modules.catalog.schemas import (
     CatalogStatsResponse,
 )
 from app.modules.catalog.service import CatalogResourceService
+from app.modules.costs import base_registry
 
 router = APIRouter(tags=["catalog"])
 logger = logging.getLogger(__name__)
@@ -120,55 +121,14 @@ def _normalise_band(base: float, lo: float, hi: float) -> tuple[float, float, fl
 # the GitHub fallback path (locally generated catalogs resolve from the source
 # checkout in ``data/catalog/regions`` first), and follows the same
 # uppercased-language-code convention as the published metros.
-REGION_MAP: dict[str, str] = {
-    "AR_DUBAI": "AR___DDC_CWICR",
-    "AU_SYDNEY": "AU___DDC_CWICR",
-    "BG_SOFIA": "BG___DDC_CWICR",
-    "CS_PRAGUE": "CS___DDC_CWICR",
-    "DE_BERLIN": "DE___DDC_CWICR",
-    "ENG_TORONTO": "EN___DDC_CWICR",
-    "SP_BARCELONA": "ES___DDC_CWICR",
-    "FR_PARIS": "FR___DDC_CWICR",
-    "HI_MUMBAI": "HI___DDC_CWICR",
-    "HR_ZAGREB": "HR___DDC_CWICR",
-    "ID_JAKARTA": "ID___DDC_CWICR",
-    "IT_ROME": "IT___DDC_CWICR",
-    "JA_TOKYO": "JA___DDC_CWICR",
-    "KO_SEOUL": "KO___DDC_CWICR",
-    "MX_MEXICOCITY": "MX___DDC_CWICR",
-    "NG_LAGOS": "NG___DDC_CWICR",
-    "NL_AMSTERDAM": "NL___DDC_CWICR",
-    "NZ_AUCKLAND": "NZ___DDC_CWICR",
-    "PL_WARSAW": "PL___DDC_CWICR",
-    "PT_SAOPAULO": "PT___DDC_CWICR",
-    "RO_BUCHAREST": "RO___DDC_CWICR",
-    "RU_STPETERSBURG": "RU___DDC_CWICR",
-    "SV_STOCKHOLM": "SV___DDC_CWICR",
-    "TH_BANGKOK": "TH___DDC_CWICR",
-    "TR_ISTANBUL": "TR___DDC_CWICR",
-    "TR_NATIONAL": "TR___DDC_CWICR",
-    "UK_GBP": "UK___DDC_CWICR",
-    "USA_USD": "US___DDC_CWICR",
-    "VI_HANOI": "VI___DDC_CWICR",
-    "ZA_JOHANNESBURG": "ZA___DDC_CWICR",
-    "ZH_SHANGHAI": "ZH___DDC_CWICR",
-    "ZH_CHINA": "ZH___DDC_CWICR",
-    # Authentic national / regional bases generated locally from official
-    # government sources (SINAPI, BCCA, Prezzario Regione Toscana, GGDE, Dinh
-    # Muc, AHSP). Their resource catalogs ship in ``data/catalog/regions`` and
-    # resolve from the local checkout, so the folder is only a GitHub fallback.
-    # BR_NATIONAL / ES_ANDALUCIA / IT_TOSCANA / GR_NATIONAL are priced, coded
-    # bases with a real resource catalog. VN_NATIONAL and ID_NATIONAL are
-    # codeless coefficient bases (no priced resources) served by the resource
-    # price-sheet feature; they are listed here only so the region id is a
-    # recognised key rather than an "Unknown region".
-    "BR_NATIONAL": "PT___DDC_CWICR",
-    "ES_ANDALUCIA": "ES___DDC_CWICR",
-    "IT_TOSCANA": "IT___DDC_CWICR",
-    "GR_NATIONAL": "EL___DDC_CWICR",
-    "VN_NATIONAL": "VI___DDC_CWICR",
-    "ID_NATIONAL": "ID___DDC_CWICR",
-}
+# Region id to the repo folder holding its resource-catalog CSV. Derived from
+# the single-source base registry (app.modules.costs.base_registry) so the
+# catalog download path, the cost-item parquet path and the /base-catalog API
+# stay in lockstep. The 30 global-CWICR markets resolve to a nested
+# ``CIS-Russia-GESN-FER-TER/<XX>___DDC_CWICR`` folder; each national base to its
+# own folder root. National catalog CSVs still ship in ``data/catalog/regions``
+# and resolve from the local checkout first, so the folder is a GitHub fallback.
+REGION_MAP: dict[str, str] = {v.region: v.catalog_folder for v in base_registry.iter_variants()}
 
 _GITHUB_BASE = "https://raw.githubusercontent.com/datadrivenconstruction/OpenConstructionEstimate-DDC-CWICR/main"
 
@@ -206,8 +166,14 @@ def _read_region_catalog_csv(region: str, folder: str) -> tuple[bytes, str]:
     where ``source`` is ``cache`` / ``github``. Raises ``RuntimeError`` with
     an actionable message when both fail.
     """
+    # The national bases export their catalog CSV under a short country token
+    # (e.g. TR_NATIONAL -> DDC_CWICR_TR_Catalog.csv) that differs from the
+    # platform region id; the registry knows that token, so try it as a
+    # fallback name after the region-id name and any explicit local alias.
+    registry_token = base_registry.catalog_token(region)
     candidate_csv_names = (
         f"DDC_CWICR_{region}_Catalog.csv",
+        *((f"DDC_CWICR_{registry_token}_Catalog.csv",) if registry_token and registry_token != region else ()),
         *(f"DDC_CWICR_{alias}_Catalog.csv" for alias in _LOCAL_CATALOG_FILE_ALIASES.get(region, ())),
     )
     csv_name = candidate_csv_names[0]
@@ -244,7 +210,10 @@ def _read_region_catalog_csv(region: str, folder: str) -> tuple[bytes, str]:
     last_error: Exception | None = None
     last_url = ""
     for candidate_csv_name in candidate_csv_names:
-        url = f"{_GITHUB_BASE}/{quote(folder, safe='')}/{quote(candidate_csv_name, safe='')}"
+        # ``safe='/'`` keeps the path separators in a nested base folder
+        # (CIS-Russia-GESN-FER-TER/XX___DDC_CWICR) intact; the host is still
+        # pinned below, so the SSRF trust boundary is unchanged.
+        url = f"{_GITHUB_BASE}/{quote(folder, safe='/')}/{quote(candidate_csv_name, safe='')}"
         last_url = url
         if urlparse(url).netloc != "raw.githubusercontent.com":
             raise RuntimeError("Catalog source host is not allowed.")
