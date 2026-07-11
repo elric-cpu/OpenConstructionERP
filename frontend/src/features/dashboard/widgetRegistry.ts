@@ -69,14 +69,6 @@ export const DASHBOARD_WIDGETS: readonly DashboardWidgetMeta[] = [
     icon: AlertTriangle,
   },
   {
-    id: 'inbox',
-    labelKey: 'dashboard.layout.w_inbox',
-    labelDefault: 'Inbox',
-    descKey: 'dashboard.layout.w_inbox_desc',
-    descDefault: 'Pending approvals and alerts awaiting you, in one list',
-    icon: Inbox,
-  },
-  {
     id: 'kpi',
     labelKey: 'dashboard.layout.w_kpi',
     labelDefault: 'KPI ribbon',
@@ -126,6 +118,14 @@ export const DASHBOARD_WIDGETS: readonly DashboardWidgetMeta[] = [
     descKey: 'dashboard.layout.w_map_desc',
     descDefault: 'Geographic map of project locations',
     icon: Globe,
+  },
+  {
+    id: 'inbox',
+    labelKey: 'dashboard.layout.w_inbox',
+    labelDefault: 'Inbox',
+    descKey: 'dashboard.layout.w_inbox_desc',
+    descDefault: 'Pending approvals and alerts awaiting you, in one list',
+    icon: Inbox,
   },
   {
     id: 'bim_coverage',

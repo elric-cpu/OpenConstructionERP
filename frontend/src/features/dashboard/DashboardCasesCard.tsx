@@ -24,9 +24,9 @@ import { rolesForPlaybook, ROLE_BY_ID } from '@/features/cases/roles';
 import { iconFor } from '@/features/cases/icons';
 import { CaseArt } from '@/features/cases/CaseArt';
 
-// How many cases to preview as picture tiles. Eight fills a clean two-row grid
-// (four across on a wide dashboard), so the block reads as a small gallery of
-// what the case library offers rather than a thin strip of chips.
+// How many cases to preview as picture tiles. Eight fills one compact row on a
+// wide dashboard (eight across) and reflows to fewer columns as it narrows, a
+// small gallery of the case library rather than a thin strip of chips.
 const PREVIEW_COUNT = 8;
 
 export function DashboardCasesCard() {
@@ -140,10 +140,10 @@ export function DashboardCasesCard() {
           </div>
           {/* Picture gallery: each case leads with its line-art illustration on
               an always-light tile (the same art the Cases hub uses), so the
-              block previews the library visually. Eight tiles land as two rows
-              of four on a wide dashboard, reflowing to three or two columns on
+              block previews the library visually. Eight compact tiles land as a
+              single row on a wide dashboard, reflowing to six, four or two on
               narrower screens. */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
           {picks.map(({ pb, best, total, inProgress }) => {
             const Icon = iconFor(pb.icon);
             const tint = tintFor(pb.category);
@@ -173,7 +173,7 @@ export function DashboardCasesCard() {
                     />
                   )}
                 </div>
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5 px-2.5 py-2">
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5 px-2 py-1.5">
                   <span className="line-clamp-2 text-xs font-semibold leading-snug text-content-primary">
                     {title}
                   </span>
