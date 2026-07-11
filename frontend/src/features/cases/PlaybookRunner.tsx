@@ -636,11 +636,11 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
               </h2>
             </div>
 
-            {/* Two columns on desktop: a slim ~30% explanation rail on the left
-                (the plain-language "what and why"), and a wide ~70% visualisation
+            {/* Two columns on desktop: a ~40% explanation rail on the left
+                (the plain-language "what and why"), and a wide ~60% visualisation
                 on the right that runs the step as a horizontal In -> Action -> Out
                 flow. They stack on narrow screens (explanation first). */}
-            <div className="mt-1 grid gap-5 lg:grid-cols-[3fr_7fr] lg:items-start lg:gap-6">
+            <div className="mt-1 grid gap-5 lg:grid-cols-[2fr_3fr] lg:items-start lg:gap-7">
               {/* LEFT: What you do + Why, in larger, readable prose. */}
               <div className="space-y-5">
                 <div>
@@ -670,9 +670,9 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                   side of the module scene, and the scene itself is a button into
                   the module, so it is obvious where the work happens. Stacks
                   vertically on narrow screens. */}
-              <div className="min-w-0">
+              <div className="min-w-0 lg:border-l lg:border-border-light lg:pl-7">
                 {hasFlow ? (
-                  <div className="flex flex-col items-stretch gap-3 lg:flex-row lg:items-stretch lg:gap-2">
+                  <div className="flex flex-col items-stretch gap-2.5 lg:flex-row lg:items-stretch lg:gap-1">
                     <FlowSide
                       label={t("cases.flow.in", { defaultValue: "Goes in" })}
                       hint={t("cases.flow.in_hint", {
