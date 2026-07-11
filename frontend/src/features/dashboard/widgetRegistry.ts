@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Canonical dashboard widget registry — single source of truth shared by
  * `DashboardPage` (which maps each id to a live React node) and

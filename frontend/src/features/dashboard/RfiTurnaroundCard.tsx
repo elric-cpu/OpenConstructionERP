@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * RfiTurnaroundCard - compact dashboard widget summarising RFI (request
  * for information) turnaround for the active project.

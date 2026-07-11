@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * UpcomingMilestonesCard - dashboard widget listing the next few upcoming
  * schedule milestones for the active project.

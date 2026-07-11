@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * DashboardRollupContext — provides the result of `useDashboardRollup`
  * to every wave-2 widget so they don't each fetch independently.

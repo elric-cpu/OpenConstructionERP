@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * EstimateResourceCard - dashboard widget surfacing the ESTIMATE side's
  * resource rollup for the active project.

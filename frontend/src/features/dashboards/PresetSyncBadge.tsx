@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * PresetSyncBadge (T09 / task #192) — visual signal of preset ↔ snapshot
  * sync state.

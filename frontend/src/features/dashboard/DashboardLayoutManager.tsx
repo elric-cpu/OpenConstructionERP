@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * DashboardLayoutManager — drag-to-reorder + show/hide control for the
  * dashboard widgets. One shared component, used in two places:

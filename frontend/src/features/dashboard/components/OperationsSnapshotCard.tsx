@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * OperationsSnapshotCard — consolidates the 9 "operations" wave-2 widgets
  * (BOQ Summary, Validation, Clash, Critical Path, Top Risks, HSE,

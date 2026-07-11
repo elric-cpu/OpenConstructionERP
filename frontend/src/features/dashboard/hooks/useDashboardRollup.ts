@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * useDashboardRollup — single React Query that fetches all wave-2
  * dashboard widget payloads in ONE round-trip to the backend.
