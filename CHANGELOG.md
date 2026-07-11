@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [11.0.0] - 2026-07-11
+
+The point cloud viewer becomes a real review tool for reality-capture data on site. You can slice the cloud to a height band and read it as a top-down plan, measure point to point with the distance and its horizontal and vertical parts in millimetres, box off a region to isolate part of a scan, colour points by elevation with a legend and a pinnable height band, and save the current view as a PNG image. The geometry and formatting behind these tools are covered by unit tests.
+
+Onboarding now leads with the cost base. You choose the national price base first and the left menu is rebuilt to the company profile you pick, so the app opens already shaped to how you work. The Cases hub gains a start-here row of case tiles with a show-more card, clearer step visuals, a wider in and out flow on each step, and the full case library translated into every language. The dashboard packs more case tiles per row with the inbox below the map, and module pages share one full-width layout so every screen lines up.
+
+The founder note reads more plainly across the app and the marketing site, a guided case step splits its explanation and its data view into a 40/60 layout, and the README carries the platform message with tidied badge rows and a refreshed module catalogue and docs tree.
+
 ## [10.10.0] - 2026-07-10
 
 This release opens the platform up to the wider world of cost data and adds a way to compare whole design options by what they cost.
