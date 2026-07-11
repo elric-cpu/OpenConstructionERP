@@ -35,8 +35,15 @@ interface DashboardLayoutState {
   order: string[];
   /** Widget ids the user has hidden. */
   hidden: string[];
+  /**
+   * Per-widget grid column span on the 6-col dashboard grid, keyed by widget
+   * id (2=third, 3=half, 4=two-thirds, 6=full). Missing = registry default.
+   * localStorage-only; never synced to the server.
+   */
+  spans: Record<string, number>;
 
   setOrder: (ids: string[]) => void;
+  setSpan: (id: string, span: number) => void;
   toggleHidden: (id: string) => void;
   show: (id: string) => void;
   hide: (id: string) => void;
@@ -76,9 +83,11 @@ export const useDashboardLayoutStore = create<DashboardLayoutState>()(
     (set) => ({
       order: [],
       hidden: [...DEFAULT_HIDDEN],
+      spans: {},
       hydrated: false,
 
       setOrder: (ids) => set({ order: ids }),
+      setSpan: (id, span) => set((s) => ({ spans: { ...s.spans, [id]: span } })),
       toggleHidden: (id) =>
         set((s) => ({
           hidden: s.hidden.includes(id)
@@ -88,7 +97,7 @@ export const useDashboardLayoutStore = create<DashboardLayoutState>()(
       show: (id) => set((s) => ({ hidden: s.hidden.filter((x) => x !== id) })),
       hide: (id) =>
         set((s) => (s.hidden.includes(id) ? s : { hidden: [...s.hidden, id] })),
-      reset: () => set({ order: [], hidden: [...DEFAULT_HIDDEN] }),
+      reset: () => set({ order: [], hidden: [...DEFAULT_HIDDEN], spans: {} }),
 
       _setFromServer: (order, hidden) => {
         suppressSync = true;
@@ -113,16 +122,20 @@ export const useDashboardLayoutStore = create<DashboardLayoutState>()(
         const state = (persisted ?? {}) as Partial<DashboardLayoutState>;
         const order = Array.isArray(state.order) ? state.order : [];
         const hidden = Array.isArray(state.hidden) ? state.hidden : [];
+        const spans =
+          state.spans && typeof state.spans === 'object'
+            ? (state.spans as Record<string, number>)
+            : {};
         if (version < 1) {
           const merged = hidden.includes('weather_site')
             ? hidden
             : [...hidden, 'weather_site'];
-          return { ...state, order, hidden: merged } as DashboardLayoutState;
+          return { ...state, order, hidden: merged, spans } as DashboardLayoutState;
         }
-        return { ...state, order, hidden } as DashboardLayoutState;
+        return { ...state, order, hidden, spans } as DashboardLayoutState;
       },
       // ``hydrated`` is runtime-only state, never persist it to localStorage.
-      partialize: (state) => ({ order: state.order, hidden: state.hidden }),
+      partialize: (state) => ({ order: state.order, hidden: state.hidden, spans: state.spans }),
     },
   ),
 );

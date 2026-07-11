@@ -1,6 +1,6 @@
 // DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 // Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -67,7 +67,7 @@ import { InspectionsQualityCard } from './InspectionsQualityCard';
 import { PunchListQualityCard } from './PunchListQualityCard';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { DashboardLayoutManager } from './DashboardLayoutManager';
-import { DASHBOARD_WIDGET_IDS } from './widgetRegistry';
+import { DASHBOARD_WIDGET_IDS, DASHBOARD_WIDGET_BY_ID } from './widgetRegistry';
 import {
   useDashboardLayoutStore,
   reconcileOrder,
@@ -77,6 +77,14 @@ import {
   DashboardRollupProvider,
   useDashboardRollupContext,
 } from './context/DashboardRollupContext';
+
+// Static Tailwind class strings (dynamic `lg:col-span-${n}` would be purged).
+const DASH_SPAN_CLASS: Record<number, string> = {
+  2: 'lg:col-span-2',
+  3: 'lg:col-span-3',
+  4: 'lg:col-span-4',
+  6: 'lg:col-span-6',
+};
 
 /* ── Helpers ──────────────────────────────────────────────────────────── */
 
@@ -1941,6 +1949,7 @@ function DashboardPageInner() {
 
   const widgetOrder = useDashboardLayoutStore((s) => s.order);
   const widgetHidden = useDashboardLayoutStore((s) => s.hidden);
+  const widgetSpans = useDashboardLayoutStore((s) => s.spans);
   const resolvedWidgets = useMemo(
     () => reconcileOrder(widgetOrder, DASHBOARD_WIDGET_IDS),
     [widgetOrder],
@@ -2600,11 +2609,19 @@ function DashboardPageInner() {
       {/* ─── Widgets - rendered in the user's saved order, hidden ones
           skipped. Conditional widgets resolve to null and contribute
           nothing (same behaviour as when they were inline). ──────────── */}
-      {resolvedWidgets.map((id) => {
-        if (widgetHidden.includes(id)) return null;
-        const node = widgetNodes[id];
-        return node ? <Fragment key={id}>{node}</Fragment> : null;
-      })}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-6 lg:grid-flow-row-dense">
+        {resolvedWidgets.map((id) => {
+          if (widgetHidden.includes(id)) return null;
+          const node = widgetNodes[id];
+          if (!node) return null;
+          const span = widgetSpans[id] ?? DASHBOARD_WIDGET_BY_ID[id]?.defaultSpan ?? 6;
+          return (
+            <div key={id} className={DASH_SPAN_CLASS[span] ?? 'lg:col-span-6'}>
+              {node}
+            </div>
+          );
+        })}
+      </div>
     </div>
     </DashboardRollupProvider>
   );

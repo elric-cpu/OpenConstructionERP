@@ -43,9 +43,12 @@ interface RowProps {
   id: string;
   hidden: boolean;
   onToggle: (id: string) => void;
+  /** Current resolved grid span (2/3/4/6) for this widget. */
+  span: number;
+  onSetSpan: (id: string, span: number) => void;
 }
 
-function WidgetRow({ id, hidden, onToggle }: RowProps) {
+function WidgetRow({ id, hidden, onToggle, span, onSetSpan }: RowProps) {
   const { t } = useTranslation();
   const meta = DASHBOARD_WIDGET_BY_ID[id];
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -53,6 +56,31 @@ function WidgetRow({ id, hidden, onToggle }: RowProps) {
 
   if (!meta) return null;
   const Icon = meta.icon;
+
+  // Segmented width control. Values map to grid column spans on the 6-col
+  // dashboard grid (2=third, 3=half, 4=two-thirds, 6=full).
+  const widthOptions: { value: number; label: string; title: string }[] = [
+    {
+      value: 2,
+      label: '1/3',
+      title: t('dashboard.layout.width_third', { defaultValue: 'Third width (3 per row)' }),
+    },
+    {
+      value: 3,
+      label: '1/2',
+      title: t('dashboard.layout.width_half', { defaultValue: 'Half width (2 per row)' }),
+    },
+    {
+      value: 4,
+      label: '2/3',
+      title: t('dashboard.layout.width_twothirds', { defaultValue: 'Two-thirds width' }),
+    },
+    {
+      value: 6,
+      label: 'Full',
+      title: t('dashboard.layout.width_full', { defaultValue: 'Full width' }),
+    },
+  ];
 
   return (
     <div
@@ -101,6 +129,35 @@ function WidgetRow({ id, hidden, onToggle }: RowProps) {
         </p>
       </div>
 
+      {/* Width control - sets grid column span (affects desktop layout only) */}
+      <div className="flex shrink-0 items-center gap-1.5">
+        <span className="hidden text-2xs font-medium text-content-quaternary sm:inline">
+          {t('dashboard.layout.width', { defaultValue: 'Width' })}
+        </span>
+        <div className="inline-flex overflow-hidden rounded-md border border-border-light">
+          {widthOptions.map((opt) => {
+            const active = span === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => onSetSpan(id, opt.value)}
+                aria-label={opt.title}
+                aria-pressed={active}
+                title={opt.title}
+                className={`px-1.5 py-1 text-[11px] font-medium transition-colors ${
+                  active
+                    ? 'bg-oe-blue text-white'
+                    : 'text-content-tertiary hover:bg-surface-secondary'
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Show / hide toggle */}
       <button
         type="button"
@@ -138,8 +195,10 @@ export function DashboardLayoutManager({ onClose, className }: ManagerProps) {
   const { t } = useTranslation();
   const order = useDashboardLayoutStore((s) => s.order);
   const hidden = useDashboardLayoutStore((s) => s.hidden);
+  const spans = useDashboardLayoutStore((s) => s.spans);
   const setOrder = useDashboardLayoutStore((s) => s.setOrder);
   const toggleHidden = useDashboardLayoutStore((s) => s.toggleHidden);
+  const setSpan = useDashboardLayoutStore((s) => s.setSpan);
   const reset = useDashboardLayoutStore((s) => s.reset);
 
   const resolved = useMemo(
@@ -198,6 +257,8 @@ export function DashboardLayoutManager({ onClose, className }: ManagerProps) {
                 id={id}
                 hidden={hidden.includes(id)}
                 onToggle={toggleHidden}
+                span={spans[id] ?? DASHBOARD_WIDGET_BY_ID[id]?.defaultSpan ?? 6}
+                onSetSpan={setSpan}
               />
             ))}
           </div>

@@ -50,6 +50,8 @@ export interface DashboardWidgetMeta {
   descKey: string;
   descDefault: string;
   icon: LucideIcon;
+  /** Default width in grid columns on the 6-col dashboard grid (2=third, 3=half, 4=two-thirds, 6=full). Omit = 6 (full width). */
+  defaultSpan?: number;
 }
 
 export const DASHBOARD_WIDGETS: readonly DashboardWidgetMeta[] = [
@@ -85,6 +87,7 @@ export const DASHBOARD_WIDGETS: readonly DashboardWidgetMeta[] = [
     descKey: 'dashboard.layout.w_finance_summary_desc',
     descDefault: 'Estimated value, open change orders and budget warnings',
     icon: Wallet,
+    defaultSpan: 3,
   },
   // Interoperability: surface the ESTIMATE side's resource rollup (labour
   // hours, total resource cost, distinct resource count) next to the field
@@ -96,6 +99,7 @@ export const DASHBOARD_WIDGETS: readonly DashboardWidgetMeta[] = [
     descKey: 'dashboard.layout.w_estimate_resources_desc',
     descDefault: 'Labour hours, total resource cost and distinct resources from the estimate',
     icon: Package,
+    defaultSpan: 3,
   },
   {
     id: 'projects',
@@ -128,14 +132,7 @@ export const DASHBOARD_WIDGETS: readonly DashboardWidgetMeta[] = [
     descKey: 'dashboard.layout.w_inbox_desc',
     descDefault: 'Pending approvals and alerts awaiting you, in one list',
     icon: Inbox,
-  },
-  {
-    id: 'bim_coverage',
-    labelKey: 'dashboard.layout.w_bim',
-    labelDefault: 'BIM coverage',
-    descKey: 'dashboard.layout.w_bim_desc',
-    descDefault: 'Model coverage and linked-quantity health',
-    icon: Cpu,
+    defaultSpan: 3,
   },
   {
     id: 'quick_upload',
@@ -144,6 +141,16 @@ export const DASHBOARD_WIDGETS: readonly DashboardWidgetMeta[] = [
     descKey: 'dashboard.layout.w_upload_desc',
     descDefault: 'Drag-and-drop a drawing or document to start',
     icon: Upload,
+    defaultSpan: 3,
+  },
+  {
+    id: 'bim_coverage',
+    labelKey: 'dashboard.layout.w_bim',
+    labelDefault: 'BIM coverage',
+    descKey: 'dashboard.layout.w_bim_desc',
+    descDefault: 'Model coverage and linked-quantity health',
+    icon: Cpu,
+    defaultSpan: 3,
   },
   {
     id: 'onboarding',
@@ -214,6 +221,7 @@ export const DASHBOARD_WIDGETS: readonly DashboardWidgetMeta[] = [
     descKey: 'dashboard.layout.w_rfi_turnaround_desc',
     descDefault: 'Open and overdue requests for information, plus average response time',
     icon: HelpCircle,
+    defaultSpan: 2,
   },
   {
     id: 'submittals_pending',
@@ -222,6 +230,7 @@ export const DASHBOARD_WIDGETS: readonly DashboardWidgetMeta[] = [
     descKey: 'dashboard.layout.w_submittals_pending_desc',
     descDefault: 'Submittals pending review, approved and overdue',
     icon: FileCheck2,
+    defaultSpan: 2,
   },
   {
     id: 'inspections_quality',
@@ -230,6 +239,7 @@ export const DASHBOARD_WIDGETS: readonly DashboardWidgetMeta[] = [
     descKey: 'dashboard.layout.w_inspections_quality_desc',
     descDefault: 'Inspection pass rate with open and failed counts',
     icon: ClipboardCheck,
+    defaultSpan: 2,
   },
   {
     id: 'punch_quality',
@@ -238,6 +248,7 @@ export const DASHBOARD_WIDGETS: readonly DashboardWidgetMeta[] = [
     descKey: 'dashboard.layout.w_punch_quality_desc',
     descDefault: 'Open and overdue punch items with average time to close',
     icon: ListChecks,
+    defaultSpan: 2,
   },
 
   // ── Field ──────────────────────────────────────────────────────────────
@@ -248,6 +259,7 @@ export const DASHBOARD_WIDGETS: readonly DashboardWidgetMeta[] = [
     descKey: 'dashboard.layout.w_weather_desc',
     descDefault: "Today's weather at your first project site",
     icon: CloudSun,
+    defaultSpan: 2,
   },
   {
     id: 'labour_cost',
@@ -256,6 +268,7 @@ export const DASHBOARD_WIDGETS: readonly DashboardWidgetMeta[] = [
     descKey: 'dashboard.layout.w_labour_cost_desc',
     descDefault: 'Cumulative field labour cost against the labour budget',
     icon: HardHat,
+    defaultSpan: 2,
   },
   {
     id: 'latest_photos',
@@ -264,6 +277,7 @@ export const DASHBOARD_WIDGETS: readonly DashboardWidgetMeta[] = [
     descKey: 'dashboard.layout.w_latest_photos_desc',
     descDefault: 'Recent progress photos across your projects',
     icon: Camera,
+    defaultSpan: 3,
   },
 ] as const;
 
