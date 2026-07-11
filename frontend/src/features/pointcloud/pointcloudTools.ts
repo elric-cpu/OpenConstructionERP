@@ -13,7 +13,7 @@
  * -90 deg about X so a Z-up scan renders in three.js's Y-up world (see the
  * `points.rotation.x = -Math.PI / 2` assignment there). That rotation maps a
  * centre-relative local point (x, y, z) to the world-space point
- * (x, z, -y) — every function here that deals in "world space" (clip boxes,
+ * (x, z, -y) - every function here that deals in "world space" (clip boxes,
  * the plan-view camera target, raycast hits) uses that mapping.
  */
 
@@ -210,4 +210,320 @@ export function slugifyForFilename(label: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
   return slug || 'scan';
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Extended inspection tools: polyline path, plan area + cut/fill volume,
+// coordinate readout, preset views, on-screen decimation and CSV export.
+// All still pure and THREE-free - PointCloudViewer.tsx turns the results
+// into scene objects and owns their lifecycle.
+// ══════════════════════════════════════════════════════════════════════
+
+// ── Polyline / path measurement ─────────────────────────────────────────
+
+export interface PolylineMetrics {
+  /** Sum of every segment length walked along the path, in metres. */
+  totalLength: number;
+  /** Number of segments (vertices - 1); 0 for an empty or single-point path. */
+  segmentCount: number;
+  /** Straight-line / horizontal / vertical spread of the final segment, or
+   *  null when the path has fewer than two vertices. */
+  lastSegment: Measurement3D | null;
+  /** Straight-line distance from the first vertex to the last, in metres. */
+  straightLine: number;
+}
+
+/** Running metrics for a multi-segment measurement path - the polyline
+ *  generalisation of `computeMeasurement3D`: total walked length, the final
+ *  segment's spread and the first-to-last straight line. An empty or
+ *  single-point path yields all zeros with a null last segment. */
+export function computePolylineMetrics(points: readonly Vec3[]): PolylineMetrics {
+  if (points.length < 2) {
+    return { totalLength: 0, segmentCount: 0, lastSegment: null, straightLine: 0 };
+  }
+  let totalLength = 0;
+  for (let i = 1; i < points.length; i++) {
+    totalLength += computeMeasurement3D(points[i - 1] as Vec3, points[i] as Vec3).distance;
+  }
+  const lastSegment = computeMeasurement3D(
+    points[points.length - 2] as Vec3,
+    points[points.length - 1] as Vec3,
+  );
+  const straightLine = computeMeasurement3D(
+    points[0] as Vec3,
+    points[points.length - 1] as Vec3,
+  ).distance;
+  return { totalLength, segmentCount: points.length - 1, lastSegment, straightLine };
+}
+
+// ── Plan area + cut/fill volume on the ground plane ──────────────────────
+
+/** Plan (horizontal) area of a polygon in square metres, via the shoelace
+ *  formula on the world X/Z axes. Y is up in the viewer frame, so X/Z is the
+ *  ground plane. Fewer than three vertices encloses no area, returning 0. */
+export function polygonAreaXZ(points: readonly Vec3[]): number {
+  if (points.length < 3) return 0;
+  let twiceArea = 0;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i] as Vec3;
+    const b = points[(i + 1) % points.length] as Vec3;
+    twiceArea += a.x * b.z - b.x * a.z;
+  }
+  return Math.abs(twiceArea) / 2;
+}
+
+/** Even-odd ray-cast test: is the horizontal point (x, z) inside the polygon
+ *  on the world X/Z ground plane? A polygon of fewer than three vertices
+ *  contains nothing. Edge-exact hits are not guaranteed either way (standard
+ *  for the even-odd rule) - unproblematic for cloud sampling where a point
+ *  landing exactly on a boundary is vanishingly rare. */
+export function pointInPolygonXZ(
+  p: { x: number; z: number },
+  polygon: readonly Vec3[],
+): boolean {
+  if (polygon.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const vi = polygon[i] as Vec3;
+    const vj = polygon[j] as Vec3;
+    const straddles = vi.z > p.z !== vj.z > p.z;
+    if (straddles && p.x < ((vj.x - vi.x) * (p.z - vi.z)) / (vj.z - vi.z) + vi.x) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+export interface VolumeEstimate {
+  /** Net volume = fill - cut, in cubic metres (positive = mostly above the
+   *  reference plane). */
+  net: number;
+  /** Volume above the reference plane, in cubic metres (>= 0). */
+  fill: number;
+  /** Volume below the reference plane, in cubic metres (>= 0). */
+  cut: number;
+  /** Plan area actually covered by sampled grid cells, in square metres. */
+  area: number;
+  /** Number of grid cells that received at least one sample point. */
+  cellCount: number;
+  /** The grid cell size used, echoed back for the readout. */
+  cellSize: number;
+}
+
+/** Estimate cut / fill volume of a sampled surface against a flat reference
+ *  elevation by the grid (DEM) method: bucket every in-polygon sample into a
+ *  square cell, take each cell's mean height, then sum cell_area x (mean - ref)
+ *  as fill (above) or cut (below). This is the standard stockpile / earthwork
+ *  estimate from a raw cloud; accuracy scales with sample density and a
+ *  sensible cell size. Degenerate input (empty samples, < 3 polygon vertices,
+ *  non-positive cell size, non-finite reference) yields an all-zero estimate. */
+export function estimateVolumeVsPlane(
+  samples: readonly Vec3[],
+  polygon: readonly Vec3[],
+  referenceY: number,
+  cellSize: number,
+): VolumeEstimate {
+  const empty: VolumeEstimate = { net: 0, fill: 0, cut: 0, area: 0, cellCount: 0, cellSize };
+  if (
+    polygon.length < 3 ||
+    samples.length === 0 ||
+    !(cellSize > 0) ||
+    !Number.isFinite(referenceY)
+  ) {
+    return empty;
+  }
+
+  // Index cells from the polygon's ground-plane bounding-box origin so the
+  // grid is stable regardless of where the polygon sits in world space.
+  let minX = Infinity;
+  let minZ = Infinity;
+  for (const v of polygon) {
+    if (v.x < minX) minX = v.x;
+    if (v.z < minZ) minZ = v.z;
+  }
+  if (!Number.isFinite(minX) || !Number.isFinite(minZ)) return empty;
+
+  // Per-cell running mean of the vertical (Y) coordinate.
+  const cells = new Map<string, { sum: number; count: number }>();
+  for (const s of samples) {
+    if (!Number.isFinite(s.x) || !Number.isFinite(s.y) || !Number.isFinite(s.z)) continue;
+    if (!pointInPolygonXZ(s, polygon)) continue;
+    const ix = Math.floor((s.x - minX) / cellSize);
+    const iz = Math.floor((s.z - minZ) / cellSize);
+    const key = `${ix}:${iz}`;
+    const cell = cells.get(key);
+    if (cell) {
+      cell.sum += s.y;
+      cell.count += 1;
+    } else {
+      cells.set(key, { sum: s.y, count: 1 });
+    }
+  }
+
+  const cellArea = cellSize * cellSize;
+  let fill = 0;
+  let cut = 0;
+  for (const cell of cells.values()) {
+    const dh = cell.sum / cell.count - referenceY;
+    if (dh >= 0) fill += dh * cellArea;
+    else cut += -dh * cellArea;
+  }
+
+  return {
+    net: fill - cut,
+    fill,
+    cut,
+    area: cells.size * cellArea,
+    cellCount: cells.size,
+    cellSize,
+  };
+}
+
+// ── Point inspector: recover absolute scan coordinates ───────────────────
+
+/** Map a world-space point (the rotated, centre-relative frame the viewer's
+ *  camera and raycaster use) back to the scan's own coordinate system: undo
+ *  the viewer's -90 deg X rotation, then add the wire `center` origin that was
+ *  subtracted for float32 safety. The result is the point's real coordinate in
+ *  the file's CRS, or its local frame when the scan carried no georeference. */
+export function worldToScanCoords(
+  world: Vec3,
+  center: readonly [number, number, number],
+): Vec3 {
+  // Inverse of local (x, y, z) -> world (x, z, -y): local = (wx, -wz, wy).
+  return {
+    x: world.x + center[0],
+    y: -world.z + center[1],
+    z: world.y + center[2],
+  };
+}
+
+// ── Preset camera views ──────────────────────────────────────────────────
+
+export type PresetView = 'top' | 'front' | 'side' | 'iso';
+
+/** Camera offset from the look-at target for a named preset view, scaled so
+ *  the whole cloud fits at `distance`. World frame is Y-up (see the module
+ *  docstring). The top view carries a tiny lateral tilt so OrbitControls'
+ *  spherical coordinates stay well-defined and orbiting away from straight
+ *  down does not snap. */
+export function presetViewOffset(view: PresetView, distance: number): Vec3 {
+  const d = Number.isFinite(distance) && distance > 0 ? distance : 1;
+  switch (view) {
+    case 'top':
+      return { x: d * 0.02, y: d, z: 0 };
+    case 'front':
+      return { x: 0, y: 0, z: d };
+    case 'side':
+      return { x: d, y: 0, z: 0 };
+    case 'iso':
+    default:
+      return { x: d * 0.7, y: d * 0.55, z: d * 0.7 };
+  }
+}
+
+// ── On-screen (client-side) decimation ───────────────────────────────────
+
+/** Stride for thinning a cloud on screen to roughly `keepFraction` of its
+ *  points (draw every stride-th point). Always >= 1. A fraction >= 1 keeps
+ *  everything (stride 1); a fraction <= 0 collapses to a single point (stride
+ *  = point count). Lets the viewer keep navigation smooth on very large clouds
+ *  without re-downloading a coarser decimation from the server. */
+export function decimationStride(pointCount: number, keepFraction: number): number {
+  if (!Number.isFinite(pointCount) || pointCount <= 1) return 1;
+  if (!Number.isFinite(keepFraction) || keepFraction >= 1) return 1;
+  if (keepFraction <= 0) return pointCount;
+  return Math.min(pointCount, Math.max(1, Math.round(1 / keepFraction)));
+}
+
+// ── Display formatters (area / volume) ───────────────────────────────────
+
+/** Format a plan area for display, in square metres (ASCII "m2"). */
+export function formatAreaM2(m2: number): string {
+  if (!Number.isFinite(m2)) return '-';
+  return `${m2.toFixed(2)} m2`;
+}
+
+/** Format a volume for display, in cubic metres (ASCII "m3"). */
+export function formatVolumeM3(m3: number): string {
+  if (!Number.isFinite(m3)) return '-';
+  return `${m3.toFixed(2)} m3`;
+}
+
+// ── CSV export ────────────────────────────────────────────────────────────
+
+/** Escape one CSV field per RFC 4180: wrap in double quotes and double any
+ *  embedded quote when the value contains a comma, quote or line break. */
+function escapeCsvField(value: string | number): string {
+  const s = typeof value === 'number' ? String(value) : value;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/** Build a CSV document from a header row and body rows. Fields are escaped
+ *  per RFC 4180; rows are newline-separated. Empty `rows` yields just the
+ *  header line. */
+export function buildCsv(
+  headers: readonly string[],
+  rows: readonly (readonly (string | number)[])[],
+): string {
+  const lines = [headers.map(escapeCsvField).join(',')];
+  for (const row of rows) lines.push(row.map(escapeCsvField).join(','));
+  return lines.join('\n');
+}
+
+/** Round to at most three decimals as a plain string (no trailing-zero
+ *  padding) for compact CSV coordinate columns. Non-finite -> empty string. */
+function csvNumber(v: number): string {
+  if (!Number.isFinite(v)) return '';
+  return String(Math.round(v * 1000) / 1000);
+}
+
+export interface AnnotationExportRow {
+  index: number;
+  note: string;
+  /** Absolute scan/CRS coordinate of the pin. */
+  scan: Vec3;
+  /** Viewer-frame (rotated, centre-relative) coordinate of the pin. */
+  world: Vec3;
+}
+
+/** Serialise dropped annotations to CSV: index, note, absolute scan XYZ and
+ *  viewer-frame XYZ. */
+export function annotationsToCsv(rows: readonly AnnotationExportRow[]): string {
+  return buildCsv(
+    ['index', 'note', 'scan_x', 'scan_y', 'scan_z', 'view_x', 'view_y', 'view_z'],
+    rows.map((r) => [
+      r.index,
+      r.note,
+      csvNumber(r.scan.x),
+      csvNumber(r.scan.y),
+      csvNumber(r.scan.z),
+      csvNumber(r.world.x),
+      csvNumber(r.world.y),
+      csvNumber(r.world.z),
+    ]),
+  );
+}
+
+/** Serialise a measurement path to CSV: per vertex the absolute scan XYZ, the
+ *  segment length from the previous vertex and the cumulative walked length. */
+export function polylineToCsv(
+  points: readonly Vec3[],
+  center: readonly [number, number, number],
+): string {
+  let cumulative = 0;
+  const rows = points.map((p, i) => {
+    const scan = worldToScanCoords(p, center);
+    const segment = i === 0 ? 0 : computeMeasurement3D(points[i - 1] as Vec3, p).distance;
+    cumulative += segment;
+    return [
+      i + 1,
+      csvNumber(scan.x),
+      csvNumber(scan.y),
+      csvNumber(scan.z),
+      csvNumber(segment),
+      csvNumber(cumulative),
+    ];
+  });
+  return buildCsv(['vertex', 'scan_x', 'scan_y', 'scan_z', 'segment_m', 'cumulative_m'], rows);
 }

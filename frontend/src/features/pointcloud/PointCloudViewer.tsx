@@ -10,24 +10,32 @@
  * world origin lives in the wire ``center``.
  *
  * Controls: color mode (RGB / height ramp / intensity / single color), point
- * size, density (re-requests with a different ``max_points`` cap) and re-fit.
- * The scan may still be processing server-side: 409 / 404 / 501 / 422 map to
- * friendly status panels instead of crashing the page.
+ * size, on-screen draw density, server density (re-requests with a different
+ * ``max_points`` cap), depth cue and re-fit. The scan may still be processing
+ * server-side: 409 / 404 / 501 / 422 map to friendly status panels instead of
+ * crashing the page.
  *
  * Inspection tools (all client-side, operating on the already-loaded
  * THREE.Points - see ./pointcloudTools.ts for the pure math behind each):
  *  - Cross-section: a world-Y height band rendered via clipping planes, plus
  *    a one-click top/plan view.
- *  - Measure: click two points to raycast-pick them and read straight-line /
- *    horizontal / vertical distance.
+ *  - Measure: click points to trace a multi-segment path with a running total,
+ *    plus straight-line / horizontal / vertical spread of the final segment.
+ *  - Area & volume: draw a polygon on the ground for its plan area, then
+ *    estimate cut / fill volume against a reference elevation (grid method).
+ *  - Inspect: click a point to read its absolute scan/CRS coordinate.
+ *  - Annotate: drop labelled pins with a note, listed in a side panel.
  *  - Clip box: an adjustable axis-aligned crop, also via clipping planes.
+ *  - Preset views: top / front / side / iso plus fit-to-cloud.
  *  - Elevation legend: a height-ramp gradient key shown in "height" color
  *    mode, with an optional pinned custom range.
  *  - Snapshot: exports the current canvas view as a PNG.
+ *  - Export: measurement paths, polygons and annotations to CSV.
  * Cross-section and clip-box planes compose (a point must satisfy both) via
  * ``renderer.localClippingEnabled`` + ``material.clippingPlanes`` - no
  * geometry is rebuilt or CPU-filtered per point, so this stays smooth at
- * millions of points.
+ * millions of points. The measure / area / inspect / annotate tools share a
+ * single pick pipeline (only one owns clicks at a time via ``pickMode``).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -38,41 +46,78 @@ import {
   ArrowDownToLine,
   Camera,
   Clock,
+  CloudFog,
   Crop,
+  Crosshair,
+  Download,
+  Gauge,
   Layers,
   Loader2,
+  MapPin,
   Maximize2,
   Minus,
+  Mountain,
+  Move3d,
+  Pentagon,
   Pin,
   PinOff,
   Plus,
   RefreshCw,
   RotateCcw,
   Ruler,
+  Trash2,
+  Undo2,
   X,
 } from 'lucide-react';
 import { useThemeStore } from '@/stores/useThemeStore';
 import { fetchScanPoints, ScanPointsError } from './api';
 import { parseOepc, OepcParseError, type OepcCloud } from './oepc';
 import {
+  annotationsToCsv,
   boxPlanes,
-  computeMeasurement3D,
+  computePolylineMetrics,
+  decimationStride,
   deriveCloudBounds,
+  estimateVolumeVsPlane,
+  formatAreaM2,
   formatLengthMm,
   formatMetersLabel,
+  formatVolumeM3,
   heightSlicePlanes,
   isWithinPlanes,
+  polygonAreaXZ,
+  polylineToCsv,
+  presetViewOffset,
   scaleClipBox,
   slugifyForFilename,
+  worldToScanCoords,
   type BoxExtent,
-  type Measurement3D,
   type PlaneEq,
+  type PolylineMetrics,
+  type PresetView,
+  type Vec3,
+  type VolumeEstimate,
 } from './pointcloudTools';
 
 export type ColorMode = 'rgb' | 'height' | 'intensity' | 'single';
 
 type LoadPhase = 'loading' | 'ready' | 'error';
 type ErrorKind = 'processing' | 'notfound' | 'reader' | 'decode' | 'generic';
+
+/** The single pick tool that currently owns canvas clicks. Only one at a time
+ *  so the tools never fight each other (or OrbitControls). */
+type PickMode = 'none' | 'measure' | 'area' | 'inspect' | 'annotate';
+
+/** An in-session labelled pin dropped on the cloud. Not persisted server-side
+ *  yet; lives for the life of the viewer mount. */
+interface Annotation {
+  id: string;
+  /** Viewer-frame (rotated, centre-relative) coordinate. */
+  world: Vec3;
+  /** Absolute scan/CRS coordinate. */
+  scan: Vec3;
+  note: string;
+}
 
 /** Density presets: the server evenly decimates to at most this many points. */
 const DENSITY_OPTIONS = [
@@ -126,6 +171,19 @@ const MEASURE_COLOR = 0xffd400;
 
 /** Clip-box wireframe color - the oe-blue brand accent. */
 const CLIP_BOX_COLOR = 0x3b82f6;
+
+/** Area-polygon color (emerald) - reads as a distinct footprint outline. */
+const AREA_COLOR = 0x22c55e;
+
+/** Point-inspector marker color (cyan). */
+const INSPECT_COLOR = 0x06b6d4;
+
+/** Annotation pin color (orange). */
+const ANNOTATION_COLOR = 0xf97316;
+
+/** Upper bound on cloud samples fed to the grid volume estimate; keeps the
+ *  synchronous compute responsive on multi-million-point clouds. */
+const VOLUME_SAMPLE_BUDGET = 300_000;
 
 /** Build the per-vertex color buffer for the requested mode. `heightRange`
  *  optionally overrides the auto (bbox-derived) min/max used by the
@@ -245,21 +303,28 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
   /** Base point size derived from the cloud extent; the slider scales it. */
   const baseSizeRef = useRef(0.01);
 
-  // ── Inspection-tools refs (cross-section, measure, clip box) ─────────────
+  // ── Inspection-tools refs ────────────────────────────────────────────────
   /** Identity of the last `cloud.positions` buffer we reset tool state for -
    *  lets the reset effect tell "genuinely new/refetched data" apart from
    *  the refit-clone `{...prev}` trick in handleRefit (same typed array). */
   const lastPositionsRef = useRef<Float32Array | null>(null);
   const boxHelperRef = useRef<THREE.Box3Helper | null>(null);
-  const pendingPointRef = useRef<THREE.Vector3 | null>(null);
-  const pendingMarkerRef = useRef<THREE.Mesh | null>(null);
+  // Measure (multi-segment path): the vertices in world space + their scene
+  // line / markers. Points live in a ref so extending the path never triggers
+  // a per-vertex React re-render (only the derived metrics are state).
+  const measurePointsRef = useRef<THREE.Vector3[]>([]);
   const measureLineRef = useRef<THREE.Line | null>(null);
   const measureMarkersRef = useRef<THREE.Mesh[]>([]);
-  /** Current (possibly half-finished) measurement points in world space,
-   *  read every animation frame to keep the floating label glued to the
-   *  line's midpoint without triggering a React re-render per frame. */
-  const measurePointsRef = useRef<THREE.Vector3[]>([]);
   const measureLabelRef = useRef<HTMLDivElement | null>(null);
+  // Area / volume polygon: world-space vertices + their boundary line/markers.
+  const areaPointsRef = useRef<THREE.Vector3[]>([]);
+  const areaLineRef = useRef<THREE.Line | null>(null);
+  const areaMarkersRef = useRef<THREE.Mesh[]>([]);
+  // Point inspector: a single highlighted marker.
+  const inspectMarkerRef = useRef<THREE.Mesh | null>(null);
+  // Annotation pins: id -> marker mesh, reconciled against the annotations
+  // state by an effect below.
+  const annotationMarkersRef = useRef<Map<string, THREE.Mesh>>(new Map());
 
   const [phase, setPhase] = useState<LoadPhase>('loading');
   const [errorKind, setErrorKind] = useState<ErrorKind>('generic');
@@ -269,6 +334,8 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
   const [maxPoints, setMaxPoints] = useState<number>(1_500_000);
   const [colorMode, setColorMode] = useState<ColorMode>('single');
   const [sizeFactor, setSizeFactor] = useState(10);
+  const [drawFraction, setDrawFraction] = useState(1);
+  const [depthCue, setDepthCue] = useState(false);
   const [reloadNonce, setReloadNonce] = useState(0);
   const [webglFailed, setWebglFailed] = useState(false);
 
@@ -280,13 +347,25 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
   const [sliceMax, setSliceMax] = useState(0);
   const [clipEnabled, setClipEnabled] = useState(false);
   const [clipBox, setClipBox] = useState<BoxExtent | null>(null);
-  const [measureEnabled, setMeasureEnabled] = useState(false);
-  const [measureHasPending, setMeasureHasPending] = useState(false);
-  const [measurement, setMeasurement] = useState<Measurement3D | null>(null);
   const [heightRangeOverride, setHeightRangeOverride] = useState<{ min: number; max: number } | null>(
     null,
   );
   const [legendPinned, setLegendPinned] = useState(false);
+
+  // The active pick tool + each pick tool's derived readout state.
+  const [pickMode, setPickMode] = useState<PickMode>('none');
+  const [pathMetrics, setPathMetrics] = useState<PolylineMetrics | null>(null);
+  const [areaVertexCount, setAreaVertexCount] = useState(0);
+  const [areaPlanArea, setAreaPlanArea] = useState(0);
+  /** Lowest world-Y among the polygon vertices - the default cut/fill datum. */
+  const [areaMinY, setAreaMinY] = useState(0);
+  /** Explicit overrides for the volume estimate; null = use the derived
+   *  default (lowest boundary point / bounds-scaled cell size). */
+  const [volumeRefY, setVolumeRefY] = useState<number | null>(null);
+  const [volumeCell, setVolumeCell] = useState<number | null>(null);
+  const [volumeResult, setVolumeResult] = useState<VolumeEstimate | null>(null);
+  const [inspectResult, setInspectResult] = useState<{ world: Vec3; scan: Vec3 } | null>(null);
+  const [annotations, setAnnotations] = useState<Annotation[]>([]);
 
   // ── Scene lifecycle: one renderer per mount, disposed on unmount ─────────
   useEffect(() => {
@@ -343,12 +422,14 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
       controls.update();
       renderer.render(scene, camera);
 
-      // Keep the measure-tool label glued to the current measurement's
-      // midpoint. Reads refs only (no React state) so this costs one
-      // projection + a style write per frame, never a re-render.
+      // Keep the measure-tool label glued to the final segment's midpoint.
+      // Reads refs only (no React state) so this costs one projection + a
+      // style write per frame, never a re-render.
       const label = measureLabelRef.current;
       if (label) {
-        const [p0, p1] = measurePointsRef.current;
+        const pts = measurePointsRef.current;
+        const p0 = pts[pts.length - 2];
+        const p1 = pts[pts.length - 1];
         const cont = containerRef.current;
         if (p0 && p1 && cont) {
           const mid = p0.clone().add(p1).multiplyScalar(0.5);
@@ -387,34 +468,38 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
         scene.remove(points);
         pointsRef.current = null;
       }
-      // Inspection-tools scene objects: clip-box wireframe + any measurement
-      // line/markers. Everything else the tools touch (clipping planes,
-      // React state) needs no GPU disposal.
+      // Inspection-tools scene objects. Everything else the tools touch
+      // (clipping planes, React state) needs no GPU disposal.
       if (boxHelperRef.current) {
         scene.remove(boxHelperRef.current);
         boxHelperRef.current.dispose();
         boxHelperRef.current = null;
       }
+      const disposeMesh = (mesh: THREE.Mesh | THREE.Line) => {
+        scene.remove(mesh);
+        mesh.geometry.dispose();
+        (mesh.material as THREE.Material).dispose();
+      };
       if (measureLineRef.current) {
-        scene.remove(measureLineRef.current);
-        measureLineRef.current.geometry.dispose();
-        (measureLineRef.current.material as THREE.Material).dispose();
+        disposeMesh(measureLineRef.current);
         measureLineRef.current = null;
       }
-      for (const marker of measureMarkersRef.current) {
-        scene.remove(marker);
-        marker.geometry.dispose();
-        (marker.material as THREE.Material).dispose();
-      }
+      for (const marker of measureMarkersRef.current) disposeMesh(marker);
       measureMarkersRef.current = [];
-      if (pendingMarkerRef.current) {
-        scene.remove(pendingMarkerRef.current);
-        pendingMarkerRef.current.geometry.dispose();
-        (pendingMarkerRef.current.material as THREE.Material).dispose();
-        pendingMarkerRef.current = null;
-      }
-      pendingPointRef.current = null;
       measurePointsRef.current = [];
+      if (areaLineRef.current) {
+        disposeMesh(areaLineRef.current);
+        areaLineRef.current = null;
+      }
+      for (const marker of areaMarkersRef.current) disposeMesh(marker);
+      areaMarkersRef.current = [];
+      areaPointsRef.current = [];
+      if (inspectMarkerRef.current) {
+        disposeMesh(inspectMarkerRef.current);
+        inspectMarkerRef.current = null;
+      }
+      for (const marker of annotationMarkersRef.current.values()) disposeMesh(marker);
+      annotationMarkersRef.current.clear();
       // forceContextLoss() before dispose() so the browser reclaims the GL
       // context slot immediately; dispose() alone leaks the live context and
       // the ~8-16 context cap is hit after a few mounts (3D view unavailable).
@@ -576,6 +661,47 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
     (points.material as THREE.PointsMaterial).size = baseSizeRef.current * (sizeFactor / 10);
   }, [sizeFactor, cloud]);
 
+  // ── On-screen draw decimation: thin the loaded cloud via a stride index so
+  //    navigation stays smooth without re-downloading a coarser cloud. Runs
+  //    after the data effect (declaration order) so a rebuilt geometry gets
+  //    the index re-applied. ────────────────────────────────────────────────
+  useEffect(() => {
+    const points = pointsRef.current;
+    if (!points || !cloud || cloud.pointCount === 0) return;
+    const geometry = points.geometry;
+    const stride = decimationStride(cloud.pointCount, drawFraction);
+    if (stride <= 1) {
+      if (geometry.index) geometry.setIndex(null);
+      return;
+    }
+    const n = cloud.pointCount;
+    const kept = Math.floor((n - 1) / stride) + 1;
+    const idx = new Uint32Array(kept);
+    let w = 0;
+    for (let i = 0; i < n; i += stride) idx[w++] = i;
+    geometry.setIndex(new THREE.BufferAttribute(idx, 1));
+  }, [cloud, drawFraction]);
+
+  // ── Depth cue: fade distant points into the background with scene fog for
+  //    cheap depth perception on flat, single-color clouds. ─────────────────
+  useEffect(() => {
+    const scene = sceneRef.current;
+    const points = pointsRef.current;
+    if (!scene) return;
+    const bounds = cloud
+      ? deriveCloudBounds({ bboxMin: cloud.bboxMin, bboxMax: cloud.bboxMax, center: cloud.center })
+      : null;
+    if (depthCue && bounds) {
+      const bg = resolvedTheme === 'dark' ? BG_DARK : BG_LIGHT;
+      scene.fog = new THREE.Fog(bg, bounds.diagonal * 0.35, bounds.diagonal * 2.2);
+    } else {
+      scene.fog = null;
+    }
+    // PointsMaterial bakes fog on/off into the compiled shader; force a
+    // recompile so toggling takes effect on the already-built material.
+    if (points) (points.material as THREE.PointsMaterial).needsUpdate = true;
+  }, [depthCue, cloud, resolvedTheme]);
+
   const handleRefit = useCallback(() => {
     // Cheapest reliable re-fit: replay the data effect by cloning the cloud
     // reference (the typed arrays are shared, so this allocates nothing big).
@@ -583,10 +709,9 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
   }, []);
 
   // ══════════════════════════════════════════════════════════════════════
-  // Inspection tools: cross-section, measure, clip box, elevation legend,
-  // snapshot. Everything below operates on the already-loaded THREE.Points
-  // in-place (clipping planes / raycasts / a canvas capture) - no backend
-  // calls, no geometry rebuilds.
+  // Inspection tools. Everything below operates on the already-loaded
+  // THREE.Points in-place (clipping planes / raycasts / a canvas capture) -
+  // no backend calls, no geometry rebuilds.
   // ══════════════════════════════════════════════════════════════════════
 
   // Bounds derive from `cloud` alone, so this stays referentially stable
@@ -602,9 +727,20 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
   const sliceStep = heightSpan > 0 ? Math.max(heightSpan / 500, 0.001) : 0.01;
   const legendRange = heightRangeOverride ?? (bounds ? { min: bounds.zMin, max: bounds.zMax } : null);
 
+  /** Default grid cell size for the volume estimate, scaled off the cloud
+   *  extent so a big site and a small pile both start with a sane value. */
+  const defaultCell = useMemo(() => {
+    if (!bounds) return 0.5;
+    const c = bounds.diagonal / 100;
+    return Math.min(100, Math.max(0.05, Math.round(c * 100) / 100));
+  }, [bounds]);
+
+  const effectiveRefY = volumeRefY ?? areaMinY;
+  const effectiveCell = volumeCell ?? defaultCell;
+
   // Every clip-plane equation currently in effect (slice + box, composed as
   // an intersection - a point must clear both to stay visible). Shared by
-  // the GPU clipping-planes effect AND the measure tool's raycast filter, so
+  // the GPU clipping-planes effect AND the pick tools' raycast filter, so
   // "what you can click" always matches "what you can see".
   const activePlaneEqs = useMemo<PlaneEq[]>(() => {
     if (!bounds) return [];
@@ -620,10 +756,47 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
     return eqs;
   }, [bounds, sliceEnabled, sliceMin, sliceMax, clipEnabled, clipBox]);
 
-  /** Drop the current measurement's scene objects (line, both markers, any
-   *  half-finished pending marker) and reset the picking state. Pure ref
-   *  bookkeeping - callers decide whether to also clear the numeric result. */
-  const disposeMeasurementObjects = useCallback(() => {
+  // ── Shared scene-object builders ─────────────────────────────────────────
+  const makeMarker = useCallback(
+    (p: THREE.Vector3, colorHex: number): THREE.Mesh => {
+      const radius = Math.max((bounds?.diagonal ?? 1) / 250, 0.004);
+      const geometry = new THREE.SphereGeometry(radius, 12, 8);
+      const material = new THREE.MeshBasicMaterial({
+        color: colorHex,
+        depthTest: false,
+        transparent: true,
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.copy(p);
+      mesh.renderOrder = 998;
+      return mesh;
+    },
+    [bounds],
+  );
+
+  const buildLine = useCallback(
+    (pts: THREE.Vector3[], colorHex: number, dashed: boolean): THREE.Line => {
+      const diagonal = bounds?.diagonal ?? 1;
+      const geometry = new THREE.BufferGeometry().setFromPoints(pts);
+      const material = dashed
+        ? new THREE.LineDashedMaterial({
+            color: colorHex,
+            dashSize: Math.max(diagonal / 120, 0.01),
+            gapSize: Math.max(diagonal / 240, 0.006),
+            depthTest: false,
+            transparent: true,
+          })
+        : new THREE.LineBasicMaterial({ color: colorHex, depthTest: false, transparent: true });
+      const line = new THREE.Line(geometry, material);
+      if (dashed) line.computeLineDistances();
+      line.renderOrder = 997;
+      return line;
+    },
+    [bounds],
+  );
+
+  // ── Per-tool scene disposers (ref-only, so stable) ───────────────────────
+  const disposeMeasureScene = useCallback(() => {
     const scene = sceneRef.current;
     if (measureLineRef.current) {
       scene?.remove(measureLineRef.current);
@@ -637,75 +810,81 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
       (marker.material as THREE.Material).dispose();
     }
     measureMarkersRef.current = [];
-    if (pendingMarkerRef.current) {
-      scene?.remove(pendingMarkerRef.current);
-      pendingMarkerRef.current.geometry.dispose();
-      (pendingMarkerRef.current.material as THREE.Material).dispose();
-      pendingMarkerRef.current = null;
-    }
-    pendingPointRef.current = null;
-    measurePointsRef.current = [];
   }, []);
 
-  /** Clear the measurement entirely (scene objects + the numeric readout) -
-   *  wired to the panel's "Clear" button. */
-  const clearMeasurement = useCallback(() => {
-    disposeMeasurementObjects();
-    setMeasurement(null);
-    setMeasureHasPending(false);
-  }, [disposeMeasurementObjects]);
+  const disposeAreaScene = useCallback(() => {
+    const scene = sceneRef.current;
+    if (areaLineRef.current) {
+      scene?.remove(areaLineRef.current);
+      areaLineRef.current.geometry.dispose();
+      (areaLineRef.current.material as THREE.Material).dispose();
+      areaLineRef.current = null;
+    }
+    for (const marker of areaMarkersRef.current) {
+      scene?.remove(marker);
+      marker.geometry.dispose();
+      (marker.material as THREE.Material).dispose();
+    }
+    areaMarkersRef.current = [];
+  }, []);
 
-  const addMeasureMarker = useCallback(
-    (scene: THREE.Scene, p: THREE.Vector3): THREE.Mesh => {
-      const radius = Math.max((bounds?.diagonal ?? 1) / 250, 0.004);
-      const geometry = new THREE.SphereGeometry(radius, 12, 8);
-      const material = new THREE.MeshBasicMaterial({
-        color: MEASURE_COLOR,
-        depthTest: false,
-        transparent: true,
-      });
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.copy(p);
-      mesh.renderOrder = 998;
-      scene.add(mesh);
-      return mesh;
-    },
-    [bounds],
-  );
+  const disposeInspectMarker = useCallback(() => {
+    const scene = sceneRef.current;
+    if (inspectMarkerRef.current) {
+      scene?.remove(inspectMarkerRef.current);
+      inspectMarkerRef.current.geometry.dispose();
+      (inspectMarkerRef.current.material as THREE.Material).dispose();
+      inspectMarkerRef.current = null;
+    }
+  }, []);
 
-  const buildMeasureLine = useCallback(
-    (a: THREE.Vector3, b: THREE.Vector3): THREE.Line => {
-      const diagonal = bounds?.diagonal ?? 1;
-      const geometry = new THREE.BufferGeometry().setFromPoints([a, b]);
-      const material = new THREE.LineDashedMaterial({
-        color: MEASURE_COLOR,
-        dashSize: Math.max(diagonal / 120, 0.01),
-        gapSize: Math.max(diagonal / 240, 0.006),
-        depthTest: false,
-        transparent: true,
-      });
-      const line = new THREE.Line(geometry, material);
-      line.computeLineDistances();
-      line.renderOrder = 997;
-      return line;
-    },
-    [bounds],
-  );
+  // ── Rebuild a tool's line + markers from its ref-held vertices ───────────
+  const redrawPath = useCallback(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    disposeMeasureScene();
+    const pts = measurePointsRef.current;
+    for (const p of pts) {
+      const m = makeMarker(p, MEASURE_COLOR);
+      scene.add(m);
+      measureMarkersRef.current.push(m);
+    }
+    if (pts.length >= 2) {
+      const line = buildLine(pts, MEASURE_COLOR, true);
+      scene.add(line);
+      measureLineRef.current = line;
+    }
+  }, [disposeMeasureScene, makeMarker, buildLine]);
 
-  /** Raycast-pick against the loaded Points on a plain (non-drag) click and
-   *  advance the two-click measurement state machine. Only ever invoked via
-   *  `measureClickRef` (see the pointer-listener effect below), so it always
-   *  runs with the LATEST closure over `activePlaneEqs` / `bounds`. */
-  const handleMeasureClick = useCallback(
-    (ev: PointerEvent) => {
+  const redrawArea = useCallback(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    disposeAreaScene();
+    const pts = areaPointsRef.current;
+    for (const p of pts) {
+      const m = makeMarker(p, AREA_COLOR);
+      scene.add(m);
+      areaMarkersRef.current.push(m);
+    }
+    if (pts.length >= 2) {
+      // Close the loop once it is a real polygon so it reads as a footprint.
+      const linePts = pts.length >= 3 ? [...pts, pts[0] as THREE.Vector3] : pts;
+      const line = buildLine(linePts, AREA_COLOR, false);
+      scene.add(line);
+      areaLineRef.current = line;
+    }
+  }, [disposeAreaScene, makeMarker, buildLine]);
+
+  // ── Shared raycast: the visible cloud point under a click, or null ───────
+  const raycastVisiblePoint = useCallback(
+    (ev: PointerEvent): THREE.Vector3 | null => {
       const container = containerRef.current;
       const camera = cameraRef.current;
       const points = pointsRef.current;
-      const scene = sceneRef.current;
-      if (!container || !camera || !points || !scene) return;
+      if (!container || !camera || !points) return null;
 
       const rect = container.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return;
+      if (rect.width === 0 || rect.height === 0) return null;
       const ndc = new THREE.Vector2(
         ((ev.clientX - rect.left) / rect.width) * 2 - 1,
         -((ev.clientY - rect.top) / rect.height) * 2 + 1,
@@ -720,52 +899,66 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
       const hits = raycaster.intersectObject(points);
       // THREE.Raycaster has no notion of GPU clipping planes, so a hit here
       // can land on a point the slice/clip box currently hides. Skip those -
-      // otherwise you could "measure" a point that is not visibly there.
+      // otherwise you could pick a point that is not visibly there.
       const visible = hits.find(
         (h) => activePlaneEqs.length === 0 || isWithinPlanes(h.point, activePlaneEqs),
       );
-      if (!visible) return;
-      const hit = visible.point.clone();
-
-      if (!pendingPointRef.current) {
-        // Fresh pick: drop any earlier finished measurement and start over.
-        disposeMeasurementObjects();
-        setMeasurement(null);
-        pendingPointRef.current = hit;
-        pendingMarkerRef.current = addMeasureMarker(scene, hit);
-        measurePointsRef.current = [hit];
-        setMeasureHasPending(true);
-        return;
-      }
-
-      const a = pendingPointRef.current;
-      const b = hit;
-      const markerA = pendingMarkerRef.current;
-      pendingPointRef.current = null;
-      pendingMarkerRef.current = null;
-      setMeasureHasPending(false);
-
-      const markerB = addMeasureMarker(scene, b);
-      const line = buildMeasureLine(a, b);
-      scene.add(line);
-      measureLineRef.current = line;
-      measureMarkersRef.current = markerA ? [markerA, markerB] : [markerB];
-      measurePointsRef.current = [a, b];
-      setMeasurement(computeMeasurement3D(a, b));
+      return visible ? visible.point.clone() : null;
     },
-    [activePlaneEqs, disposeMeasurementObjects, addMeasureMarker, buildMeasureLine],
+    [activePlaneEqs],
+  );
+
+  // ── Dispatch a pick to the active tool ───────────────────────────────────
+  const handlePickClick = useCallback(
+    (ev: PointerEvent) => {
+      const scene = sceneRef.current;
+      if (!scene || !cloud) return;
+      const p = raycastVisiblePoint(ev);
+      if (!p) return;
+
+      if (pickMode === 'measure') {
+        measurePointsRef.current.push(p);
+        redrawPath();
+        setPathMetrics(computePolylineMetrics(measurePointsRef.current));
+      } else if (pickMode === 'area') {
+        areaPointsRef.current.push(p);
+        redrawArea();
+        const pts = areaPointsRef.current;
+        setAreaVertexCount(pts.length);
+        setAreaPlanArea(polygonAreaXZ(pts));
+        setAreaMinY(Math.min(...pts.map((v) => v.y)));
+        // Polygon changed - the last volume estimate no longer applies.
+        setVolumeResult(null);
+      } else if (pickMode === 'inspect') {
+        disposeInspectMarker();
+        const m = makeMarker(p, INSPECT_COLOR);
+        scene.add(m);
+        inspectMarkerRef.current = m;
+        setInspectResult({
+          world: { x: p.x, y: p.y, z: p.z },
+          scan: worldToScanCoords(p, cloud.center),
+        });
+      } else if (pickMode === 'annotate') {
+        const id = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+        setAnnotations((prev) => [
+          ...prev,
+          { id, world: { x: p.x, y: p.y, z: p.z }, scan: worldToScanCoords(p, cloud.center), note: '' },
+        ]);
+      }
+    },
+    [pickMode, cloud, raycastVisiblePoint, redrawPath, redrawArea, disposeInspectMarker, makeMarker],
   );
 
   /** DOM pointer listeners live outside React's render cycle, so they call
-   *  through this ref rather than closing over a stale `handleMeasureClick`. */
-  const measureClickRef = useRef(handleMeasureClick);
+   *  through this ref rather than closing over a stale `handlePickClick`. */
+  const pickClickRef = useRef(handlePickClick);
   useEffect(() => {
-    measureClickRef.current = handleMeasureClick;
+    pickClickRef.current = handlePickClick;
   });
 
   // ── Reset tool state when genuinely new/refetched data lands. Skips the
   //    handleRefit `{...prev}` clone (same `positions` buffer) so re-fitting
-  //    the view never wipes an in-progress slice / clip / measurement. ─────
+  //    the view never wipes an in-progress slice / measurement. ─────────────
   useEffect(() => {
     if (!cloud || !bounds) return;
     if (lastPositionsRef.current === cloud.positions) return;
@@ -778,10 +971,46 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
     setClipBox(null);
     setHeightRangeOverride(null);
     setLegendPinned(false);
-    disposeMeasurementObjects();
-    setMeasurement(null);
-    setMeasureHasPending(false);
-  }, [cloud, bounds, disposeMeasurementObjects]);
+
+    setPickMode('none');
+    disposeMeasureScene();
+    measurePointsRef.current = [];
+    setPathMetrics(null);
+    disposeAreaScene();
+    areaPointsRef.current = [];
+    setAreaVertexCount(0);
+    setAreaPlanArea(0);
+    setAreaMinY(0);
+    setVolumeRefY(null);
+    setVolumeCell(null);
+    setVolumeResult(null);
+    disposeInspectMarker();
+    setInspectResult(null);
+    setAnnotations([]);
+  }, [cloud, bounds, disposeMeasureScene, disposeAreaScene, disposeInspectMarker]);
+
+  // ── Sync annotation pin markers to the annotations state ─────────────────
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const map = annotationMarkersRef.current;
+    const liveIds = new Set(annotations.map((a) => a.id));
+    for (const [id, mesh] of map) {
+      if (!liveIds.has(id)) {
+        scene.remove(mesh);
+        mesh.geometry.dispose();
+        (mesh.material as THREE.Material).dispose();
+        map.delete(id);
+      }
+    }
+    for (const a of annotations) {
+      if (!map.has(a.id)) {
+        const m = makeMarker(new THREE.Vector3(a.world.x, a.world.y, a.world.z), ANNOTATION_COLOR);
+        scene.add(m);
+        map.set(a.id, m);
+      }
+    }
+  }, [annotations, makeMarker]);
 
   // ── Default the clip box to the full cloud bounds the first time it's
   //    enabled; later toggles keep whatever region the user set. ───────────
@@ -834,12 +1063,12 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
     helper.visible = true;
   }, [clipEnabled, clipBox]);
 
-  // ── Measure-tool pointer listeners: a plain click (down+up within a few
-  //    px, no drag) picks a point; a real orbit-drag is ignored so measuring
-  //    never fights OrbitControls, which stays enabled throughout. ─────────
+  // ── Pick-tool pointer listeners: a plain click (down+up within a few px,
+  //    no drag) picks a point; a real orbit-drag is ignored so picking never
+  //    fights OrbitControls, which stays enabled throughout. ───────────────
   useEffect(() => {
     const renderer = rendererRef.current;
-    if (!renderer || !measureEnabled) return undefined;
+    if (!renderer || pickMode === 'none') return undefined;
     const dom = renderer.domElement;
     let downX = 0;
     let downY = 0;
@@ -857,7 +1086,7 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
     };
     const onPointerUp = (ev: PointerEvent) => {
       if (ev.button !== 0 || dragging) return;
-      measureClickRef.current(ev);
+      pickClickRef.current(ev);
     };
 
     dom.addEventListener('pointerdown', onPointerDown);
@@ -867,37 +1096,93 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
       dom.removeEventListener('pointerdown', onPointerDown);
       dom.removeEventListener('pointermove', onPointerMove);
       dom.removeEventListener('pointerup', onPointerUp);
-      // Leaving measure mode drops only a half-finished pick, so re-entering
-      // later starts clean; a completed measurement stays visible until the
-      // user explicitly clears it or a new cloud loads.
-      if (pendingMarkerRef.current) {
-        sceneRef.current?.remove(pendingMarkerRef.current);
-        pendingMarkerRef.current.geometry.dispose();
-        (pendingMarkerRef.current.material as THREE.Material).dispose();
-        pendingMarkerRef.current = null;
-      }
-      pendingPointRef.current = null;
-      setMeasureHasPending(false);
     };
-  }, [measureEnabled]);
+  }, [pickMode]);
 
-  const handleTopView = useCallback(() => {
-    const camera = cameraRef.current;
-    const controls = controlsRef.current;
-    if (!camera || !controls || !bounds) return;
-    const { worldCenter, diagonal } = bounds;
-    const distance = Math.max(diagonal * 0.9, 0.5);
-    // A tiny XZ nudge (not a true 0,distance,0 vertical) keeps OrbitControls'
-    // spherical coordinates well-defined so the user can orbit away from the
-    // plan view afterwards without a gimbal-lock jump.
-    const tilt = distance * 0.02;
-    camera.position.set(worldCenter.x + tilt, worldCenter.y + distance, worldCenter.z);
-    camera.near = Math.max(diagonal / 10_000, 0.001);
-    camera.far = Math.max(diagonal * 20, 100);
-    camera.updateProjectionMatrix();
-    controls.target.set(worldCenter.x, worldCenter.y, worldCenter.z);
-    controls.update();
-  }, [bounds]);
+  /** Switch the active pick tool, toggling off if it is already selected. */
+  const togglePick = useCallback((mode: Exclude<PickMode, 'none'>) => {
+    setPickMode((prev) => (prev === mode ? 'none' : mode));
+  }, []);
+
+  const applyPreset = useCallback(
+    (view: PresetView) => {
+      const camera = cameraRef.current;
+      const controls = controlsRef.current;
+      if (!camera || !controls || !bounds) return;
+      const { worldCenter, diagonal } = bounds;
+      const distance = Math.max(diagonal * 0.9, 0.5);
+      const off = presetViewOffset(view, distance);
+      camera.position.set(worldCenter.x + off.x, worldCenter.y + off.y, worldCenter.z + off.z);
+      camera.near = Math.max(diagonal / 10_000, 0.001);
+      camera.far = Math.max(diagonal * 20, 100);
+      camera.updateProjectionMatrix();
+      controls.target.set(worldCenter.x, worldCenter.y, worldCenter.z);
+      controls.update();
+    },
+    [bounds],
+  );
+
+  // ── Measure-path handlers ────────────────────────────────────────────────
+  const undoLastPathPoint = useCallback(() => {
+    measurePointsRef.current.pop();
+    redrawPath();
+    const pts = measurePointsRef.current;
+    setPathMetrics(pts.length >= 1 ? computePolylineMetrics(pts) : null);
+  }, [redrawPath]);
+
+  const clearPath = useCallback(() => {
+    disposeMeasureScene();
+    measurePointsRef.current = [];
+    setPathMetrics(null);
+  }, [disposeMeasureScene]);
+
+  // ── Area / volume handlers ───────────────────────────────────────────────
+  const clearArea = useCallback(() => {
+    disposeAreaScene();
+    areaPointsRef.current = [];
+    setAreaVertexCount(0);
+    setAreaPlanArea(0);
+    setAreaMinY(0);
+    setVolumeResult(null);
+  }, [disposeAreaScene]);
+
+  const computeVolume = useCallback(() => {
+    const poly = areaPointsRef.current;
+    if (!cloud || poly.length < 3) return;
+    // Build decimated world-space samples: local (lx, ly, lz) -> world
+    // (lx, lz, -ly), matching the viewer's -90 deg X rotation.
+    const n = cloud.pointCount;
+    const step = Math.max(1, Math.ceil(n / VOLUME_SAMPLE_BUDGET));
+    const pos = cloud.positions;
+    const samples: Vec3[] = [];
+    for (let i = 0; i < n; i += step) {
+      const lx = pos[i * 3] ?? 0;
+      const ly = pos[i * 3 + 1] ?? 0;
+      const lz = pos[i * 3 + 2] ?? 0;
+      samples.push({ x: lx, y: lz, z: -ly });
+    }
+    const polyVecs: Vec3[] = poly.map((v) => ({ x: v.x, y: v.y, z: v.z }));
+    setVolumeResult(estimateVolumeVsPlane(samples, polyVecs, effectiveRefY, effectiveCell));
+  }, [cloud, effectiveRefY, effectiveCell]);
+
+  // ── Inspect handlers ─────────────────────────────────────────────────────
+  const clearInspect = useCallback(() => {
+    disposeInspectMarker();
+    setInspectResult(null);
+  }, [disposeInspectMarker]);
+
+  // ── Annotation handlers ──────────────────────────────────────────────────
+  const updateAnnotationNote = useCallback((id: string, note: string) => {
+    setAnnotations((prev) => prev.map((a) => (a.id === id ? { ...a, note } : a)));
+  }, []);
+
+  const removeAnnotation = useCallback((id: string) => {
+    setAnnotations((prev) => prev.filter((a) => a.id !== id));
+  }, []);
+
+  const clearAnnotations = useCallback(() => {
+    setAnnotations([]);
+  }, []);
 
   const handleClipReset = useCallback(() => {
     if (!bounds) return;
@@ -935,6 +1220,46 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
     document.body.removeChild(link);
   }, [scanLabel, scanId]);
 
+  /** Trigger a client-side CSV download with a scan-tagged filename. */
+  const downloadCsv = useCallback(
+    (suffix: string, csv: string) => {
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `pointcloud-${slugifyForFilename(scanLabel || scanId)}-${suffix}-${stamp}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    },
+    [scanLabel, scanId],
+  );
+
+  const exportPath = useCallback(() => {
+    const pts = measurePointsRef.current;
+    if (pts.length < 2 || !cloud) return;
+    downloadCsv('path', polylineToCsv(pts, cloud.center));
+  }, [cloud, downloadCsv]);
+
+  const exportArea = useCallback(() => {
+    const pts = areaPointsRef.current;
+    if (pts.length < 3 || !cloud) return;
+    downloadCsv('polygon', polylineToCsv(pts, cloud.center));
+  }, [cloud, downloadCsv]);
+
+  const exportAnnotations = useCallback(() => {
+    if (annotations.length === 0) return;
+    const rows = annotations.map((a, i) => ({
+      index: i + 1,
+      note: a.note,
+      scan: a.scan,
+      world: a.world,
+    }));
+    downloadCsv('annotations', annotationsToCsv(rows));
+  }, [annotations, downloadCsv]);
+
   const handleToggleLegendPin = useCallback(() => {
     setLegendPinned((prev) => {
       const next = !prev;
@@ -967,6 +1292,17 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
       },
     ],
     [cloud, t],
+  );
+
+  const presetButtons = useMemo(
+    () =>
+      [
+        { view: 'top' as const, label: t('pointcloud.view_top', { defaultValue: 'Top' }) },
+        { view: 'front' as const, label: t('pointcloud.view_front', { defaultValue: 'Front' }) },
+        { view: 'side' as const, label: t('pointcloud.view_side', { defaultValue: 'Side' }) },
+        { view: 'iso' as const, label: t('pointcloud.view_iso', { defaultValue: 'Iso' }) },
+      ] as const,
+    [t],
   );
 
   const errorTitle = useMemo(() => {
@@ -1008,6 +1344,8 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
         return errorDetail;
     }
   }, [errorKind, errorDetail, t]);
+
+  const toolsDisabled = phase !== 'ready' || !cloud || cloud.pointCount === 0;
 
   return (
     <div className="space-y-3">
@@ -1080,10 +1418,38 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
           />
         </div>
 
+        <div className="min-w-[140px]">
+          <label
+            htmlFor="pointcloud-draw-density"
+            className="mb-1 flex items-center gap-1 text-2xs font-semibold uppercase tracking-wider text-content-tertiary"
+          >
+            <Gauge size={11} />
+            {t('pointcloud.viewer_draw_density', { defaultValue: 'Draw density' })}
+            <span className="font-normal normal-case text-content-quaternary">
+              {Math.round(drawFraction * 100)}%
+            </span>
+          </label>
+          <input
+            id="pointcloud-draw-density"
+            type="range"
+            min={10}
+            max={100}
+            step={5}
+            value={Math.round(drawFraction * 100)}
+            onChange={(e) => setDrawFraction(Number(e.target.value) / 100)}
+            disabled={toolsDisabled}
+            className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-surface-tertiary accent-oe-blue"
+            data-testid="pointcloud-draw-density"
+            title={t('pointcloud.draw_density_hint', {
+              defaultValue: 'Thin the loaded cloud on screen for smoother navigation - no re-download.',
+            })}
+          />
+        </div>
+
         <button
           type="button"
           onClick={handleRefit}
-          disabled={phase !== 'ready' || !cloud || cloud.pointCount === 0}
+          disabled={toolsDisabled}
           className="inline-flex items-center gap-1.5 rounded-lg border border-border-light bg-surface-secondary px-3 py-1.5 text-sm text-content-secondary transition-colors hover:bg-surface-tertiary hover:text-content-primary disabled:cursor-not-allowed disabled:opacity-40"
           title={t('pointcloud.viewer_refit', { defaultValue: 'Fit view' })}
         >
@@ -1093,8 +1459,27 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
 
         <button
           type="button"
+          onClick={() => setDepthCue((v) => !v)}
+          disabled={toolsDisabled}
+          aria-pressed={depthCue}
+          className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+            depthCue
+              ? 'border-oe-blue/40 bg-oe-blue/10 text-oe-blue'
+              : 'border-border-light bg-surface-secondary text-content-secondary hover:bg-surface-tertiary hover:text-content-primary'
+          }`}
+          title={t('pointcloud.depth_cue_hint', {
+            defaultValue: 'Fade distant points for depth perception',
+          })}
+          data-testid="pointcloud-depth-cue"
+        >
+          <CloudFog size={14} />
+          {t('pointcloud.depth_cue', { defaultValue: 'Depth cue' })}
+        </button>
+
+        <button
+          type="button"
           onClick={handleSnapshot}
-          disabled={phase !== 'ready' || !cloud || cloud.pointCount === 0}
+          disabled={toolsDisabled}
           className="inline-flex items-center gap-1.5 rounded-lg border border-border-light bg-surface-secondary px-3 py-1.5 text-sm text-content-secondary transition-colors hover:bg-surface-tertiary hover:text-content-primary disabled:cursor-not-allowed disabled:opacity-40"
           title={t('pointcloud.snapshot', { defaultValue: 'Snapshot' })}
           data-testid="pointcloud-snapshot"
@@ -1113,6 +1498,26 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
         </div>
       </div>
 
+      {/* ── Preset views ───────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center gap-1 text-2xs font-semibold uppercase tracking-wider text-content-tertiary">
+          <Move3d size={12} />
+          {t('pointcloud.views_label', { defaultValue: 'Views' })}
+        </span>
+        {presetButtons.map((p) => (
+          <button
+            key={p.view}
+            type="button"
+            onClick={() => applyPreset(p.view)}
+            disabled={toolsDisabled}
+            className="inline-flex items-center rounded-lg border border-border-light bg-surface-secondary px-2.5 py-1 text-xs font-medium text-content-secondary transition-colors hover:bg-surface-tertiary hover:text-content-primary disabled:cursor-not-allowed disabled:opacity-40"
+            data-testid={`pointcloud-view-${p.view}`}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
       {/* ── Inspection tools ───────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-2xs font-semibold uppercase tracking-wider text-content-tertiary">
@@ -1120,23 +1525,47 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
         </span>
         <ToolToggleButton
           active={sliceEnabled}
-          disabled={phase !== 'ready' || !cloud || cloud.pointCount === 0}
+          disabled={toolsDisabled}
           onClick={() => setSliceEnabled((v) => !v)}
           icon={Layers}
           label={t('pointcloud.tool_slice', { defaultValue: 'Cross-section' })}
           testId="pointcloud-tool-slice"
         />
         <ToolToggleButton
-          active={measureEnabled}
-          disabled={phase !== 'ready' || !cloud || cloud.pointCount === 0}
-          onClick={() => setMeasureEnabled((v) => !v)}
+          active={pickMode === 'measure'}
+          disabled={toolsDisabled}
+          onClick={() => togglePick('measure')}
           icon={Ruler}
           label={t('pointcloud.tool_measure', { defaultValue: 'Measure' })}
           testId="pointcloud-tool-measure"
         />
         <ToolToggleButton
+          active={pickMode === 'area'}
+          disabled={toolsDisabled}
+          onClick={() => togglePick('area')}
+          icon={Pentagon}
+          label={t('pointcloud.tool_area', { defaultValue: 'Area & volume' })}
+          testId="pointcloud-tool-area"
+        />
+        <ToolToggleButton
+          active={pickMode === 'inspect'}
+          disabled={toolsDisabled}
+          onClick={() => togglePick('inspect')}
+          icon={Crosshair}
+          label={t('pointcloud.tool_inspect', { defaultValue: 'Inspect' })}
+          testId="pointcloud-tool-inspect"
+        />
+        <ToolToggleButton
+          active={pickMode === 'annotate'}
+          disabled={toolsDisabled}
+          onClick={() => togglePick('annotate')}
+          icon={MapPin}
+          label={t('pointcloud.tool_annotate', { defaultValue: 'Annotate' })}
+          testId="pointcloud-tool-annotate"
+        />
+        <ToolToggleButton
           active={clipEnabled}
-          disabled={phase !== 'ready' || !cloud || cloud.pointCount === 0}
+          disabled={toolsDisabled}
           onClick={() => setClipEnabled((v) => !v)}
           icon={Crop}
           label={t('pointcloud.tool_clip', { defaultValue: 'Clip box' })}
@@ -1195,7 +1624,7 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
           </div>
           <button
             type="button"
-            onClick={handleTopView}
+            onClick={() => applyPreset('top')}
             className="inline-flex items-center gap-1.5 rounded-lg border border-border-light bg-surface-secondary px-3 py-1.5 text-sm text-content-secondary transition-colors hover:bg-surface-tertiary hover:text-content-primary"
             title={t('pointcloud.slice_top_view', { defaultValue: 'Top / plan view' })}
             data-testid="pointcloud-top-view"
@@ -1211,29 +1640,237 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
         </div>
       )}
 
-      {(measureEnabled || measurement) && (
+      {(pickMode === 'measure' || pathMetrics) && (
         <div
           className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-border-light bg-surface-secondary/60 p-3"
           data-testid="pointcloud-measure-panel"
         >
-          {measurement ? (
+          {pathMetrics && pathMetrics.segmentCount >= 1 ? (
             <>
               <span className="text-sm font-medium text-content-primary">
-                {t('pointcloud.measure_distance', { defaultValue: 'Distance' })}:{' '}
-                {formatLengthMm(measurement.distance)}
+                {t('pointcloud.measure_total', { defaultValue: 'Path' })}:{' '}
+                {formatLengthMm(pathMetrics.totalLength)}
               </span>
               <span className="text-xs text-content-tertiary">
-                {t('pointcloud.measure_readout', {
-                  defaultValue: 'Horizontal {{h}} · Vertical {{v}}',
-                  h: formatLengthMm(measurement.horizontal),
-                  v: formatLengthMm(measurement.vertical),
+                {t('pointcloud.measure_path_readout', {
+                  defaultValue: '{{count}} segments · straight line {{straight}}',
+                  count: pathMetrics.segmentCount,
+                  straight: formatLengthMm(pathMetrics.straightLine),
                 })}
+              </span>
+              {pathMetrics.lastSegment && (
+                <span className="text-xs text-content-tertiary">
+                  {t('pointcloud.measure_last_segment', {
+                    defaultValue: 'Last segment {{d}} (H {{h}} · V {{v}})',
+                    d: formatLengthMm(pathMetrics.lastSegment.distance),
+                    h: formatLengthMm(pathMetrics.lastSegment.horizontal),
+                    v: formatLengthMm(pathMetrics.lastSegment.vertical),
+                  })}
+                </span>
+              )}
+            </>
+          ) : (
+            <span className="text-xs text-content-tertiary">
+              {t('pointcloud.measure_hint_path', {
+                defaultValue:
+                  'Click points on the cloud to trace a path; each click adds a vertex and extends the running total.',
+              })}
+            </span>
+          )}
+          {pathMetrics && (
+            <div className="ml-auto flex items-center gap-3">
+              <button
+                type="button"
+                onClick={undoLastPathPoint}
+                className="inline-flex items-center gap-1 text-xs text-content-tertiary hover:text-content-primary"
+                data-testid="pointcloud-measure-undo"
+              >
+                <Undo2 size={12} />
+                {t('pointcloud.measure_undo', { defaultValue: 'Undo point' })}
+              </button>
+              <button
+                type="button"
+                onClick={exportPath}
+                disabled={pathMetrics.segmentCount < 1}
+                className="inline-flex items-center gap-1 text-xs text-content-tertiary hover:text-oe-blue disabled:cursor-not-allowed disabled:opacity-40"
+                data-testid="pointcloud-measure-export"
+              >
+                <Download size={12} />
+                {t('pointcloud.export_csv', { defaultValue: 'Export CSV' })}
+              </button>
+              <button
+                type="button"
+                onClick={clearPath}
+                className="inline-flex items-center gap-1 text-xs text-content-tertiary underline hover:text-danger"
+                data-testid="pointcloud-measure-clear"
+              >
+                <X size={12} />
+                {t('pointcloud.measure_clear', { defaultValue: 'Clear' })}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {(pickMode === 'area' || areaVertexCount > 0) && (
+        <div
+          className="space-y-3 rounded-lg border border-border-light bg-surface-secondary/60 p-3"
+          data-testid="pointcloud-area-panel"
+        >
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            {areaVertexCount >= 3 ? (
+              <span className="text-sm font-medium text-content-primary">
+                {t('pointcloud.area_plan', { defaultValue: 'Plan area' })}: {formatAreaM2(areaPlanArea)}
+              </span>
+            ) : (
+              <span className="text-xs text-content-tertiary">
+                {t('pointcloud.area_hint', {
+                  defaultValue:
+                    'Click at least three points on the ground to outline a footprint; the plan area updates as you go.',
+                })}
+              </span>
+            )}
+            <span className="text-xs text-content-tertiary">
+              {t('pointcloud.area_vertices', {
+                defaultValue: '{{count}} vertices',
+                count: areaVertexCount,
+              })}
+            </span>
+            {areaVertexCount > 0 && (
+              <div className="ml-auto flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={exportArea}
+                  disabled={areaVertexCount < 3}
+                  className="inline-flex items-center gap-1 text-xs text-content-tertiary hover:text-oe-blue disabled:cursor-not-allowed disabled:opacity-40"
+                  data-testid="pointcloud-area-export"
+                >
+                  <Download size={12} />
+                  {t('pointcloud.export_csv', { defaultValue: 'Export CSV' })}
+                </button>
+                <button
+                  type="button"
+                  onClick={clearArea}
+                  className="inline-flex items-center gap-1 text-xs text-content-tertiary underline hover:text-danger"
+                  data-testid="pointcloud-area-clear"
+                >
+                  <X size={12} />
+                  {t('pointcloud.measure_clear', { defaultValue: 'Clear' })}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {areaVertexCount >= 3 && (
+            <div className="space-y-2 border-t border-border-light pt-2">
+              <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
+                <span className="inline-flex items-center gap-1 text-2xs font-semibold uppercase tracking-wider text-content-tertiary">
+                  <Mountain size={12} />
+                  {t('pointcloud.volume_title', { defaultValue: 'Cut / fill volume' })}
+                </span>
+                <div>
+                  <label
+                    htmlFor="pointcloud-volume-ref"
+                    className="mb-1 block text-2xs font-medium text-content-tertiary"
+                  >
+                    {t('pointcloud.volume_ref', { defaultValue: 'Reference height (m)' })}
+                  </label>
+                  <input
+                    id="pointcloud-volume-ref"
+                    type="number"
+                    step={0.1}
+                    value={Number(effectiveRefY.toFixed(2))}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      if (Number.isFinite(v)) setVolumeRefY(v);
+                    }}
+                    className="w-24 rounded border border-border-light bg-surface-secondary px-2 py-1 text-xs tabular-nums text-content-primary"
+                    data-testid="pointcloud-volume-ref"
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="pointcloud-volume-cell"
+                    className="mb-1 block text-2xs font-medium text-content-tertiary"
+                  >
+                    {t('pointcloud.volume_cell', { defaultValue: 'Cell size (m)' })}
+                  </label>
+                  <input
+                    id="pointcloud-volume-cell"
+                    type="number"
+                    min={0.05}
+                    step={0.05}
+                    value={Number(effectiveCell.toFixed(2))}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      if (Number.isFinite(v) && v > 0) setVolumeCell(v);
+                    }}
+                    className="w-24 rounded border border-border-light bg-surface-secondary px-2 py-1 text-xs tabular-nums text-content-primary"
+                    data-testid="pointcloud-volume-cell"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={computeVolume}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-oe-blue/40 bg-oe-blue/10 px-3 py-1.5 text-sm font-medium text-oe-blue transition-colors hover:bg-oe-blue/20"
+                  data-testid="pointcloud-volume-compute"
+                >
+                  <Mountain size={14} />
+                  {t('pointcloud.volume_compute', { defaultValue: 'Estimate volume' })}
+                </button>
+              </div>
+
+              {volumeResult && (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs" data-testid="pointcloud-volume-result">
+                  <span className="font-medium text-content-primary">
+                    {t('pointcloud.volume_net', { defaultValue: 'Net' })}:{' '}
+                    {formatVolumeM3(volumeResult.net)}
+                  </span>
+                  <span className="text-content-tertiary">
+                    {t('pointcloud.volume_fill', { defaultValue: 'Fill' })}{' '}
+                    {formatVolumeM3(volumeResult.fill)} · {t('pointcloud.volume_cut', { defaultValue: 'Cut' })}{' '}
+                    {formatVolumeM3(volumeResult.cut)}
+                  </span>
+                  <span className="text-content-quaternary">
+                    {t('pointcloud.volume_grid', {
+                      defaultValue: 'over {{area}} in {{cells}} cells @ {{cell}} m',
+                      area: formatAreaM2(volumeResult.area),
+                      cells: volumeResult.cellCount,
+                      cell: volumeResult.cellSize.toFixed(2),
+                    })}
+                  </span>
+                </div>
+              )}
+              <p className="text-2xs text-content-quaternary">
+                {t('pointcloud.volume_hint', {
+                  defaultValue:
+                    'Estimated by the grid method over the loaded points against the reference height. Lower the cell size or raise draw density for more detail.',
+                })}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {(pickMode === 'inspect' || inspectResult) && (
+        <div
+          className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-border-light bg-surface-secondary/60 p-3"
+          data-testid="pointcloud-inspect-panel"
+        >
+          {inspectResult ? (
+            <>
+              <span className="text-sm font-medium text-content-primary">
+                {t('pointcloud.inspect_coords', { defaultValue: 'Scan coordinate' })}
+              </span>
+              <span className="text-xs tabular-nums text-content-tertiary">
+                X {formatMetersLabel(inspectResult.scan.x)} · Y {formatMetersLabel(inspectResult.scan.y)}{' '}
+                · Z {formatMetersLabel(inspectResult.scan.z)}
               </span>
               <button
                 type="button"
-                onClick={clearMeasurement}
+                onClick={clearInspect}
                 className="ml-auto inline-flex items-center gap-1 text-xs text-content-tertiary underline hover:text-danger"
-                data-testid="pointcloud-measure-clear"
+                data-testid="pointcloud-inspect-clear"
               >
                 <X size={12} />
                 {t('pointcloud.measure_clear', { defaultValue: 'Clear' })}
@@ -1241,14 +1878,81 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
             </>
           ) : (
             <span className="text-xs text-content-tertiary">
-              {measureHasPending
-                ? t('pointcloud.measure_hint_pending', {
-                    defaultValue: 'Click a second point to complete the measurement.',
-                  })
-                : t('pointcloud.measure_hint_start', {
-                    defaultValue: 'Click two points on the cloud to measure the distance between them.',
-                  })}
+              {t('pointcloud.inspect_hint', {
+                defaultValue: 'Click any point to read its coordinate in the scan / project reference system.',
+              })}
             </span>
+          )}
+        </div>
+      )}
+
+      {(pickMode === 'annotate' || annotations.length > 0) && (
+        <div
+          className="space-y-2 rounded-lg border border-border-light bg-surface-secondary/60 p-3"
+          data-testid="pointcloud-annotate-panel"
+        >
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span className="text-xs text-content-tertiary">
+              {t('pointcloud.annotate_hint', {
+                defaultValue: 'Click a point to drop a pin, then add a short note below.',
+              })}
+            </span>
+            {annotations.length > 0 && (
+              <div className="ml-auto flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={exportAnnotations}
+                  className="inline-flex items-center gap-1 text-xs text-content-tertiary hover:text-oe-blue"
+                  data-testid="pointcloud-annotate-export"
+                >
+                  <Download size={12} />
+                  {t('pointcloud.export_csv', { defaultValue: 'Export CSV' })}
+                </button>
+                <button
+                  type="button"
+                  onClick={clearAnnotations}
+                  className="inline-flex items-center gap-1 text-xs text-content-tertiary underline hover:text-danger"
+                  data-testid="pointcloud-annotate-clear"
+                >
+                  <X size={12} />
+                  {t('pointcloud.annotate_clear_all', { defaultValue: 'Clear all' })}
+                </button>
+              </div>
+            )}
+          </div>
+          {annotations.length > 0 && (
+            <ul className="space-y-1.5">
+              {annotations.map((a, i) => (
+                <li key={a.id} className="flex items-center gap-2" data-testid="pointcloud-annotation-row">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-orange-500/15 text-2xs font-semibold text-orange-600 dark:text-orange-400">
+                    {i + 1}
+                  </span>
+                  <input
+                    type="text"
+                    value={a.note}
+                    onChange={(e) => updateAnnotationNote(a.id, e.target.value)}
+                    placeholder={t('pointcloud.annotate_note_placeholder', {
+                      defaultValue: 'Add a note (e.g. crack, spall, RFI)',
+                    })}
+                    className="min-w-0 flex-1 rounded border border-border-light bg-surface-secondary px-2 py-1 text-xs text-content-primary placeholder-content-quaternary focus:outline-none focus:ring-1 focus:ring-oe-blue"
+                    data-testid="pointcloud-annotation-note"
+                  />
+                  <span className="hidden shrink-0 text-2xs tabular-nums text-content-quaternary sm:inline">
+                    X {a.scan.x.toFixed(2)} · Y {a.scan.y.toFixed(2)} · Z {a.scan.z.toFixed(2)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeAnnotation(a.id)}
+                    aria-label={t('pointcloud.annotate_remove', { defaultValue: 'Remove pin' })}
+                    title={t('pointcloud.annotate_remove', { defaultValue: 'Remove pin' })}
+                    className="shrink-0 rounded p-1 text-content-tertiary transition-colors hover:bg-danger/10 hover:text-danger"
+                    data-testid="pointcloud-annotation-remove"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       )}
@@ -1305,6 +2009,7 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
       <div
         ref={containerRef}
         className="relative h-[480px] w-full overflow-hidden rounded-xl border border-border-light bg-surface-secondary"
+        style={{ cursor: pickMode === 'none' ? undefined : 'crosshair' }}
         data-testid="pointcloud-viewer-canvas"
         aria-label={
           scanLabel
@@ -1437,19 +2142,18 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
 
         {/* ── Measure-tool floating label: position updated imperatively
              every frame (see the animation loop) so it stays glued to the
-             line's midpoint without a per-frame React re-render. ────────── */}
-        {measurement && (
+             final segment's midpoint without a per-frame React re-render. ─ */}
+        {pathMetrics && pathMetrics.segmentCount >= 1 && (
           <div
             ref={measureLabelRef}
             className="pointer-events-none absolute left-0 top-0 z-10 -translate-x-1/2 -translate-y-[130%] whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-2xs font-medium text-white shadow-lg"
             data-testid="pointcloud-measure-label"
           >
-            <div>{formatLengthMm(measurement.distance)}</div>
+            <div>{formatLengthMm(pathMetrics.totalLength)}</div>
             <div className="text-[10px] font-normal text-white/75">
-              {t('pointcloud.measure_readout', {
-                defaultValue: 'Horizontal {{h}} · Vertical {{v}}',
-                h: formatLengthMm(measurement.horizontal),
-                v: formatLengthMm(measurement.vertical),
+              {t('pointcloud.measure_path_segments', {
+                defaultValue: '{{count}} segments',
+                count: pathMetrics.segmentCount,
               })}
             </div>
           </div>
@@ -1458,7 +2162,7 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
 
       <p className="text-2xs text-content-quaternary">
         {t('pointcloud.viewer_hint', {
-          defaultValue: 'Drag to orbit, right-drag to pan, scroll to zoom. Density re-requests a finer or coarser server-side decimation.',
+          defaultValue: 'Drag to orbit, right-drag to pan, scroll to zoom. Pick a tool, then click points on the cloud. Density re-requests a finer or coarser server-side decimation.',
         })}
       </p>
     </div>

@@ -6,16 +6,28 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  annotationsToCsv,
   boxPlanes,
+  buildCsv,
   computeMeasurement3D,
+  computePolylineMetrics,
+  decimationStride,
   deriveCloudBounds,
+  estimateVolumeVsPlane,
+  formatAreaM2,
   formatLengthMm,
   formatMetersLabel,
+  formatVolumeM3,
   heightSlicePlanes,
   isWithinPlanes,
   planeDistance,
+  pointInPolygonXZ,
+  polygonAreaXZ,
+  polylineToCsv,
+  presetViewOffset,
   scaleClipBox,
   slugifyForFilename,
+  worldToScanCoords,
 } from './pointcloudTools';
 
 describe('computeMeasurement3D', () => {
@@ -171,5 +183,294 @@ describe('slugifyForFilename', () => {
   it('falls back to "scan" when nothing usable survives', () => {
     expect(slugifyForFilename('***')).toBe('scan');
     expect(slugifyForFilename('')).toBe('scan');
+  });
+});
+
+describe('computePolylineMetrics', () => {
+  it('returns zeros with a null last segment for empty or single-point paths', () => {
+    for (const pts of [[], [{ x: 1, y: 2, z: 3 }]]) {
+      const m = computePolylineMetrics(pts);
+      expect(m.totalLength).toBe(0);
+      expect(m.segmentCount).toBe(0);
+      expect(m.lastSegment).toBeNull();
+      expect(m.straightLine).toBe(0);
+    }
+  });
+
+  it('matches the single-segment measurement for a two-point path', () => {
+    const m = computePolylineMetrics([
+      { x: 0, y: 0, z: 0 },
+      { x: 3, y: 4, z: 0 },
+    ]);
+    expect(m.segmentCount).toBe(1);
+    expect(m.totalLength).toBeCloseTo(5, 6);
+    expect(m.straightLine).toBeCloseTo(5, 6);
+    expect(m.lastSegment?.distance).toBeCloseTo(5, 6);
+    expect(m.lastSegment?.vertical).toBeCloseTo(4, 6);
+  });
+
+  it('sums every segment and reports the final segment separately', () => {
+    // An L-shape: 3 m east, then 4 m up. Total 7, straight-line 5.
+    const m = computePolylineMetrics([
+      { x: 0, y: 0, z: 0 },
+      { x: 3, y: 0, z: 0 },
+      { x: 3, y: 4, z: 0 },
+    ]);
+    expect(m.segmentCount).toBe(2);
+    expect(m.totalLength).toBeCloseTo(7, 6);
+    expect(m.straightLine).toBeCloseTo(5, 6);
+    // Last segment is the vertical 4 m leg.
+    expect(m.lastSegment?.distance).toBeCloseTo(4, 6);
+    expect(m.lastSegment?.vertical).toBeCloseTo(4, 6);
+    expect(m.lastSegment?.horizontal).toBeCloseTo(0, 6);
+  });
+});
+
+describe('polygonAreaXZ', () => {
+  it('returns 0 for degenerate polygons of fewer than three vertices', () => {
+    expect(polygonAreaXZ([])).toBe(0);
+    expect(polygonAreaXZ([{ x: 0, y: 0, z: 0 }])).toBe(0);
+    expect(polygonAreaXZ([{ x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 1 }])).toBe(0);
+  });
+
+  it('computes the area of a unit square on the X/Z plane, ignoring height', () => {
+    const square = [
+      { x: 0, y: 5, z: 0 },
+      { x: 2, y: 9, z: 0 },
+      { x: 2, y: 1, z: 2 },
+      { x: 0, y: 7, z: 2 },
+    ];
+    expect(polygonAreaXZ(square)).toBeCloseTo(4, 6);
+  });
+
+  it('is winding-order independent (absolute area)', () => {
+    const cw = [
+      { x: 0, y: 0, z: 0 },
+      { x: 0, y: 0, z: 3 },
+      { x: 3, y: 0, z: 3 },
+      { x: 3, y: 0, z: 0 },
+    ];
+    expect(polygonAreaXZ(cw)).toBeCloseTo(9, 6);
+  });
+});
+
+describe('pointInPolygonXZ', () => {
+  const square = [
+    { x: 0, y: 0, z: 0 },
+    { x: 4, y: 0, z: 0 },
+    { x: 4, y: 0, z: 4 },
+    { x: 0, y: 0, z: 4 },
+  ];
+
+  it('detects points inside and outside a square footprint', () => {
+    expect(pointInPolygonXZ({ x: 2, z: 2 }, square)).toBe(true);
+    expect(pointInPolygonXZ({ x: 5, z: 2 }, square)).toBe(false);
+    expect(pointInPolygonXZ({ x: -1, z: 2 }, square)).toBe(false);
+  });
+
+  it('returns false for a degenerate polygon', () => {
+    expect(pointInPolygonXZ({ x: 0, z: 0 }, [])).toBe(false);
+    expect(pointInPolygonXZ({ x: 0, z: 0 }, square.slice(0, 2))).toBe(false);
+  });
+});
+
+describe('estimateVolumeVsPlane', () => {
+  const square = [
+    { x: 0, y: 0, z: 0 },
+    { x: 2, y: 0, z: 0 },
+    { x: 2, y: 0, z: 2 },
+    { x: 0, y: 0, z: 2 },
+  ];
+
+  // Fill a 2x2 footprint with samples at height y = 1, one per 1 m cell.
+  const flatSamples = [
+    { x: 0.5, y: 1, z: 0.5 },
+    { x: 1.5, y: 1, z: 0.5 },
+    { x: 0.5, y: 1, z: 1.5 },
+    { x: 1.5, y: 1, z: 1.5 },
+  ];
+
+  it('estimates a flat slab volume as area x height above the reference plane', () => {
+    const v = estimateVolumeVsPlane(flatSamples, square, 0, 1);
+    expect(v.cellCount).toBe(4);
+    expect(v.area).toBeCloseTo(4, 6);
+    // 4 cells x 1 m2 x 1 m height = 4 m3 of fill, no cut.
+    expect(v.fill).toBeCloseTo(4, 6);
+    expect(v.cut).toBeCloseTo(0, 6);
+    expect(v.net).toBeCloseTo(4, 6);
+  });
+
+  it('splits fill and cut around the reference elevation', () => {
+    const mixed = [
+      { x: 0.5, y: 2, z: 0.5 }, // +2 above ref 0 -> fill
+      { x: 1.5, y: -1, z: 1.5 }, // -1 below ref 0 -> cut
+    ];
+    const v = estimateVolumeVsPlane(mixed, square, 0, 1);
+    expect(v.fill).toBeCloseTo(2, 6);
+    expect(v.cut).toBeCloseTo(1, 6);
+    expect(v.net).toBeCloseTo(1, 6);
+  });
+
+  it('ignores samples outside the polygon footprint', () => {
+    const withStray = [...flatSamples, { x: 9, y: 100, z: 9 }];
+    const v = estimateVolumeVsPlane(withStray, square, 0, 1);
+    expect(v.cellCount).toBe(4);
+    expect(v.fill).toBeCloseTo(4, 6);
+  });
+
+  it('guards degenerate input (empty, bad cell size, non-finite reference)', () => {
+    expect(estimateVolumeVsPlane([], square, 0, 1).net).toBe(0);
+    expect(estimateVolumeVsPlane(flatSamples, square, 0, 0).cellCount).toBe(0);
+    expect(estimateVolumeVsPlane(flatSamples, square, Number.NaN, 1).fill).toBe(0);
+    expect(estimateVolumeVsPlane(flatSamples, square.slice(0, 2), 0, 1).net).toBe(0);
+  });
+
+  it('skips samples carrying non-finite coordinates', () => {
+    const withNaN = [...flatSamples, { x: Number.NaN, y: 1, z: 1 }];
+    const v = estimateVolumeVsPlane(withNaN, square, 0, 1);
+    expect(v.cellCount).toBe(4);
+  });
+});
+
+describe('worldToScanCoords', () => {
+  it('undoes the viewer rotation and re-adds the wire center', () => {
+    // Forward mapping local (x, y, z) -> world (x, z, -y). Pick a local point,
+    // roll it forward by hand, then confirm the inverse recovers scan coords.
+    const center: [number, number, number] = [100, 200, 300];
+    const local = { x: 1, y: 2, z: 3 };
+    const world = { x: local.x, y: local.z, z: -local.y }; // (1, 3, -2)
+    const scan = worldToScanCoords(world, center);
+    expect(scan.x).toBeCloseTo(local.x + center[0], 6);
+    expect(scan.y).toBeCloseTo(local.y + center[1], 6);
+    expect(scan.z).toBeCloseTo(local.z + center[2], 6);
+  });
+
+  it('returns the local frame unchanged when the center is the origin', () => {
+    const scan = worldToScanCoords({ x: 5, y: 6, z: -7 }, [0, 0, 0]);
+    expect(scan).toEqual({ x: 5, y: 7, z: 6 });
+  });
+});
+
+describe('presetViewOffset', () => {
+  it('places the top view mostly overhead with a small anti-gimbal tilt', () => {
+    const o = presetViewOffset('top', 10);
+    expect(o.y).toBe(10);
+    expect(o.z).toBe(0);
+    expect(o.x).toBeGreaterThan(0);
+    expect(o.x).toBeLessThan(1);
+  });
+
+  it('aligns front and side views to single axes', () => {
+    expect(presetViewOffset('front', 8)).toEqual({ x: 0, y: 0, z: 8 });
+    expect(presetViewOffset('side', 8)).toEqual({ x: 8, y: 0, z: 0 });
+  });
+
+  it('offsets the iso view on all three axes', () => {
+    const o = presetViewOffset('iso', 10);
+    expect(o.x).toBeGreaterThan(0);
+    expect(o.y).toBeGreaterThan(0);
+    expect(o.z).toBeGreaterThan(0);
+  });
+
+  it('falls back to a unit distance for non-positive or non-finite input', () => {
+    expect(presetViewOffset('side', 0)).toEqual({ x: 1, y: 0, z: 0 });
+    expect(presetViewOffset('front', Number.NaN)).toEqual({ x: 0, y: 0, z: 1 });
+  });
+});
+
+describe('decimationStride', () => {
+  it('keeps every point at full fraction', () => {
+    expect(decimationStride(1000, 1)).toBe(1);
+    expect(decimationStride(1000, 2)).toBe(1);
+  });
+
+  it('derives an integer stride from the keep fraction', () => {
+    expect(decimationStride(1000, 0.5)).toBe(2);
+    expect(decimationStride(1000, 0.25)).toBe(4);
+    expect(decimationStride(1000, 0.1)).toBe(10);
+  });
+
+  it('collapses to the point count for a zero or negative fraction', () => {
+    expect(decimationStride(1000, 0)).toBe(1000);
+    expect(decimationStride(1000, -0.5)).toBe(1000);
+  });
+
+  it('never returns less than 1 and tolerates tiny clouds', () => {
+    expect(decimationStride(1, 0.5)).toBe(1);
+    expect(decimationStride(0, 0.5)).toBe(1);
+    expect(decimationStride(Number.NaN, 0.5)).toBe(1);
+  });
+});
+
+describe('formatAreaM2 + formatVolumeM3', () => {
+  it('renders two-decimal ASCII units', () => {
+    expect(formatAreaM2(12.345)).toBe('12.35 m2');
+    expect(formatVolumeM3(5.5)).toBe('5.50 m3');
+  });
+
+  it('falls back gracefully for non-finite input', () => {
+    expect(formatAreaM2(Number.NaN)).toBe('-');
+    expect(formatVolumeM3(Number.POSITIVE_INFINITY)).toBe('-');
+  });
+});
+
+describe('buildCsv', () => {
+  it('joins headers and rows, escaping commas, quotes and newlines', () => {
+    const csv = buildCsv(
+      ['a', 'b'],
+      [
+        [1, 'x,y'],
+        ['q"e', 'line\nbreak'],
+      ],
+    );
+    expect(csv).toBe('a,b\n1,"x,y"\n"q""e","line\nbreak"');
+  });
+
+  it('emits just the header line for empty rows', () => {
+    expect(buildCsv(['one', 'two'], [])).toBe('one,two');
+  });
+});
+
+describe('annotationsToCsv', () => {
+  it('serialises pins with note and both coordinate frames', () => {
+    const csv = annotationsToCsv([
+      {
+        index: 1,
+        note: 'crack',
+        scan: { x: 10.1234, y: 20, z: 30 },
+        world: { x: 1, y: 2, z: 3 },
+      },
+    ]);
+    const [header, row] = csv.split('\n');
+    expect(header).toBe('index,note,scan_x,scan_y,scan_z,view_x,view_y,view_z');
+    expect(row).toBe('1,crack,10.123,20,30,1,2,3');
+  });
+
+  it('quotes a note containing a comma', () => {
+    const csv = annotationsToCsv([
+      { index: 2, note: 'spall, east face', scan: { x: 0, y: 0, z: 0 }, world: { x: 0, y: 0, z: 0 } },
+    ]);
+    expect(csv.split('\n')[1]).toContain('"spall, east face"');
+  });
+});
+
+describe('polylineToCsv', () => {
+  it('reports per-vertex scan coordinates plus segment and cumulative length', () => {
+    const csv = polylineToCsv(
+      [
+        { x: 0, y: 0, z: 0 },
+        { x: 3, y: 0, z: 0 },
+        { x: 3, y: 0, z: 4 },
+      ],
+      [0, 0, 0],
+    );
+    const rows = csv.split('\n');
+    expect(rows[0]).toBe('vertex,scan_x,scan_y,scan_z,segment_m,cumulative_m');
+    // First vertex has a zero segment and cumulative.
+    expect(rows[1]).toBe('1,0,0,0,0,0');
+    // Second vertex: 3 m segment, 3 m cumulative.
+    expect(rows[2]?.endsWith('3,3')).toBe(true);
+    // Third vertex: 4 m segment, 7 m cumulative.
+    expect(rows[3]?.endsWith('4,7')).toBe(true);
   });
 });
