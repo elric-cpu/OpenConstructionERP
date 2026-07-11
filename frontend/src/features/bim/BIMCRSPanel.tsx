@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * BIMCRSPanel — surfaces the auto-detected Coordinate Reference System
  * (CRS) for the active BIM model.

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Tests for the Pivot aggregation helpers — especially the new `count` and
  * `count_unique` functions added in Q2. These run purely client-side

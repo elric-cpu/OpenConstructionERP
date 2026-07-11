@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * `<TripletBlock>` — paired attribute + constraint shown side-by-side with a
  * thin divider. The triplet is the atomic unit of a predicate (FR-1.6).

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /* Right-click context menu for a file row/tile. Backed by floating div
    positioned at the cursor; closes on outside click, scroll, Escape, or
    another contextmenu event. All actions reuse existing endpoints:

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Registry of COLLAPSED module info cards on the current page.
  *

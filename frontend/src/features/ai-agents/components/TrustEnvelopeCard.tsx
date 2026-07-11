@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // Trust & verification card for a completed agent run.
 //
 // The single biggest barrier construction teams report to AI adoption is

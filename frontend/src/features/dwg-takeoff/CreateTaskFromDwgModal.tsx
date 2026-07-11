@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * CreateTaskFromDwgModal — inline "+ New task" flow from the DWG takeoff
  * viewer.

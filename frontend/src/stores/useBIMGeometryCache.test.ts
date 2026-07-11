@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Unit tests for the BIM geometry-cache LRU. Confirms entry/eviction
  * invariants so the cache stays small in practice.

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Performance scorecard tile — four sparkline-style dials (Safety,
  * Quality, Schedule, Cost) + an overall score with a trend arrow vs

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // OpenConstructionERP — DataDrivenConstruction (DDC)
 // AI Estimate Builder — conversational intake v2 (editable group board).
 // Copyright (c) 2026 Artem Boiko / DataDrivenConstruction

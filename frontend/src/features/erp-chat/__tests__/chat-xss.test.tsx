@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // OpenConstructionERP — chat XSS regression suite.
 //
 // Security audit 2026-05-24 finding #1: the chat surfaces

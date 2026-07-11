@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * ManageTemplatesModal — list built-in + custom report templates and
  * create / delete project-scoped custom ones.

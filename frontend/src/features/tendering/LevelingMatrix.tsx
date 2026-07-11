@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Bid leveling matrix — rows = reference BOQ lines, columns = bids. Each
  * cell shows the raw vs leveled price for one (line × bidder) pair and is

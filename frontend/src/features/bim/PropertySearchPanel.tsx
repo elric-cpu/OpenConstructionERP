@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * PropertySearchPanel — DuckDB-backed property search for the BIM viewer
  * (v3.12.0 / Stream D).

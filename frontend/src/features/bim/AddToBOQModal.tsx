@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * AddToBOQModal - link a BIM element (or a filtered subset) to a BOQ
  * position.  Two tabs:

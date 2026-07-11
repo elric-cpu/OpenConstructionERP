@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /** Grid view of files — default right-pane layout. */
 
 import { useTranslation } from 'react-i18next';

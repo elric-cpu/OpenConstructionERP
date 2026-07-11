@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * InstallConverterPrompt — modal shown when the user tries to upload a
  * native CAD file (.rvt / .dwg / .dgn) but the matching DDC converter

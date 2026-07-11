@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // OpenConstructionERP — DataDrivenConstruction (DDC)
 // Tests for normalizePackLocale: maps a partner pack's BCP-47 default_locale to
 // a supported base UI language, so an active pack forces the right language

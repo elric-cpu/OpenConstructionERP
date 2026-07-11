@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import { useCallback } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import type { Layout } from 'react-resizable-panels';

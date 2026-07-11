@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Tests for the self-contained scale auto-detect widget:
  *   1. While the detect request is in flight it shows a "checking" line.

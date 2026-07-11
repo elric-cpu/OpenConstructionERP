@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * useSmartViewShortcuts — small persistence layer for the BIM Smart View
  * builder.  Tracks two lists per project, both in ``localStorage``:

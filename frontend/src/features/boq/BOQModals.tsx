@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * BOQModals — Cost Database Search Modal and Assembly Picker Modal
  * for the BOQ Editor.

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * CostPerAreaBenchmark - a compact strip under the estimate totals that shows
  * the cost per square metre and positions it against the tenant's own past

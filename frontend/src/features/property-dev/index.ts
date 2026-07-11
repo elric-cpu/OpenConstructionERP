@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 export { PropertyDevPage } from './PropertyDevPage';
 export { InventoryMapPage } from './InventoryMapPage';
 export { TaxQuotePanel } from './TaxQuotePanel';

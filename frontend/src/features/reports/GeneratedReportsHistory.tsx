@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // <GeneratedReportsHistory> — recent reports panel for /reports.
 // Wave V_REPORTING audit closed a gap: backend already persists every
 // render via GET /api/v1/reporting/reports/?project_id=X

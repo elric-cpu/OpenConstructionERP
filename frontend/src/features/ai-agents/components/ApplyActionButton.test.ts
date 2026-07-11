@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // Unit tests for the BOQ-proposal extractor used by ApplyActionButton (Item 29).
 // Pure function — no DOM / router needed.
 import { describe, it, expect } from 'vitest';

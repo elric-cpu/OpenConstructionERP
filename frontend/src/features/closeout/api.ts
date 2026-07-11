@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import { apiGet, apiPost, apiPatch, apiDelete, getAuthToken } from '@/shared/lib/api';
 
 const BASE = '/v1/closeout';

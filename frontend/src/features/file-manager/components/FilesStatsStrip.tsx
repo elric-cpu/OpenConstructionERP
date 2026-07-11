@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // FilesStatsStrip — landing-view KPI strip + storage-by-kind breakdown.
 //
 // Reads off the file tree (no extra API call) so it appears instantly once

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // AI feedback summary - the read side of the generic trust loop.
 //
 // Every thumbs up / down a user records on a non-run AI surface (the AI

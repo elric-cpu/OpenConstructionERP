@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Shared constants, type aliases and tiny helpers used by the
  * per-tab modules under ``./tabs/*``.

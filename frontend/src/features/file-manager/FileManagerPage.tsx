@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /** Project File Manager — Issue #109.
  *
  * Unified file & folder hub. The default view (no category selected) is

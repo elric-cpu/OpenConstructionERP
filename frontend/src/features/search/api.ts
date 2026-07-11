@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * API client for the unified semantic search backend (`/api/v1/search/`)
  * and the per-module similar-items endpoints.

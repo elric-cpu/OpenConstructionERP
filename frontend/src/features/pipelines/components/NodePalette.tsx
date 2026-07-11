@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * `<NodePalette>` — categorized list of node types, populated from
  * `GET /node-types/`. Cloned from EAC `EacBlockPalette`: 260 px collapsible

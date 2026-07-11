@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * LinkedPositionsModal — Issue #127 ("utilizar varias veces el mismo Codigo
  * de Seccion, Partida, Recurso").

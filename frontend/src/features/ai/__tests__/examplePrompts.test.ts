@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // OpenConstructionERP — DataDrivenConstruction (DDC)
 // Tests for the built-in example-prompt catalogue.
 import { describe, expect, it } from 'vitest';

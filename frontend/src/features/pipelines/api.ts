@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * React Query hooks for the Pipeline Builder, bound to the pinned REST
  * contract (built in parallel on the backend — do not deviate). Every read

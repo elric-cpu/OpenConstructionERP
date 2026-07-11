@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /** Wire types for the file manager (Issue #109).
  *
  * These mirror the Pydantic schemas in

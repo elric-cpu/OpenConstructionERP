@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * House Types tab - grid view of reusable house templates (semi /
  * detached / terrace) with their variants summarised as inline

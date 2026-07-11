@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * useBIMMeasurementsStore — projected view-state of the MeasureManager's
  * measurement list, in a form the React UI can render.

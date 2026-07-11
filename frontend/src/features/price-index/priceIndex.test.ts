@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // Unit tests for the pure price-index helpers. No DOM / network needed - these
 // exercise the string/number helpers the page relies on for validation and
 // display, keeping money and factors as exact strings (never float math).

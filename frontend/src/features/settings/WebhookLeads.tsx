@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * WebhookLeads — Settings → Modules admin UI for the oe_webhook_leads
  * backend module (incoming webhook → CRM lead).

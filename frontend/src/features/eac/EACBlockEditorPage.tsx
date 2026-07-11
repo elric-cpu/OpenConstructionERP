@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * `<EACBlockEditorPage>` — full-screen page that mounts the visual block
  * editor for a given EAC ruleset id (URL param `eacId`).

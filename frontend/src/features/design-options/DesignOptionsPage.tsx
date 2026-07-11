@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * DesignOptionsPage - compare competing design options for a project side by
  * side. Each option carries its own model, which is converted and priced into

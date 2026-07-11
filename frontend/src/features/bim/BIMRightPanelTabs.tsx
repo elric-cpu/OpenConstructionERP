@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * BIMRightPanelTabs — four-tab container for the BIM viewer right sidebar
  * (RFC 19 §4.5).

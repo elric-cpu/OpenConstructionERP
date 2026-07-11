@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * LinkActivityToBIMModal — pick a schedule activity and link it to one or
  * more BIM elements (4D linking).

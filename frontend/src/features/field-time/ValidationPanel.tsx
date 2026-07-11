@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * <ValidationPanel> - traffic-light view of a timesheet's validation
  * report, consistent with how the platform surfaces validation elsewhere

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import { useState, useEffect, useRef } from 'react';
 import { apiGet } from '@/shared/lib/api';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';

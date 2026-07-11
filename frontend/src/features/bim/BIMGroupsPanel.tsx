@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * BIMGroupsPanel -- dedicated panel showing all saved element groups with
  * aggregate quantities, BOQ links, and one-click 3D isolation.

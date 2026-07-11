@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Price Index - bring costs from a base period and region to a target period
  * and region using stored construction cost index series and regional factors.

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * ThresholdRulesModal — UI for editing conditional-formatting rules that
  * colour Data Explorer pivot cells.

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Pure-function tests for the field-tag helpers behind FieldImageToggle
  * (#284 follow-up). The "field" tag is the canonical signal that opts a

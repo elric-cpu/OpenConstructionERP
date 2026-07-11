@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /** Resumable (chunked) upload client.
  *
  * Drives the backend ``/api/v1/resumable-uploads`` endpoints so a large

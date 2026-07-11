@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /** PathBar — intentionally hidden.
  *
  * Earlier revisions surfaced the absolute filesystem paths used by the

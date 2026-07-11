@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * SaveGroupModal — turn the user's current viewer filter into a saved
  * `BIMElementGroup`.  Tiny modal: name + description + dynamic/static toggle.

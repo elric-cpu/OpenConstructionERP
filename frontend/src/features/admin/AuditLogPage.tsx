@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Audit Log Page — read-only timeline of every audit-bearing change in
  * the system.  Gated on the backend by `audit.view` (Manager+) and

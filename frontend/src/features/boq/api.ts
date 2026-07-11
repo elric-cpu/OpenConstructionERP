@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import { apiGet, apiPost, apiPut, apiPatch, apiDelete } from '@/shared/lib/api';
 import type { CostVariant, VariantStats } from '@/features/costs/api';
 import { resourceAwareTotalInBase } from './boqHelpers';

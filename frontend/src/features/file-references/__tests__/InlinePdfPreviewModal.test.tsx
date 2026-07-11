@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Tests for the reusable inline PDF preview modal (#246). The protected-blob
  * fetch is mocked so we assert the modal's open/close, render, and action

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import { useMemo, useState } from 'react';
 import { ThumbsUp, ThumbsDown } from 'lucide-react';
 import DOMPurify from 'isomorphic-dompurify';

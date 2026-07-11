@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Unit tests for the shared currency-catalogue helpers used by the cost
  * catalog, assembly create, and regional-default currency pickers.

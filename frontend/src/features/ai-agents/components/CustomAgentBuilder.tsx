@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // Create / edit a user-authored AI agent — a simple, guided builder.
 //
 // The whole point is that a non-technical estimator never writes a raw system

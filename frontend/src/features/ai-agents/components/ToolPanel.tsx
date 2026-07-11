@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // Tool picker for the custom-agent builder (Item 29).
 //
 // Lists every tool the runner can dispatch to and lets the operator grant a

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /** Folder-card grid — default landing view for the unified files hub.
  *
  * One card per category from the file tree. Click → drill into the

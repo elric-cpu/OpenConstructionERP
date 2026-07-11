@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /** Modal that mints a signed download URL with a chosen TTL. */
 
 import { useEffect, useState } from 'react';

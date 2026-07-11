@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * `<RunDock>` — bottom run dock (collapsed 28 px status strip → expanded
  * timeline). Cloned conceptually from the EAC toolbar/dock idiom but kept to

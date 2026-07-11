@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Tests for shared resource-type helpers — ensures all 21 supported
  * locales translate the canonical types and the helper falls back

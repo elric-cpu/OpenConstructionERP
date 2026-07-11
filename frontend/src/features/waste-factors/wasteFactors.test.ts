@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // Unit tests for the pure waste-factor helpers. No DOM / network needed - they
 // exercise the parsing and display helpers the page relies on, keeping every
 // quantity and factor an exact string (never float math).

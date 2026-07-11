@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * API helpers for the Tendering module — integrated-5D-estimating-suite-style addenda + bid leveling.
  *

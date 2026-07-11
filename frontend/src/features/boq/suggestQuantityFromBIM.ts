@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * suggestQuantityFromBIM - pick the most relevant geometric/quantitative
  * value from a set of BIM elements for a given BOQ position unit.

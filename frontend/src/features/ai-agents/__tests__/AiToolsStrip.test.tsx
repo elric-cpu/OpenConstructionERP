@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // OpenConstructionERP - AI tools cross-link strip (CONN-82).
 //
 // The four AI surfaces (Agents, Cost Advisor, Chat, Quick Estimate) are

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * BIMConverterStatusBanner — always-visible health panel for the four DDC
  * converters needed by the BIM Hub drag-and-drop (.rvt / .ifc / .dwg / .dgn).

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // Presentation metadata for the AI-agents gallery: icon resolution, friendly
 // tool labels, and category grouping. Kept framework-light (no JSX here) so it
 // can be imported by both the gallery and the run timeline.

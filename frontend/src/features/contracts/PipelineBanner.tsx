@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import clsx from 'clsx';

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Pure derivations for the earned-value (EVM) panel and the 4D snapshot
  * scrubber. No React, no network, no DOM - everything here is unit-testable

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * LinkActivityToDwgModal — pick a schedule activity and link it to one
  * or more DWG entities (4D linking from the drawing side).

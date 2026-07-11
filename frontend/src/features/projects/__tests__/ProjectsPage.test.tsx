@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import { describe, it, expect } from 'vitest';
 import { isProjectFilterActive, buildStatusFilterOptions } from '../ProjectsPage';
 import { CURATED_PROJECT_STATUSES } from '../ProjectStatusBadge';

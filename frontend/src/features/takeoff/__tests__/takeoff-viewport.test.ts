@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Pure viewport-math tests for the PDF takeoff viewer: clamp, fit, zoom-to-
  * selection, zoom-at-cursor re-anchor, ortho snap and the live draw readout.

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Parser for the OEPC binary point buffer the backend streams from
  * GET /api/v1/pointcloud/scans/{scan_id}/points.

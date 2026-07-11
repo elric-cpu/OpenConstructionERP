@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Community acknowledgments - the people who shaped OpenConstructionERP by
  * reporting issues, asking questions and funding the work.

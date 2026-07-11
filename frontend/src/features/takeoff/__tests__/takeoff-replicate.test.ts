@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Pure tests for replicating measurements onto other pages (issue #332 wave,
  * the "typical floor" copy shortcut).

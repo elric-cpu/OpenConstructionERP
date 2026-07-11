@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { boqApi, type CostAutocompleteItem } from './api';
 import { getIntlLocale } from '@/shared/lib/formatters';

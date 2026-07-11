@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import { describe, it, expect } from 'vitest';
 import { reverseOperation, applyOperation, type TakeoffState } from '../lib/takeoff-undo';
 import type { Measurement } from '../lib/takeoff-types';

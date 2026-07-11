@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /** Bulk-actions bar — visible when one or more files are selected.
  *
  * Bulk delete dispatches per-kind:

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * BIM category taxonomy — bucket raw RVT categories and IFC entities
  * into a small set of semantic groups that estimators actually care about.

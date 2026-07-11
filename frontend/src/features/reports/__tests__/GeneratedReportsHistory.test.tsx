@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // Tests for <GeneratedReportsHistory> (Wave V_REPORTING).
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';

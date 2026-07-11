@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /** Table view of files — alternative to FileGrid. */
 
 import { useTranslation } from 'react-i18next';

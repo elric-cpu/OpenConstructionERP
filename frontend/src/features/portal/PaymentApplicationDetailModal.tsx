@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Read-only detail modal for one of the subcontractor's payment applications.
  * Shows the work-package lines (claimed / certified / approved) and the

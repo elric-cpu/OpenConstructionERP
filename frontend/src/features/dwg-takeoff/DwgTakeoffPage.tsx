@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * DWG Takeoff page - upload DWG/DXF drawings, view entities in a Canvas2D
  * renderer, toggle layers, and create measurement annotations.

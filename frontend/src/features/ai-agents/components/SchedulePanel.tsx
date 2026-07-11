@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // Schedule panel for the custom-agent builder (Item 29).
 //
 // Lets a non-technical user put an agent on a recurring schedule without ever

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * useLLMRun — shared hook for any AI/LLM-bound async operation in the
  * AI feature module. Replaces ad-hoc `useState + try/catch` patterns

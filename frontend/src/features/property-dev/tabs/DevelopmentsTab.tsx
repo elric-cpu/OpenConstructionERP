@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Developments tab — grid of development cards. Drives the primary
  * "drill into plots" path from the top-level Developments view.

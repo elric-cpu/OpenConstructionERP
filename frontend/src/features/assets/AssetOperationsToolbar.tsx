@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Drop-in toolbar for the Asset Register: "Discover assets" + "Warranty
  * alerts". Sits above the register list. Keeps the discovery modal state

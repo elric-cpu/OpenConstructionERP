@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Shared currency catalogue — single source of truth for the project
  * currency picker, used by both ``CreateProjectPage`` (modal/page) and

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Plots tab — grid view of plot tiles with status filter chips.
  * Extracted from the monolithic ``PropertyDevPage.tsx``. Tile colours

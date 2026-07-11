@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * useMarkups - React-Query hook that loads markups for a single
  * (document, page) pair and exposes a per-markup comment-count map for

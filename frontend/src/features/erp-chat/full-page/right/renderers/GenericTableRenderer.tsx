@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 export default function GenericTableRenderer({ data }: { data: unknown }) {
   const rows: Record<string, unknown>[] = Array.isArray(data) ? data : [];
 

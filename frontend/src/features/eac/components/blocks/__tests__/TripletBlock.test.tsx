@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * TripletBlock unit tests — render the inner attribute and constraint blocks
  * side-by-side with the divider.

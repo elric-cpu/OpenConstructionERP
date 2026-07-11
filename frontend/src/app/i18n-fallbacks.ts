@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Test-only aggregator. Re-exports every per-locale resource as a single
  * ``fallbackResources`` object so existing tests (notably

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /** Modal for managing per-folder permissions.
  *
  * Opens from the gear icon on a folder card (owner-only). Lists the

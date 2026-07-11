@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // Accuracy scoreboard - the AI trust moat made visible.
 //
 // Construction teams' #1 stated barrier to trusting AI is accuracy: a model

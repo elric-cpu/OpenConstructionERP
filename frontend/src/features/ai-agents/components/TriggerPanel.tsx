@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // Trigger panel for the custom-agent builder (Item 29).
 //
 // Lets a user subscribe an agent to platform events so it runs automatically

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // EVM (earned value) panel - surfaces the existing schedule earned-value data
 // (PV/EV/AC, BAC, SPI/CPI and the CPI-method forecast EAC/ETC/VAC) for one
 // schedule at a data date. Reuses the shared StatCard/Card/Badge kit; all

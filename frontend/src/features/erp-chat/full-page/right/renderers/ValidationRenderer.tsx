@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import { useState } from 'react';
 import { unwrapList, toNum } from './normalize';
 import { validationPath } from './deepLink';

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Inventory Ageing (task #140) — days-on-market histogram with a new
  * "Reserved, no contract" bucket for plots with an active Reservation

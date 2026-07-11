@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /* CDE (Common Data Environment) state badges per ISO 19650 / BS 1192.
    Maps lifecycle state to a colored chip:
      wip       — Work in Progress (gray)

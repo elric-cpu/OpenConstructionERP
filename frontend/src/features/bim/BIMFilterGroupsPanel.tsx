@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * BIMFilterGroupsPanel — thin tabbed wrapper that merges the two
  * BIM sidebar panels (filters + saved groups) into a single

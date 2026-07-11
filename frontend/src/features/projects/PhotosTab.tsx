@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * PhotosTab — project-detail tab showing all photo uploads as a
  * masonry-style grid with filter, sort, search, upload CTA and a

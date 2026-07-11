@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * BOQSummaryPanel — Quality score ring, Tips panel, Empty state onboarding,
  * and Quick Add FAB for the BOQ Editor.

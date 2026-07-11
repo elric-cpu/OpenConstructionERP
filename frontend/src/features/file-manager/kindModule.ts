@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import { BarChart3, Box, Eye, FileBarChart, FileText, Image as ImageIcon, MapPin, Package, Pencil, PenTool, PlayCircle, Radar, Ruler, type LucideIcon } from 'lucide-react';
 import type { FileKind } from './types';
 

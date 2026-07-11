@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * BOQVariablesDialog — manage per-BOQ named variables ($GFA, $LABOR_RATE …).
  *

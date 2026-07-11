@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Tests for the IFC spatial structure tree (B3): grouping, click-to-select,
  * node highlight, search filtering, and the empty state.

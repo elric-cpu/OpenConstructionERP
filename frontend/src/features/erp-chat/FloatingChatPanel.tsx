@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Floating chat panel — sliding side drawer (or full-screen sheet on
  * mobile) that talks to the same backend SSE endpoint as the full-page

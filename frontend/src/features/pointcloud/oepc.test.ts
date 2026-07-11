@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Unit tests for the OEPC binary parser. Builds the buffer byte by byte with a
  * DataView (little-endian), exactly mirroring the packer in

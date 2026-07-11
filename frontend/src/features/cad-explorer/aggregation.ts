@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Aggregation helpers shared by the Charts tab, Pivot tab and the
  * analysis-state tests. Pure functions — no React / store imports so

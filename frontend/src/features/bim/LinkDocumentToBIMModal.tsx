@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * LinkDocumentToBIMModal — pick an existing document and link it to one
  * or more BIM elements without leaving the viewer.

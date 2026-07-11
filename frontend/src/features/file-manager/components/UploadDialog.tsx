@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /** Upload dialog — multi-file uploader for the file manager.
  *
  * Routes each upload to the endpoint that owns its kind so files land in

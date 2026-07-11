@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /** Public share-link landing page (``/share/:token``).
  *
  * Rendered for unauthenticated visitors who follow a share URL.

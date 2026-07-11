@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * AttachExistingFileModal - pick one or more files that are ALREADY in the
  * project and attach them to a field report, instead of uploading a new copy.

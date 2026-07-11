@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { usePreferencesStore } from './usePreferencesStore';
 import { apiGet } from '@/shared/lib/api';

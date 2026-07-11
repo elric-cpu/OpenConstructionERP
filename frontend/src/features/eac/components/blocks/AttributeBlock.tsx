@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * `<AttributeBlock>` — purple block referencing an attribute (exact / alias /
  * regex). Always lives inside a `<TripletBlock>` together with a constraint.

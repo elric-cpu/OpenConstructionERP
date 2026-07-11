@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * ForecastInsightsPanel — live predictive cost + schedule + risk analytics
  * (TOP-30 #19).

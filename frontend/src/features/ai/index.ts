@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 export { QuickEstimatePage } from './QuickEstimatePage';
 export {
   EXAMPLE_PROMPTS,

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * ProjectLayoutManager — drag-to-reorder + show/hide control for the
  * project-detail page widgets. State lives in

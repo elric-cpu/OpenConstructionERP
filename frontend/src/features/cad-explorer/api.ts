@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * API helpers for CAD Data Explorer.
  * Endpoints prefixed with /v1/takeoff/cad-data/.

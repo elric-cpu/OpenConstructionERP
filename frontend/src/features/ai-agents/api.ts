@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // AI Agents — typed client for the /api/v1/ai-agents/* surface.
 
 import { apiDelete, apiGet, apiPost, apiPut } from '@/shared/lib/api';

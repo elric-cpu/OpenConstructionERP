@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /** Modal for creating + managing password-protected share links.
  *
  * Lets the file owner mint a 32-char URL token with an optional

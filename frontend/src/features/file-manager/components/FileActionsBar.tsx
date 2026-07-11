@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /** Toolbar above the file grid/list — search, filters, view toggle, export/import. */
 
 import { useEffect, useRef, useState } from 'react';

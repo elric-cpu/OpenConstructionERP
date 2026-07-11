@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * MarkupCommentsDrawer — right-side drawer showing the threaded comments
  * for a single markup. Opens when a markup is selected and the user clicks

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Render test for the MeasurementLedger component.  Exercises the
  * three user-facing behaviors the spec calls out:

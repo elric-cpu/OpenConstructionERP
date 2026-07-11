@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Tests for the <BlockCanvas> shell. We mock @xyflow/react so jsdom doesn't
  * choke on ResizeObserver / DOMRect. The mock exposes a minimal surface:

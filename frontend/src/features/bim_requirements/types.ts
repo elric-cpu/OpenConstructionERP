@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Types mirroring the backend `bim_requirements` Rules-as-Code endpoints
  * (`POST /api/v1/bim_requirements/preview-yaml/` and

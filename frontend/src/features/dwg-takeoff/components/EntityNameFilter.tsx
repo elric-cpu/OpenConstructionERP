@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * EntityNameFilter — collapsible filter section that groups DXF entities by
  * their display name (block_name for INSERT, pattern_name for HATCH, entity

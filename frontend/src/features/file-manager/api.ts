@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /** API client for the project file manager (Issue #109). */
 
 import { apiDelete, apiGet, apiPatch, apiPost, extractErrorMessageFromBody } from '@/shared/lib/api';

@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * useProjectWidgetsRollup — single React Query that fetches all
  * project-detail widget payloads for /projects/:id in ONE round-trip.

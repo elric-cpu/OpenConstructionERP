@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // InitialLoadProgress — overlay shown during the very first file-manager load.
 //
 // React Query's `isLoading` flag is true only on the first fetch (subsequent

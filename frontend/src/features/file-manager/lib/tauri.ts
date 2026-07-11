@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /** Tauri-only utilities for the file manager.
  *
  * In a Tauri build we can show the OS file picker, reveal a path in the

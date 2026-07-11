@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Pure-function tests for the slot-type compatibility matrix and the canvas
  * drop translator. Both live in `dnd.ts` and have no React dependency, so we

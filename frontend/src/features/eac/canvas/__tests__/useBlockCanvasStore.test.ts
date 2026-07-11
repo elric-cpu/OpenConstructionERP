@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Tests for the canvas Zustand store. Covers add/remove/move, undo/redo,
  * selection + clipboard, and the connection compatibility guard.

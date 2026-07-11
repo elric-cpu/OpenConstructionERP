@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Snags block — rendered per-Handover inside PropertyDevPage's
  * HandoversTab. Owns the full snag clickflow:

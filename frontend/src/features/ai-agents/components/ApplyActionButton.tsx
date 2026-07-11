@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // Apply-action affordances for a completed agent run.
 //
 // The BOQ-drafter agent's whole value is "turn a brief into priced BOQ

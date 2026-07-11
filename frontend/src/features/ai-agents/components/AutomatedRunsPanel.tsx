@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 // Monitoring panel for automated agent runs (Item 29).
 //
 // Scheduled and event-fired runs have no user watching the timeline live, so

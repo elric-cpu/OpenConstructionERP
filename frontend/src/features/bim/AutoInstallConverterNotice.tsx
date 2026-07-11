@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * AutoInstallConverterNotice — the inline, transparent status note shown
  * while a CAD/BIM converter is auto-installing in the background after a

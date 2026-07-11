@@ -1,3 +1,5 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
  * Tests for the B4 folder grouping helper used by SmartViewsPanel. Pure
  * function, so this is a fast unit test with no rendering.
