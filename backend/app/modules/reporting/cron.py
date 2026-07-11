@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Minimal cron-expression parser for scheduled reports.
 
 We avoid pulling in ``croniter`` (and its transitive deps) for the

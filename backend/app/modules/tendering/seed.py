@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Demo seed data for the tendering module.
 
 Creates a small, realistic set of tender packages and bids for non-flagship

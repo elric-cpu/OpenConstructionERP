@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Invoice-approval DMS service.
 
 Orchestrates the capture -> code -> approve -> post -> archive lifecycle by

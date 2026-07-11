@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """ISO 19650 suitability-code lookup table.
 
 Exposes the fixed set of ISO 19650-1 suitability codes grouped by CDE state,

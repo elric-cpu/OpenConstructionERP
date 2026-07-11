@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Pydantic v2 request/response schemas for the Service & Maintenance module.
 
 Status / priority / frequency enums are enforced via regex patterns so

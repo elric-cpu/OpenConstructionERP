@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """International electronic-invoicing library.
 
 Outbound EN 16931 invoice writer in both syntaxes:

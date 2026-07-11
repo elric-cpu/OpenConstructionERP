@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Document activity log - write helpers and read helpers.
 
 The audit log itself is intentionally trivial - there is one writer

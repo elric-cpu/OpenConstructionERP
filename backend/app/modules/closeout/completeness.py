@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Pure completeness maths and localized status labels for closeout packages.
 
 The closeout service derives a package completeness percentage (delivered

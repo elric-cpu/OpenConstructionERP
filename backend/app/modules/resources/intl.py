@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """International, dependency-free helpers for resource-planning readouts.
 
 This module is deliberately pure (no database, no I/O, stdlib only) and

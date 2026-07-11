@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Multi-method Debian ``.deb`` extraction for the no-root converter install.
 
 A ``.deb`` is an ``ar`` archive holding three members: ``debian-binary``,

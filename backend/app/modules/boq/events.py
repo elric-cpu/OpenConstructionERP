@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """BOQ event handlers - activity log integration + vector indexing.
 
 Subscribes to all ``boq.*`` events and creates activity log entries

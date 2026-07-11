@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """HSE Advanced module - sister to safety.
 
 Extends Safety with: JSA, Permit-to-Work, Toolbox Talks, PPE tracking,

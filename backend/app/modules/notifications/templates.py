@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Notification templates - English fallback strings for every notification.
 
 Notifications are stored with i18n keys (``title_key`` + ``body_key``) so

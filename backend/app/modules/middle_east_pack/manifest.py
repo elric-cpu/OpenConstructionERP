@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Module manifest for oe_middle_east_pack."""
 
 from app.core.module_loader import ModuleManifest

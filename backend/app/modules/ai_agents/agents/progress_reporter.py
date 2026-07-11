@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Progress Reporter - writes a short human narrative for a progress report.
 
 Two surfaces share one prompt-assembly + LLM-call core:

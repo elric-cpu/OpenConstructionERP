@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Wave 2 + Wave 3 notification subscribers.
 
 Wires the highest-signal events from Wave 2 (contracts, crm, resources, carbon)

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """BIMElementRule - per-element validation rule for BIM models.
 
 A :class:`BIMElementRule` is a plain Python class (not a database row) that

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Measurement (quantity determination) library.
 
 Transparent, formula-based take-off: every quantity keeps the formula that

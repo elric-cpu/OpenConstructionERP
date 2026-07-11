@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Buyer self-service portal - public + JWT-internal endpoints.
 
 Routes (all under ``/api/v1/property-dev/portal/``):

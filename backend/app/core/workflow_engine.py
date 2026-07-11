@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Workflow engine - ball-in-court tracking, approval steps, due dates.
 
 Provides reusable workflow primitives for construction document management.

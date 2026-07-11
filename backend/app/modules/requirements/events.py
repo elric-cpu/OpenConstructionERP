@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Requirements event handlers​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠ - vector indexing.
 
 Subscribes to ``requirements.requirement.*`` events and keeps the

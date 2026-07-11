@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Closeout package build job handler.
 
 Registered with the job runner under kind ``closeout.build``. Assembles the

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Claims-grade schedule-quality report assembly.
 
 A thin, pure aggregation layer on top of :mod:`app.modules.schedule_advanced.cpm`.

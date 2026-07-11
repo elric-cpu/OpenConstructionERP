@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """PDF / CSV / XLSX report builder for the BI Dashboards module.
 
 A single :class:`ReportBuilder` covers all output formats so the service

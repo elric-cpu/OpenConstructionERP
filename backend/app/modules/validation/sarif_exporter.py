@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """SARIF v2.1.0 exporter for OpenConstructionERP validation reports.
 
 Translates a :class:`ValidationReport` (from :mod:`app.core.validation.engine`

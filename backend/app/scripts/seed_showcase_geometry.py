@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Restore bundled 3D geometry for the showcase BIM models.
 
 The localized 7-project showcase snapshot (``showcase_snapshot.json.gz``)

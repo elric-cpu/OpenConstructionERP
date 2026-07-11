@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """DWG/DXF file processor - ezdxf wrapper.
 
 Parses DXF files to extract layers, entities, extents, and units.

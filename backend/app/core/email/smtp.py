@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """SMTP email backend.
 
 Wraps ``smtplib.SMTP`` with async-friendly semantics: the blocking

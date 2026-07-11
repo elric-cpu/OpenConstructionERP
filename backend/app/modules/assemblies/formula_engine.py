@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Parametric formula engine for assembly components.
 
 Evaluates formulas with variable substitution, conditionals, and lookups.

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Requirements & Quality Gates data access layer.
 
 All database queries for requirement sets, requirements, and gate results

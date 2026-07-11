@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Design Options service - attach-model and per-option BOQ/cost orchestration.
 
 Business logic for building and pricing alternative design options. Each option

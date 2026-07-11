@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """International, dependency-free reporting helpers for enterprise workflows.
 
 This module is strictly additive and pure: no database, no I/O, no

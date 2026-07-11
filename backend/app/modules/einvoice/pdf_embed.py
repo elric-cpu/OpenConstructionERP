@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Factur-X / ZUGFeRD hybrid PDF builder.
 
 A hybrid e-invoice is a human-readable PDF that carries the machine-readable

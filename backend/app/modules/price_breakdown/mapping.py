@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Map a stored BoQ position onto a :class:`PriceBreakdown`.
 
 The platform already stores a per-position resource split under

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Carbon & Sustainability module.
 
 Embodied + operational carbon (scope 1/2/3), EPD database, material matching,

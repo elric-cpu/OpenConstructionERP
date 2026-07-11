@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Pure net-to-gross waste-factor engine.
 
 Converts a net measured quantity into the gross procurement quantity by

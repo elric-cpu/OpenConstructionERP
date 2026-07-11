@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """International, database-free helpers for BIM requirement reporting.
 
 This module is purely additive and has no framework or database dependency.

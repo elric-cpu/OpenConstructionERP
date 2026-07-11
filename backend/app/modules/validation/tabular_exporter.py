@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """CSV / XLSX exporters for OpenConstructionERP validation reports.
 
 Sibling to :mod:`app.modules.validation.sarif_exporter`. Where SARIF targets

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """BOQ unit normaliser.
 
 Estimators globally use thousands of locale-specific units that no curated

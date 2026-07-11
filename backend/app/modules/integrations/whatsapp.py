@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """WhatsApp Business connector via Meta Cloud API.
 
 Setup: Requires a Meta Business account with WhatsApp Business API access.

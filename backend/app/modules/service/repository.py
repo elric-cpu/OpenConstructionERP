@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Data access layer for the Service & Maintenance module.
 
 One repository class per entity. Each class is a thin async-SQLAlchemy wrapper

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Demo seed data for the documents photo gallery.
 
 Loaded on demand via ``await seed_photos(session, project_ids)``.

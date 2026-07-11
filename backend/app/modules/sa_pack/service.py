@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Stateless business logic for the South Africa regional pack.
 
 Pure functions with no transport or database dependencies, so they are unit

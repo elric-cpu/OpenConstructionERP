@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Pydantic schemas for the buyer self-service portal.
 
 Kept in a separate module from the main ``property_dev/schemas.py`` so

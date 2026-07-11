@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """File-references event handlers - orphan cleanup.
 
 Subscribes to ``documents.document.deleted`` and purges the

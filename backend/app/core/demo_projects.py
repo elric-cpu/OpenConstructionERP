@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Demo project templates that can be installed from the marketplace.
 
 Provides 5 complete demo projects with BOQ, Schedule, Budget, and Tendering data:

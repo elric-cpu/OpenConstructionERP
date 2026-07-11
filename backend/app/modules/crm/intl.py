@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """International, plain-language CRM pipeline helpers (pure, DB-free).
 
 This module is strictly additive. It complements ``service.py`` with a small

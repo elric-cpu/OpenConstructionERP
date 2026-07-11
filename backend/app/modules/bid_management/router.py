@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Bid Management API routes.
 
 All routes are mounted at ``/api/v1/bid-management/`` and gated by

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """PDF report generation for a single daily site diary.
 
 Renders one diary into a clean, single-document PDF using reportlab

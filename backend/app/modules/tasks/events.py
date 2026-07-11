@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Tasks event handlers - vector indexing subscribers.
 
 Subscribes to ``tasks.task.*`` lifecycle events and keeps the

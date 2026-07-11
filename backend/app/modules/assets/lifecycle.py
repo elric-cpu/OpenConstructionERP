@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Pure lifecycle / warranty / maintenance computations.
 
 Everything here is a pure function of an asset's ``asset_info`` blob plus

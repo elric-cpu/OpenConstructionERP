@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Pure, dependency-free Monte Carlo cost-risk and sensitivity engine for BOQ.
 
 This module deliberately imports nothing from ``app`` (no database, no FastAPI):

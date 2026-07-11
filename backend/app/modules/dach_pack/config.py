@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Regional configuration for DACH (Germany, Austria, Switzerland)."""
 
 from decimal import Decimal

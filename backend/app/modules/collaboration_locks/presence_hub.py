@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """In-memory pub/sub for the collaboration-locks WebSocket.
 
 Each client subscribes with a ``(entity_type, entity_id)`` key plus its

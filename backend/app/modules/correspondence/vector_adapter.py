@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Correspondence vector adapter - feeds the ``oe_correspondence_correspondence`` collection.
 
 Each :class:`~app.modules.correspondence.models.Correspondence` row is

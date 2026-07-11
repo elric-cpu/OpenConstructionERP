@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Risk event handlers - vector indexing for lessons-learned reuse.
 
 Subscribes to ``risk.risk.*`` events and keeps the ``oe_risks`` vector

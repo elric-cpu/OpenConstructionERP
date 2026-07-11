@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Pure Decimal math for base-to-current cost-index adjustment.
 
 This module is deliberately free of I/O, ORM and ``float``. Every value is a

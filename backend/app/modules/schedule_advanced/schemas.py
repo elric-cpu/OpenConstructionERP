@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Schedule Advanced Pydantic schemas - request / response models.
 
 Covers all 10 LPS entities plus aggregate response schemas for the

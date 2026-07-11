@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Seed catalog: extract top 100 resources from CWICR cost item components.
 
 Reads all cost items, aggregates their components by code/type, computes

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Validation rules package (module-scoped).
 
 Holds rule collections that live at the module layer (e.g. per-element BIM

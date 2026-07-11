@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Defensive date parsing/normalisation for the safety module.
 
 ``SafetyIncident.incident_date`` is stored as a ``String`` column (no schema

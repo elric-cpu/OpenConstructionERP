@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """OpenCDE service - maps internal data to BuildingSMART BCF 3.0 format.
 
 This service bridges our internal project/collaboration models to the

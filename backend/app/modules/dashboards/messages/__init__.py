@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Locale-scoped message bundle for the dashboards module.
 
 Mirrors :mod:`app.core.validation.messages` and delegates to the same

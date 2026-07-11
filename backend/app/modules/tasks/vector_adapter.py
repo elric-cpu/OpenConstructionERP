@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Tasks vector adapter - feeds the ``oe_tasks`` collection.
 
 Each :class:`~app.modules.tasks.models.Task` row is embedded as the

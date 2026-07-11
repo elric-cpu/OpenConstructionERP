@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """DWG Takeoff data access layer.
 
 All database queries for drawings, drawing versions, and annotations live here.

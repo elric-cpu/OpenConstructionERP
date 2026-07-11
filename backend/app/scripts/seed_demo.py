@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Seed demo data: user, project, BOQ with realistic positions, cost items.
 
 Usage: python -m app.scripts.seed_demo

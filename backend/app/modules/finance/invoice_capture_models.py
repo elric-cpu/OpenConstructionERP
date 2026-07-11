@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Invoice-approval DMS models.
 
 The invoice-capture inbox is the document-management side of accounts payable:

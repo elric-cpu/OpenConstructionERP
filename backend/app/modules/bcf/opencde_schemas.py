@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """OpenCDE BCF-API 3.0 - Pydantic request/response schemas.
 
 These shapes mirror the buildingSMART OpenCDE BCF-API 3.0 JSON schemas

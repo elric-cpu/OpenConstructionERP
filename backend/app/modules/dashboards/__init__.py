@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Dashboards module - analytical layer over snapshots.
 
 Tasks in scope (see ``CLAUDE-DASHBOARDS.md`` in the repo root):

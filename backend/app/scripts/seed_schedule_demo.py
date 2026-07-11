@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Seed 2 demo BOQs with realistic positions that have labor_hours in metadata.
 
 Creates:

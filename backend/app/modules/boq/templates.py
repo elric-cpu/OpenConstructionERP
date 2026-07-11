@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Built-in BOQ templates for common building types.
 
 Each template is a complete BOQ structure with sections and positions.

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Safe arithmetic evaluator for measurement formulas.
 
 Quantity determination should be transparent: every quantity keeps the formula

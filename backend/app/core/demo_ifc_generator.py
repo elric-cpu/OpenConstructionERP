@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Generate minimal IFC files for demo projects.
 
 Creates valid IFC2x3 files with realistic building elements (walls, slabs,

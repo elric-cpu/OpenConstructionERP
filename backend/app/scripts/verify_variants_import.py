@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Scratch verification for CWICR abstract-resource variant parsing.
 
 Exercises the new `_split_bul` + variant-build logic from

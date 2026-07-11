@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Daily Site Diary data-access layer.
 
 One repository class per entity. Repositories are pure SQLAlchemy

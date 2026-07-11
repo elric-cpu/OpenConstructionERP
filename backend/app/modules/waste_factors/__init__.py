@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Waste Factors module - net-to-gross quantity adjustment library.
 
 A shared library of waste, lap and coverage multipliers per material or work

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Buyer self-service portal - JWT magic-link service.
 
 This module implements the buyer-facing portal that NEVER authenticates

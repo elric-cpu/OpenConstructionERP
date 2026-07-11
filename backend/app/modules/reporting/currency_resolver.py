@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Wave 23 - worldwide currency parameterisation helper.
 
 Provides :func:`resolve_template_currency` - the authoritative

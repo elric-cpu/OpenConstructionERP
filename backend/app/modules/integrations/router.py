@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Integrations API routes.
 
 Endpoints - Chat Connectors (Teams / Slack / Telegram):

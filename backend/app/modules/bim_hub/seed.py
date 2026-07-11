@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Demo seed data for the bim_hub module.
 
 Groups the EXISTING ``BIMModel`` rows of a project into a coordination

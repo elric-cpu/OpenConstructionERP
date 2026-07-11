@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Project Member API schemas.
 
 The Team Strip on ProjectDetailPage works at the project level rather than the

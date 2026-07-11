@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """LocalizedStr utility for multi-language JSONB string storage and resolution.
 
 Provides a Pydantic v2 model for storing translations as ``{"en": "...", "de": "..."}``

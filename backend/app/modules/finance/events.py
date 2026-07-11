@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Finance event subscribers - turn procurement mutation events into
 ProjectBudget.committed / actual updates.
 

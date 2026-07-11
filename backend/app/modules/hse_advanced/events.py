@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """HSE Advanced cross-module event subscribers (Wave M4 deep-pass).
 
 These handlers wire HSE Advanced to the rest of the platform without

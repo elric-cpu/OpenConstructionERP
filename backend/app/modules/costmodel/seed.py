@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Demo seed data for the costmodel (5D / EVM) module.
 
 Loaded on demand via ``await seed_costmodel(session, project_ids)``. For each

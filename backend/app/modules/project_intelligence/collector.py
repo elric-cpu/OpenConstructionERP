@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Project state collector - gathers project data from all modules.
 
 Uses raw SQL via session.execute(text(...)) for speed and to avoid

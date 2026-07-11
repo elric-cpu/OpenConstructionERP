@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """AIA G702/G703 payment-application support (US/CA/AU only).
 
 The AIA G702 (Application and Certificate for Payment) and G703

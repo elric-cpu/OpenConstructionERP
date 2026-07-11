@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Reporting & Dashboards module.
 
 Provides KPI snapshots, reusable report templates, scheduled report

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """BOQ importer Protocol + transport dataclasses.
 
 Defines the contract every BOQ importer must satisfy:

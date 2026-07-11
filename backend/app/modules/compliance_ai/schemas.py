@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Pydantic schemas for the compliance_ai module.
 
 Mirrors the public DTO shape of :mod:`app.core.validation.dsl.nl_builder`

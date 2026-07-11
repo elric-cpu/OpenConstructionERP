@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Excel (.xlsx) and CSV BOQ importer.
 
 Generic spreadsheet ingester with three classification heuristics on top

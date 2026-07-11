@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Project-bundle import (Issue #109).
 
 Inverse of :mod:`bundle_export`. Accepts a ``.ocep`` zip and reconstructs

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Wave-4 notification subscribers (BI Dashboards, QMS, Supplier Catalogs).
 
 Single landing zone for Wave-4 module subscribers that ship in parallel and

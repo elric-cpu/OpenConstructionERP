@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Generalised transition-gate registry (Epic H).
 
 The CDE ISO 19650 workflow uses a "Gate B" check on the

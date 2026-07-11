@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Unicode font registration for every reportlab-generated PDF.
 
 OpenEstimate principle #2 is *i18n EVERYWHERE*. reportlab's built-in Type-1

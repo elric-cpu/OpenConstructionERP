@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """MoneyValue utility for multi-currency monetary values.
 
 Core utility used by all financial modules. Stores amounts as strings

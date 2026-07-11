@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """LRU-cached, read-only DuckDB connections keyed by snapshot_id.
 
 Why a pool at all?

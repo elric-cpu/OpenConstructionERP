@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Presentation and interchange presets for measurement sheets.
 
 The sheet model is country-neutral. A preset only fixes labelling and the

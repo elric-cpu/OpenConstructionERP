@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """AI prompt templates for construction cost estimation.
 
 Contains carefully crafted prompts for text-based and photo-based estimation.

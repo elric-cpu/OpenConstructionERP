@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """AIA G702/G703 payment-application PDF (US/CA/AU only).
 
 Renders a two-part document mirroring the layout of the AIA standard forms:

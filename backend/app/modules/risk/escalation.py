@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Risk auto-escalation engine (TOP-30 #24).
 
 When a risk's severity product (``probability_score`` x ``impact_score``)

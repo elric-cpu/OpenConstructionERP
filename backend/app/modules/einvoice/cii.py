@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """EN 16931 Cross Industry Invoice (CII) builder.
 
 Produces the UN/CEFACT CII XML that is the shared syntax behind the German

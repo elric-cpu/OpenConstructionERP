@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Property Development & Buyer Portal module.
 
 Tracks property developments, plots, house types, buyer option catalogues,

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Closeout cover-sheet + completeness summary PDF.
 
 Renders the cover the brief asks for: a project header, project type and

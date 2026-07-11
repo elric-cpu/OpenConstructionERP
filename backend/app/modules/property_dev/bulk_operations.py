@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Property Development bulk-operations service.
 
 Sales-ops admin console - five batch endpoints that today require one-by-one

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """PEPPOL UBL 2.1 invoice parser.
 
 Implements a minimal but correct ``Invoice`` parser for the OASIS UBL 2.1

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Internationalization foundation Pydantic schemas for request/response validation.
 
 Covers exchange rates, countries, work calendars, tax configurations,

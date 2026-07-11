@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Background Jobs status module manifest.
 
 Exposes read-only / cancel endpoints for the JobRun rows produced by the

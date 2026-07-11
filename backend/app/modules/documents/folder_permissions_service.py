@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Folder-permission service - grant / revoke / effective-permissions API.
 
 Stateless functions mirroring :mod:`app.modules.documents.share_service`.

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """BOQ position vector adapter - feeds the ``oe_boq_positions`` collection.
 
 Each :class:`~app.modules.boq.models.Position` row is embedded as the

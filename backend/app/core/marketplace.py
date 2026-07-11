@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Marketplace registry - static catalog of installable OpenConstructionERP modules.
 
 Provides a browsable catalog of add-ons: cost databases, vector indices,

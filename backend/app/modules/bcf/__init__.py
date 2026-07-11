@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """BCF (BIM Collaboration Format) module - issues & viewpoints.
 
 Server-backed, persistent BCF Topic / Comment / Viewpoint storage with a

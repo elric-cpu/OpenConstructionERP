@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Compatibility shim - delegates to ``app.core.email``.
 
 The real implementation was moved to ``app.core.email`` in v2.3.1 so the

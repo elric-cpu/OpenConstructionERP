@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Universal per-element BIM validation rules.
 
 This module declares a small library of :class:`BIMElementRule` instances

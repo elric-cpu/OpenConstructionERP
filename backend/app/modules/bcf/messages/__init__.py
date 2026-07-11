@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Self-contained i18n bundle for the BCF module.
 
 OpenEstimate principle #2: i18n EVERYWHERE - zero hardcoded user-facing

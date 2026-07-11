@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Rate Benchmarker - sanity-checks a proposed unit rate against the catalogue.
 
 Tools (declarative - wired into the global registry on import):

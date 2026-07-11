@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Audit-log PII pruning task (Epic H §H8).
 
 GDPR Article 5(1)(e) - storage limitation. The capture-context columns

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """SQLite -> PostgreSQL data migration.
 
 One-shot copier that moves every row from the SQLite database into a freshly

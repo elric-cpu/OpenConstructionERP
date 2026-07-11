@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Wave-5 cross-module subscribers - Resources / Contracts / CRM / Carbon.
 
 Wires real cross-module side-effects emitted by the wave-5 deep-dive:

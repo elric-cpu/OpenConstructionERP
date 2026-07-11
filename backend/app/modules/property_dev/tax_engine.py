@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Property-dev jurisdiction-aware tax / VAT / stamp-duty engine.
 
 Pure-function library - every helper takes :class:`~decimal.Decimal`

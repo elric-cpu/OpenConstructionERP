@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """International, locale-safe quality helpers for the QMS module.
 
 This module is deliberately pure and dependency-free (standard library

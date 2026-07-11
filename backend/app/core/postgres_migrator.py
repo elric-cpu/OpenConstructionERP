@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """PostgreSQL auto-migrator (embedded and external PostgreSQL).
 
 On startup, compares the live PostgreSQL schema against the SQLAlchemy models

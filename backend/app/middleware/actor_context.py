@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Actor / capture-context middleware for Epic H universal audit trail.
 
 Sets the per-request :class:`~app.core.audit_log.AuditContext` on a

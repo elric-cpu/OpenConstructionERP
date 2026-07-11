@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """IDS XML exporter -- produces valid buildingSMART IDS v1.0 XML.
 
 Groups requirements by element_filter + context into specifications,

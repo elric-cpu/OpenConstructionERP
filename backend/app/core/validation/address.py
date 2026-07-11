@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Address validation engine - Wave 26 of the worldwide-parameterisation audit.
 
 Per-country postcode patterns, required-field lists, and field ordering are

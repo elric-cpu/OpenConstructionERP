@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """OpenCDE API module manifest.
 
 Exposes project data in BuildingSMART-compliant OpenCDE Foundation API 1.1

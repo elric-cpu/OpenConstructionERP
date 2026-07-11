@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Optional embedded PostgreSQL runtime - a real PG16 in-process, no Docker.
 
 Boots a PostgreSQL 16 cluster from the ``pixeltable-pgserver`` wheel (bundled PG

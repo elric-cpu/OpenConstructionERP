@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Compliance rule packs for contract gates.
 
 A *rule pack* is a jurisdiction-scoped bundle of validation rule-SET ids

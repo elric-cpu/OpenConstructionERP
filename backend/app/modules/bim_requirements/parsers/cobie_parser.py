@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """COBie Excel/CSV parser for BIM requirements.
 
 Reads the 'Attribute' sheet from a COBie-formatted Excel workbook and

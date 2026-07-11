@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """BIM Hub file-storage helper.
 
 Thin wrapper around :mod:`app.core.storage` that owns the key layout

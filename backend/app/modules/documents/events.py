@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Documents event handlers - vector indexing.
 
 Subscribes to the ``documents.document.*`` event family and keeps the

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Real weather ingestion for the daily-diary module.
 
 This module fetches actual weather observations from the public, free,

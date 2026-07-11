@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Asset Operations module manifest.
 
 Operational-phase intelligence on top of the BIM-sourced asset register.

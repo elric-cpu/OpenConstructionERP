@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Admin module - operator endpoints for QA pipelines.
 
 The qa-reset endpoint is the only public entrypoint here. It is intentionally

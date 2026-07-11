@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Module loader​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠ - discovers, loads, and manages business modules.
 
 Each module is a Python package under app/modules/ with a manifest.py.

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """International, locale-safe helpers for the Punch List module.
 
 This file is deliberately pure and dependency-free (standard library only).

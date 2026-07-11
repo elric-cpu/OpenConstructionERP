@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """IDS importer - buildingSMART Information Delivery Specification → ValidationRule.
 
 Parses an IDS v1.0 XML file (one ``<specification>`` per business rule) and

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Application configuration​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠.
 
 Loads from environment variables with .env file fallback.

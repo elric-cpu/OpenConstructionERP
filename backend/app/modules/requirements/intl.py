@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Localized labels and guarded coverage maths for requirements.
 
 The deliverable coverage roll-up in :mod:`app.modules.requirements.evaluator`

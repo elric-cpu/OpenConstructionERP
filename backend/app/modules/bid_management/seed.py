@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Deterministic demo seed for the bid_management module.
 
 ``seed_bid_management_demo(session, project_ids)`` creates:

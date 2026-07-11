@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Sales-analytics service for the Property Development module.
 
 Five director-grade dashboards, each built on a single SQL aggregate

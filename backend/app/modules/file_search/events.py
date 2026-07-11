@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """File-search event handlers - index eviction.
 
 Subscribes to ``documents.document.deleted`` and removes the matching

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """FIEBDC-3 / BC3 BOQ importer (Spain + Hispanophone LATAM).
 
 FIEBDC (Formato de Intercambio Estándar para Bases de Datos de

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """International, plain-language helpers for meeting action items.
 
 This module is intentionally free of any database, ORM, network, or

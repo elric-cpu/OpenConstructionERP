@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Handover and Closeout module (TOP-30 #25).
 
 Project-scoped digital handover / closeout package assembly. Builds a

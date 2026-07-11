@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """ECB exchange rate fetcher.
 
 Fetches daily exchange rates from the European Central Bank's public XML feed.

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Module manifest for oe_i18n_foundation."""
 
 from app.core.module_loader import ModuleManifest

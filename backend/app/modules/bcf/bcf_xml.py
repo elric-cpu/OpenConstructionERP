@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Hand-rolled BCF-XML codec for BCF **2.1** and **3.0**.
 
 Why hand-rolled?

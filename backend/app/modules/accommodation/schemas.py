@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Accommodation Pydantic schemas - request / response models.
 
 Money fields are Decimal. Currency is validated against the ISO 4217

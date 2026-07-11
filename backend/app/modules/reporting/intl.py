@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """International, Decimal-exact reporting math and plain-language explainers.
 
 This module is a small, dependency-free (stdlib only) toolkit of PURE

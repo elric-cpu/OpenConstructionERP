@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Demo seed data for the Management of Change (MoC) module.
 
 ``seed_moc(session, project_ids)`` creates a small, deterministic set of

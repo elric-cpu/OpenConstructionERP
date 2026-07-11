@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Admin module manifest.
 
 Houses operator-only endpoints that bypass normal auth via shared-secret +

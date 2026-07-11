@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """International, database-free helpers for assembly composite rates.
 
 This module adds a small set of pure, side-effect-free functions that make

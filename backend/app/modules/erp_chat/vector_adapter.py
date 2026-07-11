@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """ERP Chat message vector adapter - feeds the ``oe_chat`` collection.
 
 Indexes the textual ``content`` field of every chat message so the

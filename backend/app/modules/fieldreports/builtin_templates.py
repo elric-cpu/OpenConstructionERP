@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Code-defined built-in field-report templates.
 
 These are intentionally NOT database rows: keeping them as constants

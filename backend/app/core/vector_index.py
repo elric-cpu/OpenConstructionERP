@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Multi-collection embedding layer​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠ - the cross-module semantic memory.
 
 This is the foundation that lets every business module (BOQ, documents,

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Timeline API routes (auto-mounted at /api/v1/timeline).
 
 A unified, cross-module project timeline read over the existing activity-log

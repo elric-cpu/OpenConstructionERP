@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """GAEB DA XML 3.3 importer (DACH).
 
 Native parser for the German/Austrian/Swiss tender exchange format.

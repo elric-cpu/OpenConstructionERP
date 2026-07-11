@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Seed regional cost indices (v3.12.0 - Stream B).
 
 Inserts ~50 sample rows into ``oe_regional_indices`` - 8 cities × 6

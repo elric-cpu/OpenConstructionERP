@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """BIM Hub module manifest - BIM data management backend."""
 
 from app.core.module_loader import ModuleManifest

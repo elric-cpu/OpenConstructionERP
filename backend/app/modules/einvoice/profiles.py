@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """E-invoice profile registry.
 
 The invoice model is EN 16931, which is the *international* semantic standard

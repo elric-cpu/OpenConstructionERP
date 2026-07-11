@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """On-demand downloaders for MUSE bilingual dictionaries and IATE dumps.
 
 The user triggers these from the UI - we never download anything at boot

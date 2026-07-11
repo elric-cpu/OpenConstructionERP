@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Data access layer for dashboard presets / collections (T05).
 
 Kept in a separate module from :mod:`.repository` so the snapshot path

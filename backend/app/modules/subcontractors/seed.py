@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Deterministic demo seed for the subcontractors module.
 
 Generates 50 subcontractors with varied trades / statuses, 2-3 certificates

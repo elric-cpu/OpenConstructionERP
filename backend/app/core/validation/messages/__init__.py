@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Locale-scoped message bundle for validation rules.
 
 OpenEstimate principle #2: i18n EVERYWHERE - zero hardcoded strings.

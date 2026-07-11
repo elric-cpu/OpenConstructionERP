@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """HSE Advanced API routes - JSA, PTW, toolbox, PPE, audits, CAPA, KPI."""
 
 from __future__ import annotations

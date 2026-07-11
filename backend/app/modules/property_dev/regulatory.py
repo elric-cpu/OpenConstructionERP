@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Regulator-report generators for property_dev (task #139).
 
 Four jurisdictions are supported out of the box:

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """International, plain-language reporting helpers for subcontractors.
 
 Pure, dependency-free helpers (Python standard library plus ``Decimal`` only,

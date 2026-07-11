@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Brazilian-styled invoice PDF (Tier-1 - pre-NF-e bridge).
 
 Brazil's official electronic invoice is the NF-e (goods, federal SEFAZ XML

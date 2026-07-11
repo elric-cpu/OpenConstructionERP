@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Production-norm expansion API routes.
 
 Mounted at ``/api/v1/norm-expansion/`` by the module loader.

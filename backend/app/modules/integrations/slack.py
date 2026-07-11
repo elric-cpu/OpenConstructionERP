@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Slack incoming webhook connector.
 
 Setup: User creates an Incoming Webhook in Slack app settings,

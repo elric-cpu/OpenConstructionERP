@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Deterministic demo seed for the equipment module.
 
 Generates a representative fleet with telemetry, schedules, work orders,

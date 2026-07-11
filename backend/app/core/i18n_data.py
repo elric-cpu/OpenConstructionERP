@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Shared ISO constants for internationalization.
 
 Reference data for measurement systems, paper sizes, date/number formats,

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Starter seed for cost items + assemblies.
 
 Goal: a freshly-installed OpenConstructionERP (no CWICR import yet) should

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Regional configuration for Mexico.
 
 All figures are drawn from public Mexican standards, laws and tax rules.

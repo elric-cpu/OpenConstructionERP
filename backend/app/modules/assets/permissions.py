@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Asset Operations permission definitions.
 
 Reads ride ``bim.read`` (assets ARE BIM elements). Dispatching warranty

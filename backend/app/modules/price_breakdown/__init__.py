@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Structured unit-price breakdown (price analysis) library.
 
 Decomposes a tender position's unit rate into the cost categories every

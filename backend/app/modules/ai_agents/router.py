@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """AI Agents API routes.
 
 Endpoints (mounted at ``/api/v1/ai-agents/`` by the module loader):

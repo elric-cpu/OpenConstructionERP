@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """BOQ Drafter - sample agent that drafts a BOQ from a brief.
 
 Tools (declarative - wired into the global registry on import):

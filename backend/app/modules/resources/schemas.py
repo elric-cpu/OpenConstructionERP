@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Resources Pydantic schemas - request/response models (Pydantic v2)."""
 
 from datetime import datetime

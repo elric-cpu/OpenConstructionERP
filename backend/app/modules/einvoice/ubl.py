@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """EN 16931 UBL 2.1 invoice writer (Peppol BIS Billing 3.0 and plain UBL).
 
 The international counterpart to the CII writer. UBL is the syntax used by the

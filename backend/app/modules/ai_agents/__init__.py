@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """AI Agents framework - Slice 1.
 
 Provides a generic ReAct-style agent loop on top of the single-call

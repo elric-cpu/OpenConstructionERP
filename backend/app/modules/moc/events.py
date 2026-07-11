@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """MoC cross-module event subscribers (HSE/QMS/Risk wave).
 
 Wires Management-of-Change to upstream events without import-time coupling.

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Critical Path Method (CPM) calculation engine.
 
 Forward pass -> early dates. Backward pass -> late dates. Float -> critical path.

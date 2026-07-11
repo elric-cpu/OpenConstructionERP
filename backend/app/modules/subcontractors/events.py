@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Subcontractors event subscribers - feed cross-module facts into the rating.
 
 When the NCR / HSE / Quality modules publish an event whose payload names a

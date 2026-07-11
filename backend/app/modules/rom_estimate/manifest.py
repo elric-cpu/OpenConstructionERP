@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Conceptual (ROM) estimate module manifest."""
 
 from app.core.module_loader import ModuleManifest

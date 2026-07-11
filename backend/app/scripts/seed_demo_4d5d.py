@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Seed 4D Schedule, 5D Budget, and Tendering data for demo projects.
 
 Creates for Wohnanlage Berlin-Mitte and One Canary Square:

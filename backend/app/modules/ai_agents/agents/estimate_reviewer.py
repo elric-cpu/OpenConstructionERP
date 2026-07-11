@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Estimate Reviewer - audits an EXISTING BOQ for pricing gaps and quality issues.
 
 The user supplies a ``boq_id`` in the prompt; the agent reviews that BOQ and

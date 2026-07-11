@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Parquet-based dataframe storage for BIM element properties.
 
 Writes the full DDC converter output (1000+ columns) as a compressed

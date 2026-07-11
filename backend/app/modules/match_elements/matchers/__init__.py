@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Matchers - vector + lexical for Phase A; LLM rerank planned.
 
 Each matcher implements :class:`Matcher` and returns a ranked list of

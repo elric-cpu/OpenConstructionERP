@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Supplier Catalogs event names + cross-module subscribers.
 
 All events are best-effort published via ``event_bus.publish_detached``

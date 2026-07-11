@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Production-norm Pydantic schemas - request / response models.
 
 Every numeric value (per-unit coefficients, quantities, expanded demand) is a

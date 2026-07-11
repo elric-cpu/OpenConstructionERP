@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Scheduled custom-agent runs (Item 29).
 
 A custom agent can carry a 5-field POSIX cron expression in its

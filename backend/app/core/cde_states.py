@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """ISO 19650 Common Data Environment state machine.
 
 Four states: WIP -> SHARED -> PUBLISHED -> ARCHIVED.

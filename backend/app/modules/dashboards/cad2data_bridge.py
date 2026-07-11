@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Bridge between uploaded CAD/BIM files and the snapshot Parquet layer.
 
 T01 responsibility: take a list of uploaded source files, run each

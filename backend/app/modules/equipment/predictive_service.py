@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Equipment predictive maintenance and fleet analytics.
 
 Deterministic, on-the-fly analytics computed from the existing

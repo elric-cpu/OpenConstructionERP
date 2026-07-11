@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """ERP Chat tool definitions and handlers.
 
 Each tool maps to a real ERP service call. Handlers return a dict with:

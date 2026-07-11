@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Symmetric encryption for at-rest secrets (API keys, OAuth tokens).
 
 Uses Fernet (cryptography lib, already in deps via python-jose). The key

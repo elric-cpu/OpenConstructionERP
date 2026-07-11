@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Notifications module permission definitions.
 
 Registered at module startup via ``app.modules.notifications.on_startup``.

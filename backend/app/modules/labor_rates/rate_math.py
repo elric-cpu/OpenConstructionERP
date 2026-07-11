@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Pure Decimal build-up math for all-in labor and crew rates.
 
 This module is deliberately free of any framework, ORM or I/O dependency so

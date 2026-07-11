@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Predictive schedule and cost risk analytics (TOP-30 #19).
 
 This module is a *deterministic, explainable* forecasting layer. It needs no

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """SSRF-safe URL validation.
 
 Used by webhook and outbound-webhook-like features to reject URLs that would

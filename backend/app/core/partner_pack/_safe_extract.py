@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Shared, battle-tested safe zip extraction.
 
 This is the single implementation of zip-member safety used by:

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Forecast service for Project Intelligence (TOP-30 #19).
 
 Assembles the predictive cost + schedule + risk analytics for a project by

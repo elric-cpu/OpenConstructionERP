@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Bill-of-Quantities (BOQ) workbook builder.
 
 The single most-requested BIM-to-estimating handoff: take the measured

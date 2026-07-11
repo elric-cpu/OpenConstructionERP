@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """BIM element vector adapter - feeds the ``oe_bim_elements`` collection.
 
 Each :class:`~app.modules.bim_hub.models.BIMElement` row is embedded as

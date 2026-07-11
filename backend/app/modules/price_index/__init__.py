@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Price Index module - base-to-current cost-index adjustment.
 
 Lets an estimator carry costs from a base period and base region to a target

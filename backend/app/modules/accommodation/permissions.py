@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Accommodation module permission definitions.
 
 Coarse RBAC tier - fine-grained gates can be split out later if a

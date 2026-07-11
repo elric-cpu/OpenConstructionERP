@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Demo-data seeder for the Service & Maintenance module.
 
 Function ``seed_service_demo(session)`` populates:

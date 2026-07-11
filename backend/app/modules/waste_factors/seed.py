@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Default waste-factor library seed.
 
 Loads a small set of generic starter multipliers (concrete, rebar, tiling,

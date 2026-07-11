@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """International, Decimal-exact fixed-asset finance helpers.
 
 Pure functions for the fixed-asset / plant register that work the same in

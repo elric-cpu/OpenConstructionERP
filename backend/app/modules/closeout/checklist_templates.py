@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Declarative closeout checklist templates per project type.
 
 Pure data - no DB access. ``CHECKLIST_TEMPLATES`` maps a project type to an

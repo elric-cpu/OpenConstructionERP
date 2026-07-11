@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """CRM API routes.
 
 Mounted at ``/api/v1/crm/``. Every mutating endpoint is gated through

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Periodic predictive-forecast batch job (TOP-30 #19).
 
 Registers a ``full_evm.forecast_batch`` handler with the platform job

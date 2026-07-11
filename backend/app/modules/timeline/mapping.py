@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Pure event-to-timeline mapping (no app.* imports, py3.11-testable).
 
 The unified project timeline is built on top of the existing activity-log

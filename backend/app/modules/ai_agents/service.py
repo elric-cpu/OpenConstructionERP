@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """AI Agents service - business logic for starting and inspecting runs.
 
 The service is what wires the in-process :class:`AgentRunner` to:

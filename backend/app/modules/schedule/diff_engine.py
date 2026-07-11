@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Pure schedule diff engine - per-field categorized comparison of two snapshots.
 
 This module is intentionally *pure*: it imports only the standard library

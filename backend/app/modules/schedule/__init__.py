@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """4D Schedule module.
 
 Provides construction scheduling with WBS hierarchy, BOQ position linking,

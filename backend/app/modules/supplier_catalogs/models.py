@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Supplier Catalogs ORM models.
 
 Tables (prefix ``oe_supplier_catalogs_``):

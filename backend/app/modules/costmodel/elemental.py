@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Elemental and parametric cost modelling helpers for the 5D Cost Model.
 
 Pure, database-free functions that build an early-stage cost estimate the way

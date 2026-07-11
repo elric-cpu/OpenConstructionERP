@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Adapters between schedule data and the pure diff-engine envelope.
 
 :mod:`app.modules.schedule.diff_engine` compares two *normalized envelopes*

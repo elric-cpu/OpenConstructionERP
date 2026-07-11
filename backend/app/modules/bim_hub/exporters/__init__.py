@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """BIM Hub exporters - pluggable file-format builders.
 
 Currently ships COBie (UK 2.4, ISO 19650 handover standard). Future

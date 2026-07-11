@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Asset-candidate discovery from BIM element data.
 
 The Asset Register is empty until a human flags BIM elements as tracked

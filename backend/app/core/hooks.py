@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Hook system​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠ for data transformation and action injection.
 
 Two types:

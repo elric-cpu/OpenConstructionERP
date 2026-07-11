@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Parse DDC DwgExporter Excel output into drawable entities.
 
 DDC DwgExporter produces an Excel file with AutoCAD database records.

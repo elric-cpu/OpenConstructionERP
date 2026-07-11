@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Dashboards module API router.
 
 Endpoints land incrementally as each task in ``CLAUDE-DASHBOARDS.md``

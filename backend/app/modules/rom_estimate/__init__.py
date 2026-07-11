@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Conceptual (ROM) estimate module.
 
 Produces an instant order-of-magnitude estimate from minimal input (building

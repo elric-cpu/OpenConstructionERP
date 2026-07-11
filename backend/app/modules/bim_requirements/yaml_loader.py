@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Rules-as-Code YAML loader for BIM requirement packs.
 
 This module is the entry point of the *rules-as-YAML* feature: it turns a

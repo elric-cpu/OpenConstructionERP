@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Notification service - business logic for in-app notifications.
 
 Stateless service layer.  Wraps the repository and provides convenience

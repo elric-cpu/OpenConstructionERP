@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """AI-agent automation: tool catalogue + event-trigger registry (Item 29).
 
 This module is the single source of truth for two things a user-authored

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Presentation presets for a price breakdown.
 
 The breakdown model is country-neutral. A preset is only a labelling and

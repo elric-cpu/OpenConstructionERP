@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Document vector adapter - feeds the ``oe_documents`` collection.
 
 Each :class:`~app.modules.documents.models.Document` row is embedded as

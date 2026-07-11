@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Pydantic request/response schemas for the conceptual (ROM) estimate module.
 
 A ROM (rough order-of-magnitude) estimate is the day-one starting point of a

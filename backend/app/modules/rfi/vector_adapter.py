@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """RFI vector adapter - feeds the ``oe_rfi_rfis`` collection.
 
 Each :class:`~app.modules.rfi.models.RFI` row is embedded as the RFI

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Daily Diary cross-module event subscribers (Wave M4 deep-pass).
 
 Wires diary close-out + signature into:

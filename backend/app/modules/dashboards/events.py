@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Event taxonomy for the dashboards module.
 
 Events are published via :func:`app.core.events.publish` from service

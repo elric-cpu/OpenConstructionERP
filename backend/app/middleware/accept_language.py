@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Accept-Language header parsing middleware.
 
 Inspects the incoming ``Accept-Language`` HTTP header (RFC 7231) and an

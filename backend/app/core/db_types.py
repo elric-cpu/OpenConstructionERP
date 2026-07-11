@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Custom column types (PostgreSQL-only).
 
 The app runs on PostgreSQL exclusively, so money and dates are stored in

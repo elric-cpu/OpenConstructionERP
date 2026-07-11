@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Generic bulk operation helpers.
 
 Provides reusable schemas and a bulk delete/update/status SQL builder so each

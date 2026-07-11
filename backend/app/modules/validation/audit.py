@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Estimate-audit orchestration helpers.
 
 Pure, database-free logic that turns the raw validation-engine output over a

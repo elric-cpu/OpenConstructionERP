@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Pure markup-cascade engine for the estimating-methodology module.
 
 This is the deterministic math core that the whole methodology feature depends

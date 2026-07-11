@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """International, explainable helpers for submittal review analytics.
 
 This module is deliberately pure and dependency-free (standard library

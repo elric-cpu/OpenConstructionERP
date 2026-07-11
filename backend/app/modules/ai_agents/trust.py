@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Trust envelope - a standardized "trust wrapper" for AI agent outputs.
 
 The single biggest barrier to AI adoption reported by construction teams is

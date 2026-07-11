@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """PostgreSQL scale optimizations: JSONB columns and performance indexes.
 
 Two dialect-aware additions that are emitted by ``Base.metadata.create_all`` so

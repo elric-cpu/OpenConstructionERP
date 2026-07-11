@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """HTTP API for the subcontractors module.
 
 Mounted at /api/v1/subcontractors/. All endpoints require an authenticated

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Persisted "applied partner pack" state - survives restarts.
 
 A single global record (single-tenant, per the partner-pack ADR). Stored as

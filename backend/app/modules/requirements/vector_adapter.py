@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Requirement vector adapter​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠ - feeds the ``oe_requirements`` collection.
 
 Each :class:`~app.modules.requirements.models.Requirement` row is

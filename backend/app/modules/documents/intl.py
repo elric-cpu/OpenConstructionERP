@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """International, locale-safe helpers for the document register.
 
 Pure functions only. No database, no I/O, no framework dependency. Every

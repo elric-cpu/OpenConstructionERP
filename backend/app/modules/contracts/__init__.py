@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Contracts module - Contract Types Engine.
 
 Multi-type contract engine supporting lump-sum, GMP, cost-plus, T&M,

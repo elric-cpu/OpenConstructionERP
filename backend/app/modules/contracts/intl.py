@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """International, jurisdiction-neutral contract money and date helpers.
 
 This module is deliberately self-contained and stdlib-only (``decimal`` and

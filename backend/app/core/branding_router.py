@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Workspace white-label branding API (issue #272).
 
 Branding used to live only in the browser's localStorage, so it never followed

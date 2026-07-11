@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Serve frontend static files from the installed package or dev build.
 
 When running via `openestimate serve` or with SERVE_FRONTEND=true,

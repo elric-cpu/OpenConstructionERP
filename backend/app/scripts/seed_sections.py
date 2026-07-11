@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Seed BOQ sections and markups for demo projects.
 
 Adds section headers to existing BOQ positions and applies default markups.

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Safety module event registry and cross-module subscribers.
 
 Events the safety module *publishes* (canonical names, payload shapes):

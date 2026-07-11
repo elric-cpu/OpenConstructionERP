@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Simple caching layer with in-memory fallback.
 
 Uses Redis if available, falls back to in-memory LRU cache.

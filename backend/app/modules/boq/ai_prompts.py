@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """LLM prompt templates for BOQ AI features.
 
 Each prompt is designed for construction cost estimation domain.

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """International, explainable safety-metric helpers (pure, DB-free).
 
 This module adds a small layer of framework-independent helpers on top of the

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Contacts ↔ Modules bridge - single-source-of-truth person directory.
 
 The Contact table is the canonical store for person data

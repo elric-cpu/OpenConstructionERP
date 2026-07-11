@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Microsoft Teams incoming webhook connector.
 
 Setup: User creates an Incoming Webhook in their Teams channel,

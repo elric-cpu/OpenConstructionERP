@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """AI Advisor - generates project recommendations using the LLM service.
 
 Reuses the existing AI client from app.modules.ai.ai_client.

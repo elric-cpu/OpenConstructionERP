@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Base agent framework - Tool protocol, registry, Agent + AgentRunner.
 
 The runner implements a ReAct loop:

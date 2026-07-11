@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Dialect-aware numeric coercion for money-as-text columns.
 
 Several monetary fields are stored as ``String`` for SQLite portability

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Project Analyst - summarizes a project's budget vs committed vs actual.
 
 The agent produces a concise executive cost summary for one project: total

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """BIMQ JSON parser for BIM requirements.
 
 Parses JSON exports from the BIMQ platform (bim-q.de) into

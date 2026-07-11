@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Database engine​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠, session, and base model.
 
 PostgreSQL only. The app runs embedded PostgreSQL 16 by default (no Docker);

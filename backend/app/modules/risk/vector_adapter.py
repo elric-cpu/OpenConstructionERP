@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Risk item vector adapter - feeds the ``oe_risks`` collection.
 
 Each :class:`~app.modules.risk.models.RiskItem` row is embedded as a rich

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Resources (Graphical Resource Planning) module.
 
 Manages resources (people, crews, equipment, subcontractors) with skills,

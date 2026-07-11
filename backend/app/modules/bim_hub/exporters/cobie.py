@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """COBie (UK 2.4) workbook builder.
 
 COBie - Construction Operations Building Information Exchange - is the

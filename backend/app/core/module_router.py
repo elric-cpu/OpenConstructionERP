@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Module management API - list, enable, disable modules at runtime.
 
 Provides RESTful endpoints for the frontend Modules page to interact

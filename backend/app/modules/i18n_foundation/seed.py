@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Seed loader for oe_i18n_foundation module.
 
 Loads countries, work calendars, and tax configurations from JSON files.

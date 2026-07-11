@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Webhook dispatch service.
 
 Finds matching webhook endpoints for a given event, sends HTTP POST requests

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """In-memory email backend for assertion-based tests.
 
 Captures every sent message in a list that tests can introspect:

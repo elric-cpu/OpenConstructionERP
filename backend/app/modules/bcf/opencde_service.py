@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """OpenCDE BCF-API 3.0 - service layer.
 
 Bridges incoming OpenCDE REST requests onto our native :mod:`bcf` ORM

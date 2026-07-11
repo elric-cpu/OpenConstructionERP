@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """RVT Shared Parameters (.txt) parser.
 
 Parses the TAB-delimited RVT shared parameter file format into

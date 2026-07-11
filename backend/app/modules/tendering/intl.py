@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """International, plain-language helpers for the tendering module.
 
 This file is additive and dependency-free (Python standard library only). It

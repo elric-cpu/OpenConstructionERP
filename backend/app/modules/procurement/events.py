@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Procurement event handlers - auto-create PO from awarded tender / bid.
 
 Subscribes to BOTH award events emitted by the two sister tendering

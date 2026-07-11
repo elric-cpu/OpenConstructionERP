@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """International, explainable helpers for the ISO 19650 Common Data Environment.
 
 This module is deliberately pure and database free. It adds plain-language,

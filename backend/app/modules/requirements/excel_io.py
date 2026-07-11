@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Excel + CSV import/export for EAC requirements.
 
 The EAC schema (entity, attribute, constraint_type, constraint_value,

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """NCR cross-module event subscribers (HSE/QMS/Risk wave).
 
 These handlers wire the standalone NCR module to upstream events without

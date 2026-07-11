@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """BIM Hub event handlers​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠ - vector indexing for BIM elements.
 
 Subscribes to ``bim_hub.element.*`` events and keeps the

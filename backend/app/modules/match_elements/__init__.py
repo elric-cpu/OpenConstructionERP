@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Match Elements module.
 
 Maps elements from BIM/CAD/PDF/photo sources to CWICR cost positions

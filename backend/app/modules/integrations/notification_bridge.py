@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Deliver in-app notifications to connected chat connectors (issue #279).
 
 Pre-#279 a user could connect Telegram (or Slack / Teams / Discord /

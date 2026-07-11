@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Pure-function executor for rule packs loaded from YAML.
 
 This module is intentionally side-effect free: no DB access, no logging

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """LLM bridge - adapt the single-call ``ai`` module client to the agent loop.
 
 The existing ``ai.ai_client.call_ai`` only returns free text. We layer two

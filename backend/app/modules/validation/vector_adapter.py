@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Validation report vector adapter - feeds the ``oe_validation`` collection.
 
 Each :class:`~app.modules.validation.models.ValidationReport` row is

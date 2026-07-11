@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Validate EAC requirements against a BIM model.
 
 Bridges the EAC schema (entity, attribute, constraint_type,

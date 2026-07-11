@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Waste-factor Pydantic schemas (request / response).
 
 Factors and quantities are ``Decimal`` on input and JSON *strings* on output,

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Translation API - test harness + dictionary download/status.
 
 Mounted at ``/api/v1/translation``. Three endpoints:

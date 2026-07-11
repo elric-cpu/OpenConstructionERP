@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Shared HTML email templates.
 
 Centralises the visual shell (logo, CSS, footer) and the per-event

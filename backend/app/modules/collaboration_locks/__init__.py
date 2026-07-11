@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Collaboration-locks module - layer 1 of the real-time collab plan.
 
 Provides pessimistic soft locks + presence broadcast for any entity

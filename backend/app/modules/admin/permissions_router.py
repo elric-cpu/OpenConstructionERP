@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Admin - permissions matrix endpoint.
 
 Exposes a view + edit surface for the live ``PermissionRegistry`` so the

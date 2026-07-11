@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """International, explainable text matcher for cost-database lookup.
 
 This module is the pure, database-free core of cost matching. It compares a

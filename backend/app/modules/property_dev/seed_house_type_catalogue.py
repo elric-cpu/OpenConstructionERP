@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Idempotent seed for the property_dev house-type catalogue presets.
 
 Mirrors the bulk_insert in migration ``v3114_propdev_house_type_catalogue``

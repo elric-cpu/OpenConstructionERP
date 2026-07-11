@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Submittals vector adapter - feeds the ``oe_submittals_submittals`` collection.
 
 Each :class:`~app.modules.submittals.models.Submittal` row is embedded as

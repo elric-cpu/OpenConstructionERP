@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Domain model and math for a unit-price breakdown.
 
 Everything here is pure and Decimal-exact so it is trivially testable and can

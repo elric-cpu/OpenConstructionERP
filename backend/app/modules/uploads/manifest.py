@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Direct Uploads module manifest.
 
 Wires the HMAC-signed PUT endpoint that consumes presigned URLs minted

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Notification subscriber for Project Discussion comments (issue #279).
 
 Pre-#279 the collaboration module's ``create_comment`` published no event,

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Export the 7-project localized showcase into a committed snapshot.
 
 Dev-only tool. Run it against a database that already holds the fully

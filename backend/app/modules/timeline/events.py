@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Timeline bridge subscriber - persist significant events to the audit store.
 
 The in-memory event bus (:mod:`app.core.events`) loses everything on restart.

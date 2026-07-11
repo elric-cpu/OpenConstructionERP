@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Install the 7-project localized showcase from the committed snapshot.
 
 A fresh install ships ``showcase_snapshot.json.gz`` (built by

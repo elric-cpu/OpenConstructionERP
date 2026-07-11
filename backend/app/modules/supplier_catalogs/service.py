@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Supplier Catalogs service - vendor management, catalog, PR/PO/GR/Invoice,
 warehouse stock control, 3-way match.
 

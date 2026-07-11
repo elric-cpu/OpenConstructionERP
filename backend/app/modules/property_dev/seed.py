@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Deterministic seed data for Property Development demo.
 
 Public entry point: :func:`seed_property_dev_demo`.

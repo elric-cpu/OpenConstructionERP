@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Waste-factor business logic: factor-library CRUD plus net-to-gross apply.
 
 Centralises the small amount of data access and the bridge to the pure

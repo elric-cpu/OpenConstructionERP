@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Simple in-memory rate limiter (no Redis required).
 
 Limits requests per user per time window. Thread-safe via dict with timestamps.

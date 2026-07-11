@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Invoice-approval DMS API routes.
 
 Mounted as a sub-router of the finance module, so every path below lives under

@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """International, unit-safe rollup helpers for the daily site diary.
 
 These are pure functions (no database, no network, stdlib only) so they

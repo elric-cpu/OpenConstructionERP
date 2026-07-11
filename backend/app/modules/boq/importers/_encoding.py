@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Shared encoding / number-parsing helpers for BOQ importers.
 
 Centralises three concerns that the historical inline parsers each

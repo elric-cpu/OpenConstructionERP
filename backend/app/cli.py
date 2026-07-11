@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """OpenConstructionERP CLI - run the platform from the command line.
 
 The happy path for a new user is two commands:

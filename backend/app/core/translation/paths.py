@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Filesystem layout for downloaded dictionaries.
 
 All dictionary state lives under ``~/.openestimate/translations/``

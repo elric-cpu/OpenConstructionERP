@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """ERP Chat module permission definitions (T8).
 
 Adds an ``erp_chat.admin`` permission gating the new admin observability

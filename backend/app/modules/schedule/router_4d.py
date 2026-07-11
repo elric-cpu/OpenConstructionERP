@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """4D module HTTP API (Section 6 - MVP slice).
 
 Two routers are exported here so :mod:`app.main` can mount them under the

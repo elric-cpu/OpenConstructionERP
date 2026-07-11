@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Management of Change (MoC) API routes - mounted at /api/v1/moc/."""
 
 from __future__ import annotations

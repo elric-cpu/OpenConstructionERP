@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """ERP Chat event handlers - vector indexing.
 
 Subscribes to ``erp_chat.message.*`` events and keeps the ``oe_chat``

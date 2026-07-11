@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """BIM Hub service​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠ - business logic for BIM data management.
 
 Stateless service layer. Handles:

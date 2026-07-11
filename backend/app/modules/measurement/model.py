@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Measurement sheet model: formula-based quantity determination.
 
 A measurement sheet belongs to one BoQ item and holds the take-off lines that

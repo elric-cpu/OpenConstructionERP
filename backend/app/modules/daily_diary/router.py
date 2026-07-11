@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Daily Site Diary API routes.
 
 Mounted at ``/api/v1/daily-diary/``. Each endpoint is guarded by a

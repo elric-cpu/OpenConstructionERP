@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Pure earned-value (EVM) math for the 4D schedule slice.
 
 This module is deliberately dependency-free: it imports nothing from the ORM,

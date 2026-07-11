@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Subcontractor module permission definitions.
 
 Round 5 hardening (v4.3.0): ``rate`` and ``block`` carved out into their

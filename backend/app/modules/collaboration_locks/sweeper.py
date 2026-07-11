@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Background task that prunes expired locks.
 
 Runs every :data:`SWEEP_INTERVAL_SECONDS` for the lifetime of the

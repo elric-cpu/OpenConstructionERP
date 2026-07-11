@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """IDS XML parser -- buildingSMART Information Delivery Specification.
 
 Parses IDS v1.0 XML files into UniversalRequirement rows.

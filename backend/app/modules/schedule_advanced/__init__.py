@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Schedule Advanced module (Last Planner System).
 
 Implements the Last Planner System (LPS) workflow on top of the existing

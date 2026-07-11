@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Export FULL resource catalog from ONE CWICR region.
 
 Columns match oe_catalog_resource DB schema exactly, so the file

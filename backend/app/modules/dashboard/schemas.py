@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Pydantic schemas for the dashboard rollup endpoint.
 
 Each widget has its own concrete shape so the OpenAPI doc is useful, but

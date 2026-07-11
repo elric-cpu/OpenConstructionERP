@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Labor & Crew Rates module.
 
 Builds a fully loaded hourly labor rate from a productive base wage plus

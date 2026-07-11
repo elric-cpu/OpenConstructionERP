@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Dependency injection container​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠.
 
 Provides FastAPI dependencies for database sessions, current user,

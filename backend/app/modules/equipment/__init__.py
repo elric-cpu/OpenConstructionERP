@@ -1,3 +1,5 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Equipment & Fleet Management module.
 
 Owned/rented/leased equipment fleet with telemetry, maintenance scheduling,
