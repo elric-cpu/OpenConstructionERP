@@ -454,70 +454,6 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
         </div>
       </div>
 
-      {/* ── Control bar: progress + sample project + reset, all one line ─── */}
-      <div className="flex flex-col gap-3 rounded-xl border border-border-light bg-surface-primary px-4 py-3 shadow-xs sm:flex-row sm:items-center sm:gap-5">
-        <div
-          className="flex flex-1 items-center gap-3"
-          role="progressbar"
-          aria-valuemin={0}
-          aria-valuemax={total}
-          aria-valuenow={doneCount}
-          aria-valuetext={progressLabel}
-          aria-label={t("cases.progress_label", {
-            defaultValue: "Case progress",
-          })}
-          aria-live="polite"
-        >
-          <span className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
-            {t("cases.progress_label", { defaultValue: "Case progress" })}
-          </span>
-          <div className="h-2 min-w-[5rem] flex-1 overflow-hidden rounded-full bg-surface-secondary">
-            <div
-              className="h-full rounded-full bg-oe-blue transition-all"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-          <span className="shrink-0 text-2xs font-medium tabular-nums text-content-secondary">
-            {progressLabel}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <label
-            htmlFor={selectId}
-            className="shrink-0 text-2xs font-semibold uppercase tracking-wide text-content-tertiary"
-          >
-            {t("cases.run_on", { defaultValue: "Run on" })}
-          </label>
-          <select
-            id={selectId}
-            value={selectedRaw}
-            onChange={(e) => setSelectedProject(playbook.id, e.target.value)}
-            className="h-8 max-w-[16rem] rounded-lg border border-border bg-surface-primary px-2.5 text-xs text-content-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
-          >
-            <option value="">
-              {t("cases.run_on_none", {
-                defaultValue: "No sample project (just open the module)",
-              })}
-            </option>
-            {sortedProjects.map((p) => {
-              const label = isDemoProject(p)
-                ? t("cases.run_on_sample_option", {
-                    defaultValue: "{{name}} (sample)",
-                    name: p.name,
-                  })
-                : p.name;
-              return (
-                <option key={p.id} value={p.id}>
-                  {label}
-                </option>
-              );
-            })}
-          </select>
-          {resetButton}
-        </div>
-      </div>
-
       {/* ── The process: a compact clickable strip of the ordered steps ──── */}
       <section
         aria-label={t("cases.the_process", { defaultValue: "The process" })}
@@ -591,6 +527,70 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
           })}
         </ol>
       </section>
+
+      {/* ── Control bar: progress + sample project + reset, all one line ─── */}
+      <div className="flex flex-col gap-3 rounded-xl border border-border-light bg-surface-primary px-4 py-3 shadow-xs sm:flex-row sm:items-center sm:gap-5">
+        <div
+          className="flex flex-1 items-center gap-3"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={total}
+          aria-valuenow={doneCount}
+          aria-valuetext={progressLabel}
+          aria-label={t("cases.progress_label", {
+            defaultValue: "Case progress",
+          })}
+          aria-live="polite"
+        >
+          <span className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
+            {t("cases.progress_label", { defaultValue: "Case progress" })}
+          </span>
+          <div className="h-2 min-w-[5rem] flex-1 overflow-hidden rounded-full bg-surface-secondary">
+            <div
+              className="h-full rounded-full bg-oe-blue transition-all"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <span className="shrink-0 text-2xs font-medium tabular-nums text-content-secondary">
+            {progressLabel}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor={selectId}
+            className="shrink-0 text-2xs font-semibold uppercase tracking-wide text-content-tertiary"
+          >
+            {t("cases.run_on", { defaultValue: "Run on" })}
+          </label>
+          <select
+            id={selectId}
+            value={selectedRaw}
+            onChange={(e) => setSelectedProject(playbook.id, e.target.value)}
+            className="h-8 max-w-[16rem] rounded-lg border border-border bg-surface-primary px-2.5 text-xs text-content-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+          >
+            <option value="">
+              {t("cases.run_on_none", {
+                defaultValue: "No sample project (just open the module)",
+              })}
+            </option>
+            {sortedProjects.map((p) => {
+              const label = isDemoProject(p)
+                ? t("cases.run_on_sample_option", {
+                    defaultValue: "{{name}} (sample)",
+                    name: p.name,
+                  })
+                : p.name;
+              return (
+                <option key={p.id} value={p.id}>
+                  {label}
+                </option>
+              );
+            })}
+          </select>
+          {resetButton}
+        </div>
+      </div>
 
       {/* ── Stage: the selected step in full, as IN -> ACTION -> OUT ─────── */}
       <section ref={stageRef} className="min-w-0 scroll-mt-4">
