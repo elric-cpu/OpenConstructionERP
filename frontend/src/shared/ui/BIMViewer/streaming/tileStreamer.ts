@@ -208,3 +208,80 @@ export async function streamModelTiles(
   if (parsedTiles === 0) return null;
   return { group, tileCount: parsedTiles, meshCount: group.children.length };
 }
+
+export interface PrefetchProgress {
+  /** Tiles handled so far (downloaded, already cached, or failed). */
+  done: number;
+  /** Total tiles in the manifest. */
+  total: number;
+  /** Tiles present in the cache after handling (downloaded or already there). */
+  ok: number;
+  /** Tiles that could not be fetched. */
+  failed: number;
+}
+
+export interface PrefetchOptions {
+  onProgress?: (progress: PrefetchProgress) => void;
+  signal?: AbortSignal;
+  /** Max concurrent tile downloads (default 6). */
+  fetchConcurrency?: number;
+}
+
+export interface PrefetchResult {
+  /** Total tiles in the manifest. */
+  total: number;
+  /** Tiles present in the cache after the run (downloaded or already there). */
+  ok: number;
+  /** Tiles that could not be fetched. */
+  failed: number;
+}
+
+/**
+ * Download and cache every tile of a model for offline use, WITHOUT parsing any
+ * geometry. This warms the same content-addressed IndexedDB cache that
+ * streamModelTiles reads, so once it resolves a later open of the model is
+ * served entirely from cache and works with no network - the "take it to site"
+ * story where the phone or tablet loses signal in the field.
+ *
+ * Returns null when the model has no streamable tileset (nothing to save). Never
+ * throws for a single bad tile: a tile that will not download is counted in
+ * `failed` and the rest continue, so a flaky connection still saves as much as
+ * it can. When the signal aborts, in-flight and pending tiles stop being counted
+ * and the partial cache stays valid (tiles are immutable), so resuming later
+ * simply skips whatever already landed.
+ */
+export async function prefetchModelTiles(
+  modelId: string,
+  opts: PrefetchOptions = {},
+): Promise<PrefetchResult | null> {
+  const manifest = await fetchTileManifest(modelId, opts.signal);
+  if (!manifest) return null;
+
+  const tiles: TileInfo[] = manifest.tiles;
+  const total = tiles.length;
+  let done = 0;
+  let ok = 0;
+  let failed = 0;
+
+  await mapPool(tiles, opts.fetchConcurrency ?? 6, async (tile) => {
+    if (opts.signal?.aborted) return;
+    let succeeded = false;
+    try {
+      // Cache-first: an already-saved tile resolves without a network hit, so a
+      // second run over the same model is cheap and only fills the gaps.
+      await fetchTileBytes(modelId, tile.hash, opts.signal);
+      succeeded = true;
+    } catch {
+      // Fall through - counted as failed below unless we were aborted.
+    }
+    // Re-check after the await: a mid-flight abort (fetch rejects) is a user
+    // cancellation, not a tile that is genuinely broken, so do not count it.
+    if (opts.signal?.aborted) return;
+    if (succeeded) ok += 1;
+    else failed += 1;
+    done += 1;
+    opts.onProgress?.({ done, total, ok, failed });
+  });
+
+  return { total, ok, failed };
+}

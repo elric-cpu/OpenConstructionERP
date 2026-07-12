@@ -25,6 +25,7 @@ import { BIMViewer } from '@/shared/ui/BIMViewer';
 import type { BIMElementData } from '@/shared/ui/BIMViewer';
 import { metresToModelUnits as unitsToModelScale } from '@/shared/ui/BIMViewer/geoLocate';
 import { buildElementQuestion } from '@/shared/ui/BIMViewer/elementQuestion';
+import { OfflineModelButton } from '@/shared/ui/BIMViewer/OfflineModelButton';
 import type { SceneManager } from '@/shared/ui/BIMViewer/SceneManager';
 import { useFloatingChatStore } from '@/features/erp-chat/useFloatingChat';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
@@ -134,6 +135,7 @@ function ModelReviewInner({ projectId }: { projectId: string }) {
           ))}
         </select>
         <div className="flex-1" />
+        {activeModelId && <OfflineModelButton modelId={activeModelId} />}
         <button
           type="button"
           onClick={() => setIssuesOpen((v) => !v)}
