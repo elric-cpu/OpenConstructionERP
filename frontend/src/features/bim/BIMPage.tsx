@@ -71,6 +71,8 @@ import {
   BIM_URL_STATE_KEYS,
 } from '@/shared/ui/BIMViewer/urlState';
 import { metresToModelUnits as unitsToModelScale } from '@/shared/ui/BIMViewer/geoLocate';
+import { buildElementQuestion } from '@/shared/ui/BIMViewer/elementQuestion';
+import { useFloatingChatStore } from '@/features/erp-chat/useFloatingChat';
 import { listAnchors } from '@/features/geo-hub/api';
 import BIMFilterGroupsPanel from './BIMFilterGroupsPanel';
 import BIMRightPanelTabs from './BIMRightPanelTabs';
@@ -2873,6 +2875,14 @@ export function BIMPage() {
     [navigate],
   );
 
+  // "Ask AI about this element" - build a full-context prompt from the
+  // (Wave D enriched) element and seed the shared AI assistant with it. We
+  // prefill rather than auto-send, so the user reviews and submits. The panel
+  // is global (mounted in AppLayout), so the user stays in the 3D viewer.
+  const handleAskAiAboutElement = useCallback((element: BIMElementData) => {
+    useFloatingChatStore.getState().seedPrompt(buildElementQuestion(element));
+  }, []);
+
   // Link a saved group to a BOQ position - looks up every member element
   // by id from the current `elements` list and opens AddToBOQModal with
   // the resolved subset.  If some member ids aren't in the loaded element
@@ -4060,6 +4070,7 @@ export function BIMPage() {
             onOpenTask={handleOpenTask}
             onOpenActivity={handleOpenActivity}
             onOpenRequirement={handleOpenRequirement}
+            onAskAiAboutElement={handleAskAiAboutElement}
             onCreateTask={handleCreateTask}
             onLinkDocument={handleLinkDocument}
             onLinkActivity={handleLinkActivity}

@@ -242,6 +242,11 @@ export interface BIMViewerProps {
   onOpenActivity?: (activityId: string) => void;
   /** User clicked a linked requirement in the properties panel. */
   onOpenRequirement?: (requirementId: string) => void;
+  /** User clicked "Ask AI" in the element quick-action bar. The parent builds
+   *  an element-context prompt and seeds the AI assistant with it. Passing
+   *  this prop is what makes the button appear (and it is hidden in portal
+   *  mode, where the internal AI assistant is not reachable). */
+  onAskAiAboutElement?: (element: BIMElementData) => void;
   /** User clicked "+ New" in the Linked Tasks section — parent opens
    *  CreateTaskFromBIMModal pre-filled with this element. */
   onCreateTask?: (element: BIMElementData) => void;
@@ -708,6 +713,7 @@ export function BIMViewer({
   onOpenTask,
   onOpenActivity,
   onOpenRequirement,
+  onAskAiAboutElement,
   onCreateTask,
   onLinkDocument,
   onLinkActivity,
@@ -5112,8 +5118,30 @@ export function BIMViewer({
           </div>
 
           {/* Quick-action bar — always visible, not buried in a tab */}
-          {(onAddToBOQ || onCreateTask || onLinkDocument || onLinkActivity || onLinkRequirement) && (
+          {(onAddToBOQ ||
+            onCreateTask ||
+            onLinkDocument ||
+            onLinkActivity ||
+            onLinkRequirement ||
+            (!portal && onAskAiAboutElement)) && (
             <div className="px-3 py-1.5 border-b border-border-light shrink-0 flex flex-wrap gap-1">
+              {/* Ask AI about this element - the "ask the model" moat. Seeds the
+                  shared assistant with a full-context prompt (BOQ, docs, tasks,
+                  schedule, requirements, validation). Hidden in portal mode: the
+                  internal AI assistant is not reachable for portal clients. */}
+              {!portal && onAskAiAboutElement && (
+                <button
+                  type="button"
+                  onClick={() => onAskAiAboutElement(selectedElement)}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors"
+                  title={t('bim.quick_ask_ai_title', {
+                    defaultValue: 'Ask the AI assistant about this element',
+                  })}
+                >
+                  <Sparkles size={10} />
+                  {t('bim.quick_ask_ai', { defaultValue: 'Ask AI' })}
+                </button>
+              )}
               {onAddToBOQ && (
                 <button
                   type="button"

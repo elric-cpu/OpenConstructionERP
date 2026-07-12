@@ -24,7 +24,9 @@ import { apiGet } from '@/shared/lib/api';
 import { BIMViewer } from '@/shared/ui/BIMViewer';
 import type { BIMElementData } from '@/shared/ui/BIMViewer';
 import { metresToModelUnits as unitsToModelScale } from '@/shared/ui/BIMViewer/geoLocate';
+import { buildElementQuestion } from '@/shared/ui/BIMViewer/elementQuestion';
 import type { SceneManager } from '@/shared/ui/BIMViewer/SceneManager';
+import { useFloatingChatStore } from '@/features/erp-chat/useFloatingChat';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 
 import { makeBcfBridge } from './bcfBridge';
@@ -90,6 +92,12 @@ function ModelReviewInner({ projectId }: { projectId: string }) {
     setSceneReady(!!scene);
   }, []);
 
+  // "Ask AI about this element" - seed the shared assistant with a full
+  // element-context prompt. Same behaviour as on the main BIM page.
+  const handleAskAiAboutElement = useCallback((element: BIMElementData) => {
+    useFloatingChatStore.getState().seedPrompt(buildElementQuestion(element));
+  }, []);
+
   const handleSelectionChange = useCallback((_ids: string[], els: BIMElementData[]) => {
     // BCF wants stable ids (IFC GlobalId / RVT UniqueId); fall back to the
     // mesh ref, then the row id, and drop anything empty.
@@ -153,6 +161,7 @@ function ModelReviewInner({ projectId }: { projectId: string }) {
               isLoading={isLoadingElements}
               onSelectionChange={handleSelectionChange}
               onSceneReady={handleSceneReady}
+              onAskAiAboutElement={handleAskAiAboutElement}
               className="h-full"
             />
           ) : (

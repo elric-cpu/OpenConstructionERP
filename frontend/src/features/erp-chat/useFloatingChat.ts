@@ -38,6 +38,15 @@ interface FloatingChatState {
    * they still need to configure their key.
    */
   onboardingBannerDismissed: boolean;
+  /**
+   * One-shot text to drop into the composer the next time the panel is open.
+   * Set by `seedPrompt` (e.g. the BIM viewer's "Ask AI about this element"
+   * action) and consumed once by the panel, which prefills the input and
+   * clears it. Deliberately NOT persisted: it is a transient hand-off, not a
+   * draft to survive reloads. We prefill rather than auto-send so the user
+   * reviews and submits, matching the platform's human-confirmed AI stance.
+   */
+  pendingPrompt: string | null;
   open: () => void;
   close: () => void;
   toggle: () => void;
@@ -46,6 +55,10 @@ interface FloatingChatState {
   bumpUnread: () => void;
   dismissOnboardingBanner: () => void;
   resetOnboardingBanner: () => void;
+  /** Open the panel and stage `prompt` to prefill the composer. */
+  seedPrompt: (prompt: string) => void;
+  /** Clear the staged prompt (called by the panel once it has consumed it). */
+  clearPendingPrompt: () => void;
 }
 
 function readPersisted(): PersistedState {
@@ -83,6 +96,7 @@ export const useFloatingChatStore = create<FloatingChatState>((set, get) => ({
   lastReadAt: initial.lastReadAt,
   unreadCount: 0,
   onboardingBannerDismissed: false,
+  pendingPrompt: null,
 
   open: () => {
     const now = new Date().toISOString();
@@ -129,6 +143,21 @@ export const useFloatingChatStore = create<FloatingChatState>((set, get) => ({
 
   resetOnboardingBanner: () => {
     set({ onboardingBannerDismissed: false });
+  },
+
+  seedPrompt: (prompt: string) => {
+    const trimmed = prompt.trim();
+    if (!trimmed) return;
+    // Open the panel and stage the text; the panel consumes it on the next
+    // render. Mirrors `open()` so the unread badge and read-marker stay
+    // consistent whether the user opened the panel or the seed did.
+    const now = new Date().toISOString();
+    set({ pendingPrompt: trimmed, isOpen: true, lastReadAt: now, unreadCount: 0 });
+    writePersisted({ activeSessionId: get().activeSessionId, lastReadAt: now });
+  },
+
+  clearPendingPrompt: () => {
+    if (get().pendingPrompt !== null) set({ pendingPrompt: null });
   },
 }));
 

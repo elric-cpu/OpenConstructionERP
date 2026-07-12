@@ -1064,6 +1064,8 @@ export function FloatingChatPanel() {
   const dismissOnboardingBanner = useFloatingChatStore(
     (s) => s.dismissOnboardingBanner,
   );
+  const pendingPrompt = useFloatingChatStore((s) => s.pendingPrompt);
+  const clearPendingPrompt = useFloatingChatStore((s) => s.clearPendingPrompt);
   const isMobile = useIsMobileViewport(640);
   const resolvedTheme = useThemeStore((s) => s.resolved);
   const activeProjectId = useProjectContextStore((s) => s.activeProjectId);
@@ -1110,6 +1112,27 @@ export function FloatingChatPanel() {
     const id = window.setTimeout(() => textareaRef.current?.focus(), 80);
     return () => window.clearTimeout(id);
   }, [isOpen]);
+
+  // Consume a staged prompt (e.g. from the BIM viewer's "Ask AI about this
+  // element" button): prefill the composer, grow it to fit and place the
+  // caret at the end so the user can review, tweak and hit Enter. We do NOT
+  // auto-send, matching the human-confirmed AI stance. Fires when the panel
+  // is already open too (dep on `pendingPrompt`), not only on first open.
+  useEffect(() => {
+    if (!isOpen || !pendingPrompt) return;
+    setValue(pendingPrompt);
+    clearPendingPrompt();
+    const id = window.requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+      el.focus();
+      const end = el.value.length;
+      el.setSelectionRange(end, end);
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [isOpen, pendingPrompt, clearPendingPrompt]);
 
   // Auto-scroll on new messages.
   useEffect(() => {
