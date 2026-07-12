@@ -68,10 +68,10 @@ jobs:
 
       - name: Build frontend bundle into wheel layout
         # The Vite/Rollup build now exceeds Node's default ~4 GB heap and dies
-        # with exit 134 ("JavaScript heap out of memory"). Give it a 6 GB
+        # with exit 134 ("JavaScript heap out of memory"). Give it an 8 GB
         # old-space ceiling; harmless on the 16 GB GitHub-hosted runner.
         env:
-          NODE_OPTIONS: --max-old-space-size=6144
+          NODE_OPTIONS: --max-old-space-size=8192
         run: |
           cd frontend
           npm ci

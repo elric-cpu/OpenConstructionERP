@@ -57,9 +57,9 @@ jobs:
       - name: Build frontend
         # The macOS arm64 runner OOMs the Vite/Rollup build with Node's
         # default heap (exit 134, "JavaScript heap out of memory"). Give it
-        # a 6 GB old-space ceiling; harmless on the roomier Linux/Windows runners.
+        # an 8 GB old-space ceiling; harmless on the roomier Linux/Windows runners.
         env:
-          NODE_OPTIONS: --max-old-space-size=6144
+          NODE_OPTIONS: --max-old-space-size=8192
         run: |
           cd frontend
           npm ci
@@ -128,9 +128,9 @@ jobs:
       - name: Build frontend
         # The macOS arm64 runner OOMs the Vite/Rollup build with Node's
         # default heap (exit 134, "JavaScript heap out of memory"). Give it
-        # a 6 GB old-space ceiling; harmless on the roomier Linux/Windows runners.
+        # an 8 GB old-space ceiling; harmless on the roomier Linux/Windows runners.
         env:
-          NODE_OPTIONS: --max-old-space-size=6144
+          NODE_OPTIONS: --max-old-space-size=8192
         run: |
           cd frontend
           npm ci
