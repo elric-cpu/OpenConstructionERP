@@ -87,7 +87,8 @@ import {
 } from './color5d';
 import { TimelineScrubber } from './TimelineScrubber';
 import { use4dTimeline } from './use4dTimeline';
-import { resolveElementStatus } from './4dStatus';
+import { resolveElementStatus, type FourDStatus } from './4dStatus';
+import { INSTALL_STATUS_HEX, resolveInstallStatus } from './installStatus';
 import SimilarItemsPanel from '@/shared/ui/SimilarItemsPanel';
 import { Slider } from '@/shared/ui/Slider';
 import { useBIMViewerStore } from '@/stores/useBIMViewerStore';
@@ -179,7 +180,8 @@ export interface BIMViewerProps {
     | 'document_coverage'
     | '5d_cost'
     | '4d_schedule'
-    | 'by_progress';
+    | 'by_progress'
+    | 'install_status';
   /** Latest BOQ percent-complete (0-100) per element id, used by the
    *  ``by_progress`` colour mode and surfaced in the element info panel /
    *  hover tooltip as "BOQ Progress: XX%". The viewer's element list is
@@ -993,7 +995,10 @@ export function BIMViewer({
    *  activates 4D mode so we don't hit the schedule API on every page
    *  visit.  When the project has no schedule, `isAvailable` is false
    *  and the scrubber renders nothing. */
-  const fourD = use4dTimeline(projectId, colorByMode === '4d_schedule');
+  const fourD = use4dTimeline(
+    projectId,
+    colorByMode === '4d_schedule' || colorByMode === 'install_status',
+  );
 
   /** 5D cost rate stats — min / max unit_rate across all linked BOQ
    *  positions on the loaded elements.  Drives the legend strip in the
@@ -1970,6 +1975,33 @@ export function BIMViewer({
           // Fade elements with no recorded progress so the coloured
           // (linked + measured) work pops out of the neutral context.
           (el) => (pctMap[el.id] != null ? 1 : NO_LINK_OPACITY),
+        );
+      });
+    } else if (colorByMode === 'install_status') {
+      // Install-status overlay - a discrete green / amber / grey bucket per
+      // element: installed, being installed, or still to come. The schedule
+      // (4D) wins when the element is scheduled; otherwise BOQ progress
+      // decides. Elements with neither are left in their neutral colour.
+      const pctMap = progressByElementId ?? {};
+      const schedFor = (id: string): FourDStatus | null =>
+        fourD.isAvailable
+          ? resolveElementStatus(
+              id,
+              fourD.currentMs,
+              fourD.elementToActivities,
+              fourD.activitiesById,
+            )
+          : null;
+      import('three').then((THREE) => {
+        mgr.colorByDirect(
+          (el) => {
+            const status = resolveInstallStatus(schedFor(el.id), pctMap[el.id] ?? null);
+            return status === 'none' ? null : new THREE.Color(INSTALL_STATUS_HEX[status]);
+          },
+          (el) =>
+            resolveInstallStatus(schedFor(el.id), pctMap[el.id] ?? null) === 'none'
+              ? NO_LINK_OPACITY
+              : 1,
         );
       });
     } else {
@@ -4097,6 +4129,37 @@ export function BIMViewer({
               {t('bim.progress_legend_no_data', { defaultValue: 'no data' })}
             </span>
           </div>
+        </div>
+      )}
+
+      {/* Install-status legend - three fixed swatches (green / amber / grey)
+          for installed / in-progress / pending, mirroring the mesh colours. */}
+      {colorByMode === 'install_status' && (
+        <div className="absolute bottom-3 end-3 z-20 flex flex-col gap-1 rounded-lg bg-surface-primary border border-border-light shadow-sm px-3 py-2 min-w-[150px]">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-content-tertiary">
+            {t('bim.install_status_legend_title', { defaultValue: 'Install status' })}
+          </span>
+          {(
+            [
+              ['installed', t('bim.install_status_installed', { defaultValue: 'Installed' })],
+              [
+                'in_progress',
+                t('bim.install_status_in_progress', { defaultValue: 'In progress' }),
+              ],
+              ['pending', t('bim.install_status_pending', { defaultValue: 'Pending' })],
+            ] as const
+          ).map(([key, label]) => (
+            <span
+              key={key}
+              className="flex items-center gap-1.5 text-[10px] text-content-secondary"
+            >
+              <span
+                className="inline-block h-2 w-2 rounded-full"
+                style={{ background: INSTALL_STATUS_HEX[key] }}
+              />
+              {label}
+            </span>
+          ))}
         </div>
       )}
 

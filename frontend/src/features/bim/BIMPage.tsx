@@ -2067,6 +2067,7 @@ export function BIMPage() {
     | '5d_cost'
     | '4d_schedule'
     | 'by_progress'
+    | 'install_status'
   >('default');
   const showBoundingBoxes = false;
   const [isolatedIds, setIsolatedIds] = useState<string[] | null>(null);
@@ -2386,7 +2387,7 @@ export function BIMPage() {
     queryFn: () => fetchBIMElementProgress(activeModelId!),
     enabled:
       !!activeModelId &&
-      colorByMode === 'by_progress' &&
+      (colorByMode === 'by_progress' || colorByMode === 'install_status') &&
       (activeModel?.status === 'ready' || activeModel?.status === 'degraded'),
     staleTime: 60_000,
   });
@@ -3547,7 +3548,8 @@ export function BIMPage() {
                       | 'document_coverage'
                       | '5d_cost'
                       | '4d_schedule'
-                      | 'by_progress',
+                      | 'by_progress'
+                      | 'install_status',
                   )
                 }
                 title={t('bim.color_by', { defaultValue: 'Color by' })}
@@ -3582,6 +3584,9 @@ export function BIMPage() {
                   </option>
                   <option value="by_progress">
                     {t('bim.color_by_progress', { defaultValue: 'By progress' })}
+                  </option>
+                  <option value="install_status">
+                    {t('bim.color_install_status', { defaultValue: 'Install status' })}
                   </option>
                 </optgroup>
               </select>
