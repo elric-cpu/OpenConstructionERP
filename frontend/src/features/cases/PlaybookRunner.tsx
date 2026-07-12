@@ -3,18 +3,22 @@
 //
 // PlaybookRunner - the case detail page that drives one case.
 //
-// Layout, top to bottom: a compact header (title + one-line description + meta
-// on the left, a small framed case image on the right), a slim control bar (the
-// progress track, the sample-project picker and reset, all on one line), a
-// compact "The process" step strip (the ordered steps as small clickable
-// filmstrip cards), and the stage - the selected step in full. The stage is the
-// star: it shows the step as an IN -> ACTION -> OUT flow (what data goes in, the
-// action scene in the middle, what comes out) so the user sees exactly what the
-// step consumes and produces, then a What / Why caption and the module actions.
+// Layout, top to bottom: a title block (the hero) that answers "what is this,
+// why, how far am I and how do I start" in one place - the category, time and
+// step count, the case title and purpose, one obvious primary action (Start /
+// Continue / Review), the sample-project picker and reset, and the progress
+// track. Below the hero the page splits into two columns on wide screens: a
+// sticky "The process" step rail on the left (the ordered steps as compact,
+// clickable rows, each showing its module, so the whole journey stays in view
+// while you read), and the stage on the right - the selected step in full. The
+// stage reads top to bottom: What you do / Why, then the step's IN -> ACTION ->
+// OUT data flow across the full column width (what data goes in, the action
+// scene you click to open the module, what comes out), then the actions. On
+// narrow screens the columns stack (rail above the stage).
 //
 // The selected step is a single source of truth: `useCasesStore`'s per-run
-// current step index. Clicking a process card, using Prev/Next, or marking a
-// step done all write that one index, and the strip, the highlight and the stage
+// current step index. Clicking a process row, using Prev/Next, or marking a
+// step done all write that one index, and the rail, the highlight and the stage
 // all read back from it, so everything stays in sync. Progress and the
 // sample-project choice are owned by useCasesStore and persist across reloads.
 
@@ -35,6 +39,9 @@ import {
   ArrowRight,
   ArrowDown,
   Check,
+  Clock,
+  ListChecks,
+  Play,
   RotateCcw,
   CheckCircle2,
   LogIn,
@@ -160,21 +167,21 @@ function FlowConnector({ vertical = false }: { vertical?: boolean }): ReactEleme
   );
 }
 
-/** The small filmstrip thumbnail for one step in the process strip: the step's
- *  bespoke process scene when it has one, otherwise its icon scene, framed to
- *  match the stage so the strip reads as a row of pictures of the actual work. */
-function StepThumb({ step }: { step: PlaybookStep }): ReactElement {
-  // A compact, wide 16:9 banner: small enough that the numbered title beside it
-  // stays the prominent element and the strip reads as an ordered process.
-  const cls = "aspect-[16/9] w-full";
+/** The thumbnail for one step in the process rail: the step's bespoke process
+ *  scene when it has one, otherwise its icon scene, framed to match the stage so
+ *  the rail reads as a row of pictures of the actual work. `className` sizes the
+ *  tile (the rail passes a small fixed width; the default fills its box). */
+function StepThumb({
+  step,
+  className = "aspect-[16/9] w-full",
+}: {
+  step: PlaybookStep;
+  className?: string;
+}): ReactElement {
   return step.scene && hasProcessScene(step.scene) ? (
-    <StepProcessScene
-      sceneId={step.scene}
-      rounded="rounded-lg"
-      className={cls}
-    />
+    <StepProcessScene sceneId={step.scene} rounded="rounded-lg" className={className} />
   ) : (
-    <StepScene icon={step.icon} rounded="rounded-lg" className={cls} />
+    <StepScene icon={step.icon} rounded="rounded-lg" className={className} />
   );
 }
 
@@ -296,7 +303,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
   const onStepKeyDown = useCallback(
     (e: KeyboardEvent, index: number) => {
       let target: number | null = null;
-      // The strip is a single sequence, so both axes walk it.
+      // The rail is a single sequence, so both axes walk it.
       if (e.key === "ArrowDown" || e.key === "ArrowRight")
         target = clampStepIndex(index + 1, total);
       else if (e.key === "ArrowUp" || e.key === "ArrowLeft")
@@ -313,18 +320,25 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
     [selectStep, total],
   );
 
-  // Pointer taps on a process card should reveal the stage below, so the switch
+  // Pointer taps on a process row should reveal the stage below, so the switch
   // is visible even when the stage sits under the fold (mobile / short
   // viewports). Only scroll when little to none of the stage is on screen; when
-  // it is already visible (desktop) the viewport stays put. Keyboard activation
-  // reports `detail === 0` and is skipped, so arrowing through the cards never
-  // yanks focus out of view.
+  // it is already visible (wide screens, side by side) the viewport stays put.
+  // Keyboard activation reports `detail === 0` and is skipped, so arrowing
+  // through the rows never yanks focus out of view.
   const revealStage = useCallback(() => {
     const el = stageRef.current;
     if (!el) return;
     if (el.getBoundingClientRect().top > window.innerHeight - 120) {
       el.scrollIntoView({ behavior: "smooth", block: "start" });
     }
+  }, []);
+
+  // The hero's primary action always brings the working stage into view (and on
+  // narrow screens that is a real scroll down to it), then leaves the user on
+  // their current step ready to read and act.
+  const scrollToStage = useCallback(() => {
+    stageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
   // Resolve a flow item list (input / output) to display strings once.
@@ -378,6 +392,17 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
   const curOutputs = resolveFlow(currentStep, "outputs");
   const hasFlow = curInputs.length > 0 || curOutputs.length > 0;
 
+  // The hero primary reads as Start / Continue / Review depending on where the
+  // run stands, so returning to a half-finished case is obvious.
+  const hasStarted = doneCount > 0 || currentIndex > 0;
+  const primaryLabel = allDone
+    ? t("cases.hero.review", { defaultValue: "Review case" })
+    : hasStarted
+      ? t("cases.hero.continue", { defaultValue: "Continue" })
+      : t("cases.hero.start", { defaultValue: "Start case" });
+
+  // The clickable action scene that opens the step's module, reused by the flow
+  // and the no-flow layouts so the module link is always the same affordance.
   const StageScene =
     currentStep?.scene && hasProcessScene(currentStep.scene) ? (
       <StepProcessScene
@@ -392,6 +417,33 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
         className="aspect-[10/7] w-full"
       />
     );
+  const openModuleLabel = t("cases.step.go_to_module", {
+    defaultValue: "Open {{module}}",
+    module: curModule,
+  });
+  const openModuleButton = currentStep ? (
+    <button
+      type="button"
+      onClick={() => handleGo(currentStep)}
+      title={t("cases.step.go_to", {
+        defaultValue: "Go to {{module}}",
+        module: curModule,
+      })}
+      className="group w-full max-w-[260px] rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+    >
+      {StageScene}
+      <span className="mt-2 inline-flex w-full items-center justify-center gap-1 text-xs font-semibold text-oe-blue-text transition-colors group-hover:text-oe-blue">
+        <CurIcon size={12} strokeWidth={2} aria-hidden="true" />
+        {openModuleLabel}
+        <ArrowRight
+          size={12}
+          strokeWidth={2.2}
+          className="transition-transform group-hover:translate-x-0.5"
+          aria-hidden="true"
+        />
+      </span>
+    </button>
+  ) : null;
 
   return (
     <div className="space-y-5 animate-fade-in">
@@ -405,249 +457,306 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
         {t("cases.back_to_list", { defaultValue: "All cases" })}
       </button>
 
-      {/* ── Header: title + meta left, a small framed case image right ────── */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span
-              className={clsx(
-                "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-2xs font-medium",
-                tint.chip,
-              )}
-            >
-              <PlaybookIcon size={11} strokeWidth={2} aria-hidden="true" />
-              {t(cat.labelKey, { defaultValue: cat.labelDefault })}
-            </span>
-            <span className="text-2xs font-medium text-content-tertiary">
-              {t("cases.card.minutes", {
-                defaultValue: "about {{count}} min",
-                count: playbook.estMinutes,
-              })}
-            </span>
-            <span className="text-2xs font-medium text-content-tertiary">
-              {t("cases.card.steps", {
-                defaultValue: "{{count}} steps",
-                count: total,
-              })}
-            </span>
-          </div>
-          <h1 className="text-xl font-semibold tracking-tight text-content-primary sm:text-2xl">
-            {title}
-          </h1>
-          <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-content-secondary">
-            {desc}
-          </p>
-        </div>
+      {/* ── Hero: purpose + primary action + run context + progress ──────── */}
+      <section className="relative overflow-hidden rounded-2xl border border-border-light bg-gradient-to-br from-oe-blue/[0.08] via-oe-blue/[0.03] to-transparent p-5 sm:p-6">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-10 -top-12 h-44 w-44 rounded-full bg-oe-blue/10 blur-3xl"
+        />
+        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 flex-1">
+            {/* Meta: discipline, time and step count */}
+            <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span
+                className={clsx(
+                  "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-2xs font-medium",
+                  tint.chip,
+                )}
+              >
+                <PlaybookIcon size={11} strokeWidth={2} aria-hidden="true" />
+                {t(cat.labelKey, { defaultValue: cat.labelDefault })}
+              </span>
+              <span className="inline-flex items-center gap-1 text-2xs font-medium text-content-tertiary">
+                <Clock size={11} aria-hidden="true" />
+                {t("cases.card.minutes", {
+                  defaultValue: "about {{count}} min",
+                  count: playbook.estMinutes,
+                })}
+              </span>
+              <span className="inline-flex items-center gap-1 text-2xs font-medium text-content-tertiary">
+                <ListChecks size={11} aria-hidden="true" />
+                {t("cases.card.steps", {
+                  defaultValue: "{{count}} steps",
+                  count: total,
+                })}
+              </span>
+            </div>
+            <h1 className="text-xl font-semibold tracking-tight text-content-primary sm:text-2xl">
+              {title}
+            </h1>
+            <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-content-secondary">
+              {desc}
+            </p>
 
-        {/* Decorative case image (alt=""): the H1 already names the case. Kept
-            compact so the hero stays tight; the always-light tile chrome is the
-            established illustration surface. */}
-        <div className="w-32 shrink-0 sm:w-40 lg:w-44">
-          <div className="aspect-[4/3] w-full overflow-hidden rounded-xl border border-border-light bg-gradient-to-b from-white to-slate-50 ring-1 ring-inset ring-slate-900/[0.04]">
-            <CaseArt
-              id={playbook.id}
-              fallbackIcon={PlaybookIcon}
-              fallbackClass={tint.text}
-              alt=""
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* ── The process: a compact clickable strip of the ordered steps ──── */}
-      <section
-        aria-label={t("cases.the_process", { defaultValue: "The process" })}
-      >
-        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-          <p className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
-            {t("cases.the_process", { defaultValue: "The process" })}
-          </p>
-          <p className="text-xs text-content-tertiary">
-            {t("cases.process_help", {
-              defaultValue: "Choose a step to see what happens and why",
-            })}
-          </p>
-        </div>
-        <ol className="flex flex-wrap gap-2" aria-label={title}>
-          {playbook.steps.map((step, i) => {
-            const done = isStepDone(progress, step.id);
-            const isCurrent = i === currentIndex;
-            const stepTitle = t(step.titleKey, {
-              defaultValue: step.titleDefault,
-            });
-            return (
-              <li key={step.id} className="min-w-[8rem] max-w-[12rem] flex-1">
-                <button
-                  type="button"
-                  ref={(el) => {
-                    stepRefs.current[i] = el;
-                  }}
-                  onClick={(e) => {
-                    selectStep(i);
-                    if (e.detail !== 0) revealStage();
-                  }}
-                  onKeyDown={(e) => onStepKeyDown(e, i)}
-                  aria-current={isCurrent ? "step" : undefined}
-                  className={clsx(
-                    "group flex h-full w-full flex-col gap-1.5 rounded-xl border p-2 text-left transition-all",
-                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40",
-                    isCurrent
-                      ? "border-oe-blue bg-oe-blue-subtle shadow-sm ring-1 ring-inset ring-oe-blue/30"
-                      : "border-border-light bg-surface-primary hover:border-oe-blue/40 hover:bg-surface-secondary/40",
-                  )}
+            {/* Primary action + sample-project context + reset, one command row */}
+            <div className="mt-4 flex flex-wrap items-center gap-2.5">
+              <Button
+                variant="primary"
+                size="lg"
+                icon={<Play size={16} />}
+                onClick={() => {
+                  selectStep(currentIndex);
+                  scrollToStage();
+                }}
+              >
+                {primaryLabel}
+              </Button>
+              <div className="flex items-center gap-2">
+                <label
+                  htmlFor={selectId}
+                  className="shrink-0 text-2xs font-semibold uppercase tracking-wide text-content-tertiary"
                 >
-                  {/* A small 16:9 picture keeps the strip visual but compact; the
-                      numbered title below is the prominent element, so the strip
-                      reads as an ordered process, not a wall of pictures. */}
-                  <StepThumb step={step} />
-                  <div className="flex items-start gap-1.5">
+                  {t("cases.run_on", { defaultValue: "Run on" })}
+                </label>
+                <select
+                  id={selectId}
+                  value={selectedRaw}
+                  onChange={(e) =>
+                    setSelectedProject(playbook.id, e.target.value)
+                  }
+                  className="h-8 max-w-[15rem] rounded-lg border border-border bg-surface-primary px-2.5 text-xs text-content-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+                >
+                  <option value="">
+                    {t("cases.run_on_none", {
+                      defaultValue: "No sample project (just open the module)",
+                    })}
+                  </option>
+                  {sortedProjects.map((p) => {
+                    const label = isDemoProject(p)
+                      ? t("cases.run_on_sample_option", {
+                          defaultValue: "{{name}} (sample)",
+                          name: p.name,
+                        })
+                      : p.name;
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {label}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+              {resetButton}
+            </div>
+
+            {/* Progress track */}
+            <div
+              className="mt-4 flex items-center gap-3"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={total}
+              aria-valuenow={doneCount}
+              aria-valuetext={progressLabel}
+              aria-label={t("cases.progress_label", {
+                defaultValue: "Case progress",
+              })}
+              aria-live="polite"
+            >
+              <span className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
+                {t("cases.progress_label", { defaultValue: "Case progress" })}
+              </span>
+              <div className="h-2 min-w-[5rem] max-w-xs flex-1 overflow-hidden rounded-full bg-surface-secondary">
+                <div
+                  className="h-full rounded-full bg-oe-blue transition-all"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <span className="shrink-0 text-2xs font-medium tabular-nums text-content-secondary">
+                {progressLabel}
+              </span>
+            </div>
+          </div>
+
+          {/* Decorative case image (alt=""): the H1 already names the case. The
+              always-light tile chrome is the established illustration surface. */}
+          <div className="w-32 shrink-0 sm:w-40 lg:w-44">
+            <div className="aspect-[4/3] w-full overflow-hidden rounded-xl border border-border-light bg-gradient-to-b from-white to-slate-50 ring-1 ring-inset ring-slate-900/[0.04]">
+              <CaseArt
+                id={playbook.id}
+                fallbackIcon={PlaybookIcon}
+                fallbackClass={tint.text}
+                alt=""
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Two columns on wide screens: the step rail + the stage ───────── */}
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[19rem_minmax(0,1fr)] xl:items-start">
+        {/* The process: a sticky, scannable rail of the ordered steps. Each row
+            shows its number/status, a small picture of the work and the module
+            it uses, so the whole journey stays readable while the stage scrolls. */}
+        <section
+          aria-label={t("cases.the_process", { defaultValue: "The process" })}
+          className="xl:sticky xl:top-4 xl:self-start"
+        >
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+            <p className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
+              {t("cases.the_process", { defaultValue: "The process" })}
+            </p>
+            <p className="text-xs text-content-tertiary xl:hidden">
+              {t("cases.process_help", {
+                defaultValue: "Choose a step to see what happens and why",
+              })}
+            </p>
+          </div>
+          <ol
+            className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:flex xl:max-h-[calc(100vh-3rem)] xl:flex-col xl:overflow-y-auto xl:pr-1"
+            aria-label={title}
+          >
+            {playbook.steps.map((step, i) => {
+              const done = isStepDone(progress, step.id);
+              const isCurrent = i === currentIndex;
+              const stepTitle = t(step.titleKey, {
+                defaultValue: step.titleDefault,
+              });
+              const stepModule = step.moduleLabelKey
+                ? t(step.moduleLabelKey, { defaultValue: step.moduleLabel })
+                : step.moduleLabel;
+              return (
+                <li key={step.id} className="min-w-0">
+                  <button
+                    type="button"
+                    ref={(el) => {
+                      stepRefs.current[i] = el;
+                    }}
+                    onClick={(e) => {
+                      selectStep(i);
+                      if (e.detail !== 0) revealStage();
+                    }}
+                    onKeyDown={(e) => onStepKeyDown(e, i)}
+                    aria-current={isCurrent ? "step" : undefined}
+                    className={clsx(
+                      "group flex h-full w-full items-center gap-2.5 rounded-xl border p-2 text-left transition-all",
+                      "focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40",
+                      isCurrent
+                        ? "border-oe-blue bg-oe-blue-subtle shadow-sm ring-1 ring-inset ring-oe-blue/30"
+                        : "border-border-light bg-surface-primary hover:border-oe-blue/40 hover:bg-surface-secondary/40",
+                    )}
+                  >
                     <span
                       className={clsx(
-                        "mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-2xs font-bold",
+                        "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-2xs font-bold",
                         done || isCurrent
                           ? "bg-oe-blue text-white"
                           : "bg-surface-secondary text-content-secondary ring-1 ring-inset ring-border-light",
                       )}
                       aria-hidden="true"
                     >
-                      {done ? <Check size={11} strokeWidth={2.5} /> : i + 1}
+                      {done ? <Check size={12} strokeWidth={2.5} /> : i + 1}
                     </span>
-                    <span
-                      className={clsx(
-                        "min-w-0 text-sm font-semibold leading-snug line-clamp-2",
-                        isCurrent ? "text-oe-blue-text" : "text-content-primary",
-                      )}
-                    >
-                      {stepTitle}
+                    <StepThumb
+                      step={step}
+                      className="aspect-[16/9] w-16 shrink-0 sm:w-20"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span
+                        className={clsx(
+                          "block text-sm font-semibold leading-snug line-clamp-2",
+                          isCurrent
+                            ? "text-oe-blue-text"
+                            : "text-content-primary",
+                        )}
+                      >
+                        {stepTitle}
+                      </span>
+                      <span className="mt-1 flex">
+                        <span className="inline-block max-w-full truncate rounded border border-border-light bg-surface-secondary px-1.5 py-px text-2xs font-medium text-content-tertiary">
+                          {stepModule}
+                        </span>
+                      </span>
                     </span>
-                  </div>
-                </button>
-              </li>
-            );
-          })}
-        </ol>
-      </section>
-
-      {/* ── Control bar: progress + sample project + reset, all one line ─── */}
-      <div className="flex flex-col gap-3 rounded-xl border border-border-light bg-surface-primary px-4 py-3 shadow-xs sm:flex-row sm:items-center sm:gap-5">
-        <div
-          className="flex flex-1 items-center gap-3"
-          role="progressbar"
-          aria-valuemin={0}
-          aria-valuemax={total}
-          aria-valuenow={doneCount}
-          aria-valuetext={progressLabel}
-          aria-label={t("cases.progress_label", {
-            defaultValue: "Case progress",
-          })}
-          aria-live="polite"
-        >
-          <span className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
-            {t("cases.progress_label", { defaultValue: "Case progress" })}
-          </span>
-          <div className="h-2 min-w-[5rem] flex-1 overflow-hidden rounded-full bg-surface-secondary">
-            <div
-              className="h-full rounded-full bg-oe-blue transition-all"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-          <span className="shrink-0 text-2xs font-medium tabular-nums text-content-secondary">
-            {progressLabel}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <label
-            htmlFor={selectId}
-            className="shrink-0 text-2xs font-semibold uppercase tracking-wide text-content-tertiary"
-          >
-            {t("cases.run_on", { defaultValue: "Run on" })}
-          </label>
-          <select
-            id={selectId}
-            value={selectedRaw}
-            onChange={(e) => setSelectedProject(playbook.id, e.target.value)}
-            className="h-8 max-w-[16rem] rounded-lg border border-border bg-surface-primary px-2.5 text-xs text-content-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
-          >
-            <option value="">
-              {t("cases.run_on_none", {
-                defaultValue: "No sample project (just open the module)",
-              })}
-            </option>
-            {sortedProjects.map((p) => {
-              const label = isDemoProject(p)
-                ? t("cases.run_on_sample_option", {
-                    defaultValue: "{{name}} (sample)",
-                    name: p.name,
-                  })
-                : p.name;
-              return (
-                <option key={p.id} value={p.id}>
-                  {label}
-                </option>
+                  </button>
+                </li>
               );
             })}
-          </select>
-          {resetButton}
-        </div>
-      </div>
+          </ol>
+        </section>
 
-      {/* ── Stage: the selected step in full, as IN -> ACTION -> OUT ─────── */}
-      <section ref={stageRef} className="min-w-0 scroll-mt-4">
-        {currentStep && (
-          <div
-            key={currentStep.id}
-            className="animate-card-in rounded-2xl border border-border-light bg-surface-primary p-4 shadow-xs sm:p-6"
-          >
-            {/* Eyebrow: step counter + module chip */}
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <span className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
-                {t("cases.step_counter", {
-                  defaultValue: "Step {{n}} of {{total}}",
-                  n: currentIndex + 1,
-                  total,
-                })}
-              </span>
-              <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border-light bg-surface-secondary px-2 py-0.5 text-2xs font-medium text-content-secondary">
-                <CurIcon size={12} strokeWidth={2} aria-hidden="true" />
-                {curModule}
-              </span>
-            </div>
+        {/* ── Stage: the selected step in full, IN -> ACTION -> OUT ───────── */}
+        <section ref={stageRef} className="min-w-0 scroll-mt-4">
+          {currentStep && (
+            <div
+              key={currentStep.id}
+              className="animate-card-in rounded-2xl border border-border-light bg-surface-primary p-4 shadow-xs sm:p-6"
+            >
+              {/* Eyebrow: step counter + module chip, and quick prev/next */}
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
+                    {t("cases.step_counter", {
+                      defaultValue: "Step {{n}} of {{total}}",
+                      n: currentIndex + 1,
+                      total,
+                    })}
+                  </span>
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border-light bg-surface-secondary px-2 py-0.5 text-2xs font-medium text-content-secondary">
+                    <CurIcon size={12} strokeWidth={2} aria-hidden="true" />
+                    {curModule}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      selectStep(clampStepIndex(currentIndex - 1, total))
+                    }
+                    disabled={currentIndex === 0}
+                    aria-label={t("cases.prev_step", { defaultValue: "Previous" })}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-border-light bg-surface-primary text-content-secondary transition-colors hover:border-oe-blue/40 hover:text-content-primary disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+                  >
+                    <ArrowLeft size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      selectStep(clampStepIndex(currentIndex + 1, total))
+                    }
+                    disabled={currentIndex === total - 1}
+                    aria-label={t("cases.next_step", { defaultValue: "Next" })}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-border-light bg-surface-primary text-content-secondary transition-colors hover:border-oe-blue/40 hover:text-content-primary disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+                  >
+                    <ArrowRight size={14} />
+                  </button>
+                </div>
+              </div>
 
-            {/* Title with status */}
-            <div className="mb-4 flex items-start gap-2.5">
-              <span
-                className={clsx(
-                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold",
-                  curDone
-                    ? "bg-oe-blue text-white"
-                    : "bg-oe-blue/15 text-oe-blue-text ring-1 ring-inset ring-oe-blue/30",
-                )}
-                aria-hidden="true"
-              >
-                {curDone ? (
-                  <Check size={16} strokeWidth={2.5} />
-                ) : (
-                  currentIndex + 1
-                )}
-              </span>
-              <h2 className="mt-0.5 text-lg font-semibold leading-snug text-content-primary sm:text-xl">
-                {curTitle}
-              </h2>
-            </div>
+              {/* Title with status */}
+              <div className="mb-5 flex items-start gap-2.5">
+                <span
+                  className={clsx(
+                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold",
+                    curDone
+                      ? "bg-oe-blue text-white"
+                      : "bg-oe-blue/15 text-oe-blue-text ring-1 ring-inset ring-oe-blue/30",
+                  )}
+                  aria-hidden="true"
+                >
+                  {curDone ? <Check size={16} strokeWidth={2.5} /> : currentIndex + 1}
+                </span>
+                <h2 className="mt-0.5 text-lg font-semibold leading-snug text-content-primary sm:text-xl">
+                  {curTitle}
+                </h2>
+              </div>
 
-            {/* Two columns on desktop: a ~40% explanation rail on the left
-                (the plain-language "what and why"), and a wide ~60% visualisation
-                on the right that runs the step as a horizontal In -> Action -> Out
-                flow. They stack on narrow screens (explanation first). */}
-            <div className="mt-1 grid gap-5 lg:grid-cols-[2fr_3fr] lg:items-start lg:gap-7">
-              {/* LEFT: What you do + Why, in larger, readable prose. */}
-              <div className="space-y-5">
+              {/* What you do + Why: two readable columns on wider screens. */}
+              <div className="grid gap-5 sm:grid-cols-2 sm:gap-7">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-oe-blue-text">
                     {t("cases.step.what", { defaultValue: "What you do" })}
                   </p>
-                  <p className="mt-1.5 text-lg leading-relaxed text-content-primary">
+                  <p className="mt-1.5 text-base leading-relaxed text-content-primary sm:text-lg">
                     {t(currentStep.whatKey, {
                       defaultValue: currentStep.whatDefault,
                     })}
@@ -657,7 +766,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                   <p className="text-xs font-semibold uppercase tracking-wide text-content-tertiary">
                     {t("cases.step.why", { defaultValue: "Why" })}
                   </p>
-                  <p className="mt-1.5 text-lg leading-relaxed text-content-secondary">
+                  <p className="mt-1.5 text-base leading-relaxed text-content-secondary sm:text-lg">
                     {t(currentStep.whyKey, {
                       defaultValue: currentStep.whyDefault,
                     })}
@@ -665,12 +774,11 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                 </div>
               </div>
 
-              {/* RIGHT (70%): the visualisation as a horizontal In ->
-                  Action -> Out flow. The Goes-in and Comes-out blocks sit either
-                  side of the module scene, and the scene itself is a button into
-                  the module, so it is obvious where the work happens. Stacks
-                  vertically on narrow screens. */}
-              <div className="min-w-0 lg:border-l lg:border-border-light lg:pl-7">
+              {/* The data flow, across the full width: In -> Action -> Out. The
+                  Goes-in and Comes-out blocks sit either side of the action
+                  scene, and the scene is a button into the module, so it is
+                  obvious where the work happens. Stacks on narrow screens. */}
+              <div className="mt-6 border-t border-border-light pt-5">
                 {hasFlow ? (
                   <div className="flex flex-col items-stretch gap-2.5 lg:flex-row lg:items-stretch lg:gap-1">
                     <FlowSide
@@ -683,30 +791,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                     />
                     <FlowConnector />
                     <div className="flex shrink-0 flex-col items-center justify-center lg:w-[32%]">
-                      <button
-                        type="button"
-                        onClick={() => handleGo(currentStep)}
-                        title={t("cases.step.go_to", {
-                          defaultValue: "Go to {{module}}",
-                          module: curModule,
-                        })}
-                        className="group w-full max-w-[240px] rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
-                      >
-                        {StageScene}
-                        <span className="mt-2 inline-flex w-full items-center justify-center gap-1 text-xs font-semibold text-oe-blue-text transition-colors group-hover:text-oe-blue">
-                          <CurIcon size={12} strokeWidth={2} aria-hidden="true" />
-                          {t("cases.step.go_to_module", {
-                            defaultValue: "Open {{module}}",
-                            module: curModule,
-                          })}
-                          <ArrowRight
-                            size={12}
-                            strokeWidth={2.2}
-                            className="transition-transform group-hover:translate-x-0.5"
-                            aria-hidden="true"
-                          />
-                        </span>
-                      </button>
+                      {openModuleButton}
                     </div>
                     <FlowConnector />
                     <FlowSide
@@ -719,72 +804,71 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                     />
                   </div>
                 ) : (
-                  <div className="mx-auto w-full max-w-md">{StageScene}</div>
+                  <div className="mx-auto flex w-full max-w-md flex-col items-center">
+                    {openModuleButton}
+                  </div>
                 )}
               </div>
-            </div>
 
-            {/* Actions + step-to-step navigation */}
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border-light pt-5">
-              <div className="flex flex-wrap items-center gap-2.5">
-                <Button
-                  variant="primary"
-                  size="md"
-                  icon={<ArrowRight size={16} />}
-                  iconPosition="right"
-                  onClick={() => handleGo(currentStep)}
-                  aria-label={t("cases.step.go_to", {
-                    defaultValue: "Go to {{module}}",
-                    module: curModule,
-                  })}
-                >
-                  {t("cases.step.go_to_module", {
-                    defaultValue: "Open {{module}}",
-                    module: curModule,
-                  })}
-                </Button>
-                <Button
-                  variant={curDone ? "ghost" : "secondary"}
-                  size="md"
-                  icon={curDone ? <RotateCcw size={16} /> : <Check size={16} />}
-                  onClick={() => handleToggle(currentStep)}
-                >
-                  {curDone
-                    ? t("cases.step.mark_undone", {
-                        defaultValue: "Mark not done",
-                      })
-                    : t("cases.step.mark_done", { defaultValue: "Mark done" })}
-                </Button>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Button
-                  variant="ghost"
-                  size="md"
-                  icon={<ArrowLeft size={16} />}
-                  onClick={() =>
-                    selectStep(clampStepIndex(currentIndex - 1, total))
-                  }
-                  disabled={currentIndex === 0}
-                >
-                  {t("cases.prev_step", { defaultValue: "Previous" })}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="md"
-                  icon={<ArrowRight size={16} />}
-                  iconPosition="right"
-                  onClick={() =>
-                    selectStep(clampStepIndex(currentIndex + 1, total))
-                  }
-                  disabled={currentIndex === total - 1}
-                >
-                  {t("cases.next_step", { defaultValue: "Next" })}
-                </Button>
+              {/* Actions + step-to-step navigation */}
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border-light pt-5">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <Button
+                    variant="primary"
+                    size="md"
+                    icon={<ArrowRight size={16} />}
+                    iconPosition="right"
+                    onClick={() => handleGo(currentStep)}
+                    aria-label={t("cases.step.go_to", {
+                      defaultValue: "Go to {{module}}",
+                      module: curModule,
+                    })}
+                  >
+                    {openModuleLabel}
+                  </Button>
+                  <Button
+                    variant={curDone ? "ghost" : "secondary"}
+                    size="md"
+                    icon={curDone ? <RotateCcw size={16} /> : <Check size={16} />}
+                    onClick={() => handleToggle(currentStep)}
+                  >
+                    {curDone
+                      ? t("cases.step.mark_undone", {
+                          defaultValue: "Mark not done",
+                        })
+                      : t("cases.step.mark_done", { defaultValue: "Mark done" })}
+                  </Button>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="ghost"
+                    size="md"
+                    icon={<ArrowLeft size={16} />}
+                    onClick={() =>
+                      selectStep(clampStepIndex(currentIndex - 1, total))
+                    }
+                    disabled={currentIndex === 0}
+                  >
+                    {t("cases.prev_step", { defaultValue: "Previous" })}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="md"
+                    icon={<ArrowRight size={16} />}
+                    iconPosition="right"
+                    onClick={() =>
+                      selectStep(clampStepIndex(currentIndex + 1, total))
+                    }
+                    disabled={currentIndex === total - 1}
+                  >
+                    {t("cases.next_step", { defaultValue: "Next" })}
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
-      </section>
+          )}
+        </section>
+      </div>
 
       {/* ── Completion note ─────────────────────────────────────────────── */}
       {allDone && (

@@ -286,6 +286,52 @@ export function orthoSnap(anchor: Point, cursor: Point): Point {
   };
 }
 
+/**
+ * Ortho-snap a vertex that is being dragged on an existing measurement.
+ *
+ * The draw path has a single anchor (the previously placed point). An existing
+ * vertex instead has one or two neighbours to square against: an endpoint of an
+ * open run has one neighbour, an interior vertex has two, and every vertex of a
+ * closed shape (area / volume / cloud) has two with wraparound. Each neighbour
+ * is used as an `orthoSnap` anchor and the candidate closest to the raw cursor
+ * wins, so the edge the user is nearest to aligning is the one that squares up.
+ *
+ * `orthoSnap` preserves length along the snapped axis, so squaring an edge does
+ * not silently shorten it. Returns `cursor` unchanged for degenerate input
+ * (fewer than two points, or `vertexIndex` out of range), matching the draw
+ * path's "no anchor, no snap".
+ */
+export function orthoSnapVertexDrag(
+  points: Point[],
+  vertexIndex: number,
+  cursor: Point,
+  closed: boolean,
+): Point {
+  const n = points.length;
+  if (n < 2 || vertexIndex < 0 || vertexIndex >= n) return cursor;
+
+  const neighbours: Point[] = [];
+  const prev =
+    vertexIndex > 0 ? points[vertexIndex - 1]! : closed ? points[n - 1]! : null;
+  const next =
+    vertexIndex < n - 1 ? points[vertexIndex + 1]! : closed ? points[0]! : null;
+  if (prev) neighbours.push(prev);
+  if (next) neighbours.push(next);
+  if (neighbours.length === 0) return cursor;
+
+  let best = cursor;
+  let bestDist = Infinity;
+  for (const anchor of neighbours) {
+    const cand = orthoSnap(anchor, cursor);
+    const d = Math.hypot(cand.x - cursor.x, cand.y - cursor.y);
+    if (d < bestDist) {
+      bestDist = d;
+      best = cand;
+    }
+  }
+  return best;
+}
+
 /* ── Duplicate trailing vertex (double-click finish) ─────────────────────
  * A double-click that closes a shape fires two `click` events before the
  * `dblclick`, so the last placed vertex is a near-duplicate of the one before

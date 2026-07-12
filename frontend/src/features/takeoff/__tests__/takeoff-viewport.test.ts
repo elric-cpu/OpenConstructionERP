@@ -25,6 +25,7 @@ import {
   zoomAtCursorScroll,
   wheelZoomStep,
   orthoSnap,
+  orthoSnapVertexDrag,
   dropTrailingDuplicateVertex,
   snapToVertex,
   computeDrawReadout,
@@ -243,6 +244,73 @@ describe('orthoSnap', () => {
 
   it('returns the anchor for a zero-length drag', () => {
     expect(orthoSnap(anchor, { x: 100, y: 100 })).toEqual({ x: 100, y: 100 });
+  });
+});
+
+describe('orthoSnapVertexDrag', () => {
+  it('squares an open run endpoint against its single neighbour, keeping length', () => {
+    // Endpoint (index 1) of an open two-point run, dragged near-horizontal.
+    const pts: Point[] = [
+      { x: 0, y: 0 },
+      { x: 100, y: 5 },
+    ];
+    const r = orthoSnapVertexDrag(pts, 1, { x: 100, y: 5 }, false);
+    expect(r.y).toBeCloseTo(0, 5); // locked onto the neighbour's horizontal
+    expect(r.x).toBeGreaterThan(100);
+    // Length preserved along the axis, not shrunk to the x-component.
+    expect(Math.hypot(r.x, r.y)).toBeCloseTo(Math.hypot(100, 5), 4);
+  });
+
+  it('picks the closest of two neighbours for an interior vertex', () => {
+    // Interior vertex (index 1) between (0,0) and (20,0); the cursor is nearest
+    // to a 45-degree line from (0,0), so the result lands on that diagonal.
+    const pts: Point[] = [
+      { x: 0, y: 0 },
+      { x: 4, y: 4 },
+      { x: 20, y: 0 },
+    ];
+    const r = orthoSnapVertexDrag(pts, 1, { x: 4.5, y: 5 }, false);
+    expect(r.x).toBeCloseTo(r.y, 5); // on the 45-degree axis from (0,0)
+    expect(r.x).toBeGreaterThan(0);
+  });
+
+  it('uses the wraparound neighbour for the first vertex of a closed shape', () => {
+    // Square, closed. Vertex 0 wraps to vertex 3 (0,10) and forward to (10,0).
+    // A cursor near the left (vertical) edge squares onto x = 0.
+    const square: Point[] = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 10 },
+    ];
+    const r = orthoSnapVertexDrag(square, 0, { x: 0.5, y: 8 }, true);
+    expect(r.x).toBeCloseTo(0, 5); // vertical from the wraparound neighbour (0,10)
+  });
+
+  it('has no wraparound neighbour for the first vertex of an open run', () => {
+    // Same first vertex and cursor as the closed case, but open: the only
+    // neighbour is (10,0), so there is no vertical (0,10) anchor. The cursor
+    // squares onto the 45-degree diagonal from (10,0) instead of onto x = 0.
+    const open: Point[] = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 10 },
+    ];
+    const r = orthoSnapVertexDrag(open, 0, { x: 0.5, y: 8 }, false);
+    expect(Math.abs(r.x - 10)).toBeCloseTo(Math.abs(r.y), 4); // 45 from (10,0)
+    expect(r.x).toBeGreaterThan(0.9); // not the closed case's vertical (x = 0)
+  });
+
+  it('returns the cursor unchanged for degenerate input', () => {
+    const cursor: Point = { x: 5, y: 5 };
+    expect(orthoSnapVertexDrag([{ x: 1, y: 1 }], 0, cursor, false)).toEqual(cursor);
+    const two: Point[] = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+    ];
+    expect(orthoSnapVertexDrag(two, 5, cursor, false)).toEqual(cursor);
+    expect(orthoSnapVertexDrag(two, -1, cursor, true)).toEqual(cursor);
   });
 });
 

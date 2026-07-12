@@ -527,3 +527,82 @@ export function polylineToCsv(
   });
   return buildCsv(['vertex', 'scan_x', 'scan_y', 'scan_z', 'segment_m', 'cumulative_m'], rows);
 }
+
+// ══════════════════════════════════════════════════════════════════════
+// Angle measurement + dynamic scale bar. Still pure and THREE-free -
+// PointCloudViewer.tsx renders the markers/lines and the on-screen bar.
+// ══════════════════════════════════════════════════════════════════════
+
+// ── Angle measurement (three-point) ──────────────────────────────────────
+
+/** Interior angle in degrees at vertex `b`, formed by the rays b->a and b->c
+ *  in 3D. Always in [0, 180]. Degenerate input (a or c coincident with b) has
+ *  no defined angle and yields NaN, so callers can show a placeholder rather
+ *  than a misleading 0. Handy for reading a roof pitch, a wall corner or the
+ *  splay of two site features straight off the cloud. */
+export function angleAtVertex(a: Vec3, b: Vec3, c: Vec3): number {
+  const ux = a.x - b.x;
+  const uy = a.y - b.y;
+  const uz = a.z - b.z;
+  const vx = c.x - b.x;
+  const vy = c.y - b.y;
+  const vz = c.z - b.z;
+  const lu = Math.sqrt(ux * ux + uy * uy + uz * uz);
+  const lv = Math.sqrt(vx * vx + vy * vy + vz * vz);
+  if (lu === 0 || lv === 0) return NaN;
+  let cos = (ux * vx + uy * vy + uz * vz) / (lu * lv);
+  // Clamp against floating-point drift so acos never sees |x| > 1.
+  if (cos > 1) cos = 1;
+  else if (cos < -1) cos = -1;
+  return (Math.acos(cos) * 180) / Math.PI;
+}
+
+/** Format an angle in degrees for display (one decimal + degree glyph).
+ *  Non-finite -> "-". */
+export function formatAngle(deg: number): string {
+  if (!Number.isFinite(deg)) return '-';
+  return `${deg.toFixed(1)}°`;
+}
+
+// ── Dynamic scale bar ─────────────────────────────────────────────────────
+
+export interface ScaleBar {
+  /** The "nice" round length the bar represents, in metres. */
+  meters: number;
+  /** How wide to draw the bar on screen, in pixels. */
+  pixels: number;
+  /** Human label for the bar, e.g. "5 m", "50 cm", "2 km". */
+  label: string;
+}
+
+/** Format a scale-bar length: km at/above 1000 m, cm below 1 m, plain metres
+ *  in between. Inputs are the 1/2/5 x 10^n "nice" numbers `chooseScaleBar`
+ *  produces, so these stay whole (5 m, 50 cm, 2 km) rather than showing
+ *  spurious decimals. */
+function formatScaleBarLabel(meters: number): string {
+  if (meters >= 1000) return `${meters / 1000} km`;
+  if (meters >= 1) return `${meters} m`;
+  return `${Math.round(meters * 100)} cm`;
+}
+
+/** Pick a "nice" 1/2/5 x 10^n scale-bar length that fits within `maxPixels` at
+ *  the given world-metres-per-pixel, and report its on-screen width. This is
+ *  the familiar map/CAD scale bar: the largest round distance no wider than
+ *  the allotted space, so the viewer always shows a clean "5 m" / "20 m" ruler
+ *  that grows and shrinks as you zoom. Invalid input (non-positive or
+ *  non-finite scale) yields a zero-width bar with a "-" label. */
+export function chooseScaleBar(worldPerPixel: number, maxPixels: number): ScaleBar {
+  const raw = worldPerPixel * maxPixels;
+  if (!(worldPerPixel > 0) || !(maxPixels > 0) || !Number.isFinite(raw)) {
+    return { meters: 0, pixels: 0, label: '-' };
+  }
+  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  let meters = pow;
+  for (const mult of [5, 2, 1]) {
+    if (mult * pow <= raw) {
+      meters = mult * pow;
+      break;
+    }
+  }
+  return { meters, pixels: meters / worldPerPixel, label: formatScaleBarLabel(meters) };
+}

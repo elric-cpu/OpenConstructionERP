@@ -6,14 +6,17 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  angleAtVertex,
   annotationsToCsv,
   boxPlanes,
   buildCsv,
+  chooseScaleBar,
   computeMeasurement3D,
   computePolylineMetrics,
   decimationStride,
   deriveCloudBounds,
   estimateVolumeVsPlane,
+  formatAngle,
   formatAreaM2,
   formatLengthMm,
   formatMetersLabel,
@@ -472,5 +475,95 @@ describe('polylineToCsv', () => {
     expect(rows[2]?.endsWith('3,3')).toBe(true);
     // Third vertex: 4 m segment, 7 m cumulative.
     expect(rows[3]?.endsWith('4,7')).toBe(true);
+  });
+});
+
+describe('angleAtVertex', () => {
+  it('reads a right angle at the middle vertex', () => {
+    // Rays along +X and +Z from the origin meet at 90 degrees.
+    const deg = angleAtVertex({ x: 1, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 });
+    expect(deg).toBeCloseTo(90, 6);
+  });
+
+  it('reads a straight (180 degree) angle', () => {
+    const deg = angleAtVertex({ x: -2, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 5, y: 0, z: 0 });
+    expect(deg).toBeCloseTo(180, 6);
+  });
+
+  it('reads an acute angle and is scale-invariant', () => {
+    // 45 degrees between +X and the X/Z diagonal, regardless of ray length.
+    const deg = angleAtVertex({ x: 3, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 7, y: 0, z: 7 });
+    expect(deg).toBeCloseTo(45, 6);
+  });
+
+  it('measures a roof pitch off the vertical rise and horizontal run', () => {
+    // Ridge apex at (0, 3) with eaves 4 m out each side: each slope is
+    // atan(3/4) ~ 36.87 deg from horizontal, so the apex angle is ~106.26 deg.
+    const apex = { x: 0, y: 3, z: 0 };
+    const deg = angleAtVertex({ x: -4, y: 0, z: 0 }, apex, { x: 4, y: 0, z: 0 });
+    expect(deg).toBeCloseTo(2 * (90 - (Math.atan2(3, 4) * 180) / Math.PI), 4);
+  });
+
+  it('returns NaN for a degenerate (coincident) vertex', () => {
+    expect(angleAtVertex({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 })).toBeNaN();
+  });
+});
+
+describe('formatAngle', () => {
+  it('renders one decimal with a degree glyph', () => {
+    expect(formatAngle(90)).toBe('90.0°');
+    expect(formatAngle(36.8699)).toBe('36.9°');
+  });
+
+  it('falls back gracefully for non-finite input', () => {
+    expect(formatAngle(Number.NaN)).toBe('-');
+    expect(formatAngle(Number.POSITIVE_INFINITY)).toBe('-');
+  });
+});
+
+describe('chooseScaleBar', () => {
+  it('picks the largest 1/2/5 x 10^n length that fits the allotted width', () => {
+    // 0.05 m per pixel over 120 px = 6 m of headroom -> a 5 m bar (100 px).
+    const bar = chooseScaleBar(0.05, 120);
+    expect(bar.meters).toBe(5);
+    expect(bar.pixels).toBeCloseTo(100, 6);
+    expect(bar.label).toBe('5 m');
+  });
+
+  it('drops into a 2 m bar when 5 m no longer fits', () => {
+    // 0.05 m/px over 80 px = 4 m headroom -> 2 m (5 m would be 100 px, too wide).
+    const bar = chooseScaleBar(0.05, 80);
+    expect(bar.meters).toBe(2);
+    expect(bar.pixels).toBeCloseTo(40, 6);
+    expect(bar.label).toBe('2 m');
+  });
+
+  it('labels sub-metre bars in centimetres', () => {
+    // 0.005 m/px over 120 px = 0.6 m headroom -> a 0.5 m (50 cm) bar.
+    const bar = chooseScaleBar(0.005, 120);
+    expect(bar.meters).toBeCloseTo(0.5, 6);
+    expect(bar.label).toBe('50 cm');
+  });
+
+  it('labels kilometre-scale bars in km', () => {
+    // 20 m/px over 120 px = 2400 m headroom -> a 2 km bar.
+    const bar = chooseScaleBar(20, 120);
+    expect(bar.meters).toBe(2000);
+    expect(bar.label).toBe('2 km');
+  });
+
+  it('never draws wider than the allotted pixels', () => {
+    for (const wpp of [0.001, 0.02, 0.5, 3, 50]) {
+      const bar = chooseScaleBar(wpp, 100);
+      expect(bar.pixels).toBeLessThanOrEqual(100 + 1e-9);
+      expect(bar.pixels).toBeGreaterThan(0);
+    }
+  });
+
+  it('guards non-positive or non-finite input', () => {
+    expect(chooseScaleBar(0, 100)).toEqual({ meters: 0, pixels: 0, label: '-' });
+    expect(chooseScaleBar(-1, 100)).toEqual({ meters: 0, pixels: 0, label: '-' });
+    expect(chooseScaleBar(0.05, 0)).toEqual({ meters: 0, pixels: 0, label: '-' });
+    expect(chooseScaleBar(Number.NaN, 100)).toEqual({ meters: 0, pixels: 0, label: '-' });
   });
 });

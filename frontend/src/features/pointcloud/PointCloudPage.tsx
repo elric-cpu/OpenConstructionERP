@@ -34,6 +34,7 @@ import {
   Loader2,
   UploadCloud,
   CheckCircle2,
+  ChevronDown,
   X,
   Palette,
   Sun,
@@ -345,6 +346,10 @@ export function PointCloudPage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // The secondary "Upload another scan" panel (shown once a scan is loaded and
+  // the viewer owns the top of the page) starts collapsed so the cloud stays
+  // the focus; expanding it reveals the full uploader.
+  const [uploadExpanded, setUploadExpanded] = useState(false);
 
   const handlePickProject = useCallback(
     (id: string) => {
@@ -505,6 +510,319 @@ export function PointCloudPage() {
     }
   }, [progress, t]);
 
+  // ── Layout blocks ────────────────────────────────────────────────────────
+  // Declared here so the loaded and empty states can lead with different
+  // content without duplicating JSX. Mirrors the BIM hub: once a scan is
+  // loaded the 3D viewer becomes the primary element at the top and the
+  // uploader is demoted to a collapsed "Upload another scan" panel at the
+  // bottom; with nothing loaded the uploader stays the primary call to action.
+
+  // Project picker - mirrors the DWG Takeoff selector so the scan registers
+  // against the right project. Shared by the primary and secondary uploaders.
+  const projectPicker = (
+    <label className="flex items-center gap-2 text-xs text-content-tertiary">
+      <span className="font-medium">{t('pointcloud.project_label', { defaultValue: 'Project' })}</span>
+      <select
+        className="max-w-[220px] truncate rounded-lg border border-border-light bg-surface-secondary px-2.5 py-1.5 text-sm text-content-primary focus:outline-none focus:ring-1 focus:ring-oe-blue"
+        value={projectId}
+        onChange={(e) => handlePickProject(e.target.value)}
+        disabled={uploading || projectsLoading}
+        data-testid="pointcloud-project-select"
+      >
+        {projectsLoading && <option value="">{t('common.loading', 'Loading...')}</option>}
+        {projects.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+
+  // Dropzone + capture metadata + progress + error + submit. Shared between the
+  // primary (empty-state) and secondary (loaded-state) uploaders so the upload
+  // form and all its functionality stay identical in both places.
+  const uploadControls = (
+    <>
+      <label
+        htmlFor="pointcloud-upload-input"
+        role="button"
+        tabIndex={0}
+        aria-label={t('pointcloud.upload_dropzone_aria', {
+          defaultValue: 'Upload a point-cloud file',
+        })}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            fileInputRef.current?.click();
+          }
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          const f = e.dataTransfer.files?.[0];
+          if (f) handleFileSelect(f);
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+        }}
+        className={`flex flex-col items-center gap-3 rounded-xl border-2 border-dashed p-8 text-center transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-2 ${
+          uploading
+            ? 'cursor-default border-border-medium bg-surface-secondary/60'
+            : 'cursor-pointer'
+        } ${
+          dragOver
+            ? 'border-oe-blue bg-oe-blue/5'
+            : file
+              ? 'border-oe-blue/40 bg-oe-blue/5'
+              : 'border-border-medium hover:border-oe-blue/50 hover:bg-surface-secondary'
+        }`}
+      >
+        {file ? (
+          <>
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-oe-blue/10">
+              <CheckCircle2 size={24} className="text-oe-blue" />
+            </div>
+            <p className="text-sm font-medium text-content-primary">{file.name}</p>
+            <p className="text-2xs text-content-quaternary">{formatFileSize(file.size)}</p>
+            {!uploading && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  clearFile();
+                }}
+                className="inline-flex items-center gap-1 text-2xs text-content-tertiary underline hover:text-danger"
+              >
+                <X size={11} />
+                {t('pointcloud.upload_remove_file', { defaultValue: 'Remove file' })}
+              </button>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-border-light bg-surface-secondary">
+              <UploadCloud size={26} className="text-content-quaternary" />
+            </div>
+            <p className="text-sm font-medium text-content-primary">
+              {t('pointcloud.upload_drop_here', { defaultValue: 'Drop your scan here' })}
+            </p>
+            <p className="text-xs text-content-tertiary">
+              {t('pointcloud.upload_drop_hint', { defaultValue: 'or click to browse files' })}
+            </p>
+            <div className="mt-1 flex flex-wrap justify-center gap-1.5">
+              {SUPPORTED_FORMATS.map((fmt) => (
+                <span
+                  key={fmt}
+                  className="rounded-md border border-border-light bg-surface-secondary/60 px-2 py-0.5 text-2xs font-medium text-content-tertiary"
+                >
+                  {fmt}
+                </span>
+              ))}
+            </div>
+          </>
+        )}
+        <input
+          id="pointcloud-upload-input"
+          ref={fileInputRef}
+          type="file"
+          accept={ACCEPT_ATTR}
+          className="hidden"
+          disabled={uploading}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleFileSelect(f);
+          }}
+        />
+      </label>
+
+      {/* Capture metadata - the tier gates what the scan may drive. */}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div>
+          <label className="mb-1 block text-2xs font-semibold uppercase tracking-wider text-content-tertiary">
+            {t('pointcloud.name_label', { defaultValue: 'Scan name' })}
+          </label>
+          <input
+            type="text"
+            className="w-full rounded-lg border border-border-light bg-surface-secondary px-3 py-2 text-sm text-content-primary placeholder-content-quaternary focus:outline-none focus:ring-1 focus:ring-oe-blue"
+            placeholder={t('pointcloud.name_placeholder', { defaultValue: 'e.g. Ground floor scan' })}
+            value={scanName}
+            onChange={(e) => setScanName(e.target.value)}
+            disabled={uploading}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-2xs font-semibold uppercase tracking-wider text-content-tertiary">
+            {t('pointcloud.source_label', { defaultValue: 'Source' })}
+          </label>
+          <select
+            className="w-full rounded-lg border border-border-light bg-surface-secondary px-3 py-2 text-sm text-content-primary focus:outline-none focus:ring-1 focus:ring-oe-blue"
+            value={sourceType}
+            onChange={(e) => setSourceType(e.target.value as ScanSourceType)}
+            disabled={uploading}
+          >
+            {SOURCE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {t(o.labelKey, { defaultValue: o.fallback })}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-2xs font-semibold uppercase tracking-wider text-content-tertiary">
+            {t('pointcloud.tier_label', { defaultValue: 'Accuracy tier' })}
+          </label>
+          <select
+            className="w-full rounded-lg border border-border-light bg-surface-secondary px-3 py-2 text-sm text-content-primary focus:outline-none focus:ring-1 focus:ring-oe-blue"
+            value={accuracyTier}
+            onChange={(e) => setAccuracyTier(e.target.value as AccuracyTier)}
+            disabled={uploading}
+          >
+            {ACCURACY_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {t(o.labelKey, { defaultValue: o.fallback })}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {uploading && progress && (
+        <div className="space-y-1.5">
+          <div className="flex justify-between text-2xs">
+            <span className="text-content-secondary">{stageLabel}</span>
+            <span className="tabular-nums text-content-quaternary">{progress.percent}%</span>
+          </div>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-tertiary">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-oe-blue to-blue-400 transition-all duration-300"
+              style={{ width: `${progress.percent}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {uploadError && (
+        <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950/20">
+          <AlertCircle size={14} className="mt-0.5 shrink-0 text-red-500" />
+          <p className="text-2xs text-red-700 dark:text-red-300">{uploadError}</p>
+        </div>
+      )}
+
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={handleUpload}
+          disabled={!file || uploading || !projectId}
+          data-testid="pointcloud-upload-submit"
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-oe-blue px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-oe-blue-dark hover:shadow-md active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          {uploading ? <Loader2 size={16} className="animate-spin" /> : <UploadCloud size={16} />}
+          {uploading
+            ? t('pointcloud.uploading', { defaultValue: 'Uploading...' })
+            : t('pointcloud.upload_cta', { defaultValue: 'Upload scan' })}
+        </button>
+      </div>
+    </>
+  );
+
+  // Primary uploader - the prominent call to action shown at the top while no
+  // scan is loaded yet.
+  const uploadPrimary = (
+    <Card className={GLASS_CARD}>
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-content-primary">
+              {t('pointcloud.upload_title', { defaultValue: 'Upload a scan' })}
+            </h2>
+            <p className="mt-0.5 text-xs text-content-tertiary">
+              {t('pointcloud.upload_subtitle', {
+                defaultValue:
+                  'Reality-capture clouds upload straight to object storage and register here.',
+              })}
+            </p>
+          </div>
+          {projectPicker}
+        </div>
+        {uploadControls}
+      </div>
+    </Card>
+  );
+
+  // Secondary uploader - demoted to a collapsed "Upload another scan" panel at
+  // the bottom of the page once the viewer owns the top of the layout.
+  const uploadSecondary = (
+    <Card padding="none" className={GLASS_CARD}>
+      <button
+        type="button"
+        onClick={() => setUploadExpanded((v) => !v)}
+        aria-expanded={uploadExpanded}
+        data-testid="pointcloud-upload-another-toggle"
+        className="flex w-full items-center gap-3 px-4 py-3 text-start transition-colors hover:bg-surface-secondary/40"
+      >
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-oe-blue/10 text-oe-blue">
+          <UploadCloud size={16} />
+        </div>
+        <div className="min-w-0 flex-1 text-start">
+          <span className="block text-sm font-semibold text-content-primary">
+            {t('pointcloud.upload_another_title', { defaultValue: 'Upload another scan' })}
+          </span>
+          <span className="mt-0.5 block text-xs text-content-tertiary">
+            {t('pointcloud.upload_another_subtitle', {
+              defaultValue: 'Add more reality-capture data to this project.',
+            })}
+          </span>
+        </div>
+        <ChevronDown
+          size={18}
+          className={`shrink-0 text-content-tertiary transition-transform duration-200 ${
+            uploadExpanded ? 'rotate-180' : ''
+          }`}
+        />
+      </button>
+      {uploadExpanded && (
+        <div className="space-y-4 border-t border-border-light p-4">
+          <div className="flex justify-end">{projectPicker}</div>
+          {uploadControls}
+        </div>
+      )}
+    </Card>
+  );
+
+  // The 3D cloud viewer - the primary element at the top once a scan is loaded.
+  const viewerCard = activeScan ? (
+    <Card className={GLASS_CARD}>
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-semibold text-content-primary">
+              {t('pointcloud.viewer_title', { defaultValue: 'Cloud viewer' })}
+            </h2>
+            <p className="mt-0.5 text-xs text-content-tertiary">
+              {(SOURCE_LABEL[activeScan.source_type] ?? activeScan.source_type) +
+                ' · ' +
+                activeScan.original_format.toUpperCase()}
+            </p>
+          </div>
+          <Badge variant={STATUS_VARIANT[activeScan.status] ?? 'neutral'} size="sm">
+            {statusLabel(activeScan.status)}
+          </Badge>
+        </div>
+        <PointCloudViewer
+          key={activeScan.id}
+          scanId={activeScan.id}
+          scanLabel={SOURCE_LABEL[activeScan.source_type] ?? activeScan.source_type}
+        />
+      </div>
+    </Card>
+  ) : null;
+
   return (
     <div className="relative space-y-5">
       <PointCloudBackground />
@@ -548,230 +866,10 @@ export function PointCloudPage() {
         )}
       </DismissibleInfo>
 
-      {/* ── Upload window ──────────────────────────────────────────────── */}
-      {!noProjects && (
-        <Card className={GLASS_CARD}>
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-semibold text-content-primary">
-                  {t('pointcloud.upload_title', { defaultValue: 'Upload a scan' })}
-                </h2>
-                <p className="mt-0.5 text-xs text-content-tertiary">
-                  {t('pointcloud.upload_subtitle', {
-                    defaultValue:
-                      'Reality-capture clouds upload straight to object storage and register here.',
-                  })}
-                </p>
-              </div>
-              {/* Project picker - mirrors the DWG Takeoff selector so the scan
-                  registers against the right project. */}
-              <label className="flex items-center gap-2 text-xs text-content-tertiary">
-                <span className="font-medium">{t('pointcloud.project_label', { defaultValue: 'Project' })}</span>
-                <select
-                  className="max-w-[220px] truncate rounded-lg border border-border-light bg-surface-secondary px-2.5 py-1.5 text-sm text-content-primary focus:outline-none focus:ring-1 focus:ring-oe-blue"
-                  value={projectId}
-                  onChange={(e) => handlePickProject(e.target.value)}
-                  disabled={uploading || projectsLoading}
-                  data-testid="pointcloud-project-select"
-                >
-                  {projectsLoading && <option value="">{t('common.loading', 'Loading...')}</option>}
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <label
-              htmlFor="pointcloud-upload-input"
-              role="button"
-              tabIndex={0}
-              aria-label={t('pointcloud.upload_dropzone_aria', {
-                defaultValue: 'Upload a point-cloud file',
-              })}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  fileInputRef.current?.click();
-                }
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragOver(false);
-                const f = e.dataTransfer.files?.[0];
-                if (f) handleFileSelect(f);
-              }}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragOver(true);
-              }}
-              onDragLeave={(e) => {
-                e.preventDefault();
-                setDragOver(false);
-              }}
-              className={`flex flex-col items-center gap-3 rounded-xl border-2 border-dashed p-8 text-center transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-2 ${
-                uploading
-                  ? 'cursor-default border-border-medium bg-surface-secondary/60'
-                  : 'cursor-pointer'
-              } ${
-                dragOver
-                  ? 'border-oe-blue bg-oe-blue/5'
-                  : file
-                    ? 'border-oe-blue/40 bg-oe-blue/5'
-                    : 'border-border-medium hover:border-oe-blue/50 hover:bg-surface-secondary'
-              }`}
-            >
-              {file ? (
-                <>
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-oe-blue/10">
-                    <CheckCircle2 size={24} className="text-oe-blue" />
-                  </div>
-                  <p className="text-sm font-medium text-content-primary">{file.name}</p>
-                  <p className="text-2xs text-content-quaternary">{formatFileSize(file.size)}</p>
-                  {!uploading && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        clearFile();
-                      }}
-                      className="inline-flex items-center gap-1 text-2xs text-content-tertiary underline hover:text-danger"
-                    >
-                      <X size={11} />
-                      {t('pointcloud.upload_remove_file', { defaultValue: 'Remove file' })}
-                    </button>
-                  )}
-                </>
-              ) : (
-                <>
-                  <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-border-light bg-surface-secondary">
-                    <UploadCloud size={26} className="text-content-quaternary" />
-                  </div>
-                  <p className="text-sm font-medium text-content-primary">
-                    {t('pointcloud.upload_drop_here', { defaultValue: 'Drop your scan here' })}
-                  </p>
-                  <p className="text-xs text-content-tertiary">
-                    {t('pointcloud.upload_drop_hint', { defaultValue: 'or click to browse files' })}
-                  </p>
-                  <div className="mt-1 flex flex-wrap justify-center gap-1.5">
-                    {SUPPORTED_FORMATS.map((fmt) => (
-                      <span
-                        key={fmt}
-                        className="rounded-md border border-border-light bg-surface-secondary/60 px-2 py-0.5 text-2xs font-medium text-content-tertiary"
-                      >
-                        {fmt}
-                      </span>
-                    ))}
-                  </div>
-                </>
-              )}
-              <input
-                id="pointcloud-upload-input"
-                ref={fileInputRef}
-                type="file"
-                accept={ACCEPT_ATTR}
-                className="hidden"
-                disabled={uploading}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) handleFileSelect(f);
-                }}
-              />
-            </label>
-
-            {/* Capture metadata - the tier gates what the scan may drive. */}
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div>
-                <label className="mb-1 block text-2xs font-semibold uppercase tracking-wider text-content-tertiary">
-                  {t('pointcloud.name_label', { defaultValue: 'Scan name' })}
-                </label>
-                <input
-                  type="text"
-                  className="w-full rounded-lg border border-border-light bg-surface-secondary px-3 py-2 text-sm text-content-primary placeholder-content-quaternary focus:outline-none focus:ring-1 focus:ring-oe-blue"
-                  placeholder={t('pointcloud.name_placeholder', { defaultValue: 'e.g. Ground floor scan' })}
-                  value={scanName}
-                  onChange={(e) => setScanName(e.target.value)}
-                  disabled={uploading}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-2xs font-semibold uppercase tracking-wider text-content-tertiary">
-                  {t('pointcloud.source_label', { defaultValue: 'Source' })}
-                </label>
-                <select
-                  className="w-full rounded-lg border border-border-light bg-surface-secondary px-3 py-2 text-sm text-content-primary focus:outline-none focus:ring-1 focus:ring-oe-blue"
-                  value={sourceType}
-                  onChange={(e) => setSourceType(e.target.value as ScanSourceType)}
-                  disabled={uploading}
-                >
-                  {SOURCE_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {t(o.labelKey, { defaultValue: o.fallback })}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-2xs font-semibold uppercase tracking-wider text-content-tertiary">
-                  {t('pointcloud.tier_label', { defaultValue: 'Accuracy tier' })}
-                </label>
-                <select
-                  className="w-full rounded-lg border border-border-light bg-surface-secondary px-3 py-2 text-sm text-content-primary focus:outline-none focus:ring-1 focus:ring-oe-blue"
-                  value={accuracyTier}
-                  onChange={(e) => setAccuracyTier(e.target.value as AccuracyTier)}
-                  disabled={uploading}
-                >
-                  {ACCURACY_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {t(o.labelKey, { defaultValue: o.fallback })}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {uploading && progress && (
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-2xs">
-                  <span className="text-content-secondary">{stageLabel}</span>
-                  <span className="tabular-nums text-content-quaternary">{progress.percent}%</span>
-                </div>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-tertiary">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-oe-blue to-blue-400 transition-all duration-300"
-                    style={{ width: `${progress.percent}%` }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {uploadError && (
-              <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950/20">
-                <AlertCircle size={14} className="mt-0.5 shrink-0 text-red-500" />
-                <p className="text-2xs text-red-700 dark:text-red-300">{uploadError}</p>
-              </div>
-            )}
-
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={handleUpload}
-                disabled={!file || uploading || !projectId}
-                data-testid="pointcloud-upload-submit"
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-oe-blue px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-oe-blue-dark hover:shadow-md active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-30"
-              >
-                {uploading ? <Loader2 size={16} className="animate-spin" /> : <UploadCloud size={16} />}
-                {uploading
-                  ? t('pointcloud.uploading', { defaultValue: 'Uploading...' })
-                  : t('pointcloud.upload_cta', { defaultValue: 'Upload scan' })}
-              </button>
-            </div>
-          </div>
-        </Card>
-      )}
+      {/* ── Primary slot ─────────────────────────────────────────────────
+             The 3D viewer leads once a scan is loaded (mirrors the BIM hub);
+             until then the uploader is the primary call to action. ──────── */}
+      {activeScan ? viewerCard : !noProjects && uploadPrimary}
 
       {/* ── Scan registry ──────────────────────────────────────────────── */}
       {noProjects ? (
@@ -914,33 +1012,10 @@ export function PointCloudPage() {
         </Card>
       )}
 
-      {/* ── Viewer ─────────────────────────────────────────────────────── */}
-      {activeScan && (
-        <Card className={GLASS_CARD}>
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h2 className="text-sm font-semibold text-content-primary">
-                  {t('pointcloud.viewer_title', { defaultValue: 'Cloud viewer' })}
-                </h2>
-                <p className="mt-0.5 text-xs text-content-tertiary">
-                  {(SOURCE_LABEL[activeScan.source_type] ?? activeScan.source_type) +
-                    ' · ' +
-                    activeScan.original_format.toUpperCase()}
-                </p>
-              </div>
-              <Badge variant={STATUS_VARIANT[activeScan.status] ?? 'neutral'} size="sm">
-                {statusLabel(activeScan.status)}
-              </Badge>
-            </div>
-            <PointCloudViewer
-              key={activeScan.id}
-              scanId={activeScan.id}
-              scanLabel={SOURCE_LABEL[activeScan.source_type] ?? activeScan.source_type}
-            />
-          </div>
-        </Card>
-      )}
+      {/* ── Secondary slot ───────────────────────────────────────────────
+             Once the viewer owns the top, the uploader is demoted to a
+             collapsed "Upload another scan" panel here at the bottom. ───── */}
+      {activeScan && !noProjects && uploadSecondary}
 
       <div className="grid gap-3 sm:grid-cols-3">
         {CAPABILITY_CARDS.map((cap, i) => {

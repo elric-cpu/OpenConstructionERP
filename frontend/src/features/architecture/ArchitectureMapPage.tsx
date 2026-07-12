@@ -35,8 +35,9 @@ const ReactFlow = RFComponent as any as React.FC<Record<string, any>>;
 import { useTranslation } from 'react-i18next';
 import { apiGet } from '@/shared/lib/api';
 import { ModuleGuideButton } from '@/shared/ui';
-import { Search, X, Network, Box, Table2, ArrowRightLeft, Layers, Info, ChevronRight } from 'lucide-react';
+import { Search, X, Network, Box, Table2, ArrowRightLeft, Layers, Info, ChevronRight, Waypoints } from 'lucide-react';
 import { architectureGuide } from './architectureGuide';
+import { computeNeighborhood, neighborCount } from './architectureGraph';
 
 // ---------------------------------------------------------------------------
 // Types — manifest JSON shape
@@ -1110,7 +1111,11 @@ interface FlowCanvasProps {
 
 function FlowCanvas({ manifest, viewLevel, searchQuery }: FlowCanvasProps) {
   const { fitView } = useReactFlow();
+  const { t } = useTranslation();
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  // Hovering previews a node's connections; clicking locks them in (and opens
+  // the detail panel). The hovered node wins while the pointer is over it.
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
 
   const built = useMemo(() => {
     let result: { nodes: Node[]; edges: Edge[] };
@@ -1131,47 +1136,116 @@ function FlowCanvas({ manifest, viewLevel, searchQuery }: FlowCanvasProps) {
     return result;
   }, [manifest, viewLevel]);
 
-  // Apply search highlighting
-  const filteredNodes = useMemo(() => {
-    if (!searchQuery.trim()) return built.nodes;
-    const q = searchQuery.toLowerCase();
+  // The node whose connections we light up: a hover preview if any, else the
+  // locked click selection. Everything else on the canvas dims, turning the
+  // dense hairball into a readable star of just what connects.
+  const activeHighlightId = hoveredNodeId ?? selectedNodeId;
+  const highlightActive = activeHighlightId != null;
+  const neighborhood = useMemo(
+    () =>
+      computeNeighborhood(
+        built.edges as Array<{ id: string; source: string; target: string }>,
+        activeHighlightId,
+      ),
+    [built.edges, activeHighlightId],
+  );
+
+  // Node styling: search dims non-matches; an active highlight dims everything
+  // outside the focused node's immediate neighbourhood and rings the focus.
+  const styledNodes = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
     return built.nodes.map((node) => {
-      const data = node.data as Record<string, unknown>;
-      const label = String(data.label ?? data.path ?? data.handler ?? '').toLowerCase();
-      const moduleId = String(data.moduleId ?? '').toLowerCase();
-      const match = label.includes(q) || moduleId.includes(q);
+      let opacity = 1;
+      let boxShadow: string | undefined;
+      if (highlightActive) {
+        const inSet = neighborhood.nodeIds.has(node.id);
+        opacity = inSet ? 1 : 0.08;
+        if (node.id === activeHighlightId) {
+          boxShadow = '0 0 0 3px #3b82f6, 0 6px 18px rgba(59,130,246,0.4)';
+        } else if (inSet) {
+          boxShadow = '0 0 0 2px rgba(59,130,246,0.45)';
+        }
+      } else if (q) {
+        const data = node.data as Record<string, unknown>;
+        const label = String(data.label ?? data.path ?? data.handler ?? '').toLowerCase();
+        const moduleId = String(data.moduleId ?? '').toLowerCase();
+        opacity = label.includes(q) || moduleId.includes(q) ? 1 : 0.15;
+      }
       return {
         ...node,
         style: {
           ...node.style,
-          opacity: match ? 1 : 0.15,
-          transition: 'opacity 0.3s ease',
+          opacity,
+          boxShadow,
+          borderRadius: 8,
+          transition: 'opacity 0.2s ease, box-shadow 0.2s ease',
         },
       };
     });
-  }, [built.nodes, searchQuery]);
+  }, [built.nodes, searchQuery, highlightActive, neighborhood, activeHighlightId]);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(filteredNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(built.edges);
+  // Edge styling: while a node is active, the edges touching it turn brand blue
+  // and animate; the rest fade almost out so the real connections stand out.
+  const styledEdges = useMemo(() => {
+    if (!highlightActive) return built.edges;
+    return built.edges.map((edge) => {
+      const on = neighborhood.edgeIds.has(edge.id);
+      return {
+        ...edge,
+        animated: on,
+        zIndex: on ? 1000 : 0,
+        style: {
+          ...edge.style,
+          stroke: on ? '#3b82f6' : '#cbd5e1',
+          strokeWidth: on ? 2.5 : 1,
+          opacity: on ? 1 : 0.06,
+          transition: 'opacity 0.2s ease',
+        },
+        markerEnd: on
+          ? { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 }
+          : edge.markerEnd,
+      };
+    });
+  }, [built.edges, highlightActive, neighborhood]);
 
-  // Update nodes/edges when view changes
+  const [nodes, setNodes, onNodesChange] = useNodesState(styledNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(styledEdges);
+
+  // Push restyled nodes/edges into React Flow whenever the styling changes
+  // (view level, search or highlight). No fitView here - restyling on hover or
+  // selection must never yank the camera around.
   useEffect(() => {
-    setNodes(filteredNodes);
-    setEdges(built.edges);
-    // Fit view after layout change
+    setNodes(styledNodes);
+    setEdges(styledEdges);
+  }, [styledNodes, styledEdges, setNodes, setEdges]);
+
+  // Re-fit the camera only when the layout itself changes (a new view level),
+  // not on every hover / search restyle.
+  useEffect(() => {
     const timer = setTimeout(() => {
       fitView({ padding: 0.15, duration: 400 });
     }, 100);
     return () => clearTimeout(timer);
-  }, [filteredNodes, built.edges, setNodes, setEdges, fitView]);
+  }, [viewLevel, fitView]);
 
   const onNodeClick: NodeMouseHandler = useCallback((_event, node) => {
     setSelectedNodeId(node.id);
   }, []);
 
+  const onNodeMouseEnter: NodeMouseHandler = useCallback((_event, node) => {
+    setHoveredNodeId(node.id);
+  }, []);
+
+  const onNodeMouseLeave = useCallback(() => {
+    setHoveredNodeId(null);
+  }, []);
+
   const onPaneClick = useCallback(() => {
     setSelectedNodeId(null);
+    setHoveredNodeId(null);
   }, []);
+
+  const connectedCount = neighborCount(neighborhood);
 
   return (
     <div className="relative w-full h-full">
@@ -1181,6 +1255,8 @@ function FlowCanvas({ manifest, viewLevel, searchQuery }: FlowCanvasProps) {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={onNodeClick}
+        onNodeMouseEnter={onNodeMouseEnter}
+        onNodeMouseLeave={onNodeMouseLeave}
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
         fitView
@@ -1215,6 +1291,32 @@ function FlowCanvas({ manifest, viewLevel, searchQuery }: FlowCanvasProps) {
         <Panel position="bottom-left">
           <Legend />
         </Panel>
+        {highlightActive && (
+          <Panel position="top-center">
+            <div className="flex items-center gap-2 rounded-full border border-blue-200 bg-white/95 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm backdrop-blur-sm">
+              <Waypoints size={13} className="text-blue-500" />
+              <span>
+                {t('architecture.connected_count', {
+                  defaultValue: '{{count}} directly connected',
+                  count: connectedCount,
+                })}
+              </span>
+              {selectedNodeId ? (
+                <button
+                  type="button"
+                  onClick={onPaneClick}
+                  className="ml-1 rounded-full px-2 py-0.5 text-[11px] text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                >
+                  {t('architecture.clear_highlight', { defaultValue: 'Clear' })}
+                </button>
+              ) : (
+                <span className="ml-1 text-[11px] font-normal text-slate-400">
+                  {t('architecture.click_to_lock', { defaultValue: 'click to lock' })}
+                </span>
+              )}
+            </div>
+          </Panel>
+        )}
       </ReactFlow>
 
       <DetailPanel

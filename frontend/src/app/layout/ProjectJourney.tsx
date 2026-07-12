@@ -1,6 +1,6 @@
 // DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 // Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -25,6 +25,7 @@ import {
   type JourneyModule,
 } from './projectJourneyData';
 import { useModuleStore } from '@/stores/useModuleStore';
+import type { Playbook } from '@/features/cases/types';
 
 // The case registry eagerly bundles ~85 playbook data files, so it is loaded
 // LAZILY (dynamic import when the panel opens) to keep it out of the always-on
@@ -373,14 +374,8 @@ function ProjectJourneyPanel({
                                   />
                                   {cases.length > 0 && (
                                     <CasesPill
-                                      count={cases.length}
-                                      onClick={() =>
-                                        go(
-                                          cases.length === 1
-                                            ? `/cases/${cases[0]!.id}`
-                                            : '/cases',
-                                        )
-                                      }
+                                      cases={cases}
+                                      onOpenCase={(id) => go(`/cases/${id}`)}
                                     />
                                   )}
                                 </span>
@@ -425,12 +420,7 @@ function ProjectJourneyPanel({
                       onClick={() => go(m.to)}
                     />
                     {cases.length > 0 && (
-                      <CasesPill
-                        count={cases.length}
-                        onClick={() =>
-                          go(cases.length === 1 ? `/cases/${cases[0]!.id}` : '/cases')
-                        }
-                      />
+                      <CasesPill cases={cases} onOpenCase={(id) => go(`/cases/${id}`)} />
                     )}
                   </span>
                 );
@@ -475,32 +465,314 @@ function ModuleChip({
   );
 }
 
+/** Fixed width of the cases preview / menu floating layer (px). */
+const CASES_POP_WIDTH = 288;
+
 /**
- * A tiny graduation-cap + count pill sitting beside a module chip when one or
+ * A graduation-cap + count control sitting beside a module chip when one or
  * more guided cases visit that module. It is its own button (never nested in
- * the chip button) so a click opens the case library instead of the module,
- * and it stays quiet: it only appears where cases exist, so the map is never a
- * wall of pills.
+ * the chip button). Hovering or focusing it previews the first few case
+ * titles; clicking opens a small keyboard-navigable menu whose rows link
+ * straight to each case. The floating layer renders in a portal on
+ * ``document.body`` so the phase card's ``overflow-hidden`` never clips it, and
+ * it stays quiet: it only appears where cases exist, so a module with no cases
+ * renders no pill at all and its count stays non-interactive.
  */
-function CasesPill({ count, onClick }: { count: number; onClick: () => void }) {
+function CasesPill({
+  cases,
+  onOpenCase,
+}: {
+  cases: Playbook[];
+  onOpenCase: (id: string) => void;
+}) {
   const { t } = useTranslation();
+  const count = cases.length;
+
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  // Set true just before we programmatically return focus to the trigger (Esc /
+  // Tab out) so the immediate ``focus`` event does not re-open the preview.
+  const suppressPreviewRef = useRef(false);
+  const activeRef = useRef(0);
+
+  // ``preview`` = passive hover/focus hint; ``open`` = interactive menu.
+  const [mode, setMode] = useState<'closed' | 'preview' | 'open'>('closed');
+  const [active, setActive] = useState(0);
+  const [layout, setLayout] = useState<{
+    left: number;
+    top: number | null;
+    bottom: number | null;
+    maxH: number;
+  } | null>(null);
+
+  useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
+
+  const close = useCallback((focusTrigger: boolean) => {
+    setMode('closed');
+    if (focusTrigger) {
+      suppressPreviewRef.current = true;
+      btnRef.current?.focus();
+    }
+  }, []);
+
+  const focusItem = useCallback((i: number) => {
+    itemRefs.current[i]?.focus();
+  }, []);
+
+  // Anchor the floating layer under the pill, flipping above when the bottom of
+  // the (scrollable) map panel is close. When placed above we pin the layer's
+  // bottom edge so it hugs the pill regardless of its own height.
+  const place = useCallback(() => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const margin = 8;
+    const gap = 6;
+    const left = Math.min(Math.max(r.left, margin), window.innerWidth - CASES_POP_WIDTH - margin);
+    const spaceBelow = window.innerHeight - r.bottom - gap - margin;
+    const spaceAbove = r.top - gap - margin;
+    const below = spaceBelow >= 200 || spaceBelow >= spaceAbove;
+    const maxH = Math.max(120, Math.min(340, below ? spaceBelow : spaceAbove));
+    setLayout(
+      below
+        ? { left, top: r.bottom + gap, bottom: null, maxH }
+        : { left, top: null, bottom: window.innerHeight - r.top + gap, maxH },
+    );
+  }, []);
+
+  // Position synchronously before paint whenever the layer is visible.
+  useLayoutEffect(() => {
+    if (mode === 'closed') return;
+    place();
+  }, [mode, place]);
+
+  // Keep the layer anchored while the map panel scrolls or the window resizes.
+  useEffect(() => {
+    if (mode === 'closed') return undefined;
+    const onMove = () => place();
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    return () => {
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+    };
+  }, [mode, place]);
+
+  // Move focus onto the first row when the menu opens.
+  useEffect(() => {
+    if (mode !== 'open') return undefined;
+    const raf = requestAnimationFrame(() => focusItem(activeRef.current));
+    return () => cancelAnimationFrame(raf);
+  }, [mode, focusItem]);
+
+  // Outside-click closes the open menu (clicks on the trigger or the menu are
+  // treated as inside so the trigger keeps toggling).
+  useEffect(() => {
+    if (mode !== 'open') return undefined;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (btnRef.current?.contains(target) || popRef.current?.contains(target)) return;
+      setMode('closed');
+    };
+    document.addEventListener('mousedown', onDown, true);
+    return () => document.removeEventListener('mousedown', onDown, true);
+  }, [mode]);
+
+  // Keyboard handling for the open menu. Captured at the document so it works
+  // wherever focus sits, and Escape/arrows are stopped from bubbling to the map
+  // panel's own Escape-to-close so this menu shuts first, on its own.
+  useEffect(() => {
+    if (mode !== 'open' || count === 0) return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      switch (e.key) {
+        case 'Escape':
+        case 'Tab':
+          e.preventDefault();
+          e.stopPropagation();
+          close(true);
+          break;
+        case 'ArrowDown': {
+          e.preventDefault();
+          e.stopPropagation();
+          const n = (activeRef.current + 1) % count;
+          setActive(n);
+          focusItem(n);
+          break;
+        }
+        case 'ArrowUp': {
+          e.preventDefault();
+          e.stopPropagation();
+          const n = (activeRef.current - 1 + count) % count;
+          setActive(n);
+          focusItem(n);
+          break;
+        }
+        case 'Home':
+          e.preventDefault();
+          e.stopPropagation();
+          setActive(0);
+          focusItem(0);
+          break;
+        case 'End':
+          e.preventDefault();
+          e.stopPropagation();
+          setActive(count - 1);
+          focusItem(count - 1);
+          break;
+        default:
+          break;
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [mode, count, close, focusItem]);
+
+  const showPreview = useCallback(() => {
+    if (suppressPreviewRef.current) {
+      suppressPreviewRef.current = false;
+      return;
+    }
+    setMode((m) => (m === 'open' ? m : 'preview'));
+  }, []);
+
+  const hidePreview = useCallback(() => {
+    setMode((m) => (m === 'preview' ? 'closed' : m));
+  }, []);
+
+  const toggleOpen = useCallback(() => {
+    setActive(0);
+    setMode((m) => (m === 'open' ? 'closed' : 'open'));
+  }, []);
+
+  const previewTitles = cases.slice(0, 5);
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={t('journey.cases_pill', { defaultValue: '{{count}} cases', count })}
-      title={t('journey.cases_pill_title', {
-        defaultValue: 'Guided cases that use this module - open the case library',
-      })}
-      className={clsx(
-        'inline-flex shrink-0 items-center gap-0.5 rounded-md border border-oe-blue/25 bg-oe-blue/5 px-1.5 py-1',
-        'text-2xs font-semibold tabular-nums text-oe-blue transition-colors',
-        'hover:border-oe-blue/50 hover:bg-oe-blue/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40',
-      )}
-    >
-      <GraduationCap size={11} strokeWidth={2} aria-hidden />
-      {count}
-    </button>
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={mode === 'open'}
+        aria-label={t('journey.cases_pill', { defaultValue: '{{count}} cases', count })}
+        title={t('journey.cases_pill_title', {
+          defaultValue: 'Guided cases that use this module - hover to preview, click to open',
+        })}
+        onMouseEnter={showPreview}
+        onMouseLeave={hidePreview}
+        onFocus={showPreview}
+        onBlur={hidePreview}
+        onClick={toggleOpen}
+        className={clsx(
+          'inline-flex shrink-0 items-center gap-0.5 rounded-md border px-1.5 py-1',
+          'text-2xs font-semibold tabular-nums text-oe-blue transition-colors',
+          'focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40',
+          mode === 'open'
+            ? 'border-oe-blue/50 bg-oe-blue/10'
+            : 'border-oe-blue/25 bg-oe-blue/5 hover:border-oe-blue/50 hover:bg-oe-blue/10',
+        )}
+      >
+        <GraduationCap size={11} strokeWidth={2} aria-hidden />
+        {count}
+        <ChevronDown
+          size={10}
+          strokeWidth={2}
+          aria-hidden
+          className={clsx('transition-transform', mode === 'open' && 'rotate-180')}
+        />
+      </button>
+
+      {mode !== 'closed' &&
+        layout &&
+        createPortal(
+          <div
+            ref={popRef}
+            style={{
+              position: 'fixed',
+              left: layout.left,
+              width: CASES_POP_WIDTH,
+              zIndex: 130,
+              ...(layout.top != null ? { top: layout.top } : { bottom: layout.bottom ?? 0 }),
+            }}
+            className={clsx(mode === 'preview' && 'pointer-events-none')}
+          >
+            {mode === 'preview' ? (
+              <div
+                aria-hidden
+                className="overflow-hidden rounded-lg border border-border-light bg-surface-elevated shadow-xl ring-1 ring-black/5"
+              >
+                <div className="flex items-center gap-1.5 border-b border-border-light/70 bg-surface-secondary/40 px-3 py-2">
+                  <GraduationCap size={12} className="text-oe-blue" aria-hidden />
+                  <span className="text-2xs font-semibold text-content-secondary">
+                    {t('journey.cases_preview_title', { defaultValue: 'Guided cases' })}
+                  </span>
+                </div>
+                <ul className="py-1">
+                  {previewTitles.map((pb) => (
+                    <li key={pb.id} className="truncate px-3 py-1 text-2xs text-content-primary">
+                      {t(pb.titleKey, { defaultValue: pb.titleDefault })}
+                    </li>
+                  ))}
+                </ul>
+                <div className="border-t border-border-light/70 px-3 py-1.5 text-[10px] text-content-tertiary">
+                  {count > previewTitles.length
+                    ? t('journey.cases_more_hint', {
+                        defaultValue: '+{{n}} more - click to open',
+                        n: count - previewTitles.length,
+                      })
+                    : t('journey.cases_click_hint', { defaultValue: 'Click to open' })}
+                </div>
+              </div>
+            ) : (
+              <div
+                role="menu"
+                aria-label={t('journey.cases_menu_label', {
+                  defaultValue: 'Cases that use this module',
+                })}
+                className="overflow-hidden rounded-lg border border-border-light bg-surface-elevated shadow-2xl ring-1 ring-black/5"
+              >
+                <div className="flex items-center gap-1.5 border-b border-border-light/70 bg-surface-secondary/40 px-3 py-2">
+                  <GraduationCap size={12} className="text-oe-blue" aria-hidden />
+                  <span className="text-2xs font-semibold text-content-secondary">
+                    {t('journey.cases_menu_title', { defaultValue: 'Open a guided case' })}
+                  </span>
+                </div>
+                <ul
+                  className="overflow-y-auto py-1"
+                  style={{ maxHeight: Math.max(96, layout.maxH - 44) }}
+                >
+                  {cases.map((pb, i) => (
+                    <li key={pb.id} role="none">
+                      <button
+                        ref={(el) => {
+                          itemRefs.current[i] = el;
+                        }}
+                        role="menuitem"
+                        tabIndex={i === active ? 0 : -1}
+                        type="button"
+                        onClick={() => onOpenCase(pb.id)}
+                        onMouseEnter={() => setActive(i)}
+                        className="group flex w-full items-center gap-2 px-3 py-1.5 text-left text-2xs text-content-primary transition-colors hover:bg-oe-blue/5 focus:bg-oe-blue/10 focus:outline-none"
+                      >
+                        <span className="flex-1 truncate">
+                          {t(pb.titleKey, { defaultValue: pb.titleDefault })}
+                        </span>
+                        <ArrowRight
+                          size={11}
+                          aria-hidden
+                          className="shrink-0 text-oe-blue opacity-0 transition-opacity group-hover:opacity-70 group-focus:opacity-100"
+                        />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 

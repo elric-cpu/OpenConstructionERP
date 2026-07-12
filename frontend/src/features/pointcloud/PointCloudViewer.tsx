@@ -51,13 +51,17 @@ import {
   Crosshair,
   Download,
   Gauge,
+  Grid3x3,
   Layers,
   Loader2,
   MapPin,
+  Maximize,
   Maximize2,
+  Minimize2,
   Minus,
   Mountain,
   Move3d,
+  Palette,
   Pentagon,
   Pin,
   PinOff,
@@ -66,6 +70,7 @@ import {
   RotateCcw,
   Ruler,
   Trash2,
+  Triangle,
   Undo2,
   X,
 } from 'lucide-react';
@@ -73,12 +78,15 @@ import { useThemeStore } from '@/stores/useThemeStore';
 import { fetchScanPoints, ScanPointsError } from './api';
 import { parseOepc, OepcParseError, type OepcCloud } from './oepc';
 import {
+  angleAtVertex,
   annotationsToCsv,
   boxPlanes,
+  chooseScaleBar,
   computePolylineMetrics,
   decimationStride,
   deriveCloudBounds,
   estimateVolumeVsPlane,
+  formatAngle,
   formatAreaM2,
   formatLengthMm,
   formatMetersLabel,
@@ -106,7 +114,7 @@ type ErrorKind = 'processing' | 'notfound' | 'reader' | 'decode' | 'generic';
 
 /** The single pick tool that currently owns canvas clicks. Only one at a time
  *  so the tools never fight each other (or OrbitControls). */
-type PickMode = 'none' | 'measure' | 'area' | 'inspect' | 'annotate';
+type PickMode = 'none' | 'measure' | 'angle' | 'area' | 'inspect' | 'annotate';
 
 /** An in-session labelled pin dropped on the cloud. Not persisted server-side
  *  yet; lives for the life of the viewer mount. */
@@ -130,6 +138,32 @@ const DENSITY_OPTIONS = [
 /** Scene backgrounds matching the BIM viewer's light / dark pair. */
 const BG_LIGHT = 0xf0f2f5;
 const BG_DARK = 0x1a1a2e;
+/** Extra backdrop choices - a neutral slate and pure black give high-contrast
+ *  studio looks that pros often switch to when reading fine surface detail. */
+const BG_SLATE = 0x334155;
+const BG_BLACK = 0x000000;
+
+/** The viewer's backdrop can follow the app theme or be pinned to a fixed
+ *  studio backdrop, independent of light/dark mode. */
+type BgMode = 'theme' | 'light' | 'slate' | 'dark' | 'black';
+
+/** Resolve a background mode to a concrete scene-clear colour. `theme` tracks
+ *  the app's light/dark setting; the rest are fixed studio backdrops. */
+function effectiveBgHex(mode: BgMode, resolvedTheme: string): number {
+  switch (mode) {
+    case 'light':
+      return BG_LIGHT;
+    case 'slate':
+      return BG_SLATE;
+    case 'dark':
+      return BG_DARK;
+    case 'black':
+      return BG_BLACK;
+    case 'theme':
+    default:
+      return resolvedTheme === 'dark' ? BG_DARK : BG_LIGHT;
+  }
+}
 
 /** Fallback single color: the oe-blue accent. */
 const SINGLE_COLOR = new THREE.Color(0x3b82f6);
@@ -180,6 +214,41 @@ const INSPECT_COLOR = 0x06b6d4;
 
 /** Annotation pin color (orange). */
 const ANNOTATION_COLOR = 0xf97316;
+
+/** Angle-tool color (magenta) - distinct from the yellow measure path so the
+ *  two picking tools never read as the same overlay. */
+const ANGLE_COLOR = 0xec4899;
+
+/** A soft round sprite for the points, built once and shared. Turning the
+ *  default hard squares into feathered discs is the single biggest "reads like
+ *  a real surface" upgrade, at no per-point cost (one texture lookup + an
+ *  alpha test). Returns null in non-DOM/edge environments so the material
+ *  falls back to square points instead of throwing. */
+let discTexture: THREE.Texture | null = null;
+let discTextureTried = false;
+function getDiscTexture(): THREE.Texture | null {
+  if (discTextureTried) return discTexture;
+  discTextureTried = true;
+  if (typeof document === 'undefined') return null;
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  const r = size / 2;
+  const gradient = ctx.createRadialGradient(r, r, 0, r, r, r);
+  gradient.addColorStop(0, 'rgba(255,255,255,1)');
+  gradient.addColorStop(0.75, 'rgba(255,255,255,1)');
+  gradient.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(r, r, r, 0, Math.PI * 2);
+  ctx.fill();
+  discTexture = new THREE.CanvasTexture(canvas);
+  discTexture.needsUpdate = true;
+  return discTexture;
+}
 
 /** Upper bound on cloud samples fed to the grid volume estimate; keeps the
  *  synchronous compute responsive on multi-million-point clouds. */
@@ -325,6 +394,17 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
   // Annotation pins: id -> marker mesh, reconciled against the annotations
   // state by an effect below.
   const annotationMarkersRef = useRef<Map<string, THREE.Mesh>>(new Map());
+  // Angle tool (three-point): the picked vertices + their line / markers.
+  const anglePointsRef = useRef<THREE.Vector3[]>([]);
+  const angleLineRef = useRef<THREE.Line | null>(null);
+  const angleMarkersRef = useRef<THREE.Mesh[]>([]);
+  // Ground grid + orientation axes: a spatial reference frame under the cloud.
+  const gridHelperRef = useRef<THREE.GridHelper | null>(null);
+  const axesHelperRef = useRef<THREE.AxesHelper | null>(null);
+  // Scale-bar overlay: the bar element (width set each frame) + its label. The
+  // animation loop keeps both in sync with the camera without a re-render.
+  const scaleBarRef = useRef<HTMLDivElement | null>(null);
+  const scaleBarLabelRef = useRef<HTMLDivElement | null>(null);
 
   const [phase, setPhase] = useState<LoadPhase>('loading');
   const [errorKind, setErrorKind] = useState<ErrorKind>('generic');
@@ -338,6 +418,11 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
   const [depthCue, setDepthCue] = useState(false);
   const [reloadNonce, setReloadNonce] = useState(0);
   const [webglFailed, setWebglFailed] = useState(false);
+  // A ground grid + orientation axes gives every scan an immediate sense of
+  // scale and which way is up; on by default because it reads clearer.
+  const [showGrid, setShowGrid] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [bgMode, setBgMode] = useState<BgMode>('theme');
 
   // ── Inspection-tools state ────────────────────────────────────────────
   const [sliceEnabled, setSliceEnabled] = useState(false);
@@ -366,6 +451,10 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
   const [volumeResult, setVolumeResult] = useState<VolumeEstimate | null>(null);
   const [inspectResult, setInspectResult] = useState<{ world: Vec3; scan: Vec3 } | null>(null);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  // Angle tool readout: the picked-vertex count (0-3) + the measured interior
+  // angle at the middle vertex once all three are down.
+  const [angleVertexCount, setAngleVertexCount] = useState(0);
+  const [angleValue, setAngleValue] = useState<number | null>(null);
 
   // ── Scene lifecycle: one renderer per mount, disposed on unmount ─────────
   useEffect(() => {
@@ -446,6 +535,26 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
           label.style.visibility = 'hidden';
         }
       }
+
+      // Scale bar: size a "nice" round ruler from the metres-per-pixel at the
+      // orbit-pivot depth (2 * tan(fov/2) * dist / viewport height). Written
+      // imperatively so the ruler tracks every zoom without a React re-render.
+      const bar = scaleBarRef.current;
+      const barLabel = scaleBarLabelRef.current;
+      const barCont = containerRef.current;
+      if (bar && barLabel && barCont && barCont.clientHeight > 0) {
+        const dist = camera.position.distanceTo(controls.target);
+        const worldHeight = 2 * Math.tan((camera.fov * Math.PI) / 360) * dist;
+        const worldPerPixel = worldHeight / barCont.clientHeight;
+        const sb = chooseScaleBar(worldPerPixel, Math.min(barCont.clientWidth * 0.25, 160));
+        if (sb.pixels > 0) {
+          bar.style.width = `${sb.pixels}px`;
+          barLabel.textContent = sb.label;
+          bar.style.visibility = 'visible';
+        } else {
+          bar.style.visibility = 'hidden';
+        }
+      }
     });
 
     const observer = new ResizeObserver(() => {
@@ -494,6 +603,13 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
       for (const marker of areaMarkersRef.current) disposeMesh(marker);
       areaMarkersRef.current = [];
       areaPointsRef.current = [];
+      if (angleLineRef.current) {
+        disposeMesh(angleLineRef.current);
+        angleLineRef.current = null;
+      }
+      for (const marker of angleMarkersRef.current) disposeMesh(marker);
+      angleMarkersRef.current = [];
+      anglePointsRef.current = [];
       if (inspectMarkerRef.current) {
         disposeMesh(inspectMarkerRef.current);
         inspectMarkerRef.current = null;
@@ -519,11 +635,11 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
     };
   }, []);
 
-  // ── Theme: keep the scene background in sync with the app theme ──────────
+  // ── Keep the scene background in sync with the app theme / chosen backdrop ─
   useEffect(() => {
     const scene = sceneRef.current;
-    if (scene) scene.background = new THREE.Color(resolvedTheme === 'dark' ? BG_DARK : BG_LIGHT);
-  }, [resolvedTheme, webglFailed]);
+    if (scene) scene.background = new THREE.Color(effectiveBgHex(bgMode, resolvedTheme));
+  }, [resolvedTheme, webglFailed, bgMode]);
 
   // ── Fetch + parse the OEPC buffer, cancellable ────────────────────────────
   useEffect(() => {
@@ -613,10 +729,18 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
     const diagonal = max.clone().sub(min).length() || 1;
     baseSizeRef.current = diagonal / 1000;
 
+    // A soft round sprite (alpha-tested, so no blending / depth-sort cost)
+    // turns the default hard squares into feathered discs - the cloud reads
+    // like a surface rather than confetti. Falls back to squares if the
+    // sprite could not be built.
+    const disc = getDiscTexture();
     const material = new THREE.PointsMaterial({
       size: baseSizeRef.current * (sizeFactor / 10),
       vertexColors: true,
       sizeAttenuation: true,
+      map: disc ?? undefined,
+      alphaTest: disc ? 0.5 : 0,
+      transparent: false,
     });
 
     const points = new THREE.Points(geometry, material);
@@ -692,7 +816,9 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
       ? deriveCloudBounds({ bboxMin: cloud.bboxMin, bboxMax: cloud.bboxMax, center: cloud.center })
       : null;
     if (depthCue && bounds) {
-      const bg = resolvedTheme === 'dark' ? BG_DARK : BG_LIGHT;
+      // Fade into whatever backdrop is showing so distant points dissolve
+      // cleanly rather than into a mismatched colour.
+      const bg = effectiveBgHex(bgMode, resolvedTheme);
       scene.fog = new THREE.Fog(bg, bounds.diagonal * 0.35, bounds.diagonal * 2.2);
     } else {
       scene.fog = null;
@@ -700,7 +826,7 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
     // PointsMaterial bakes fog on/off into the compiled shader; force a
     // recompile so toggling takes effect on the already-built material.
     if (points) (points.material as THREE.PointsMaterial).needsUpdate = true;
-  }, [depthCue, cloud, resolvedTheme]);
+  }, [depthCue, cloud, resolvedTheme, bgMode]);
 
   const handleRefit = useCallback(() => {
     // Cheapest reliable re-fit: replay the data effect by cloning the cloud
@@ -828,6 +954,22 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
     areaMarkersRef.current = [];
   }, []);
 
+  const disposeAngleScene = useCallback(() => {
+    const scene = sceneRef.current;
+    if (angleLineRef.current) {
+      scene?.remove(angleLineRef.current);
+      angleLineRef.current.geometry.dispose();
+      (angleLineRef.current.material as THREE.Material).dispose();
+      angleLineRef.current = null;
+    }
+    for (const marker of angleMarkersRef.current) {
+      scene?.remove(marker);
+      marker.geometry.dispose();
+      (marker.material as THREE.Material).dispose();
+    }
+    angleMarkersRef.current = [];
+  }, []);
+
   const disposeInspectMarker = useCallback(() => {
     const scene = sceneRef.current;
     if (inspectMarkerRef.current) {
@@ -875,6 +1017,25 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
     }
   }, [disposeAreaScene, makeMarker, buildLine]);
 
+  const redrawAngle = useCallback(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    disposeAngleScene();
+    const pts = anglePointsRef.current;
+    for (const p of pts) {
+      const m = makeMarker(p, ANGLE_COLOR);
+      scene.add(m);
+      angleMarkersRef.current.push(m);
+    }
+    // An open two-leg polyline (a->b->c) - the corner being measured, not a
+    // closed shape.
+    if (pts.length >= 2) {
+      const line = buildLine(pts, ANGLE_COLOR, false);
+      scene.add(line);
+      angleLineRef.current = line;
+    }
+  }, [disposeAngleScene, makeMarker, buildLine]);
+
   // ── Shared raycast: the visible cloud point under a click, or null ───────
   const raycastVisiblePoint = useCallback(
     (ev: PointerEvent): THREE.Vector3 | null => {
@@ -920,6 +1081,16 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
         measurePointsRef.current.push(p);
         redrawPath();
         setPathMetrics(computePolylineMetrics(measurePointsRef.current));
+      } else if (pickMode === 'angle') {
+        const apts = anglePointsRef.current;
+        // Three vertices define one corner; a fourth click starts a fresh pick.
+        if (apts.length >= 3) apts.length = 0;
+        apts.push(p);
+        redrawAngle();
+        setAngleVertexCount(apts.length);
+        setAngleValue(
+          apts.length === 3 ? angleAtVertex(apts[0] as Vec3, apts[1] as Vec3, apts[2] as Vec3) : null,
+        );
       } else if (pickMode === 'area') {
         areaPointsRef.current.push(p);
         redrawArea();
@@ -946,7 +1117,16 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
         ]);
       }
     },
-    [pickMode, cloud, raycastVisiblePoint, redrawPath, redrawArea, disposeInspectMarker, makeMarker],
+    [
+      pickMode,
+      cloud,
+      raycastVisiblePoint,
+      redrawPath,
+      redrawAngle,
+      redrawArea,
+      disposeInspectMarker,
+      makeMarker,
+    ],
   );
 
   /** DOM pointer listeners live outside React's render cycle, so they call
@@ -984,10 +1164,14 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
     setVolumeRefY(null);
     setVolumeCell(null);
     setVolumeResult(null);
+    disposeAngleScene();
+    anglePointsRef.current = [];
+    setAngleVertexCount(0);
+    setAngleValue(null);
     disposeInspectMarker();
     setInspectResult(null);
     setAnnotations([]);
-  }, [cloud, bounds, disposeMeasureScene, disposeAreaScene, disposeInspectMarker]);
+  }, [cloud, bounds, disposeMeasureScene, disposeAreaScene, disposeAngleScene, disposeInspectMarker]);
 
   // ── Sync annotation pin markers to the annotations state ─────────────────
   useEffect(() => {
@@ -1062,6 +1246,63 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
     helper.box.max.set(clipBox.max.x, clipBox.max.y, clipBox.max.z);
     helper.visible = true;
   }, [clipEnabled, clipBox]);
+
+  // ── Ground grid + orientation axes: a spatial reference under the cloud so
+  //    scale and "which way is up" read at a glance. Rebuilt when the bounds
+  //    change; toggled and theme-tinted in place. GridHelper lies in the XZ
+  //    plane, which is the ground here (Y is up after the -90 deg rotation). ─
+  useEffect(() => {
+    const scene = sceneRef.current;
+    const disposeFrame = () => {
+      if (gridHelperRef.current) {
+        scene?.remove(gridHelperRef.current);
+        gridHelperRef.current.geometry.dispose();
+        (gridHelperRef.current.material as THREE.Material).dispose();
+        gridHelperRef.current = null;
+      }
+      if (axesHelperRef.current) {
+        scene?.remove(axesHelperRef.current);
+        axesHelperRef.current.geometry.dispose();
+        (axesHelperRef.current.material as THREE.Material).dispose();
+        axesHelperRef.current = null;
+      }
+    };
+    if (!scene) return undefined;
+    disposeFrame();
+    if (!showGrid || !bounds) return disposeFrame;
+
+    const wx = bounds.worldMax.x - bounds.worldMin.x;
+    const wz = bounds.worldMax.z - bounds.worldMin.z;
+    const span = Math.max(wx, wz, 1);
+    const dark =
+      resolvedTheme === 'dark' || bgMode === 'dark' || bgMode === 'black' || bgMode === 'slate';
+    const gridColor = dark ? 0x475569 : 0xcbd5e1;
+    const centerColor = dark ? 0x64748b : 0x94a3b8;
+    const grid = new THREE.GridHelper(span * 1.3, 20, centerColor, gridColor);
+    // Sit the grid just under the lowest point, centred on the footprint.
+    grid.position.set(
+      bounds.worldCenter.x,
+      bounds.worldMin.y - Math.max(bounds.diagonal * 0.002, 1e-4),
+      bounds.worldCenter.z,
+    );
+    const gridMat = grid.material as THREE.Material;
+    gridMat.transparent = true;
+    gridMat.opacity = 0.55;
+    gridMat.depthWrite = false;
+    scene.add(grid);
+    gridHelperRef.current = grid;
+
+    // A small triad at the ground corner shows the axis directions (X/Z ground,
+    // Y up), always drawn on top so it stays legible against the cloud.
+    const axes = new THREE.AxesHelper(Math.max(span * 0.12, 0.2));
+    axes.position.set(bounds.worldMin.x, bounds.worldMin.y, bounds.worldMin.z);
+    (axes.material as THREE.Material).depthTest = false;
+    axes.renderOrder = 996;
+    scene.add(axes);
+    axesHelperRef.current = axes;
+
+    return disposeFrame;
+  }, [bounds, showGrid, resolvedTheme, bgMode]);
 
   // ── Pick-tool pointer listeners: a plain click (down+up within a few px,
   //    no drag) picks a point; a real orbit-drag is ignored so picking never
@@ -1146,6 +1387,13 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
     setVolumeResult(null);
   }, [disposeAreaScene]);
 
+  const clearAngle = useCallback(() => {
+    disposeAngleScene();
+    anglePointsRef.current = [];
+    setAngleVertexCount(0);
+    setAngleValue(null);
+  }, [disposeAngleScene]);
+
   const computeVolume = useCallback(() => {
     const poly = areaPointsRef.current;
     if (!cloud || poly.length < 3) return;
@@ -1199,6 +1447,24 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
     },
     [bounds],
   );
+
+  // ── Fullscreen: mirror the browser state so the button/layout stay correct
+  //    even when the user leaves fullscreen with Esc. ────────────────────────
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(document.fullscreenElement === containerRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    if (document.fullscreenElement) {
+      void document.exitFullscreen?.();
+    } else {
+      void container.requestFullscreen?.();
+    }
+  }, []);
 
   const handleSnapshot = useCallback(() => {
     const renderer = rendererRef.current;
@@ -1305,6 +1571,26 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
     [t],
   );
 
+  /** Overall cloud footprint W x D x H in metres, for the header readout. */
+  const dimensionsLabel = useMemo(() => {
+    if (!bounds) return null;
+    const w = bounds.worldMax.x - bounds.worldMin.x;
+    const d = bounds.worldMax.z - bounds.worldMin.z;
+    const h = bounds.worldMax.y - bounds.worldMin.y;
+    return `${w.toFixed(1)} × ${d.toFixed(1)} × ${h.toFixed(1)} m`;
+  }, [bounds]);
+
+  const bgModeOptions = useMemo(
+    () => [
+      { value: 'theme' as const, label: t('pointcloud.bg_theme', { defaultValue: 'Theme' }) },
+      { value: 'light' as const, label: t('pointcloud.bg_light', { defaultValue: 'Light' }) },
+      { value: 'slate' as const, label: t('pointcloud.bg_slate', { defaultValue: 'Slate' }) },
+      { value: 'dark' as const, label: t('pointcloud.bg_dark', { defaultValue: 'Dark' }) },
+      { value: 'black' as const, label: t('pointcloud.bg_black', { defaultValue: 'Black' }) },
+    ],
+    [t],
+  );
+
   const errorTitle = useMemo(() => {
     switch (errorKind) {
       case 'processing':
@@ -1349,11 +1635,15 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
 
   return (
     <div className="space-y-3">
-      {/* ── Toolbar ─────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
-        <div>
-          <label
-            htmlFor="pointcloud-color-mode"
+      {/* ── Controls: grouped into Display / View / Tools for clarity ────── */}
+      <div className="space-y-3 rounded-xl border border-border-light bg-surface-secondary/40 p-3">
+        <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
+          <span className="mb-2 hidden self-end text-2xs font-semibold uppercase tracking-wider text-content-quaternary lg:inline">
+            {t('pointcloud.group_display', { defaultValue: 'Display' })}
+          </span>
+          <div>
+            <label
+              htmlFor="pointcloud-color-mode"
             className="mb-1 block text-2xs font-semibold uppercase tracking-wider text-content-tertiary"
           >
             {t('pointcloud.viewer_color_mode', { defaultValue: 'Color by' })}
@@ -1446,6 +1736,73 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
           />
         </div>
 
+        <div>
+          <label
+            htmlFor="pointcloud-bg-mode"
+            className="mb-1 flex items-center gap-1 text-2xs font-semibold uppercase tracking-wider text-content-tertiary"
+          >
+            <Palette size={11} />
+            {t('pointcloud.viewer_background', { defaultValue: 'Background' })}
+          </label>
+          <select
+            id="pointcloud-bg-mode"
+            className="rounded-lg border border-border-light bg-surface-secondary px-2.5 py-1.5 text-sm text-content-primary focus:outline-none focus:ring-1 focus:ring-oe-blue"
+            value={bgMode}
+            onChange={(e) => setBgMode(e.target.value as BgMode)}
+            disabled={toolsDisabled}
+            data-testid="pointcloud-bg-mode"
+          >
+            {bgModeOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="ml-auto flex flex-col items-end justify-end gap-0.5 self-end pb-1 text-xs tabular-nums text-content-tertiary">
+          {phase === 'ready' && cloud ? (
+            <>
+              <span>
+                {t('pointcloud.viewer_points_shown', {
+                  defaultValue: '{{points}} points shown',
+                  points: formatPoints(cloud.pointCount),
+                })}
+              </span>
+              {dimensionsLabel && (
+                <span className="text-content-quaternary" data-testid="pointcloud-dimensions">
+                  {t('pointcloud.viewer_dimensions', {
+                    defaultValue: 'Extent {{dims}}',
+                    dims: dimensionsLabel,
+                  })}
+                </span>
+              )}
+            </>
+          ) : null}
+        </div>
+      </div>
+
+      {/* ── Preset views ───────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center gap-1 text-2xs font-semibold uppercase tracking-wider text-content-tertiary">
+          <Move3d size={12} />
+          {t('pointcloud.views_label', { defaultValue: 'Views' })}
+        </span>
+        {presetButtons.map((p) => (
+          <button
+            key={p.view}
+            type="button"
+            onClick={() => applyPreset(p.view)}
+            disabled={toolsDisabled}
+            className="inline-flex items-center rounded-lg border border-border-light bg-surface-secondary px-2.5 py-1 text-xs font-medium text-content-secondary transition-colors hover:bg-surface-tertiary hover:text-content-primary disabled:cursor-not-allowed disabled:opacity-40"
+            data-testid={`pointcloud-view-${p.view}`}
+          >
+            {p.label}
+          </button>
+        ))}
+
+        <span className="mx-1 hidden h-5 w-px self-center bg-border-light sm:inline-block" aria-hidden="true" />
+
         <button
           type="button"
           onClick={handleRefit}
@@ -1455,6 +1812,25 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
         >
           <Maximize2 size={14} />
           {t('pointcloud.viewer_refit', { defaultValue: 'Fit view' })}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowGrid((v) => !v)}
+          disabled={toolsDisabled}
+          aria-pressed={showGrid}
+          className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+            showGrid
+              ? 'border-oe-blue/40 bg-oe-blue/10 text-oe-blue'
+              : 'border-border-light bg-surface-secondary text-content-secondary hover:bg-surface-tertiary hover:text-content-primary'
+          }`}
+          title={t('pointcloud.grid_hint', {
+            defaultValue: 'Show a ground grid and orientation axes for scale and direction',
+          })}
+          data-testid="pointcloud-grid-toggle"
+        >
+          <Grid3x3 size={14} />
+          {t('pointcloud.grid_axes', { defaultValue: 'Grid & axes' })}
         </button>
 
         <button
@@ -1478,6 +1854,25 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
 
         <button
           type="button"
+          onClick={toggleFullscreen}
+          disabled={toolsDisabled}
+          aria-pressed={isFullscreen}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border-light bg-surface-secondary px-3 py-1.5 text-sm text-content-secondary transition-colors hover:bg-surface-tertiary hover:text-content-primary disabled:cursor-not-allowed disabled:opacity-40"
+          title={
+            isFullscreen
+              ? t('pointcloud.fullscreen_exit', { defaultValue: 'Exit fullscreen' })
+              : t('pointcloud.fullscreen', { defaultValue: 'Fullscreen' })
+          }
+          data-testid="pointcloud-fullscreen"
+        >
+          {isFullscreen ? <Minimize2 size={14} /> : <Maximize size={14} />}
+          {isFullscreen
+            ? t('pointcloud.fullscreen_exit', { defaultValue: 'Exit fullscreen' })
+            : t('pointcloud.fullscreen', { defaultValue: 'Fullscreen' })}
+        </button>
+
+        <button
+          type="button"
           onClick={handleSnapshot}
           disabled={toolsDisabled}
           className="inline-flex items-center gap-1.5 rounded-lg border border-border-light bg-surface-secondary px-3 py-1.5 text-sm text-content-secondary transition-colors hover:bg-surface-tertiary hover:text-content-primary disabled:cursor-not-allowed disabled:opacity-40"
@@ -1487,35 +1882,6 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
           <Camera size={14} />
           {t('pointcloud.snapshot', { defaultValue: 'Snapshot' })}
         </button>
-
-        <div className="ml-auto self-center text-xs tabular-nums text-content-tertiary">
-          {phase === 'ready' && cloud
-            ? t('pointcloud.viewer_points_shown', {
-                defaultValue: '{{points}} points shown',
-                points: formatPoints(cloud.pointCount),
-              })
-            : null}
-        </div>
-      </div>
-
-      {/* ── Preset views ───────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="inline-flex items-center gap-1 text-2xs font-semibold uppercase tracking-wider text-content-tertiary">
-          <Move3d size={12} />
-          {t('pointcloud.views_label', { defaultValue: 'Views' })}
-        </span>
-        {presetButtons.map((p) => (
-          <button
-            key={p.view}
-            type="button"
-            onClick={() => applyPreset(p.view)}
-            disabled={toolsDisabled}
-            className="inline-flex items-center rounded-lg border border-border-light bg-surface-secondary px-2.5 py-1 text-xs font-medium text-content-secondary transition-colors hover:bg-surface-tertiary hover:text-content-primary disabled:cursor-not-allowed disabled:opacity-40"
-            data-testid={`pointcloud-view-${p.view}`}
-          >
-            {p.label}
-          </button>
-        ))}
       </div>
 
       {/* ── Inspection tools ───────────────────────────────────────────────── */}
@@ -1538,6 +1904,14 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
           icon={Ruler}
           label={t('pointcloud.tool_measure', { defaultValue: 'Measure' })}
           testId="pointcloud-tool-measure"
+        />
+        <ToolToggleButton
+          active={pickMode === 'angle'}
+          disabled={toolsDisabled}
+          onClick={() => togglePick('angle')}
+          icon={Triangle}
+          label={t('pointcloud.tool_angle', { defaultValue: 'Angle' })}
+          testId="pointcloud-tool-angle"
         />
         <ToolToggleButton
           active={pickMode === 'area'}
@@ -1571,6 +1945,7 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
           label={t('pointcloud.tool_clip', { defaultValue: 'Clip box' })}
           testId="pointcloud-tool-clip"
         />
+      </div>
       </div>
 
       {sliceEnabled && bounds && (
@@ -1708,6 +2083,46 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
                 {t('pointcloud.measure_clear', { defaultValue: 'Clear' })}
               </button>
             </div>
+          )}
+        </div>
+      )}
+
+      {(pickMode === 'angle' || angleVertexCount > 0) && (
+        <div
+          className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-border-light bg-surface-secondary/60 p-3"
+          data-testid="pointcloud-angle-panel"
+        >
+          {angleValue != null ? (
+            <span
+              className="text-sm font-medium text-content-primary"
+              data-testid="pointcloud-angle-value"
+            >
+              {t('pointcloud.angle_value', { defaultValue: 'Angle' })}: {formatAngle(angleValue)}
+            </span>
+          ) : (
+            <span className="text-xs text-content-tertiary">
+              {t('pointcloud.angle_hint', {
+                defaultValue:
+                  'Click three points - two arms and the corner between them; the angle at the middle point is measured.',
+              })}
+            </span>
+          )}
+          <span className="text-xs text-content-tertiary">
+            {t('pointcloud.angle_vertices', {
+              defaultValue: '{{count}} / 3 points',
+              count: angleVertexCount,
+            })}
+          </span>
+          {angleVertexCount > 0 && (
+            <button
+              type="button"
+              onClick={clearAngle}
+              className="ml-auto inline-flex items-center gap-1 text-xs text-content-tertiary underline hover:text-danger"
+              data-testid="pointcloud-angle-clear"
+            >
+              <X size={12} />
+              {t('pointcloud.measure_clear', { defaultValue: 'Clear' })}
+            </button>
           )}
         </div>
       )}
@@ -2008,7 +2423,9 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
       {/* ── Canvas + status overlays ─────────────────────────────────────── */}
       <div
         ref={containerRef}
-        className="relative h-[480px] w-full overflow-hidden rounded-xl border border-border-light bg-surface-secondary"
+        className={`relative w-full overflow-hidden border border-border-light bg-surface-secondary ${
+          isFullscreen ? 'h-full rounded-none' : 'h-[480px] rounded-xl'
+        }`}
         style={{ cursor: pickMode === 'none' ? undefined : 'crosshair' }}
         data-testid="pointcloud-viewer-canvas"
         aria-label={
@@ -2074,6 +2491,23 @@ export function PointCloudViewer({ scanId, scanLabel }: PointCloudViewerProps) {
             <p className="text-sm text-content-secondary">
               {t('pointcloud.viewer_empty', { defaultValue: 'The scan decoded to zero points.' })}
             </p>
+          </div>
+        )}
+
+        {/* ── Scale bar: a live ruler whose width/label the animation loop
+             keeps sized to a round distance at the current zoom. ─────────── */}
+        {!webglFailed && phase === 'ready' && cloud && cloud.pointCount > 0 && (
+          <div className="pointer-events-none absolute bottom-3 right-3 z-10 flex flex-col items-center gap-0.5">
+            <div
+              ref={scaleBarLabelRef}
+              className="rounded bg-surface-primary/80 px-1.5 py-0.5 text-2xs font-medium tabular-nums text-content-secondary shadow-sm backdrop-blur-sm"
+            />
+            <div
+              ref={scaleBarRef}
+              className="h-2 border-x-2 border-b-2 border-content-secondary/80"
+              style={{ width: 0, visibility: 'hidden' }}
+              data-testid="pointcloud-scale-bar"
+            />
           </div>
         )}
 

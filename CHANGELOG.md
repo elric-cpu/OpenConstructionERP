@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [11.2.0] - 2026-07-12
+
+The point cloud viewer turns into a proper measurement workspace for a reality-capture scan. On top of the slice, distance and box tools it already had, you can trace a polyline to read a running length and perimeter, draw a polygon to read plan area, estimate a volume against a reference plane, jump to preset top, front and side views, thin a very dense cloud so it stays responsive, and export every measurement to CSV. Once a scan is loaded the viewer takes the top of the page as the primary element, the way the BIM hub works, and the uploader steps back to a collapsed panel below.
+
+The architecture map now shows what connects to what. Click or hover a module and the modules it links to light up while the rest fade back, so a large map reads as one relationship at a time. On each module in your project journey the case count is now a link that opens the list of cases attached to that module, the cost base import screen uses one consistent country picker with the local China base first and the global CWICR set next, and the guided case pages are reworked to read more clearly.
+
+This release also fixes a placed drawing that anchored at the wrong spot instead of the project location, and a takeoff viewer that did not fill the available height.
+
 ## [11.1.0] - 2026-07-12
 
 This release makes the cost bases the centre of the workspace. Every price base you can load now shows in one place with its own count of rates, so you can see all of them at a glance, the global set and each national base, and know how much sits in each one before you choose. The same picker appears in import, in the data setup step and in onboarding, and from it you can search across bases, load a base, set the one you want active, or simply pick a base to work with, without leaving the screen.

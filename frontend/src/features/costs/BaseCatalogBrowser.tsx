@@ -1,20 +1,40 @@
 // DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 // Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 //
-// One reusable browser for the whole CWICR cost-base catalog. It groups every
-// loadable base into the flagship Global CWICR family (30 markets) and the eight
-// authentic national bases, shows the real work-item count on every card, and
-// lets a user search, load or pick a base. The same component renders on the
-// import page, the database-setup page and onboarding so the three surfaces
-// never drift. It is presentational: the parent owns the load logic and passes
-// it in via onLoad, so each page keeps its own progress, toasts and retry.
+// One reusable browser for the whole CWICR cost-base catalog. Every base family
+// - the flagship Global CWICR base (GESN / FER / TER, 30 market/language
+// variants) and each authentic national base alike - is presented the same way:
+// a single clickable country row that expands to reveal its importable variants,
+// each with the real work-item count. China is listed first, the Global CWICR
+// (GESN / FER / TER) base second, then the rest, and there is no separate
+// grouping heading. The same component renders on the import page, the
+// database-setup page and onboarding so the three surfaces never drift. It is
+// presentational: the parent owns the load logic and passes it in via onLoad, so
+// each page keeps its own progress, toasts and retry.
 
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, ChevronDown, Download, Globe, Loader2, Search, Building2 } from 'lucide-react';
+import { Check, ChevronDown, Download, Loader2, Search } from 'lucide-react';
 import { CountryFlag } from '@/shared/ui';
-import type { BaseCatalog, BaseVariant } from './baseCatalog';
+import type { BaseCatalog, BaseFamily, BaseVariant } from './baseCatalog';
 import { variantMatches } from './baseCatalog';
+
+// Founder-requested family order for the base picker: China first, then the
+// flagship Global CWICR base (GESN / FER / TER) second, then every other family
+// in its original catalog order. Keeps the picker uniform - the GESN / FER / TER
+// base is just another country row, never a special block.
+const FAMILY_ORDER_PRIORITY: Record<string, number> = { china: 0, global: 1 };
+
+function orderFamilies(families: BaseFamily[]): BaseFamily[] {
+  return families
+    .map((family, index) => ({ family, index }))
+    .sort(
+      (a, b) =>
+        (FAMILY_ORDER_PRIORITY[a.family.key] ?? 2) -
+          (FAMILY_ORDER_PRIORITY[b.family.key] ?? 2) || a.index - b.index,
+    )
+    .map((entry) => entry.family);
+}
 
 interface BaseCatalogBrowserProps {
   /** The catalog payload from useBaseCatalog(). */
@@ -212,30 +232,46 @@ export function BaseCatalogBrowser({
 }: BaseCatalogBrowserProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
-  const [globalOpen, setGlobalOpen] = useState(true);
 
   const isLoaded = (v: BaseVariant) => (loadedRegions ? loadedRegions.has(v.region) : v.loaded);
   const anyLoading = loadingRegion !== null;
 
-  const globalFamily = catalog.families.find((f) => f.key === 'global');
-  const nationalFamilies = catalog.families.filter((f) => f.key !== 'global');
+  // China first, the Global CWICR (GESN / FER / TER) base second, then the rest.
+  const orderedFamilies = useMemo(() => orderFamilies(catalog.families), [catalog.families]);
 
-  const filteredGlobal = useMemo(
-    () => (globalFamily ? globalFamily.variants.filter((v) => variantMatches(v, globalFamily, query)) : []),
-    [globalFamily, query],
+  // Per-family expand/collapse - every country uses the same interaction: click
+  // the header to reveal its importable variants. The first family (China)
+  // starts open so the pattern is immediately discoverable.
+  const [openFamilies, setOpenFamilies] = useState<Set<string>>(
+    () => new Set(orderedFamilies.slice(0, 1).map((f) => f.key)),
   );
-  const filteredNationals = useMemo(
-    () => nationalFamilies.filter((f) => f.variants.some((v) => variantMatches(v, f, query))),
-    [nationalFamilies, query],
+  const toggleFamily = (key: string) =>
+    setOpenFamilies((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const searching = query.trim() !== '';
+
+  // Filter each family's variants by the query; drop families with no match.
+  const familyRows = useMemo(
+    () =>
+      orderedFamilies
+        .map((family) => ({
+          family,
+          variants: family.variants.filter((v) => variantMatches(v, family, query)),
+        }))
+        .filter((row) => row.variants.length > 0),
+    [orderedFamilies, query],
   );
 
   const loadedTotal = catalog.families.reduce(
     (acc, f) => acc + f.variants.filter((v) => isLoaded(v)).length,
     0,
   );
-  const noResults = filteredGlobal.length === 0 && filteredNationals.length === 0;
-  // Collapsing the 30-market family hides matches while searching - force it open.
-  const showGlobal = globalFamily && filteredGlobal.length > 0 && (globalOpen || query.trim() !== '');
+  const noResults = familyRows.length === 0;
 
   const renderCard = (variant: BaseVariant, title: string, chip: string) => (
     <BaseVariantCard
@@ -288,71 +324,92 @@ export function BaseCatalogBrowser({
         </div>
       )}
 
-      {/* Global CWICR family: 30 markets */}
-      {globalFamily && filteredGlobal.length > 0 && (
-        <section className="mb-6">
-          <button
-            type="button"
-            onClick={() => setGlobalOpen((o) => !o)}
-            className="mb-3 flex w-full items-center gap-3 rounded-xl border border-oe-blue/20 bg-oe-blue-subtle/10 p-3 text-left transition-colors hover:bg-oe-blue-subtle/20"
-          >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-oe-blue/10 text-oe-blue">
-              <Globe size={18} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-content-primary">{globalFamily.name}</span>
-                <span className="rounded bg-oe-blue/10 px-1.5 py-0.5 text-[10px] font-medium text-oe-blue">
-                  {globalFamily.norm_system}
-                </span>
-              </div>
-              <div className="truncate text-xs text-content-tertiary">{globalFamily.description}</div>
-            </div>
-            <div className="hidden shrink-0 text-right sm:block">
-              <div className="text-sm font-bold tabular-nums text-content-primary">
-                {positionsLabel(globalFamily.positions)}
-              </div>
-              <div className="text-[11px] text-content-tertiary">
-                {t('costs.base_family_markets', {
-                  defaultValue: '{{count}} markets',
-                  count: globalFamily.market_count,
-                })}
-              </div>
-            </div>
-            <ChevronDown
-              size={18}
-              className={`shrink-0 text-content-tertiary transition-transform ${showGlobal ? '' : '-rotate-90'}`}
-            />
-          </button>
-          {showGlobal && (
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-              {filteredGlobal.map((v) => renderCard(v, v.market, v.language))}
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* National bases */}
-      {filteredNationals.length > 0 && (
-        <section>
-          <div className="mb-3 flex items-center gap-2.5 px-1">
-            <Building2 size={16} className="text-content-tertiary" />
-            <span className="text-sm font-semibold text-content-primary">
-              {t('costs.base_national_title', { defaultValue: 'National bases' })}
-            </span>
-            <span className="text-xs text-content-tertiary">
-              {t('costs.base_national_sub', {
-                defaultValue: 'Built from official government norm systems',
-              })}
-            </span>
-          </div>
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-            {filteredNationals.map((f) =>
-              f.variants.map((v) => renderCard(v, f.name, f.norm_system)),
-            )}
-          </div>
-        </section>
-      )}
+      {/* Uniform country picker: every base family - the Global CWICR base
+          (GESN / FER / TER) included - is one clickable country row. Click a
+          row to reveal that country's importable market/language variants. No
+          family is a special block and there is no separate grouping heading;
+          China is first, the Global CWICR (GESN / FER / TER) base second, then
+          the rest. */}
+      <div className="space-y-3">
+        {familyRows.map(({ family, variants }) => {
+          // The Global CWICR base derives from the CIS / GESN-FER-TER norm
+          // lineage; badge it with the shared CIS emblem (its backend origin
+          // flag "un" has no icon). National families use their own flag.
+          const flagCode = family.key === 'global' ? 'cis' : family.origin_flag;
+          const loadedInFamily = variants.filter((v) => isLoaded(v)).length;
+          const multiMarket = family.market_count > 1;
+          // Keep a family open while searching, when the user opened it, or when
+          // it holds the loading / active / selected base (so state stays shown).
+          const open =
+            searching ||
+            openFamilies.has(family.key) ||
+            variants.some(
+              (v) =>
+                v.region === loadingRegion ||
+                v.region === activeRegion ||
+                v.region === selectedRegion,
+            );
+          return (
+            <section key={family.key}>
+              <button
+                type="button"
+                aria-expanded={open}
+                onClick={() => toggleFamily(family.key)}
+                className="flex w-full items-center gap-3 rounded-xl border border-border-light bg-surface-elevated p-3 text-left transition-colors hover:border-border hover:bg-surface-secondary"
+              >
+                <CountryFlag
+                  code={flagCode}
+                  size={34}
+                  className="shrink-0 rounded shadow-xs border border-black/5"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold text-content-primary">{family.name}</span>
+                    <span className="rounded bg-surface-secondary px-1.5 py-0.5 text-[10px] font-medium text-content-secondary">
+                      {family.norm_system}
+                    </span>
+                    {multiMarket && (
+                      <span className="rounded bg-oe-blue/10 px-1.5 py-0.5 text-[10px] font-medium text-oe-blue">
+                        {t('costs.base_family_markets', {
+                          defaultValue: '{{count}} markets',
+                          count: family.market_count,
+                        })}
+                      </span>
+                    )}
+                    {loadedInFamily > 0 && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-semantic-success/15 px-1.5 py-0.5 text-[10px] font-semibold text-semantic-success">
+                        <Check size={10} />
+                        {t('costs.base_family_loaded_count', {
+                          defaultValue: '{{count}} loaded',
+                          count: loadedInFamily,
+                        })}
+                      </span>
+                    )}
+                  </div>
+                  <div className="truncate text-xs text-content-tertiary">{family.description}</div>
+                </div>
+                <div className="hidden shrink-0 text-right sm:block">
+                  <div className="text-sm font-bold tabular-nums text-content-primary">
+                    {positionsLabel(family.positions)}
+                  </div>
+                  <div className="text-[11px] text-content-tertiary">
+                    {t('costs.base_positions', { defaultValue: 'positions' })}
+                  </div>
+                </div>
+                <ChevronDown
+                  size={18}
+                  className={`shrink-0 text-content-tertiary transition-transform ${open ? '' : '-rotate-90'}`}
+                />
+              </button>
+              {open && (
+                <div className="mt-2.5 grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                  {variants.map((v) => renderCard(v, v.market, v.language))}
+                </div>
+              )}
+            </section>
+          );
+        })}
+      </div>
     </div>
   );
 }

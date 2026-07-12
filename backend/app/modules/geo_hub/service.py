@@ -1765,27 +1765,62 @@ class GeoHubService:
             media_type = "application/octet-stream"
         return blob, media_type
 
+    async def _project_map_center(
+        self,
+        project_id: uuid.UUID,
+    ) -> tuple[float, float] | None:
+        """Resolve a project's map centre as ``(lat, lon)`` floats.
+
+        Mirrors ``map_config``'s anchor precedence so anything dropped on
+        the map lands where the project is actually shown: a real persisted
+        ``GeoAnchor`` (non-zero) wins, otherwise the project's
+        address-derived coordinates (``address.lat``/``lng``). Returns
+        ``None`` only when the project has no locatable point yet.
+        """
+        anchor = await self.anchors.get_by_project(project_id)
+        if anchor is not None and not (anchor.lat == Decimal("0") and anchor.lon == Decimal("0")):
+            return float(anchor.lat), float(anchor.lon)
+        # No real anchor (or only the 0/0 placeholder the projects.created
+        # subscriber seeds) - fall back to the address coords the map itself
+        # uses to place the project, so a placement doesn't land on null
+        # island while the map shows the project elsewhere.
+        from app.modules.projects.repository import ProjectRepository
+
+        project = await ProjectRepository(self.session).get_by_id(project_id)
+        coords = _address_coords(project.address) if project is not None else None
+        if coords is not None:
+            lat, lon = coords
+            return float(lat), float(lon)
+        return None
+
     async def _default_corners_for_project(
         self,
         project_id: uuid.UUID,
     ) -> list[list[float]]:
-        """Return a small bbox centered on the project anchor.
+        """Return a small bbox centered on the project's own location.
 
         ~250 m square (a rough city-block) - large enough to be visible
         on a satellite map, small enough that the user immediately sees
-        they need to drag it into place. Falls back to a placeholder
-        bbox near 0,0 when the project has no anchor yet.
+        they need to drag it into place.
+
+        The centre is resolved with the SAME precedence the map uses to
+        place the project itself (see ``_project_map_center`` / ``map_config``):
+        a real persisted anchor first, otherwise the project's
+        address-derived coordinates. Without the second step a project
+        located purely by its address (no GeoAnchor row, or only the 0/0
+        placeholder) had its freshly placed overlay dropped on null island
+        (0,0) instead of on the project. Falls back to a placeholder bbox
+        near 0,0 only when the project has no location at all yet.
         """
-        anchor = await self.anchors.get_by_project(project_id)
-        if anchor is None:
+        center = await self._project_map_center(project_id)
+        if center is None:
             return [
                 [0.0011, 0.0011],
                 [0.0011, -0.0011],
                 [-0.0011, -0.0011],
                 [-0.0011, 0.0011],
             ]
-        lat = float(anchor.lat)
-        lon = float(anchor.lon)
+        lat, lon = center
         # ~250 m at the equator. We let it scale-distort at high
         # latitudes because the user is expected to drag corners anyway.
         delta = 0.00225
