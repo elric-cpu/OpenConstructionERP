@@ -759,6 +759,33 @@ export async function fetchBIMElementProperties(
   return rows[0] ?? null;
 }
 
+/** Fetch the full ERP context for one selected element: its linked BOQ
+ *  positions (with cost), documents, tasks, schedule activities,
+ *  requirements, validation results and install/progress.
+ *
+ *  The 3D viewer loads elements in skeleton mode for speed (no link joins),
+ *  so on selection it calls this to populate the element panel on demand -
+ *  the model still opens fast and detail is lazy-loaded per click. Returns
+ *  the enriched element, or throws on a non-OK response so the caller can
+ *  fall back to the skeleton element it already holds. */
+export async function fetchBIMElementContext(
+  elementId: string,
+  signal?: AbortSignal,
+): Promise<BIMElementData> {
+  const token = useAuthStore.getState().accessToken;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const resp = await fetch(
+    `/api/v1/bim_hub/elements/${encodeURIComponent(elementId)}/context`,
+    { method: 'GET', headers, signal },
+  );
+  if (!resp.ok) {
+    throw new Error(`Element context fetch failed (HTTP ${resp.status})`);
+  }
+  return (await resp.json()) as BIMElementData;
+}
+
 /**
  * Schema row describing one column in the model's Parquet dataframe.
  * Returned by ``GET /models/{id}/dataframe/schema/``.

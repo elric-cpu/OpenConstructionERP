@@ -53,7 +53,7 @@ import {
   Move3d,
   LocateFixed,
 } from 'lucide-react';
-import { fetchBIMElementProperties } from '@/features/bim/api';
+import { fetchBIMElementContext, fetchBIMElementProperties } from '@/features/bim/api';
 import { SceneManager } from './SceneManager';
 import { ElementManager } from './ElementManager';
 import {
@@ -2453,6 +2453,14 @@ export function BIMViewer({
   // so a slow query for element A never overwrites fresh data for element B.
   const parquetAbortRef = useRef<AbortController | null>(null);
 
+  // Per-element ERP context (BOQ / docs / tasks / activities / requirements /
+  // validation / progress) is fetched on demand when an element is selected -
+  // the bulk element load is skeleton-only for speed. The fetched-once-per-id
+  // guard stops a re-fetch loop after we merge the enriched arrays back into
+  // `selectedElement` (same id, new object identity).
+  const linkCtxAbortRef = useRef<AbortController | null>(null);
+  const linkCtxFetchedIdRef = useRef<string | null>(null);
+
   /** Resolve the RVT ElementId of the currently-selected element. The
    *  Parquet's primary key column is `id` and contains this value — it is
    *  exposed on the BIMElement row as `mesh_ref`. Unmatched stubs use the
@@ -2541,6 +2549,64 @@ export function BIMViewer({
       ac.abort();
     };
   }, [selectedElement, modelId, revitIdOf, portal]);
+
+  // On selection, pull the element's full ERP context (linked BOQ positions
+  // with cost, documents, tasks, schedule activities, requirements and
+  // validation) and merge it into `selectedElement` so the element panel's
+  // link sections populate. The bulk element load is skeleton-only for speed,
+  // so this is where a clicked element gains its real links - lazily.
+  useEffect(() => {
+    // Portal mode has no internal JWT, so the context endpoint would 401.
+    if (portal) return;
+    const el = selectedElement;
+    if (!el || !el.id) {
+      linkCtxFetchedIdRef.current = null;
+      return;
+    }
+    // Only real DB elements carry a UUID id; viewer stubs (unmatched meshes)
+    // use a synthetic id with no context row - skip them to avoid a 404.
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(el.id);
+    if (!isUuid) return;
+    // Fetch once per element id: merging the arrays back re-runs this effect
+    // (new object identity, same id) and must not trigger a re-fetch loop.
+    if (linkCtxFetchedIdRef.current === el.id) return;
+    linkCtxFetchedIdRef.current = el.id;
+
+    linkCtxAbortRef.current?.abort();
+    const ac = new AbortController();
+    linkCtxAbortRef.current = ac;
+
+    void (async () => {
+      try {
+        const ctx = await fetchBIMElementContext(el.id, ac.signal);
+        if (ac.signal.aborted) return;
+        setSelectedElement((prev) =>
+          prev && prev.id === ctx.id
+            ? {
+                ...prev,
+                boq_links: ctx.boq_links,
+                linked_documents: ctx.linked_documents,
+                linked_tasks: ctx.linked_tasks,
+                linked_activities: ctx.linked_activities,
+                linked_requirements: ctx.linked_requirements,
+                validation_results: ctx.validation_results,
+                validation_status: ctx.validation_status,
+              }
+            : prev,
+        );
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        // Non-fatal: keep the skeleton arrays. Clear the guard so reselecting
+        // the same element can retry the fetch.
+        if (!ac.signal.aborted) linkCtxFetchedIdRef.current = null;
+      }
+    })();
+
+    return () => {
+      ac.abort();
+    };
+  }, [selectedElement, portal]);
 
   /** Kept for the legacy "All properties" refresh button so it still
    *  force-refetches on demand, bypassing the cache. */
@@ -5511,6 +5577,35 @@ export function BIMViewer({
                         <div className="text-[11px] text-content-secondary truncate" title={link.boq_position_description || ''}>
                           {link.boq_position_description || '—'}
                         </div>
+                        {(() => {
+                          // Money is serialised as a string over the wire even
+                          // though the type says number, so coerce defensively.
+                          const num = (v: number | null): number | null => {
+                            if (v == null) return null;
+                            const n = Number(v);
+                            return Number.isFinite(n) ? n : null;
+                          };
+                          const qty = num(link.boq_position_quantity);
+                          const rate = num(link.boq_position_unit_rate);
+                          const total = num(link.boq_position_total);
+                          if (rate == null && total == null) return null;
+                          return (
+                            <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-content-tertiary tabular-nums">
+                              {qty != null && (
+                                <span>
+                                  {qty}
+                                  {link.boq_position_unit ? ` ${link.boq_position_unit}` : ''}
+                                </span>
+                              )}
+                              {rate != null && <span>@ {rate.toLocaleString()}</span>}
+                              {total != null && (
+                                <span className="font-semibold text-content-secondary">
+                                  = {total.toLocaleString()}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                       {onUnlinkBOQ && (
                         <button

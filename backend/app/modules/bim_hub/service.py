@@ -1129,6 +1129,7 @@ class BIMHubService:
         self,
         model_id: uuid.UUID,
         *,
+        element_id: uuid.UUID | None = None,
         element_type: str | None = None,
         storey: str | None = None,
         discipline: str | None = None,
@@ -1212,6 +1213,11 @@ class BIMHubService:
 
         # ── Step 1: load elements with BOQ links eagerly ────────────────
         base = select(BIMElement).where(BIMElement.model_id == model_id)
+        if element_id is not None:
+            # Single-element scope: powers the per-element context card, which
+            # composes the same BOQ / doc / task / activity / requirement /
+            # validation / progress briefs for exactly one selected element.
+            base = base.where(BIMElement.id == element_id)
         if element_type is not None:
             base = base.where(BIMElement.element_type == element_type)
         if storey is not None:

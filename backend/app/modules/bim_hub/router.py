@@ -3783,6 +3783,66 @@ async def cleanup_orphan_bim_files(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
+def _assemble_element_responses(
+    items: list,
+    boq_links_by_id: dict,
+    doc_links_by_id: dict,
+    task_links_by_id: dict,
+    activity_briefs_by_id: dict,
+    requirement_briefs_by_id: dict,
+    validation_summaries_by_id: dict,
+    current_pct_by_id: dict,
+    current_pct_date_by_id: dict,
+    report_exists: bool,
+) -> list[BIMElementResponse]:
+    """Map ``list_elements_with_links`` briefs onto ``BIMElementResponse`` rows.
+
+    Shared by the model-wide element list and the single-element context
+    endpoint so both surface identical BOQ / document / task / activity /
+    requirement / validation / progress enrichment. ``report_exists`` decides
+    whether an element with no findings reads as 'pass' (a report ran) or
+    'unchecked' (no report at all).
+    """
+    from app.modules.bim_hub.schemas import (
+        ActivityBrief,
+        DocumentLinkBrief,
+        ElementValidationSummary,
+        RequirementBrief,
+        TaskBrief,
+    )
+
+    responses: list[BIMElementResponse] = []
+    for elem in items:
+        boq_briefs = [BOQElementLinkBrief.model_validate(b) for b in boq_links_by_id.get(elem.id, [])]
+        doc_briefs = [DocumentLinkBrief.model_validate(b) for b in doc_links_by_id.get(elem.id, [])]
+        task_briefs = [TaskBrief.model_validate(b) for b in task_links_by_id.get(elem.id, [])]
+        activity_briefs = [ActivityBrief.model_validate(b) for b in activity_briefs_by_id.get(elem.id, [])]
+        requirement_briefs = [RequirementBrief.model_validate(b) for b in requirement_briefs_by_id.get(elem.id, [])]
+        raw_val = validation_summaries_by_id.get(elem.id, [])
+        validation_summaries = [ElementValidationSummary.model_validate(v) for v in raw_val]
+        # Derive worst-severity status; 'unchecked' iff no report exists at all.
+        if not report_exists:
+            val_status: str = "unchecked"
+        elif any(v.severity == "error" for v in validation_summaries):
+            val_status = "error"
+        elif any(v.severity == "warning" for v in validation_summaries):
+            val_status = "warning"
+        else:
+            val_status = "pass"
+        resp = BIMElementResponse.model_validate(elem)
+        resp.boq_links = boq_briefs
+        resp.linked_documents = doc_briefs
+        resp.linked_tasks = task_briefs
+        resp.linked_activities = activity_briefs
+        resp.linked_requirements = requirement_briefs
+        resp.validation_results = validation_summaries
+        resp.validation_status = val_status  # type: ignore[assignment]
+        resp.current_pct = current_pct_by_id.get(elem.id)
+        resp.current_pct_date = current_pct_date_by_id.get(elem.id)
+        responses.append(resp)
+    return responses
+
+
 @router.get("/models/{model_id}/elements/", response_model=BIMElementListResponse)
 async def list_elements(
     model_id: uuid.UUID,
@@ -3820,14 +3880,6 @@ async def list_elements(
     entries, and a ``linked_activities`` array of ``ActivityBrief`` entries
     so the viewer can render link badges without a second round trip.
     """
-    from app.modules.bim_hub.schemas import (
-        ActivityBrief,
-        DocumentLinkBrief,
-        ElementValidationSummary,
-        RequirementBrief,
-        TaskBrief,
-    )
-
     await _verify_model_access(service, model_id, user_id or "")
 
     # Skeleton path: plain BIMElement rows, no relation joins, no enrichment.
@@ -3896,36 +3948,18 @@ async def list_elements(
     report_exists = _VALIDATION_REPORT_SENTINEL in validation_summaries_by_id
     validation_summaries_by_id.pop(_VALIDATION_REPORT_SENTINEL, None)
 
-    responses: list[BIMElementResponse] = []
-    for elem in items:
-        boq_briefs = [BOQElementLinkBrief.model_validate(b) for b in boq_links_by_id.get(elem.id, [])]
-        doc_briefs = [DocumentLinkBrief.model_validate(b) for b in doc_links_by_id.get(elem.id, [])]
-        task_briefs = [TaskBrief.model_validate(b) for b in task_links_by_id.get(elem.id, [])]
-        activity_briefs = [ActivityBrief.model_validate(b) for b in activity_briefs_by_id.get(elem.id, [])]
-        requirement_briefs = [RequirementBrief.model_validate(b) for b in requirement_briefs_by_id.get(elem.id, [])]
-        raw_val = validation_summaries_by_id.get(elem.id, [])
-        validation_summaries = [ElementValidationSummary.model_validate(v) for v in raw_val]
-        # Derive worst-severity status; 'unchecked' iff no report exists
-        # at all (any element had at least one entry → report_exists).
-        if not report_exists:
-            val_status: str = "unchecked"
-        elif any(v.severity == "error" for v in validation_summaries):
-            val_status = "error"
-        elif any(v.severity == "warning" for v in validation_summaries):
-            val_status = "warning"
-        else:
-            val_status = "pass"
-        resp = BIMElementResponse.model_validate(elem)
-        resp.boq_links = boq_briefs
-        resp.linked_documents = doc_briefs
-        resp.linked_tasks = task_briefs
-        resp.linked_activities = activity_briefs
-        resp.linked_requirements = requirement_briefs
-        resp.validation_results = validation_summaries
-        resp.validation_status = val_status  # type: ignore[assignment]
-        resp.current_pct = current_pct_by_id.get(elem.id)
-        resp.current_pct_date = current_pct_date_by_id.get(elem.id)
-        responses.append(resp)
+    responses = _assemble_element_responses(
+        items,
+        boq_links_by_id,
+        doc_links_by_id,
+        task_links_by_id,
+        activity_briefs_by_id,
+        requirement_briefs_by_id,
+        validation_summaries_by_id,
+        current_pct_by_id,
+        current_pct_date_by_id,
+        report_exists,
+    )
 
     return BIMElementListResponse(
         items=responses,
@@ -4059,6 +4093,73 @@ async def get_element(
     # Verify caller owns the project this element's model belongs to.
     await _verify_model_access(service, element.model_id, user_id or "")
     return BIMElementResponse.model_validate(element)
+
+
+@router.get("/elements/{element_id}/context", response_model=BIMElementResponse)
+async def get_element_context(
+    element_id: uuid.UUID,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("bim.read")),
+    service: BIMHubService = Depends(_get_service),
+) -> BIMElementResponse:
+    """Full ERP context for one selected element.
+
+    The 3D viewer loads elements in skeleton mode (no joins) so the model
+    opens fast. When the user clicks an element we call this to compose,
+    on demand, everything the platform knows about it: linked BOQ positions
+    (with cost), documents, tasks, schedule activities, requirements,
+    validation findings and install/progress. Reuses the same enrichment
+    the model-wide list uses, scoped to a single element.
+    """
+    element = await service.get_element(element_id)
+    if element is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Element not found",
+        )
+    await _verify_model_access(service, element.model_id, user_id or "")
+
+    (
+        items,
+        _total,
+        boq_links_by_id,
+        doc_links_by_id,
+        task_links_by_id,
+        activity_briefs_by_id,
+        requirement_briefs_by_id,
+        validation_summaries_by_id,
+        current_pct_by_id,
+        current_pct_date_by_id,
+    ) = await service.list_elements_with_links(
+        element.model_id,
+        element_id=element_id,
+        limit=1,
+    )
+
+    from app.modules.bim_hub.service import _VALIDATION_REPORT_SENTINEL
+
+    report_exists = _VALIDATION_REPORT_SENTINEL in validation_summaries_by_id
+    validation_summaries_by_id.pop(_VALIDATION_REPORT_SENTINEL, None)
+
+    responses = _assemble_element_responses(
+        items,
+        boq_links_by_id,
+        doc_links_by_id,
+        task_links_by_id,
+        activity_briefs_by_id,
+        requirement_briefs_by_id,
+        validation_summaries_by_id,
+        current_pct_by_id,
+        current_pct_date_by_id,
+        report_exists,
+    )
+    if not responses:
+        # The element vanished between the two queries (rare race); treat as 404.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Element not found",
+        )
+    return responses[0]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
