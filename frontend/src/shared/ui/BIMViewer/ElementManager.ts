@@ -18,6 +18,7 @@ import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { SceneManager } from './SceneManager';
 import type { BIMQualityMode } from '@/stores/useBIMViewerStore';
+import { modelIdFromGeometryUrl, streamModelTiles } from './streaming/tileStreamer';
 
 // Module-level in-flight buffer fetches, shared across ElementManager
 // instances. React StrictMode's dev double-mount creates two managers
@@ -809,6 +810,27 @@ export class ElementManager {
       store: (url: string, buffer: ArrayBuffer, format: 'glb' | 'dae') => void;
     },
   ): Promise<void> {
+    // 1b. Fast streaming path — when the model has a baked tileset, stream its
+    //     content-addressed tiles (IndexedDB cache-first, parsed in small
+    //     chunks that yield to the event loop) instead of one monolithic GLB.
+    //     Tiles are the same trimesh GLB format and preserve node names, so
+    //     the merged group feeds the existing processLoadedScene() unchanged.
+    //     Any failure — no tileset, a bad tile, a parse error — falls through
+    //     to the monolithic path below, so this can only speed loading up.
+    try {
+      const streamModelId = modelIdFromGeometryUrl(geometryUrl);
+      if (streamModelId) {
+        const streamed = await streamModelTiles(streamModelId, { onProgress });
+        if (streamed) {
+          this.processLoadedScene(streamed.group, undefined, true);
+          onProgress?.(1);
+          return;
+        }
+      }
+    } catch (streamErr) {
+      // Streaming is a pure optimization; never let it break the load.
+      console.warn('[BIM] tile streaming failed, using monolithic GLB', streamErr);
+    }
 
     // 2. Cache miss — fetch the bytes. The actual network IO is funnelled
     //    through a module-level in-flight Map so that a parallel
