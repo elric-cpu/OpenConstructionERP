@@ -413,3 +413,63 @@ describe('WalkMode - placeAtEyeLevel', () => {
     expect(camera.position.z).toBe(3);
   });
 });
+
+describe('WalkMode - analog joystick axis (touch site mode)', () => {
+  let camera: THREE.PerspectiveCamera;
+  let renderer: THREE.WebGLRenderer;
+  let dom: HTMLElement;
+  let wm: WalkMode;
+
+  beforeEach(() => {
+    camera = new THREE.PerspectiveCamera();
+    camera.position.set(0, 0, 5);
+    camera.lookAt(0, 0, 0);
+    renderer = { domElement: document.createElement('canvas') } as unknown as THREE.WebGLRenderer;
+    dom = document.createElement('div');
+    wm = new WalkMode({ camera, renderer, domElement: dom }); // drag-to-look default
+    wm.enable();
+  });
+
+  afterEach(() => {
+    wm.dispose();
+  });
+
+  it('drives forward movement with no keys pressed', () => {
+    wm.setMoveAxis(0, 1); // full forward
+    wm.tick(0.5); // 2 m/s * 0.5 s = 1 m along -Z
+    expect(camera.position.z).toBeCloseTo(4, 5);
+  });
+
+  it('drives strafe movement to the right', () => {
+    wm.setMoveAxis(1, 0);
+    wm.tick(0.5);
+    expect(camera.position.x).toBeCloseTo(1, 5);
+  });
+
+  it('stops when the axis is released to zero', () => {
+    wm.setMoveAxis(0, 1);
+    wm.tick(0.5);
+    const z1 = camera.position.z;
+    wm.setMoveAxis(0, 0);
+    wm.tick(0.5);
+    expect(camera.position.z).toBeCloseTo(z1, 5);
+  });
+
+  it('clamps key + stick so combined input never exceeds full speed', () => {
+    pressKey('KeyW'); // key forward = 1
+    wm.setMoveAxis(0, 1); // stick forward = 1; sum clamps to 1, not 2
+    wm.tick(0.5);
+    // Full speed only: 1 m, so z = 4 (not 3).
+    expect(camera.position.z).toBeCloseTo(4, 5);
+    releaseKey('KeyW');
+  });
+
+  it('resets the axis on disable so a deflected stick does not persist', () => {
+    wm.setMoveAxis(0, 1);
+    wm.disable();
+    wm.enable();
+    const z0 = camera.position.z;
+    wm.tick(0.5);
+    expect(camera.position.z).toBeCloseTo(z0, 5);
+  });
+});

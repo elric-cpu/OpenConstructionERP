@@ -130,6 +130,14 @@ export class WalkMode {
     sprint: false,
   };
 
+  /** Analog movement axis, each in [-1, 1], driven by an on-screen joystick
+   *  (touch site mode) via `setMoveAxis`. Combined with the keyboard state in
+   *  `tick()`. `_moveStrafe` positive = right, `_moveForward` positive =
+   *  forward. Zero when no joystick is active, so keyboard walking is
+   *  unaffected. */
+  private _moveStrafe = 0;
+  private _moveForward = 0;
+
   private animId: number | null = null;
   private lastTickMs = 0;
 
@@ -405,6 +413,10 @@ export class WalkMode {
     // Reset key state so a leftover key-up arriving after disable()
     // does not poison the next enable().
     for (const k of Object.keys(this.keys)) this.keys[k] = false;
+    // Reset the analog joystick axis too, so a stick left deflected when the
+    // user exits walk mode does not drift the camera on the next enable().
+    this._moveStrafe = 0;
+    this._moveForward = 0;
     this._disabling = false;
     this._everLocked = false;
   }
@@ -412,6 +424,16 @@ export class WalkMode {
   dispose(): void {
     this.disable();
     this.lockListeners.clear();
+  }
+
+  /** Set the analog movement axis from an on-screen joystick (touch site
+   *  mode). Both components are clamped to [-1, 1]: `strafe` positive = move
+   *  right, `forward` positive = move forward. This is additive with the
+   *  keyboard state inside `tick()`; call `setMoveAxis(0, 0)` on joystick
+   *  release to stop. Non-finite inputs are treated as 0. */
+  setMoveAxis(strafe: number, forward: number): void {
+    this._moveStrafe = Math.max(-1, Math.min(1, Number.isFinite(strafe) ? strafe : 0));
+    this._moveForward = Math.max(-1, Math.min(1, Number.isFinite(forward) ? forward : 0));
   }
 
   /** Integrate the current WASD/space/shift state into the camera position.
@@ -427,26 +449,37 @@ export class WalkMode {
     const speed = this.keys.sprint ? this.flightSpeed * SPRINT_MULTIPLIER : this.flightSpeed;
     const distance = speed * dt;
 
-    const moved =
-      this.keys.forward ||
-      this.keys.backward ||
-      this.keys.left ||
-      this.keys.right ||
-      this.keys.up ||
-      this.keys.down;
+    // Net movement per axis, combining the binary WASD keys with the analog
+    // joystick axis. Each axis is clamped to [-1, 1] so key + stick together
+    // can never exceed full speed. With no joystick active the axis terms are
+    // 0, so keyboard-only walking is byte-identical to before.
+    const clampUnit = (v: number): number => Math.max(-1, Math.min(1, v));
+    let fwd = 0;
+    if (this.keys.forward) fwd += 1;
+    if (this.keys.backward) fwd -= 1;
+    fwd = clampUnit(fwd + this._moveForward);
+
+    let str = 0;
+    if (this.keys.right) str += 1;
+    if (this.keys.left) str -= 1;
+    str = clampUnit(str + this._moveStrafe);
+
+    let vert = 0;
+    if (this.keys.up) vert += 1;
+    if (this.keys.down) vert -= 1;
+
+    const moved = fwd !== 0 || str !== 0 || vert !== 0;
 
     if (moved) {
       if (this.controls) {
         // FPS path: PointerLockControls knows how to translate the camera
         // along its own ground-projected forward/right axes.
-        if (this.keys.forward) this.controls.moveForward(distance);
-        if (this.keys.backward) this.controls.moveForward(-distance);
-        if (this.keys.right) this.controls.moveRight(distance);
-        if (this.keys.left) this.controls.moveRight(-distance);
+        if (fwd !== 0) this.controls.moveForward(fwd * distance);
+        if (str !== 0) this.controls.moveRight(str * distance);
       } else {
         // Drag-to-look path: derive camera-relative forward/right from the
         // camera quaternion ourselves (no controls object to lean on).
-        // Forward is ground-projected (Y zeroed) so WASD walks the floor
+        // Forward is ground-projected (Y zeroed) so movement walks the floor
         // plane rather than flying into the model when the user looks up.
         const forward = WalkMode._fwd
           .set(0, 0, -1)
@@ -459,14 +492,11 @@ export class WalkMode {
         right.y = 0;
         if (right.lengthSq() > 1e-8) right.normalize();
 
-        if (this.keys.forward) this.camera.position.addScaledVector(forward, distance);
-        if (this.keys.backward) this.camera.position.addScaledVector(forward, -distance);
-        if (this.keys.right) this.camera.position.addScaledVector(right, distance);
-        if (this.keys.left) this.camera.position.addScaledVector(right, -distance);
+        if (fwd !== 0) this.camera.position.addScaledVector(forward, fwd * distance);
+        if (str !== 0) this.camera.position.addScaledVector(right, str * distance);
       }
       // Up/down are world-Y in both modes.
-      if (this.keys.up) this.camera.position.y += distance;
-      if (this.keys.down) this.camera.position.y -= distance;
+      if (vert !== 0) this.camera.position.y += vert * distance;
     }
 
     // While pointer-lock is active the user is also free-looking via mouse

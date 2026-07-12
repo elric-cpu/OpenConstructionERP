@@ -71,6 +71,7 @@ import { ClipManager } from './ClipManager';
 // existing managers so they coexist without disrupting current flows.
 import { SectionBox } from './SectionBox';
 import { WalkMode } from './WalkMode';
+import { WalkJoystick } from './WalkJoystick';
 import { MeasureTool } from './MeasureTool';
 import {
   deriveGeometry,
@@ -100,6 +101,7 @@ import { useBIMMeasurementsStore } from '@/stores/useBIMMeasurementsStore';
 import { useToastStore } from '@/stores/useToastStore';
 import { copyToClipboard } from '@/shared/lib/browser';
 import { useDisplayQuantity } from '@/shared/hooks/useDisplayQuantity';
+import { useIsTouch } from '@/shared/hooks/useIsTouch';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -778,6 +780,10 @@ export function BIMViewer({
    *  (browser releases via Esc) while the toolbar button stays armed
    *  until the user explicitly disables it. */
   const [walkActive, setWalkActive] = useState(false);
+  /** Coarse-pointer (touch) device. Gates the on-screen walk joystick, which
+   *  fills the one Site-mode gap: walk-mode look works on touch, but there is
+   *  no keyboard to drive WASD locomotion. */
+  const isTouch = useIsTouch();
   /** True only when walk mode is running in true pointer-lock (FPS) mode —
    *  the only mode that hides the cursor. Gates the centred crosshair so the
    *  default drag-to-look (cursor visible) doesn't show a redundant reticle. */
@@ -4061,6 +4067,20 @@ export function BIMViewer({
               ? t('viewerTools.walk_mode_drag', { defaultValue: 'Drag to look' })
               : t('viewerTools.walk_mode_fps', { defaultValue: 'Mouse-look (FPS)' })}
           </button>
+        </div>
+      )}
+
+      {/* On-screen walk joystick - touch site mode only. Walk-mode look
+          already works by dragging the view; this thumb-stick drives
+          locomotion, which is otherwise keyboard-only (WASD). Bottom-start so
+          it sits under the left thumb and clear of the right-hand panel. */}
+      {walkActive && isTouch && (
+        <div className="absolute bottom-6 start-6 z-30" data-testid="bim-walk-joystick">
+          <WalkJoystick
+            ariaLabel={t('viewerTools.walk_joystick', { defaultValue: 'Walk joystick' })}
+            onMove={(strafe, forward) => walkModeRef.current?.setMoveAxis(strafe, forward)}
+            onEnd={() => walkModeRef.current?.setMoveAxis(0, 0)}
+          />
         </div>
       )}
 
