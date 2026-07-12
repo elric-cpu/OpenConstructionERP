@@ -66,7 +66,7 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Header, HTTPException, Query, UploadFile, status
-from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -3319,6 +3319,91 @@ async def get_model_geometry(
             ),
         },
         headers={"X-Request-Id": request_id},
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Streaming tiles (fast viewer)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@router.get("/models/{model_id}/tiles/manifest/", response_model=None)
+async def get_model_tiles_manifest(
+    model_id: uuid.UUID,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("bim.read")),
+    service: BIMHubService = Depends(_get_service),
+) -> Response:
+    """Return the streaming-tile manifest for a model, baking it on first use.
+
+    The viewer calls this before loading geometry. A ``200`` returns the tile
+    manifest (bounds + per-tile bbox, node names, content hashes). A ``204 No
+    Content`` means this model has no streamable tileset - too small, no GLB,
+    still converting, or a bake error - and the viewer falls back to the
+    single monolithic GLB. Either way the model is viewable; the manifest is
+    purely a fast-path opt-in.
+    """
+    await _verify_model_access(service, model_id, user_id or "")
+    try:
+        manifest = await service.ensure_tileset(model_id)
+    except Exception:  # noqa: BLE001 - never fail the viewer over the fast path
+        logger.exception("ensure_tileset failed for model %s - viewer uses monolith", model_id)
+        manifest = None
+
+    if not manifest or not manifest.get("tiles"):
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    return Response(
+        content=json.dumps(manifest),
+        media_type="application/json",
+        # The manifest tracks the current geometry and lists content hashes
+        # that change on re-convert, so it is always served fresh; the size
+        # is trivial next to the tiles it points at.
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.head(
+    "/models/{model_id}/tiles/{tile_hash}/",
+    response_model=None,
+    include_in_schema=False,
+)
+@router.get("/models/{model_id}/tiles/{tile_hash}/", response_model=None)
+async def get_model_tile(
+    model_id: uuid.UUID,
+    tile_hash: str,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("bim.read")),
+    service: BIMHubService = Depends(_get_service),
+) -> Response | RedirectResponse:
+    """Serve one content-addressed geometry tile (GLB).
+
+    A tile URL is its content hash, so a tile is immutable: it carries a
+    one-year ``immutable`` cache directive and the browser, any CDN, and the
+    viewer's IndexedDB cache may keep it forever. This is what makes a revisit
+    (or an offline site tablet) instant instead of a full re-download - the
+    opposite of the ``no-store`` monolith path.
+    """
+    model = await _verify_model_access(service, model_id, user_id or "")
+    project_id = str(model.project_id)
+    key = bim_file_storage.tile_key(project_id, model_id, tile_hash)
+    immutable = "public, max-age=31536000, immutable"
+
+    # S3-style backend: redirect the browser straight to a presigned URL.
+    presigned = bim_file_storage.presigned_geometry_url(key)
+    if presigned:
+        return RedirectResponse(url=presigned, status_code=307)
+
+    blob = await bim_file_storage.read_tile(project_id, model_id, tile_hash)
+    if not blob:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tile not found - reload to fetch a fresh manifest.",
+        )
+    return Response(
+        content=blob,
+        media_type="model/gltf-binary",
+        headers={"Cache-Control": immutable},
     )
 
 

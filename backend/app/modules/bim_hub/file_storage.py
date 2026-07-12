@@ -23,8 +23,10 @@ a single ``STORAGE_BACKEND=s3`` environment variable away.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import pathlib
+import re
 import uuid
 from collections.abc import AsyncIterator
 from typing import Final
@@ -480,3 +482,125 @@ def bim_root_label() -> str:
     if bucket:
         return f"s3://{bucket}/{_BIM_PREFIX}/"
     return f"{_BIM_PREFIX}/"
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Streaming tiles (v11.x - fast viewer)
+# ──────────────────────────────────────────────────────────────────────────
+#
+# A model's monolithic ``geometry.glb`` is baked once into spatially-tiled,
+# content-addressed sub-GLBs so the viewer can stream geometry progressively
+# and cache tiles forever. Key layout::
+#
+#     bim/{project_id}/{model_id}/tiles/manifest.json
+#     bim/{project_id}/{model_id}/tiles/{content_hash}.glb
+#
+# The manifest is the readiness marker (written last); its presence means the
+# tileset is complete. Tiles are immutable because the URL is the content hash.
+
+_TILES_SUBDIR: Final[str] = "tiles"
+
+# Tile hashes are hex (sha256 prefix). This strips anything else so a hash
+# taken straight from a URL path can never escape the model's tiles prefix.
+_HEX_ONLY: Final[re.Pattern[str]] = re.compile(r"[^0-9a-f]")
+
+
+def _safe_hash(content_hash: str) -> str:
+    """Return a path-safe, hex-only form of a tile content hash."""
+    return _HEX_ONLY.sub("", (content_hash or "").lower())[:64]
+
+
+def tiles_prefix(project_id: uuid.UUID | str, model_id: uuid.UUID | str) -> str:
+    """Return the storage prefix holding every streaming tile for a model."""
+    return f"{bim_model_prefix(project_id, model_id)}/{_TILES_SUBDIR}"
+
+
+def tiles_manifest_key(project_id: uuid.UUID | str, model_id: uuid.UUID | str) -> str:
+    """Return the storage key for a model's tile manifest."""
+    return f"{tiles_prefix(project_id, model_id)}/manifest.json"
+
+
+def tile_key(
+    project_id: uuid.UUID | str,
+    model_id: uuid.UUID | str,
+    content_hash: str,
+) -> str:
+    """Return the storage key for a single content-addressed tile GLB."""
+    return f"{tiles_prefix(project_id, model_id)}/{_safe_hash(content_hash)}.glb"
+
+
+async def save_tile(
+    project_id: uuid.UUID | str,
+    model_id: uuid.UUID | str,
+    content_hash: str,
+    content: bytes,
+) -> str:
+    """Persist one tile GLB and return its storage key."""
+    key = tile_key(project_id, model_id, content_hash)
+    await _backend().put(key, content)
+    return key
+
+
+async def save_tiles_manifest(
+    project_id: uuid.UUID | str,
+    model_id: uuid.UUID | str,
+    content: bytes,
+) -> str:
+    """Persist the tile manifest (written last - marks the tileset complete)."""
+    key = tiles_manifest_key(project_id, model_id)
+    await _backend().put(key, content)
+    logger.info("Saved BIM tile manifest key=%s (%d bytes)", key, len(content))
+    return key
+
+
+async def read_tiles_manifest(
+    project_id: uuid.UUID | str,
+    model_id: uuid.UUID | str,
+) -> bytes | None:
+    """Return the raw manifest bytes, or ``None`` if the model has no tileset."""
+    key = tiles_manifest_key(project_id, model_id)
+    backend = _backend()
+    try:
+        if await backend.exists(key):
+            return await backend.get(key)
+    except Exception:  # noqa: BLE001 - a probe must never raise into the caller
+        logger.exception("read_tiles_manifest failed key=%s", key)
+    return None
+
+
+async def read_tile(
+    project_id: uuid.UUID | str,
+    model_id: uuid.UUID | str,
+    content_hash: str,
+) -> bytes | None:
+    """Return one tile's GLB bytes, or ``None`` if it does not exist.
+
+    Prefers a zero-copy local-disk read; falls back to the backend's
+    ``get`` for remote/community backends.
+    """
+    key = tile_key(project_id, model_id, content_hash)
+    backend = _backend()
+    try:
+        disk_path = backend.local_path(key)
+        if disk_path is not None:
+            if not disk_path.exists():
+                return None
+            return await asyncio.to_thread(disk_path.read_bytes)
+        if await backend.exists(key):
+            return await backend.get(key)
+    except Exception:  # noqa: BLE001 - never raise a serve error into the caller
+        logger.exception("read_tile failed key=%s", key)
+    return None
+
+
+async def delete_tiles(
+    project_id: uuid.UUID | str,
+    model_id: uuid.UUID | str,
+) -> int:
+    """Delete a model's whole tiles subtree (used before a re-bake)."""
+    prefix = tiles_prefix(project_id, model_id)
+    try:
+        return await _backend().delete_prefix(prefix)
+    except Exception as exc:  # noqa: BLE001 - cleanup must not block a re-bake
+        logger.warning("Failed to delete BIM tiles at prefix=%s: %s", prefix, exc)
+        return 0

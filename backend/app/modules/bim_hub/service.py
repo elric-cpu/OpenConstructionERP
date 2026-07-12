@@ -10,7 +10,9 @@ Stateless service layer. Handles:
 - Model diff calculation (compare elements by stable_id + geometry_hash)
 """
 
+import asyncio
 import fnmatch
+import json
 import logging
 import shutil
 import uuid
@@ -750,6 +752,130 @@ class BIMHubService:
                 detail="BIM model not found",
             )
         return model
+
+    # ── Streaming tiles (fast viewer) ──────────────────────────────────────
+    async def ensure_tileset(self, model_id: uuid.UUID) -> dict[str, Any] | None:
+        """Return the streaming-tile manifest for a model, baking it on demand.
+
+        The monolithic ``geometry.glb`` is partitioned once (spatial octree)
+        into content-addressed sub-GLBs so the viewer can stream geometry
+        progressively and cache tiles immutably. This is idempotent and
+        self-healing: a cached manifest is reused only while both the tiler
+        version and a cheap source-geometry fingerprint still match, so a
+        re-converted model transparently re-bakes instead of serving tiles
+        that point at stale geometry.
+
+        Returns the manifest dict, or ``None`` when the model has no GLB
+        geometry or is not worth tiling - the caller then serves the
+        monolithic GLB (the untouched fallback path).
+        """
+        from app.modules.bim_hub import tiler
+
+        model = await self.model_repo.get(model_id)
+        if model is None:
+            return None
+        project_id = str(model.project_id)
+        mid = str(model_id)
+
+        # Only GLB carries the triangles we tile cheaply. DAE-only (pre-v1.5)
+        # models keep the monolith path until they are re-converted to GLB.
+        found = await bim_file_storage.find_geometry_key(project_id, mid, prefer_ext=".glb")
+        if found is None or found[1] != ".glb":
+            return None
+        glb_key = found[0]
+
+        fingerprint = await self._geometry_fingerprint(glb_key)
+
+        # Reuse a cached tileset only if it still matches this source + tiler.
+        raw = await bim_file_storage.read_tiles_manifest(project_id, mid)
+        if raw is not None:
+            try:
+                cached = json.loads(raw)
+            except (ValueError, TypeError):
+                cached = None
+            if (
+                isinstance(cached, dict)
+                and cached.get("tiler_version") == tiler.TILER_VERSION
+                and cached.get("source_fingerprint") == fingerprint
+            ):
+                return None if cached.get("skipped") else cached
+            # Stale (new geometry or new tiler): wipe before re-baking.
+            await bim_file_storage.delete_tiles(project_id, mid)
+
+        glb_bytes = await self._read_blob_bytes(glb_key)
+        if not glb_bytes:
+            return None
+
+        # CPU-bound: bake off the event loop so we never block request serving.
+        result = await asyncio.to_thread(tiler.build_tileset, glb_bytes)
+        if result is None:
+            # Not worth tiling - persist a sentinel so we don't re-bake on
+            # every open; keyed by fingerprint so a re-convert still retries.
+            sentinel = {
+                "tiler_version": tiler.TILER_VERSION,
+                "source_fingerprint": fingerprint,
+                "skipped": True,
+            }
+            await bim_file_storage.save_tiles_manifest(project_id, mid, json.dumps(sentinel).encode())
+            return None
+
+        manifest, tiles = result
+        manifest["source_fingerprint"] = fingerprint
+        manifest["model_id"] = mid
+        for content_hash, blob in tiles.items():
+            await bim_file_storage.save_tile(project_id, mid, content_hash, blob)
+        # Manifest written last: its presence marks the tileset complete.
+        await bim_file_storage.save_tiles_manifest(project_id, mid, json.dumps(manifest).encode())
+        return manifest
+
+    async def _geometry_fingerprint(self, key: str) -> str:
+        """Cheap change-detector for a geometry blob: ``size:sha256(head)``.
+
+        Reads only the first 128 KB so re-checking a cached tileset never
+        pages a 100 MB GLB into memory. A re-convert changes the size and/or
+        the header, which flips the fingerprint and triggers a re-bake.
+        """
+        import hashlib
+
+        from app.core.storage import get_storage_backend
+
+        backend = get_storage_backend()
+        try:
+            size = await backend.size(key)
+        except Exception:  # noqa: BLE001 - sizing is best-effort
+            size = -1
+
+        head = b""
+        try:
+            disk_path = backend.local_path(key)
+            if disk_path is not None:
+
+                def _read_head(p: Path) -> bytes:
+                    with p.open("rb") as fh:
+                        return fh.read(131072)
+
+                head = await asyncio.to_thread(_read_head, disk_path)
+            else:
+                async for chunk in backend.open_stream(key):
+                    head = chunk[:131072]
+                    break
+        except Exception:  # noqa: BLE001 - a bad read just weakens the fingerprint
+            head = b""
+        return f"{size}:{hashlib.sha256(head).hexdigest()[:16]}"
+
+    async def _read_blob_bytes(self, key: str) -> bytes | None:
+        """Read a stored blob fully, preferring a zero-copy local-disk read."""
+        from app.core.storage import get_storage_backend
+
+        backend = get_storage_backend()
+        try:
+            disk_path = backend.local_path(key)
+            if disk_path is not None:
+                return await asyncio.to_thread(disk_path.read_bytes)
+            return await backend.get(key)
+        except Exception:  # noqa: BLE001 - a read failure -> caller falls back
+            logger.exception("Failed to read geometry blob key=%s", key)
+            return None
 
     async def list_models(
         self,
