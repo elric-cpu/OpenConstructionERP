@@ -2072,6 +2072,15 @@ export function BIMViewer({
     elementMgrRef.current?.applyQualityMode(qualityMode);
   }, [qualityMode, sceneManagerReady, elements]);
 
+  // Adaptive render resolution - site mode only. While walking the model on a
+  // touch device (phone/tablet), let the scene trim its pixel ratio to hold
+  // the frame rate on weaker mobile GPUs; turn it off (restoring the ratio)
+  // when leaving walk mode or on a non-touch device. Keyed on the ready scene
+  // so a freshly (re)created model picks up the right mode.
+  useEffect(() => {
+    sceneManagerReady?.setAdaptiveResolution(walkActive && isTouch);
+  }, [walkActive, isTouch, sceneManagerReady]);
+
   // Sync hidden-category toggles from the Layers tab.
   //
   // Iterate EVERY distinct category (keyed the same way the Layers panel

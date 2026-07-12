@@ -10,6 +10,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CameraTween, type CameraState } from './CameraTween';
+import { AdaptiveResolution } from './adaptiveResolution';
 import type { BIMQualityMode } from '@/stores/useBIMViewerStore';
 
 export interface Viewpoint {
@@ -51,6 +52,16 @@ export class SceneManager {
   private _qualityMode: BIMQualityMode = 'default';
   /** On-demand rendering flag — drops idle CPU from 60 FPS to ~0%. */
   private _needsRender = true;
+  /** Adaptive resolution (touch site mode): trims the pixel ratio to hold the
+   *  frame rate while walking. Null unless turned on via
+   *  setAdaptiveResolution(). */
+  private _adaptive: AdaptiveResolution | null = null;
+  /** Pixel ratio in force when adaptive resolution was turned on, restored
+   *  verbatim when it is turned off. */
+  private _adaptiveBaseRatio = 1;
+  /** Timestamp of the last RENDERED frame, for adaptive frame-time sampling.
+   *  Reset to 0 while idle so an idle gap is never counted as a slow frame. */
+  private _lastRenderTs = 0;
   /** Active camera tween (W6.6) — null when the camera is at rest. */
   private _tween: CameraTween | null = null;
   /** Reject the pending flyTo() promise when a new tween cancels it. */
@@ -374,6 +385,19 @@ export class SceneManager {
     // PixelRatio change resets internal viewport — reapply size + render.
     this.updateSize();
     this._needsRender = true;
+
+    // If adaptive resolution is running (touch site mode), the preset just
+    // moved the pixel ratio out from under it. Adopt the new ratio as the
+    // adaptive ceiling and restart the controller so the two never fight
+    // (otherwise adaptive would immediately drag the picture back down).
+    if (this._adaptive) {
+      this._adaptiveBaseRatio = this.renderer.getPixelRatio();
+      this._adaptive = new AdaptiveResolution({
+        minScale: 0.5,
+        maxScale: this._adaptiveBaseRatio,
+      });
+      this._lastRenderTs = 0;
+    }
   }
 
   private updateSize(): void {
@@ -387,7 +411,7 @@ export class SceneManager {
     }
   }
 
-  private animate = (): void => {
+  private animate = (now = 0): void => {
     this.animationId = requestAnimationFrame(this.animate);
     // While the GL context is lost, render() would throw — pause drawing
     // until `webglcontextrestored` clears the flag. Damping/controls update
@@ -400,10 +424,54 @@ export class SceneManager {
     const dampingDirty = this.controls.update();
     if (dampingDirty) this._needsRender = true;
     if (this._needsRender) {
+      // Adaptive resolution (touch site mode): measure the interval between
+      // consecutive RENDERED frames — the real cost of drawing while the
+      // camera moves — and let the controller trim the pixel ratio to hold
+      // the frame rate. Only applied when the scale actually changes (the
+      // controller has a cooldown), so setSize churn stays rare.
+      if (this._adaptive && now > 0) {
+        if (this._lastRenderTs > 0) {
+          const targetScale = this._adaptive.sample(now - this._lastRenderTs);
+          if (targetScale !== this.renderer.getPixelRatio()) {
+            this.renderer.setPixelRatio(targetScale);
+            this.updateSize();
+          }
+        }
+        this._lastRenderTs = now;
+      }
       this.renderer.render(this.scene, this.camera);
       this._needsRender = false;
+    } else if (this._adaptive) {
+      // Idle: forget the last render time so the gap to the next drawn frame
+      // is not mistaken for one very slow frame.
+      this._lastRenderTs = 0;
     }
   };
+
+  /**
+   * Turn adaptive render resolution on or off (touch site mode). While on,
+   * the pixel ratio is trimmed toward 0.5 when frames run slow and eased back
+   * up when there is headroom, bounded above by whatever ratio was in force
+   * when it was enabled (so it never sharpens past the manual quality
+   * ceiling). Turning it off restores that ratio exactly. Idempotent.
+   */
+  setAdaptiveResolution(enabled: boolean): void {
+    if (enabled === (this._adaptive !== null)) return;
+    if (enabled) {
+      this._adaptiveBaseRatio = this.renderer.getPixelRatio();
+      this._adaptive = new AdaptiveResolution({
+        minScale: 0.5,
+        maxScale: this._adaptiveBaseRatio,
+      });
+      this._lastRenderTs = 0;
+    } else {
+      this._adaptive = null;
+      this._lastRenderTs = 0;
+      this.renderer.setPixelRatio(this._adaptiveBaseRatio);
+      this.updateSize();
+      this._needsRender = true;
+    }
+  }
 
   /** Mark the scene as needing a re-render on the next animation frame.
    *  Call this after selection changes, colour mutations, or visibility toggles. */
