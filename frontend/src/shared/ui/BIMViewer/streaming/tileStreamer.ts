@@ -17,14 +17,14 @@
  * has no tileset, and the caller falls back to the monolithic GLB.
  */
 
-import * as THREE from "three";
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import type { GLTF } from "three/addons/loaders/GLTFLoader.js";
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
 
-import { useAuthStore } from "@/stores/useAuthStore";
+import { useAuthStore } from '@/stores/useAuthStore';
 
-import { getCachedTile, putCachedTile, tileCacheKey } from "./tileCache";
-import type { TileInfo, TileManifest } from "./tileTypes";
+import { getCachedTile, putCachedTile, tileCacheKey } from './tileCache';
+import type { TileInfo, TileManifest } from './tileTypes';
 
 const GLB_MAGIC = 0x46546c67; // 'glTF' little-endian
 
@@ -34,8 +34,8 @@ function tilesBase(modelId: string): string {
 
 function authHeaders(): Record<string, string> {
   const token = useAuthStore.getState().accessToken;
-  const headers: Record<string, string> = { Accept: "*/*" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const headers: Record<string, string> = { Accept: '*/*' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
   return headers;
 }
 
@@ -62,8 +62,7 @@ export async function fetchTileManifest(
     });
     if (resp.status === 204 || !resp.ok) return null;
     const data = (await resp.json()) as TileManifest;
-    if (!data || !Array.isArray(data.tiles) || data.tiles.length === 0)
-      return null;
+    if (!data || !Array.isArray(data.tiles) || data.tiles.length === 0) return null;
     return data;
   } catch {
     return null;
@@ -79,15 +78,11 @@ async function fetchTileBytes(
   const cached = await getCachedTile(key);
   if (cached) return cached;
 
-  const resp = await fetch(
-    `${tilesBase(modelId)}/${encodeURIComponent(hash)}/`,
-    {
-      headers: authHeaders(),
-      signal,
-    },
-  );
-  if (!resp.ok)
-    throw new Error(`Tile ${hash} fetch failed (HTTP ${resp.status})`);
+  const resp = await fetch(`${tilesBase(modelId)}/${encodeURIComponent(hash)}/`, {
+    headers: authHeaders(),
+    signal,
+  });
+  if (!resp.ok) throw new Error(`Tile ${hash} fetch failed (HTTP ${resp.status})`);
   const buffer = await resp.arrayBuffer();
   // Content-addressed => immutable => cache forever. Store a copy so the
   // returned buffer stays usable by the caller.
@@ -95,10 +90,7 @@ async function fetchTileBytes(
   return buffer;
 }
 
-function parseTile(
-  loader: GLTFLoader,
-  buffer: ArrayBuffer,
-): Promise<THREE.Object3D | null> {
+function parseTile(loader: GLTFLoader, buffer: ArrayBuffer): Promise<THREE.Object3D | null> {
   return new Promise((resolve) => {
     if (buffer.byteLength < 12) {
       resolve(null);
@@ -112,7 +104,7 @@ function parseTile(
     try {
       loader.parse(
         buffer,
-        "",
+        '',
         (gltf: GLTF) => resolve(gltf?.scene ?? null),
         () => resolve(null),
       );
@@ -180,24 +172,20 @@ export async function streamModelTiles(
 
   // Phase A - download every tile (cache-first) with bounded concurrency. A
   // failed tile becomes null and is skipped rather than aborting the load.
-  const buffers = await mapPool(
-    tiles,
-    opts.fetchConcurrency ?? 6,
-    async (tile) => {
-      try {
-        return await fetchTileBytes(modelId, tile.hash, opts.signal);
-      } catch {
-        return null;
-      }
-    },
-  );
+  const buffers = await mapPool(tiles, opts.fetchConcurrency ?? 6, async (tile) => {
+    try {
+      return await fetchTileBytes(modelId, tile.hash, opts.signal);
+    } catch {
+      return null;
+    }
+  });
 
   // Phase B - parse on the main thread, one tile at a time, yielding between
   // tiles so the browser can render progress and stay responsive (no single
   // multi-second parse freeze).
   const loader = new GLTFLoader();
   const group = new THREE.Group();
-  group.name = "streamed-tiles";
+  group.name = 'streamed-tiles';
   let parsedTiles = 0;
 
   for (let i = 0; i < buffers.length; i += 1) {

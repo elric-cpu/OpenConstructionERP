@@ -85,6 +85,7 @@ import {
   ScrollText,
   Plus,
   PackageCheck,
+  ScanEye,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -121,6 +122,7 @@ const ROUTE_ICON_MAP: Record<string, LucideIcon> = {
   '/geo': Globe,
   // ── 5. Model Coordination ─────────────────────────────────────────
   '/coordination': LayoutDashboard,
+  '/model-review': ScanEye,
   '/bcf': MessageSquare,
   '/bim/federations': Layers,
   '/clash': Radar,

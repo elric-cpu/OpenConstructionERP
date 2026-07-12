@@ -118,6 +118,9 @@ const IssuesHubPage = lazy(() =>
   import('@/features/issues/IssuesHubPage').then((m) => ({ default: m.IssuesHubPage }))
 );
 const BcfPage = lazy(() => import('@/features/bcf/BcfPage').then((m) => ({ default: m.BcfPage })));
+const ModelReviewPage = lazy(() =>
+  import('@/features/bim/ModelReviewPage').then((m) => ({ default: m.ModelReviewPage }))
+);
 const CloseoutPage = lazy(() => import('@/features/closeout/CloseoutPage'));
 const InboxPage = lazy(() =>
   import('@/features/inbox').then((m) => ({ default: m.InboxPage })),
@@ -998,6 +1001,7 @@ export default function App() {
         <Route path="/projects/:projectId/clash/profiles" element={<P title="Clash Profiles"><ClashProfileManager /></P>} />
         <Route path="/coordination" element={<P title="Model Coordination"><CoordinationHubPage /></P>} />
         <Route path="/bcf" element={<P title="Model Issues"><BcfPage /></P>} />
+        <Route path="/model-review" element={<P title="Model Review"><ModelReviewPage /></P>} />
         <Route path="/assets" element={<P title="Asset Register"><AssetsPage /></P>} />
         <Route path="/bim/:modelId" element={<P title="BIM Viewer"><BIMPage /></P>} />
         <Route path="/projects/:projectId/bim" element={<P title="BIM Viewer"><BIMPage /></P>} />

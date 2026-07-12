@@ -5252,6 +5252,7 @@ const resource = {
     "nav.punchlist": "Punch List",
     "nav.issues": "Issues",
     "nav.model_issues": "Model Issues",
+    "nav.model_review": "Model Review",
     "closeout.title": "Handover & Closeout",
     "markups.subtitle": "Review annotations",
     "markups.title": "Markups & Annotations",

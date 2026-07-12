@@ -14,8 +14,8 @@
  * streaming loader simply falls back to the network.
  */
 
-const DB_NAME = "oce-bim-tiles";
-const STORE = "tiles";
+const DB_NAME = 'oce-bim-tiles';
+const STORE = 'tiles';
 const DB_VERSION = 1;
 
 let dbPromise: Promise<IDBDatabase | null> | null = null;
@@ -24,7 +24,7 @@ function openDb(): Promise<IDBDatabase | null> {
   if (dbPromise) return dbPromise;
   dbPromise = new Promise<IDBDatabase | null>((resolve) => {
     try {
-      if (typeof indexedDB === "undefined") {
+      if (typeof indexedDB === 'undefined') {
         resolve(null);
         return;
       }
@@ -56,7 +56,7 @@ export async function getCachedTile(key: string): Promise<ArrayBuffer | null> {
   if (!db) return null;
   return new Promise<ArrayBuffer | null>((resolve) => {
     try {
-      const tx = db.transaction(STORE, "readonly");
+      const tx = db.transaction(STORE, 'readonly');
       const req = tx.objectStore(STORE).get(key);
       req.onsuccess = () => {
         const val = req.result;
@@ -70,15 +70,12 @@ export async function getCachedTile(key: string): Promise<ArrayBuffer | null> {
 }
 
 /** Store a tile's bytes. Fire-and-forget: failures are swallowed. */
-export async function putCachedTile(
-  key: string,
-  buffer: ArrayBuffer,
-): Promise<void> {
+export async function putCachedTile(key: string, buffer: ArrayBuffer): Promise<void> {
   const db = await openDb();
   if (!db) return;
   return new Promise<void>((resolve) => {
     try {
-      const tx = db.transaction(STORE, "readwrite");
+      const tx = db.transaction(STORE, 'readwrite');
       tx.objectStore(STORE).put(buffer, key);
       tx.oncomplete = () => resolve();
       tx.onerror = () => resolve();

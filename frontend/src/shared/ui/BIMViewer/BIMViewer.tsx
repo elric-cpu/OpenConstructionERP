@@ -127,6 +127,10 @@ export interface BIMViewerProps {
   ) => void;
   /** Callback when an element is hovered. */
   onElementHover?: (elementId: string | null) => void;
+  /** Hands the live SceneManager up to the parent (and null on teardown) so a
+   *  parent can drive the viewer directly - e.g. build a BCF capture bridge
+   *  that snapshots the camera and canvas. */
+  onSceneReady?: (scene: SceneManager | null) => void;
   /** View mode coloring scheme. */
   viewMode?: BIMViewMode;
   /** Show measurement tools. */
@@ -668,6 +672,7 @@ export function BIMViewer({
   onElementSelect,
   onSelectionChange,
   onElementHover,
+  onSceneReady,
   viewMode: _viewMode = 'default',
   showMeasureTools: _showMeasureTools = false,
   className,
@@ -811,6 +816,13 @@ export function BIMViewer({
   useEffect(() => {
     onIsolationChangeRef.current = onIsolationChange;
   }, [onIsolationChange]);
+
+  // Latest onSceneReady callback, kept in a ref so the emit effect (which is
+  // keyed only on the SceneManager) never captures a stale closure.
+  const onSceneReadyRef = useRef(onSceneReady);
+  useEffect(() => {
+    onSceneReadyRef.current = onSceneReady;
+  }, [onSceneReady]);
 
   const [wireframe, setWireframe] = useState(false);
   const [gridVisible, setGridVisible] = useState(false);
@@ -2223,6 +2235,16 @@ export function BIMViewer({
       if (w.__oeBim) delete w.__oeBim;
     };
   }, [setClipBox, setClipPlane, setClipMode, sceneManagerReady]);
+
+  // Publish the live SceneManager to a parent that opts in via onSceneReady:
+  // fires with the manager once the scene mounts and with null when it tears
+  // down, so the parent can build a capture bridge and drop it cleanly.
+  useEffect(() => {
+    onSceneReadyRef.current?.(sceneManagerReady);
+    return () => {
+      onSceneReadyRef.current?.(null);
+    };
+  }, [sceneManagerReady]);
 
   // Sync selection from parent — ONLY when the parent explicitly changes
   // selection (e.g. clicking a row in the filter panel). Skip when the

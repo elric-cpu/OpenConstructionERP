@@ -94,6 +94,7 @@ import {
   Wand2,
   PackageCheck,
   Loader2,
+  ScanEye,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -326,6 +327,7 @@ const navGroups: NavGroup[] = [
     hideInSimple: true,
     items: [
       { labelKey: 'nav.coordination_hub', to: '/coordination', icon: LayoutDashboard, badge: 'BETA' },
+      { labelKey: 'nav.model_review', to: '/model-review', icon: ScanEye, badge: 'BETA' },
       { labelKey: 'nav.bim_federations', to: '/bim/federations', icon: Layers },
       { labelKey: 'nav.clash_detection', to: '/clash', icon: Radar, badge: 'BETA' },
       { labelKey: 'nav.model_issues', to: '/bcf', icon: MessageSquare, badge: 'BETA' },
