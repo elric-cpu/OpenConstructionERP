@@ -5280,6 +5280,12 @@ export default function TakeoffViewerModule({
     setRectStartPoint(null);
     setIsDraggingRect(false);
     setShowTextInput(false);
+    // Switching tools also cancels an in-progress two-click calibration pick,
+    // mirroring the Escape handler. Without this the calibration stays armed
+    // and its click branch eats the next click on the newly selected tool (#344).
+    setSettingScale(false);
+    setCalibrationMode(false);
+    setScalePoints([]);
     if (isAnnotationTool(tool)) {
       setAnnotationColor(DEFAULT_ANNOTATION_COLORS[tool]);
     }
