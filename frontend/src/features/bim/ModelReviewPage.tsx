@@ -18,10 +18,12 @@ import { useTranslation } from 'react-i18next';
 import { Cuboid, PanelRightClose, PanelRightOpen } from 'lucide-react';
 
 import { BcfIssuesPanel } from '@/features/bcf';
+import { listAnchors } from '@/features/geo-hub/api';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { apiGet } from '@/shared/lib/api';
 import { BIMViewer } from '@/shared/ui/BIMViewer';
 import type { BIMElementData } from '@/shared/ui/BIMViewer';
+import { metresToModelUnits as unitsToModelScale } from '@/shared/ui/BIMViewer/geoLocate';
 import type { SceneManager } from '@/shared/ui/BIMViewer/SceneManager';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 
@@ -35,6 +37,30 @@ function ModelReviewInner({ projectId }: { projectId: string }) {
 
   const { models, activeModel, elements, geometryUrl, isLoadingModels, isLoadingElements } =
     useModelViewerData(projectId, activeModelId);
+
+  // Project geo anchor + model units power the viewer's "locate me" pin. The
+  // control hides itself when the project has no anchor.
+  const geoAnchorQuery = useQuery({
+    queryKey: ['geo-hub', 'anchors', projectId],
+    queryFn: () => listAnchors(projectId),
+    enabled: Boolean(projectId),
+    staleTime: 60_000,
+  });
+  const geoAnchor = useMemo(() => {
+    const a = geoAnchorQuery.data?.[0];
+    if (!a) return null;
+    const lat = Number(a.lat);
+    const lon = Number(a.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    return { lat, lon };
+  }, [geoAnchorQuery.data]);
+  const modelUnitsScale = useMemo(() => {
+    const meta = (activeModel?.metadata ?? null) as Record<string, unknown> | null;
+    const units =
+      (meta?.units as unknown) ??
+      ((meta?.metadata as Record<string, unknown> | undefined)?.units as unknown);
+    return unitsToModelScale(units);
+  }, [activeModel]);
 
   // Auto-pick the first renderable model so the page is useful on open.
   useEffect(() => {
@@ -122,6 +148,8 @@ function ModelReviewInner({ projectId }: { projectId: string }) {
               modelMetadata={activeModel?.metadata ?? null}
               elements={elements}
               geometryUrl={geometryUrl}
+              geoAnchor={geoAnchor}
+              metresToModelUnits={modelUnitsScale}
               isLoading={isLoadingElements}
               onSelectionChange={handleSelectionChange}
               onSceneReady={handleSceneReady}

@@ -70,6 +70,8 @@ import {
   serializeBIMUrlState,
   BIM_URL_STATE_KEYS,
 } from '@/shared/ui/BIMViewer/urlState';
+import { metresToModelUnits as unitsToModelScale } from '@/shared/ui/BIMViewer/geoLocate';
+import { listAnchors } from '@/features/geo-hub/api';
 import BIMFilterGroupsPanel from './BIMFilterGroupsPanel';
 import BIMRightPanelTabs from './BIMRightPanelTabs';
 import PropertySearchPanel from './PropertySearchPanel';
@@ -2201,6 +2203,33 @@ export function BIMPage() {
 
   const activeModel = useMemo(() => models.find((m) => m.id === activeModelId) ?? null, [models, activeModelId]);
 
+  // Project geo anchor drives the viewer's "locate me" pin. Cheap, shared
+  // cache key with the rest of the geo-hub surface; absent for projects that
+  // were never geolocated (the viewer simply hides the control then).
+  const geoAnchorQuery = useQuery({
+    queryKey: ['geo-hub', 'anchors', projectId],
+    queryFn: () => listAnchors(projectId),
+    enabled: Boolean(projectId),
+    staleTime: 60_000,
+  });
+  const geoAnchor = useMemo(() => {
+    const a = geoAnchorQuery.data?.[0];
+    if (!a) return null;
+    const lat = Number(a.lat);
+    const lon = Number(a.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    return { lat, lon };
+  }, [geoAnchorQuery.data]);
+  // Model units per metre, read from the canonical metadata (falls back to
+  // metres). Used to scale the GPS offset for the locate-me pin.
+  const modelUnitsScale = useMemo(() => {
+    const meta = (activeModel?.metadata ?? null) as Record<string, unknown> | null;
+    const units =
+      (meta?.units as unknown) ??
+      ((meta?.metadata as Record<string, unknown> | undefined)?.units as unknown);
+    return unitsToModelScale(units);
+  }, [activeModel]);
+
   const statusPollQuery = useQuery({
     queryKey: ['bim-model-status', activeModelId],
     queryFn: () => fetchBIMModel(activeModelId!),
@@ -4004,6 +4033,8 @@ export function BIMPage() {
             isLoading={elementsQuery.isLoading}
             error={elementsQuery.error ? t('bim.error_load_elements', { defaultValue: 'Failed to load model elements. Check the server connection.' }) : null}
             geometryUrl={geometryUrl}
+            geoAnchor={geoAnchor}
+            metresToModelUnits={modelUnitsScale}
             showBoundingBoxes={showBoundingBoxes}
             filterPredicate={filterPredicate}
             colorByMode={colorByMode}

@@ -51,6 +51,7 @@ import {
   PencilRuler,
   RotateCcw,
   Move3d,
+  LocateFixed,
 } from 'lucide-react';
 import { fetchBIMElementProperties } from '@/features/bim/api';
 import { SceneManager } from './SceneManager';
@@ -89,6 +90,8 @@ import { TimelineScrubber } from './TimelineScrubber';
 import { use4dTimeline } from './use4dTimeline';
 import { resolveElementStatus, type FourDStatus } from './4dStatus';
 import { INSTALL_STATUS_HEX, resolveInstallStatus } from './installStatus';
+import { YouAreHereMarker } from './YouAreHereMarker';
+import { isWithinBounds, modelPointFromGeo } from './geoLocate';
 import SimilarItemsPanel from '@/shared/ui/SimilarItemsPanel';
 import { Slider } from '@/shared/ui/Slider';
 import { useBIMViewerStore } from '@/stores/useBIMViewerStore';
@@ -132,6 +135,12 @@ export interface BIMViewerProps {
    *  parent can drive the viewer directly - e.g. build a BCF capture bridge
    *  that snapshots the camera and canvas. */
   onSceneReady?: (scene: SceneManager | null) => void;
+  /** Project WGS84 anchor. When present, a "locate me" control appears that
+   *  drops a device-GPS pin into the model relative to this point. */
+  geoAnchor?: { lat: number; lon: number } | null;
+  /** Model linear units per metre (1 metres, 1000 mm, 3.28084 feet). Used to
+   *  scale the GPS offset into model units for the locate-me pin. */
+  metresToModelUnits?: number;
   /** View mode coloring scheme. */
   viewMode?: BIMViewMode;
   /** Show measurement tools. */
@@ -675,6 +684,8 @@ export function BIMViewer({
   onSelectionChange,
   onElementHover,
   onSceneReady,
+  geoAnchor = null,
+  metresToModelUnits = 1,
   viewMode: _viewMode = 'default',
   showMeasureTools: _showMeasureTools = false,
   className,
@@ -743,6 +754,15 @@ export function BIMViewer({
   const walkModeRef = useRef<WalkMode | null>(null);
   const measureToolRef = useRef<MeasureTool | null>(null);
   const [viewerToolsReady, setViewerToolsReady] = useState(false);
+  /** "Locate me" pin (device GPS -> project anchor -> scene point). Created
+   *  when the scene is ready and the project has a geo anchor. */
+  const youAreHereRef = useRef<YouAreHereMarker | null>(null);
+  /** Locate-me lifecycle for button state and honest user feedback:
+   *  idle -> locating -> located | outside (GPS is outside the model
+   *  footprint) | denied (permission) | error (no fix / unsupported). */
+  const [locateState, setLocateState] = useState<
+    'idle' | 'locating' | 'located' | 'outside' | 'denied' | 'error'
+  >('idle');
   /** True while WalkMode currently owns the pointer lock — drives the
    *  on-screen "Mouse: look · WASD: move" hint overlay. */
   const [walkLocked, setWalkLocked] = useState(false);
@@ -2278,6 +2298,100 @@ export function BIMViewer({
     };
   }, [sceneManagerReady]);
 
+  // Own a "you are here" marker for the lifetime of the scene. Recreated when
+  // the scene remounts; disposed (removing its meshes) on teardown so it never
+  // outlives the SceneManager it draws into.
+  useEffect(() => {
+    if (!sceneManagerReady) {
+      youAreHereRef.current = null;
+      return;
+    }
+    const marker = new YouAreHereMarker(sceneManagerReady);
+    youAreHereRef.current = marker;
+    setLocateState('idle');
+    return () => {
+      marker.dispose();
+      youAreHereRef.current = null;
+    };
+  }, [sceneManagerReady]);
+
+  // "Locate me": read the device GPS, project it against the model anchor and
+  // drop a pin. Honest about its limits - it refuses when the fix lands well
+  // outside the model footprint and always sizes the ring to GPS accuracy,
+  // rather than pretending to survey-grade precision. Clicking again hides it.
+  const handleLocateMe = useCallback(() => {
+    const marker = youAreHereRef.current;
+    const scene = sceneRef.current;
+    if (!marker || !scene || !geoAnchor) return;
+    if (marker.isVisible) {
+      marker.hide();
+      setLocateState('idle');
+      return;
+    }
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setLocateState('error');
+      return;
+    }
+    setLocateState('locating');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const bounds = scene.getContentBounds();
+        const groundY = bounds ? bounds.min.y : 0;
+        const point = modelPointFromGeo(
+          geoAnchor,
+          { lat: pos.coords.latitude, lon: pos.coords.longitude },
+          { metresToModelUnits, groundY },
+        );
+        if (bounds) {
+          const spanX = bounds.max.x - bounds.min.x;
+          const spanZ = bounds.max.z - bounds.min.z;
+          // Allow up to one model span of slack so standing just outside the
+          // walls still resolves; refuse only when clearly off this site.
+          const margin = Math.max(spanX, spanZ);
+          const inside = isWithinBounds(
+            point,
+            {
+              min: { x: bounds.min.x, y: bounds.min.y, z: bounds.min.z },
+              max: { x: bounds.max.x, y: bounds.max.y, z: bounds.max.z },
+            },
+            margin,
+          );
+          if (!inside) {
+            marker.hide();
+            setLocateState('outside');
+            return;
+          }
+        }
+        const accuracyM = Number.isFinite(pos.coords.accuracy)
+          ? pos.coords.accuracy
+          : 8;
+        const accuracyRadius = Math.max(accuracyM * metresToModelUnits, 0.5);
+        const poleHeight = 1.7 * metresToModelUnits;
+        marker.show(point, accuracyRadius, { poleHeight });
+        scene.focusOnPoint(point, Math.max(accuracyRadius * 2, poleHeight * 3));
+        setLocateState('located');
+      },
+      (err) => {
+        setLocateState(err.code === err.PERMISSION_DENIED ? 'denied' : 'error');
+      },
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 },
+    );
+  }, [geoAnchor, metresToModelUnits]);
+
+  // Auto-clear the transient locate outcomes so a one-off "outside" or "denied"
+  // banner does not linger. The steady 'located'/'idle' states are left alone.
+  useEffect(() => {
+    if (
+      locateState !== 'outside' &&
+      locateState !== 'denied' &&
+      locateState !== 'error'
+    ) {
+      return;
+    }
+    const id = window.setTimeout(() => setLocateState('idle'), 5000);
+    return () => window.clearTimeout(id);
+  }, [locateState]);
+
   // Sync selection from parent — ONLY when the parent explicitly changes
   // selection (e.g. clicking a row in the filter panel). Skip when the
   // selection originated from the viewer's own SelectionManager (Ctrl+Click)
@@ -3742,6 +3856,32 @@ export function BIMViewer({
             testId="bim-walk-toggle"
           />
         )}
+        {geoAnchor && (
+          <ToolbarButton
+            icon={LocateFixed}
+            label={
+              locateState === 'locating'
+                ? t('viewerTools.locating', { defaultValue: 'Locating...' })
+                : locateState === 'outside'
+                  ? t('viewerTools.locate_outside', {
+                      defaultValue: 'Your GPS position is outside this model',
+                    })
+                  : locateState === 'denied'
+                    ? t('viewerTools.locate_denied', {
+                        defaultValue: 'Location permission denied',
+                      })
+                    : locateState === 'error'
+                      ? t('viewerTools.locate_error', {
+                          defaultValue: 'No location fix available',
+                        })
+                      : t('viewerTools.locate', { defaultValue: 'Locate me' })
+            }
+            onClick={handleLocateMe}
+            active={locateState === 'located'}
+            variant="group"
+            testId="bim-locate-me"
+          />
+        )}
         <ToolbarButton
           icon={EyeOffIcon}
           label={t('bim.ghost_toggle', {
@@ -3762,6 +3902,52 @@ export function BIMViewer({
           FederatedViewer / future re-use, and the SectionBox / WalkMode /
           MeasureTool helpers stay wired so the top-toolbar Walk button
           and any future re-introduction can grab them. */}
+
+      {/* Locate-me status pill — surfaces the transient outcomes (searching,
+          off-site, permission denied, no fix) plainly instead of hiding them
+          in a tooltip. Auto-clears after a few seconds. */}
+      {(locateState === 'locating' ||
+        locateState === 'outside' ||
+        locateState === 'denied' ||
+        locateState === 'error') && (
+        <div
+          className={clsx(
+            'absolute top-14 start-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-3 py-1.5 rounded-lg backdrop-blur text-[11px] font-medium shadow-lg select-none',
+            locateState === 'locating'
+              ? 'bg-slate-900/85 text-white'
+              : 'bg-amber-100/95 text-amber-900 border border-amber-300',
+          )}
+          data-testid="bim-locate-status"
+          role="status"
+          aria-live="polite"
+        >
+          {locateState === 'locating' ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span>
+                {t('viewerTools.locating', { defaultValue: 'Locating...' })}
+              </span>
+            </>
+          ) : (
+            <>
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>
+                {locateState === 'outside'
+                  ? t('viewerTools.locate_outside', {
+                      defaultValue: 'Your GPS position is outside this model',
+                    })
+                  : locateState === 'denied'
+                    ? t('viewerTools.locate_denied', {
+                        defaultValue: 'Location permission denied',
+                      })
+                    : t('viewerTools.locate_error', {
+                        defaultValue: 'No location fix available',
+                      })}
+              </span>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Walk mode on-screen hint — visible the whole time walk mode is
           armed so the drag-to-look instruction is always discoverable
