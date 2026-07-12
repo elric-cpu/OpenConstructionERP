@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [11.1.0] - 2026-07-12
+
+This release makes the cost bases the centre of the workspace. Every price base you can load now shows in one place with its own count of rates, so you can see all of them at a glance, the global set and each national base, and know how much sits in each one before you choose. The same picker appears in import, in the data setup step and in onboarding, and from it you can search across bases, load a base, set the one you want active, or simply pick a base to work with, without leaving the screen.
+
+The point cloud viewer gains a fuller set of professional tools for working a reality-capture scan, and the dashboard lets you set the width of each widget so the home screen lays out the way you read it. This release also fixes a drawing that could not be placed on the map, by serving document downloads on the right paths and filling in demo stubs, and it completes the line-art illustrations across the Cases hub.
+
+The interface is more complete in every language. Thousands more strings are translated in each of the twenty seven supported languages, so the newer screens read in your language instead of falling back to English.
+
 ## [11.0.0] - 2026-07-11
 
 The point cloud viewer becomes a real review tool for reality-capture data on site. You can slice the cloud to a height band and read it as a top-down plan, measure point to point with the distance and its horizontal and vertical parts in millimetres, box off a region to isolate part of a scan, colour points by elevation with a legend and a pinnable height band, and save the current view as a PNG image. The geometry and formatting behind these tools are covered by unit tests.
