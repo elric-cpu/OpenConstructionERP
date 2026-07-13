@@ -7,7 +7,9 @@ All settings are typed and validated via Pydantic.
 """
 
 import logging
+import os
 import re
+import secrets
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
@@ -305,6 +307,16 @@ class Settings(BaseSettings):
     # explanatory reason when the gate is full rather than degrade the whole
     # process. Default 8. Env: ``OE_POINTCLOUD_MAX_CONCURRENT_INGEST``.
     pointcloud_max_concurrent_ingest: int = Field(default=8, ge=1, le=256)
+
+    # ── Request limits ───────────────────────────────────────────────────
+    # Coarse global ceiling (bytes) on any single request body, enforced by
+    # ``app.middleware.body_size_limit.MaxBodySizeMiddleware``. It is a backstop
+    # ABOVE every per-endpoint upload cap, so it never trips a legitimate
+    # upload; it only stops an absurdly large body from reaching an endpoint
+    # that reads it unbounded and OOMs the single worker. Default 4 GiB - above
+    # the largest built-in per-endpoint cap (the ~2 GiB point-cloud proxied
+    # fallback). Set to 0 to disable. Env: ``OE_MAX_REQUEST_BODY_BYTES``.
+    max_request_body_bytes: int = Field(default=4 * 1024 * 1024 * 1024, ge=0)
 
     # ── Auth ─────────────────────────────────────────────────────────────
     jwt_secret: str = "openestimate-local-dev-key"
@@ -681,9 +693,137 @@ class Settings(BaseSettings):
         return origins[0].rstrip("/") if origins else "http://localhost:5173"
 
 
+def _jwt_secret_persist_dir() -> Path:
+    """Return the directory the auto-provisioned JWT secret is stored in.
+
+    Honours the platform data-dir overrides (``OE_DATA_DIR`` > ``DATA_DIR`` >
+    ``OE_CLI_DATA_DIR``) so a container that mounts a volume at ``/data`` keeps
+    one stable secret across redeploys. With no override it falls back to the
+    persistent per-user ``~/.openestimate`` - the location the CLI and desktop
+    already use - so the secret never lands inside a source checkout's tracked
+    ``data`` tree.
+
+    Returns:
+        The directory to read/write the ``.jwt-secret`` file in.
+    """
+    override = os.environ.get("OE_DATA_DIR") or os.environ.get("DATA_DIR") or os.environ.get("OE_CLI_DATA_DIR")
+    if override and override.strip():
+        return Path(override.strip())
+    return Path.home() / ".openestimate"
+
+
+def _operator_supplied_jwt_secret() -> str | None:
+    """Return a real operator-provided JWT secret from the environment.
+
+    Accepts either the bare ``JWT_SECRET`` or the brand-namespaced
+    ``OE_JWT_SECRET`` (both spellings populate ``Settings.jwt_secret``). A value
+    that is empty or a well-known weak placeholder counts as "not supplied", so
+    a zero-config deployment auto-provisions a strong secret instead. Any other
+    value is returned verbatim, with no length judgement, so an explicitly-set
+    but too-short secret still reaches the strict ``Settings`` validator and is
+    rejected in production rather than silently replaced.
+
+    Returns:
+        The operator's secret, or ``None`` when none was meaningfully set.
+    """
+    for name in ("JWT_SECRET", "OE_JWT_SECRET"):
+        raw = os.environ.get(name)
+        if raw is None:
+            continue
+        value = raw.strip()
+        if value and value not in _JWT_KNOWN_WEAK_SECRETS:
+            return value
+    return None
+
+
+def _non_development_env() -> bool:
+    """Return True when ``APP_ENV`` selects a non-development deployment.
+
+    Read straight from the environment (both bare and ``OE_``-prefixed
+    spellings) because this runs before ``Settings`` is constructed. An unset
+    value means development - the same default the model declares.
+
+    Returns:
+        ``True`` for staging/production, ``False`` for development or unset.
+    """
+    for name in ("APP_ENV", "OE_APP_ENV"):
+        raw = os.environ.get(name)
+        if raw is not None and raw.strip():
+            return raw.strip().lower() != "development"
+    return False
+
+
+def _ensure_persistent_jwt_secret() -> None:
+    """Auto-provision a strong, persistent JWT secret in non-dev deployments.
+
+    Runs once, from :func:`get_settings`, before ``Settings`` reads the
+    environment. It is a no-op in development (the bundled dev default is
+    acceptable there and the app boots without ceremony) and whenever the
+    operator already supplied a real secret. Otherwise, in staging/production
+    it loads a previously persisted secret from the data dir - or generates one
+    and persists it (``chmod 600``) - and exports it as ``JWT_SECRET`` so the
+    app, and the strict production validator, see a strong value.
+
+    This lets the published container boot with zero configuration while still
+    signing tokens with a secret that is NOT the public repo default, and keeps
+    that secret stable across restarts so browser sessions survive a redeploy
+    when the data dir is a mounted volume. If persistence fails (a read-only
+    data dir) it degrades to a per-process secret and logs a loud warning
+    rather than refusing to start.
+    """
+    if not _non_development_env():
+        return
+    if _operator_supplied_jwt_secret() is not None:
+        # The operator owns the secret - let Settings validate it as-is so a
+        # deliberately weak value still fails loudly in production.
+        return
+
+    secret_path = _jwt_secret_persist_dir() / ".jwt-secret"
+
+    try:
+        if secret_path.is_file():
+            existing = secret_path.read_text(encoding="utf-8").strip()
+            if len(existing) >= _JWT_SECRET_MIN_LENGTH:
+                os.environ["JWT_SECRET"] = existing
+                _logger.info("Loaded the persisted JWT secret from %s.", secret_path)
+                return
+    except OSError:
+        # Unreadable persisted secret - fall through and generate a fresh one.
+        pass
+
+    generated = secrets.token_urlsafe(48)
+    try:
+        secret_path.parent.mkdir(parents=True, exist_ok=True)
+        secret_path.write_text(generated, encoding="utf-8")
+        # Best-effort chmod 600 (POSIX). On Windows the file inherits the
+        # user-only ACL of the home directory.
+        try:
+            secret_path.chmod(0o600)
+        except OSError:
+            pass
+        _logger.warning(
+            "JWT_SECRET was not configured - generated a strong random secret "
+            "and persisted it to %s. Set JWT_SECRET / OE_JWT_SECRET to a value "
+            "you control for a stable multi-replica secret, and mount the data "
+            "dir as a volume so this secret survives redeploys.",
+            secret_path,
+        )
+    except OSError as exc:
+        _logger.warning(
+            "JWT_SECRET was not configured and could not be persisted to %s "
+            "(%s) - using a per-process secret; sessions will be invalidated on "
+            "restart. Set JWT_SECRET / OE_JWT_SECRET or make the data dir "
+            "writable to keep sessions alive.",
+            secret_path,
+            exc,
+        )
+    os.environ["JWT_SECRET"] = generated
+
+
 @lru_cache
 def get_settings() -> Settings:
     """Cached settings singleton."""
+    _ensure_persistent_jwt_secret()
     return Settings()
 
 

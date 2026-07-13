@@ -1256,6 +1256,15 @@ def create_app() -> FastAPI:
 
     app.add_middleware(AcceptLanguageMiddleware)
 
+    # ── Request-body-size backstop (added last -> outermost -> runs first) ─
+    # Coarse global ceiling above every per-endpoint upload cap. Rejects an
+    # absurdly large body before any other middleware or endpoint reads it, so
+    # a single oversized request can't OOM the worker. Per-endpoint caps remain
+    # the fine-grained defense.
+    from app.middleware.body_size_limit import MaxBodySizeMiddleware
+
+    app.add_middleware(MaxBodySizeMiddleware, max_body_bytes=settings.max_request_body_bytes)
+
     # ── Global exception handler - return JSON for unhandled errors ────
     from fastapi import Request
     from fastapi.exceptions import RequestValidationError

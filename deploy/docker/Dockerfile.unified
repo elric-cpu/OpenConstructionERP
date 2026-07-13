@@ -87,15 +87,24 @@ ENV PYTHONUNBUFFERED=1 \
     VECTOR_BACKEND=lancedb \
     OE_DATA_DIR=/data \
     VECTOR_DATA_DIR=/data/vectors \
-    APP_ENV=development \
+    APP_ENV=production \
     APP_DEBUG=false \
     ALLOWED_ORIGINS=*
 
-# JWT_SECRET is intentionally NOT set here — the application config
-# requires it via env var at runtime. Setting a default in the image
-# would bake a globally-shared signing key into every container
-# pulled from the registry (BUG-D03). Pass `-e JWT_SECRET=$(openssl
-# rand -hex 32)` to ``docker run`` or supply via compose .env.
+# APP_ENV defaults to production so a bare `docker run` of the published
+# image is secure by default: the interactive API docs are hidden, a
+# wildcard CORS origin is stripped, and the JWT secret is validated. The
+# quickstart compose (docker-compose.quickstart.yml) sets APP_ENV=development
+# for a friendlier first-run; a real deployment keeps this default.
+#
+# JWT_SECRET is intentionally NOT baked into the image. When it is unset the
+# app auto-generates a strong random secret on first boot and persists it
+# under the data dir (/data/.jwt-secret, chmod 600), so the container boots
+# with zero configuration and still signs tokens with a secret that is NOT
+# the public repo default (BUG-D03). Because /data is a mounted volume that
+# secret survives restarts and redeploys. For a multi-replica deployment,
+# where every replica must share one signing key, set it explicitly:
+# `-e JWT_SECRET=$(openssl rand -hex 32)` on ``docker run`` or via compose .env.
 
 EXPOSE 8080
 VOLUME ["/data"]
