@@ -26,6 +26,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { getCachedTile, putCachedTile, tileCacheKey } from './tileCache';
 import { orderTilesForStreaming, orderTilesByViewport, type CameraPose } from './tilePriority';
 import type { TileInfo, TileManifest } from './tileTypes';
+import { yieldToEventLoop } from './yieldToEventLoop';
 
 const GLB_MAGIC = 0x46546c67; // 'glTF' little-endian
 
@@ -136,11 +137,6 @@ async function mapPool<T, R>(
   return out;
 }
 
-/** Yield to the event loop so render + input can run between tile parses. */
-function macroYield(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
-}
-
 export interface StreamResult {
   /** Merged geometry, ready for processLoadedScene(). */
   group: THREE.Group;
@@ -234,7 +230,7 @@ export async function streamModelTiles(
     }
     done += 1;
     opts.onProgress?.(done / total);
-    await macroYield();
+    await yieldToEventLoop();
   });
 
   if (parsedTiles === 0) return null;
