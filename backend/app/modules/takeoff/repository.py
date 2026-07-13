@@ -35,6 +35,28 @@ class TakeoffRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_by_source_document_id(
+        self, source_document_id: str, *, project_id: uuid.UUID
+    ) -> TakeoffDocument | None:
+        """Return the takeoff document created from a Project-Files document.
+
+        Idempotency lookup for ``POST /documents/from-source``: scoped to the
+        project so the same source id in two projects never collides, and
+        ordered oldest-first so the canonical row wins if a race ever created
+        two.
+        """
+        stmt = (
+            select(TakeoffDocument)
+            .where(
+                TakeoffDocument.source_document_id == source_document_id,
+                TakeoffDocument.project_id == project_id,
+            )
+            .order_by(TakeoffDocument.created_at.asc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
     async def create(self, doc: TakeoffDocument) -> TakeoffDocument:
         self.session.add(doc)
         await self.session.flush()

@@ -1351,11 +1351,14 @@ export function TakeoffPage() {
 
   /* ── Cross-module open: ?doc=X&source=document ─────────────────────────
    * The unified /files page links a documents-module PDF here so the user
-   * can start measuring without re-uploading. The id namespace is the
-   * documents table, not takeoff_documents — so we fetch metadata from
-   * /v1/documents/{id} and point the viewer at that download URL. The
-   * fallback display name is read from the optional `?name=` param so
-   * the viewer header isn't empty during the metadata fetch.            */
+   * can start measuring without re-uploading. The `doc` id is the documents
+   * table PK, NOT a takeoff_document id - so the viewer's own calls
+   * (detect-scale, page-scales, measurements) used to 404 against it and
+   * measurements got filed under the wrong id. We now ask the backend to
+   * find-or-create a REAL takeoff_document for this source (idempotent, so a
+   * second open reuses the same row) and drive the viewer entirely off THAT
+   * takeoff id. The fallback display name is read from the optional `?name=`
+   * param so the header isn't empty during the fetch.                    */
   useEffect(() => {
     const docId = searchParams.get('doc');
     const source = searchParams.get('source');
@@ -1364,29 +1367,28 @@ export function TakeoffPage() {
     let cancelled = false;
     (async () => {
       try {
-        const meta = await apiGet<{ id: string; name: string; filename?: string }>(
-          `/v1/documents/${encodeURIComponent(docId)}`,
+        const takeoff = await apiPost<{ id: string; filename?: string; status?: string }>(
+          `/v1/takeoff/documents/from-source/${encodeURIComponent(docId)}`,
         );
         if (cancelled) return;
         const displayName =
-          meta.filename ||
-          meta.name ||
+          takeoff.filename ||
           searchParams.get('name') ||
           t('takeoff.document_placeholder', { defaultValue: 'Document' });
-        setActiveDocId(docId);
+        // Use the takeoff_document id everywhere from here on so scale-detect,
+        // page-scales and measurements all resolve against takeoff_documents.
+        setActiveDocId(takeoff.id);
         setViewerDoc({
-          url: `/api/v1/documents/${encodeURIComponent(docId)}/download/`,
+          url: `/api/v1/takeoff/documents/${encodeURIComponent(takeoff.id)}/download/`,
           name: displayName,
-          // Project Files document PK (oe_documents_document). The backend
-          // accepts a document_id from either table in the same project.
-          id: docId,
+          id: takeoff.id,
         });
         setActiveTab('measurements');
       } catch {
         if (cancelled) return;
-        // The documents-module metadata fetch failed (e.g. the id belongs to
-        // another table, or access was denied). Surface it instead of leaving
-        // a silently empty page.
+        // The find-or-create failed (e.g. access denied, the source blob is
+        // missing, or the file is not a PDF). Surface it instead of leaving a
+        // silently empty page.
         useToastStore.getState().addToast({
           type: 'error',
           title: t('takeoff.open_failed_title', { defaultValue: 'Could not open file' }),

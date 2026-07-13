@@ -104,6 +104,17 @@ class TakeoffDocument(Base):
     )
     # Path to the stored PDF file on disk (for viewing/download)
     file_path: Mapped[str | None] = mapped_column(String(1000), nullable=True, default=None)
+    # Originating Project-Files document id (oe_documents_document PK) when this
+    # takeoff document was created by opening a file from the Documents hub. NULL
+    # for direct uploads. This is the idempotency key for the find-or-create in
+    # ``POST /documents/from-source/{id}``: opening the same Project-Files PDF
+    # twice reuses this row instead of minting a duplicate and re-parsing. Kept
+    # as a String(36) uuid (the established uuid-as-string pattern in this
+    # module) and indexed for the once-per-open lookup. Additive + nullable, so
+    # every existing row reads unchanged; create_all + postgres_auto_migrate add
+    # the column on normal deploys and the alembic migration keeps the revision
+    # graph and any external/migration-driven DB consistent.
+    source_document_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True, default=None)
     # Extracted text content from PDF (plain text for AI analysis)
     extracted_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
     # Per-page data: [{ page: 1, text: "...", tables: [...] }, ...]

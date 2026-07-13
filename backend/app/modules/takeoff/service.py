@@ -1148,6 +1148,7 @@ class TakeoffService:
         size_bytes: int,
         owner_id: str,
         project_id: str | None = None,
+        source_document_id: str | None = None,
     ) -> TakeoffDocument:
         """Upload and process a PDF document for takeoff.
 
@@ -1338,9 +1339,47 @@ class TakeoffService:
             page_data=page_data,
             file_path=str(file_path),
             metadata_=doc_metadata,
+            source_document_id=source_document_id,
         )
 
         return await self.repo.create(doc)
+
+    async def get_or_create_takeoff_from_source(
+        self,
+        *,
+        source_document_id: str,
+        source_project_id: str,
+        filename: str,
+        content: bytes,
+        size_bytes: int,
+        owner_id: str,
+    ) -> TakeoffDocument:
+        """Find-or-create a takeoff document for a Project-Files document.
+
+        Opening a Project-Files PDF in takeoff needs a real ``TakeoffDocument``
+        row: takeoff persists page_scales, extracted_text, analysis and every
+        measurement FKs to it, none of which a documents-module row can hold.
+
+        Idempotent: if a takeoff document already exists for this source id in
+        the project it is returned unchanged (no duplicate, no re-parse).
+        Otherwise the source PDF bytes run through the hardened, isolated upload
+        path (the same size/page-capped, memory-isolated parse and graceful
+        degradation as a normal upload) and the new row is stamped with
+        ``source_document_id`` so the next open reuses it.
+        """
+        existing = await self.repo.get_by_source_document_id(
+            source_document_id, project_id=uuid.UUID(source_project_id)
+        )
+        if existing is not None:
+            return existing
+        return await self.upload_document(
+            filename=filename,
+            content=content,
+            size_bytes=size_bytes,
+            owner_id=owner_id,
+            project_id=source_project_id,
+            source_document_id=source_document_id,
+        )
 
     async def get_document(self, doc_id: str) -> TakeoffDocument | None:
         return await self.repo.get_by_id(uuid.UUID(doc_id))

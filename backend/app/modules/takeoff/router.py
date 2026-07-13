@@ -4296,6 +4296,119 @@ async def upload_document(
     }
 
 
+# ── Open a Project-Files document in takeoff (id-namespace bridge) ──────────
+
+
+@router.post(
+    "/documents/from-source/{source_document_id}",
+    status_code=200,
+    dependencies=[Depends(RequirePermission("takeoff.create"))],
+)
+async def create_takeoff_from_source(
+    source_document_id: str,
+    user_id: CurrentUserId,
+    service: TakeoffService = Depends(_get_service),
+    session: SessionDep = None,  # type: ignore[assignment]
+) -> dict[str, Any]:
+    """Find-or-create a takeoff document for a Project-Files document.
+
+    Opening a PDF from Project Files deep-links here with the
+    ``oe_documents_document`` id. That id lives only in the documents table, so
+    the takeoff viewer's own calls (get, detect-scale, page-scales,
+    measurements) 404 against it and measurements would be filed under the wrong
+    id. This endpoint resolves the source document, verifies the caller's access
+    to its project, and returns a REAL ``TakeoffDocument`` - created once from
+    the source PDF and reused on every later open - whose id the viewer then
+    uses everywhere.
+
+    Idempotent: the same source id in the same project always maps to the same
+    takeoff document, with no duplicate row and no re-parse. The parse itself is
+    the hardened, isolated, size/page-capped path used by direct upload, so an
+    oversized or malformed source PDF degrades instead of taking the API down.
+    """
+    from app.core.storage import is_within_safe_root
+    from app.modules.documents.models import Document
+    from app.modules.documents.service import UPLOAD_BASE
+
+    try:
+        src_uuid = _uuid.UUID(source_document_id)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid source document id (must be a UUID)",
+        ) from exc
+
+    allowed, _ = upload_limiter.is_allowed(str(user_id))
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many opens. Please wait a moment and try again.",
+            headers={"Retry-After": "60"},
+        )
+
+    # Load the source document and verify project access before touching disk.
+    # 404 (not 403) on a missing id so a probed UUID does not leak existence.
+    src_doc = await session.get(Document, src_uuid)
+    if src_doc is None:
+        raise HTTPException(status_code=404, detail="Source document not found")
+    await verify_project_access(src_doc.project_id, str(user_id), session)
+
+    # Resolve the stored blob safely: relative paths anchor under the uploads
+    # root, and the resolved path must stay inside a platform-owned root (the
+    # same containment the documents download route enforces).
+    upload_base = Path(UPLOAD_BASE).resolve()
+    raw = Path(src_doc.file_path) if src_doc.file_path else None
+    if raw is None:
+        raise HTTPException(status_code=404, detail="Source document file is not available")
+    file_path = (raw if raw.is_absolute() else upload_base / raw).resolve()
+    if (
+        not is_within_safe_root(file_path, extra_roots=[upload_base])
+        or file_path.is_symlink()
+        or not file_path.is_file()
+    ):
+        raise HTTPException(status_code=404, detail="Source document file is not available")
+
+    # Bounded read so an oversized stored blob cannot be pulled fully into RAM
+    # before the cap rejects it (same 200 MB default as direct upload).
+    cap = _max_upload_bytes()
+    with file_path.open("rb") as fh:
+        content = fh.read(cap + 1)
+    if len(content) > cap:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"This file is too large to open in takeoff (over {cap // 1024 // 1024} MB). "
+                "Raise OE_TAKEOFF_MAX_UPLOAD_MB on the server to allow bigger files."
+            ),
+        )
+    if not content.startswith(b"%PDF-"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF documents can be opened in the takeoff viewer.",
+        )
+
+    doc = await service.get_or_create_takeoff_from_source(
+        source_document_id=str(src_uuid),
+        source_project_id=str(src_doc.project_id),
+        filename=src_doc.name or "document.pdf",
+        content=content,
+        size_bytes=len(content),
+        owner_id=str(user_id),
+    )
+
+    no_text_count, no_text_pages = no_text_layer_info(doc)
+    return {
+        "id": str(doc.id),
+        "filename": doc.filename,
+        "pages": doc.pages,
+        "size_bytes": doc.size_bytes,
+        "status": doc.status,
+        "source_document_id": doc.source_document_id,
+        "pages_without_text": no_text_count,
+        "pages_without_text_list": no_text_pages,
+    }
+
+
 # ── Access helper (Audit B5) ──────────────────────────────────────────────
 
 
