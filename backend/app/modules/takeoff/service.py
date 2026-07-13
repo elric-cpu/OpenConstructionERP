@@ -966,6 +966,60 @@ def _run_pdf_worker(
     )
 
 
+def _use_in_process_pdf_parser() -> bool:
+    """Whether to parse PDFs in-process instead of via a child interpreter.
+
+    The isolated parser is launched with ``sys.executable -m
+    app.modules.takeoff.pdf_extract_worker``. That only works when
+    ``sys.executable`` is a real Python interpreter that honours ``-m``. In the
+    PyInstaller one-file desktop build the backend runs as a frozen binary
+    sidecar, so ``sys.executable`` is that binary (``sys.frozen`` is set) and
+    ``-m`` is not honoured - the tokens reach the app's own CLI, it exits
+    non-zero, and every upload would degrade to zero pages. There we parse
+    in-process, exactly as the pre-subprocess desktop build did. The memory
+    isolation this trades away only ever protected the single-PID server
+    container, not a single-user desktop machine.
+    """
+    if getattr(sys, "frozen", False):
+        return True
+    return os.environ.get("OE_DESKTOP", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _parse_pdf_in_process(
+    pdf_path: Path,
+    *,
+    filename: str | None,
+    max_pages: int,
+) -> tuple[int, list[dict], bool] | None:
+    """Parse a PDF in the current process (frozen / desktop fallback).
+
+    Mirrors the result contract of :func:`_parse_pdf_isolated`: returns
+    ``(page_count, page_data, truncated)`` for any completed parse - including
+    the unreadable-document ``(0, [], False)`` case - and ``None`` only when the
+    parser raised outright. Runs the same
+    :func:`app.modules.takeoff.pdf_extract_worker.extract_pdf_data` path, and
+    therefore the same vector-density guard, as the child process, without the
+    POSIX address-space cap that is meaningless on a single-user desktop.
+    """
+    from app.modules.takeoff import pdf_extract_worker
+
+    try:
+        result = pdf_extract_worker.extract_pdf_data(str(pdf_path), max_pages, filename=filename)
+    except Exception:
+        logger.warning(
+            "takeoff.pdf in-process parse failed (filename=%r) - degrading upload",
+            filename,
+            exc_info=True,
+        )
+        return None
+    page_count = int(result.get("page_count", 0) or 0)
+    pages = result.get("pages") or []
+    if not isinstance(pages, list):
+        pages = []
+    truncated = bool(result.get("truncated", False))
+    return page_count, pages, truncated
+
+
 async def _parse_pdf_isolated(
     pdf_path: Path,
     *,
@@ -989,6 +1043,18 @@ async def _parse_pdf_isolated(
     """
     max_pages = max_pages if max_pages is not None else _parse_max_pages()
     timeout_s = timeout_s if timeout_s is not None else _parse_timeout_s()
+
+    # The frozen desktop build cannot spawn ``sys.executable -m ...``; parse in
+    # the current process there (same parser, same density guard) so takeoff
+    # uploads keep working instead of degrading to zero pages.
+    if _use_in_process_pdf_parser():
+        return await asyncio.to_thread(
+            _parse_pdf_in_process,
+            pdf_path,
+            filename=filename,
+            max_pages=max_pages,
+        )
+
     try:
         proc = await asyncio.to_thread(
             _run_pdf_worker,

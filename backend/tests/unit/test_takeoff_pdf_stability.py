@@ -537,3 +537,79 @@ class TestExtractTablesIndianLocale:
         assert by_desc["Wall plastering"]["unit"] == "m"
         assert by_desc["Bricks"]["quantity"] == 12345678.0
         assert by_desc["Bricks"]["unit"] == "pcs"
+
+
+# ---------------------------------------------------------------------------
+# Desktop / frozen build: parse in-process (the `python -m` child cannot run
+# in a PyInstaller one-file binary, so every upload would degrade to 0 pages)
+# ---------------------------------------------------------------------------
+
+
+class TestInProcessParserSelection:
+    """`_use_in_process_pdf_parser` switches to in-process on the desktop build."""
+
+    def test_false_on_a_normal_interpreter(self, monkeypatch):
+        monkeypatch.delenv("OE_DESKTOP", raising=False)
+        monkeypatch.setattr(takeoff_service.sys, "frozen", False, raising=False)
+        assert takeoff_service._use_in_process_pdf_parser() is False
+
+    def test_true_when_frozen(self, monkeypatch):
+        monkeypatch.delenv("OE_DESKTOP", raising=False)
+        monkeypatch.setattr(takeoff_service.sys, "frozen", True, raising=False)
+        assert takeoff_service._use_in_process_pdf_parser() is True
+
+    def test_true_when_oe_desktop_env_set(self, monkeypatch):
+        monkeypatch.setattr(takeoff_service.sys, "frozen", False, raising=False)
+        monkeypatch.setenv("OE_DESKTOP", "1")
+        assert takeoff_service._use_in_process_pdf_parser() is True
+
+
+class TestParsePdfInProcess:
+    """`_parse_pdf_in_process` mirrors the subprocess result contract exactly."""
+
+    def test_maps_worker_dict_to_tuple(self, monkeypatch, tmp_path):
+        import app.modules.takeoff.pdf_extract_worker as worker
+
+        pages = [{"page": 1, "text": "hi", "tables": [], "has_text": True}]
+        monkeypatch.setattr(
+            worker,
+            "extract_pdf_data",
+            lambda *a, **k: {"page_count": 4, "pages": pages, "truncated": True},
+        )
+        pdf = tmp_path / "x.pdf"
+        pdf.write_bytes(b"%PDF-1.4\n")
+        assert takeoff_service._parse_pdf_in_process(pdf, filename="x.pdf", max_pages=1) == (4, pages, True)
+
+    def test_returns_none_when_worker_raises(self, monkeypatch, tmp_path):
+        import app.modules.takeoff.pdf_extract_worker as worker
+
+        def _boom(*a, **k):
+            raise RuntimeError("parser exploded")
+
+        monkeypatch.setattr(worker, "extract_pdf_data", _boom)
+        pdf = tmp_path / "x.pdf"
+        pdf.write_bytes(b"%PDF-1.4\n")
+        assert takeoff_service._parse_pdf_in_process(pdf, filename="x.pdf", max_pages=1) is None
+
+
+class TestParsePdfIsolatedFrozenBranch:
+    """When frozen, `_parse_pdf_isolated` parses in-process, never spawning a child."""
+
+    @pytest.mark.asyncio
+    async def test_frozen_uses_in_process_not_subprocess(self, monkeypatch, tmp_path):
+        import app.modules.takeoff.pdf_extract_worker as worker
+
+        monkeypatch.setattr(takeoff_service.sys, "frozen", True, raising=False)
+
+        def _fail_if_called(*a, **k):  # the subprocess path must NOT run
+            raise AssertionError("desktop build must not spawn the `python -m` worker")
+
+        monkeypatch.setattr(takeoff_service, "_run_pdf_worker", _fail_if_called)
+        monkeypatch.setattr(
+            worker,
+            "extract_pdf_data",
+            lambda *a, **k: {"page_count": 2, "pages": [], "truncated": False},
+        )
+        pdf = tmp_path / "d.pdf"
+        pdf.write_bytes(b"%PDF-1.4\n")
+        assert await takeoff_service._parse_pdf_isolated(pdf, filename="d.pdf") == (2, [], False)
