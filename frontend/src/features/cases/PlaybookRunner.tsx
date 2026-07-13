@@ -463,7 +463,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
           aria-hidden="true"
           className="pointer-events-none absolute -right-10 -top-12 h-44 w-44 rounded-full bg-oe-blue/10 blur-3xl"
         />
-        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-stretch lg:justify-between">
           <div className="min-w-0 flex-1">
             {/* Meta: discipline, time and step count */}
             <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -577,10 +577,12 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
             </div>
           </div>
 
-          {/* Decorative case image (alt=""): the H1 already names the case. The
-              always-light tile chrome is the established illustration surface. */}
-          <div className="w-32 shrink-0 sm:w-40 lg:w-44">
-            <div className="aspect-[4/3] w-full overflow-hidden rounded-xl border border-border-light bg-gradient-to-b from-white to-slate-50 ring-1 ring-inset ring-slate-900/[0.04]">
+          {/* Decorative case image (alt=""): the H1 already names the case. A
+              plain white surface so the illustration reads as content rather
+              than a boxed-out card, and on wide screens the tile stretches to
+              the full height of the hero so the art shows as large as the block. */}
+          <div className="w-40 shrink-0 sm:w-52 lg:w-72">
+            <div className="aspect-[4/3] w-full overflow-hidden rounded-xl border border-border-light bg-white lg:aspect-auto lg:h-full">
               <CaseArt
                 id={playbook.id}
                 fallbackIcon={PlaybookIcon}
