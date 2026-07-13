@@ -269,6 +269,11 @@ class ActivityResponse(BaseModel):
     activity_code: str | None = None
     bim_element_ids: list[str] | None = None
 
+    # Per-activity work calendar (schedule_advanced Calendar). Set via the
+    # dedicated PUT /activities/{id}/calendar/ endpoint; exposed here so the
+    # grid can show and pick the activity's calendar. None -> schedule default.
+    calendar_id: UUID | None = None
+
 
 class LinkPositionRequest(BaseModel):
     """Request body for linking a BOQ position to an activity."""

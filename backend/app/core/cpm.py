@@ -182,6 +182,10 @@ async def calculate_cpm(
           earlier than" floor and defaults to 0. A root (no predecessor) passes
           its own manual start here so its successors are scheduled after it,
           not at the project origin.
+        - calendar: dict (optional) - a per-activity work calendar
+          ({"work_days": [...], "exceptions": [...]}) so this activity's
+          duration is measured on its own work week (e.g. a six-day trade).
+          Omitted -> the activity uses the schedule-wide ``calendar`` argument.
 
     Each relationship dict must have:
         - predecessor_id: str
@@ -217,6 +221,13 @@ async def calculate_cpm(
     act_map: dict[str, dict] = {}
     for act in activities:
         aid = str(act["id"])
+        # Per-activity work calendar. When an activity carries its own
+        # ``calendar`` ({"work_days": [...], "exceptions": [...]}) its duration
+        # is measured on that work week (e.g. a six-day trade, or a crew with
+        # its own holidays); otherwise it uses the schedule-wide default. Both
+        # its early_start and late_start are derived with the SAME calendar, so
+        # the working-day forward/backward passes stay symmetric.
+        act_cal = act.get("calendar")
         act_map[aid] = {
             "id": aid,
             "duration": max(int(act.get("duration", 0)), 0),
@@ -226,6 +237,8 @@ async def calculate_cpm(
             # date; a root passes its own manual start here so its successors
             # anchor after it, not at the origin.
             "start_offset": max(int(act.get("start_offset", 0) or 0), 0),
+            "work_days": _parse_work_days(act_cal) if act_cal else work_days,
+            "exceptions": _parse_exceptions(act_cal) if act_cal else exceptions,
             "early_start": 0,
             "early_finish": 0,
             "late_start": 0,
@@ -289,7 +302,7 @@ async def calculate_cpm(
         # origin). Snapping an offset that already lands on a working day - the
         # common case, including every successor and a working-day origin -
         # returns it unchanged, so the no-start_offset path stays byte-identical.
-        es = _snap_to_working_day(act["start_offset"], work_days, exceptions, p_start)
+        es = _snap_to_working_day(act["start_offset"], act["work_days"], act["exceptions"], p_start)
 
         for link in predecessors[aid]:
             pred = act_map[link["pred"]]
@@ -310,7 +323,9 @@ async def calculate_cpm(
             es = max(es, candidate)
 
         act["early_start"] = max(es, 0)
-        act["early_finish"] = _add_working_days(act["early_start"], act["duration"], work_days, exceptions, p_start)
+        act["early_finish"] = _add_working_days(
+            act["early_start"], act["duration"], act["work_days"], act["exceptions"], p_start
+        )
 
     # ── Project duration ─────────────────────────────────────────────────
     project_finish = max((act_map[aid]["early_finish"] for aid in act_map), default=0)
@@ -343,7 +358,9 @@ async def calculate_cpm(
             lf = min(lf, candidate)
 
         act["late_finish"] = lf
-        act["late_start"] = _sub_working_days(act["late_finish"], act["duration"], work_days, exceptions, p_start)
+        act["late_start"] = _sub_working_days(
+            act["late_finish"], act["duration"], act["work_days"], act["exceptions"], p_start
+        )
 
     # ── Float calculation ────────────────────────────────────────────────
     for aid in act_map:

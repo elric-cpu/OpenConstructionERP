@@ -1824,6 +1824,51 @@ class ScheduleService:
             return 0
         return max((d - project_start).days, 0)
 
+    async def _resolve_activity_calendars(self, activities: list[Activity]) -> dict[str, dict]:
+        """Load each activity's per-activity work calendar as ``{work_days, exceptions}``.
+
+        An activity may point at a named work calendar (``Activity.calendar_id``
+        -> a ``schedule_advanced`` ``Calendar``) so its own duration is measured
+        on its own work week - a six-day trade, or a crew with its own holidays.
+        Returns a map keyed by activity-id string, only for activities whose
+        ``calendar_id`` resolves to an existing calendar; the rest fall back to
+        the schedule-wide calendar inside the CPM engine. The calendar model
+        stores ``holidays``, which the engine consumes as ``exceptions``.
+        Calendars are batch-loaded in a single query.
+
+        Args:
+            activities: The schedule's activities.
+
+        Returns:
+            ``{activity_id: {"work_days": [...], "exceptions": [...]}}`` for the
+            activities that carry a resolvable calendar; empty when none do.
+        """
+        calendar_ids = {a.calendar_id for a in activities if getattr(a, "calendar_id", None)}
+        if not calendar_ids:
+            return {}
+
+        from app.modules.schedule_advanced.models import Calendar
+
+        rows = await self.session.execute(select(Calendar).where(Calendar.id.in_(calendar_ids)))
+        cal_by_id = {c.id: c for c in rows.scalars().all()}
+
+        resolved: dict[str, dict] = {}
+        for a in activities:
+            cid = getattr(a, "calendar_id", None)
+            cal = cal_by_id.get(cid) if cid else None
+            if cal is None:
+                continue
+            try:
+                work_days = [int(d) for d in (cal.work_days or [])]
+            except (TypeError, ValueError):
+                work_days = []
+            exceptions = [str(h) for h in (cal.holidays or []) if h]
+            resolved[str(a.id)] = {
+                "work_days": work_days or [0, 1, 2, 3, 4],
+                "exceptions": exceptions,
+            }
+        return resolved
+
     async def reschedule(self, schedule_id: uuid.UUID) -> list[Activity]:
         """Recompute activity dates from the dependency network via CPM.
 
@@ -1863,20 +1908,28 @@ class ScheduleService:
         # the rest are roots whose manual start anchors the chain.
         has_predecessor = {str(r.successor_id) for r in relationships}
 
+        # Each activity may carry its own named work calendar so its duration is
+        # measured on its own work week (a six-day trade, a crew with its own
+        # holidays); the rest fall back to the schedule-wide calendar.
+        activity_calendars = await self._resolve_activity_calendars(activities)
+
         # Feed each root's own start into the engine as a "start no earlier
         # than" floor (a day-offset from the project origin) so its successors
         # are scheduled after it, not at the origin. Successors carry no floor:
         # they are driven purely by the network, so a stale manual date can
         # never pin them later than their predecessors allow.
-        act_dicts = [
-            {
+        act_dicts: list[dict[str, object]] = []
+        for a in activities:
+            entry: dict[str, object] = {
                 "id": str(a.id),
                 "duration": a.duration_days or 0,
                 "name": a.name,
                 "start_offset": (0 if str(a.id) in has_predecessor else self._activity_start_offset(a, project_start)),
             }
-            for a in activities
-        ]
+            activity_calendar = activity_calendars.get(str(a.id))
+            if activity_calendar is not None:
+                entry["calendar"] = activity_calendar
+            act_dicts.append(entry)
         rel_dicts = [
             {
                 "predecessor_id": str(r.predecessor_id),

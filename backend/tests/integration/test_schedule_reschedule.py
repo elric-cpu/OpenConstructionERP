@@ -141,3 +141,104 @@ async def test_patch_relationship_and_reschedule_moves_successor() -> None:
             assert retyped.lag_days == 2
         finally:
             schedule_router._verify_schedule_owner = original  # type: ignore[assignment]
+
+
+@pytest.mark.asyncio
+async def test_reschedule_honours_per_activity_work_calendar() -> None:
+    """A predecessor on a six-day work week finishes sooner, moving its successor.
+
+    The predecessor spans several weeks. On the default Monday-Friday calendar
+    every Saturday is idle; assigning it a Monday-Saturday calendar lets it work
+    the Saturdays, so the same duration finishes at an earlier calendar date and
+    its FS successor starts earlier. Proves reschedule threads
+    ``Activity.calendar_id`` through the CPM engine.
+    """
+    from app.modules.schedule_advanced.models import Calendar
+
+    async with transactional_session(disable_fks=True) as session:
+        service = ScheduleService(session)
+        project_id = uuid.uuid4()
+        schedule = await service.create_schedule(
+            ScheduleCreate(project_id=project_id, name="Calendar QA", start_date="2024-01-01")
+        )
+        schedule_id = schedule.id
+        pred = await service.create_activity(
+            ActivityCreate(
+                schedule_id=schedule_id,
+                name="Six-day trade",
+                start_date="2024-01-01",
+                end_date="2024-01-12",  # ~2 weeks, several idle Saturdays on Mon-Fri
+            )
+        )
+        succ = await service.create_activity(
+            ActivityCreate(
+                schedule_id=schedule_id,
+                name="Follow-on",
+                start_date="2024-01-01",
+                end_date="2024-01-03",
+            )
+        )
+        pred_id, succ_id = pred.id, succ.id
+
+        # A named Monday-Saturday work calendar for the project. disable_fks lets
+        # the project_id be synthetic; Activity.calendar_id has no DB-level FK.
+        six_day = Calendar(
+            project_id=project_id,
+            name="Six-day week",
+            work_days=[0, 1, 2, 3, 4, 5],
+            holidays=[],
+            is_default=False,
+        )
+        session.add(six_day)
+        await session.flush()
+        six_day_id = six_day.id
+
+        async def _noop_verify(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+            return None
+
+        original = schedule_router._verify_schedule_owner
+        schedule_router._verify_schedule_owner = _noop_verify  # type: ignore[assignment]
+        try:
+            await schedule_router.create_relationship(
+                schedule_id=schedule_id,
+                data=RelationshipCreate(
+                    predecessor_id=pred_id,
+                    successor_id=succ_id,
+                    relationship_type="FS",
+                    lag_days=0,
+                ),
+                session=session,
+                _user_id=uuid.uuid4(),
+                payload={"role": "admin"},
+                service=service,
+            )
+
+            # Baseline reschedule on the default Monday-Friday calendar.
+            activities = await schedule_router.reschedule_schedule(
+                schedule_id=schedule_id,
+                _user_id=uuid.uuid4(),
+                payload={"role": "admin"},
+                session=session,
+                service=service,
+            )
+            succ_default_start = _by_id(activities, succ_id).start_date
+
+            # Assign the six-day calendar to the predecessor and reschedule again.
+            # expire_all so the reschedule reload sees the new calendar_id (a Core
+            # UPDATE does not refresh the identity-mapped instance); in the real
+            # API the assign and the reschedule are separate requests/sessions.
+            await service.activity_repo.update_fields(pred_id, calendar_id=six_day_id)
+            session.expire_all()
+            activities = await schedule_router.reschedule_schedule(
+                schedule_id=schedule_id,
+                _user_id=uuid.uuid4(),
+                payload={"role": "admin"},
+                session=session,
+                service=service,
+            )
+            succ_sixday_start = _by_id(activities, succ_id).start_date
+
+            # Working the Saturdays pulls the successor to an earlier start.
+            assert succ_sixday_start < succ_default_start
+        finally:
+            schedule_router._verify_schedule_owner = original  # type: ignore[assignment]
