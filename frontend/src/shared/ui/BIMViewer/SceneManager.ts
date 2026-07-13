@@ -739,6 +739,33 @@ export class SceneManager {
     this._needsRender = true;
   }
 
+  /**
+   * Camera pose for viewport-priority tile streaming, or null while the camera
+   * is still at its untouched cold-open default.
+   *
+   * On a fresh model open the view only fits to the geometry AFTER it has
+   * loaded, so during streaming there is no meaningful camera yet - ranking
+   * tiles against the arbitrary default viewpoint would be worse than the
+   * geometry-mass order (a model authored at real-world survey coordinates is
+   * nowhere near the default origin target). We therefore return null until
+   * something - a deep-link clash/element focus, a saved view, a user orbit -
+   * has moved the camera off the constructor default (position (30,20,30),
+   * target (0,0,0)); from then on the streamer prioritises the tiles nearest
+   * what the user is actually looking at.
+   */
+  getPlacedCameraPose():
+    | { position: [number, number, number]; target: [number, number, number] }
+    | null {
+    const p = this.camera.position;
+    const t = this.controls.target;
+    const atDefaultPos =
+      Math.abs(p.x - 30) < 1e-6 && Math.abs(p.y - 20) < 1e-6 && Math.abs(p.z - 30) < 1e-6;
+    const atDefaultTarget =
+      Math.abs(t.x) < 1e-6 && Math.abs(t.y) < 1e-6 && Math.abs(t.z) < 1e-6;
+    if (atDefaultPos && atDefaultTarget) return null;
+    return { position: [p.x, p.y, p.z], target: [t.x, t.y, t.z] };
+  }
+
   /** Get current camera viewpoint. */
   getViewpoint(): Viewpoint {
     return {

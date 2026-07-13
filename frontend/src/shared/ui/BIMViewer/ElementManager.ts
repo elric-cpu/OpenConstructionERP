@@ -829,6 +829,12 @@ export class ElementManager {
         const progressive = !this.geometryLoaded;
         const streamed = await streamModelTiles(streamModelId, {
           onProgress,
+          // Viewport-priority streaming: when the camera has already been aimed
+          // (e.g. a clash / element deep-link focused it before the geometry
+          // finished), stream the tiles nearest what the user is looking at
+          // first. Returns null on a plain cold open, so that case keeps the
+          // geometry-mass order.
+          getCameraPose: () => this.sceneManager.getPlacedCameraPose(),
           onTileParsed: progressive
             ? (group) => {
                 if (!previewGroup) {

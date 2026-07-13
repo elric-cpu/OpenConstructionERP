@@ -56,3 +56,74 @@ export function orderTilesForStreaming(tiles: TileInfo[]): TileInfo[] {
     })
     .map((entry) => entry.tile);
 }
+
+/** A camera pose in viewer-world space, enough to rank tiles by what the
+ *  user is looking at. Positions are in metres in the viewer's Y-up frame. */
+export interface CameraPose {
+  /** Camera eye position [x, y, z]. */
+  position: [number, number, number];
+  /** Look-at / orbit target [x, y, z]. Optional; when absent only the eye
+   *  distance is used. */
+  target?: [number, number, number];
+}
+
+/**
+ * Tile bounding-sphere centre expressed in the viewer's world frame.
+ *
+ * Tiles are baked in the source's Z-up frame and the viewer displays them
+ * under a single -90 deg rotation about X (no translation, no scale - see the
+ * streaming reveal in ElementManager). That rotation maps a source point
+ * (x, y, z) to (x, z, -y), so a tile whose source centre is `center` sits at
+ * [x, z, -y] on screen. We rank against that so "near the camera" means near
+ * where the geometry actually appears, not where it was authored.
+ *
+ * Pure and allocation-light; guards malformed centres to the origin.
+ */
+export function tileCenterInViewerSpace(tile: TileInfo): [number, number, number] {
+  const c = tile.center;
+  if (!Array.isArray(c)) return [0, 0, 0];
+  const x = num(c[0]);
+  const y = num(c[1]);
+  const z = num(c[2]);
+  return [x, z, -y];
+}
+
+/** Squared distance from a tile (in viewer space) to the more relevant of the
+ *  camera target or eye. Squared to avoid a sqrt in the hot ranking loop. */
+function tileCameraDistanceSq(tile: TileInfo, pose: CameraPose): number {
+  const [tx, ty, tz] = tileCenterInViewerSpace(tile);
+  const ref = pose.target ?? pose.position;
+  const dx = tx - num(ref[0]);
+  const dy = ty - num(ref[1]);
+  const dz = tz - num(ref[2]);
+  return dx * dx + dy * dy + dz * dz;
+}
+
+/**
+ * Return a NEW array of the tiles ordered by what the camera is looking at:
+ * nearest to the camera target (or eye) first, so the region on screen fills
+ * in before the far side of the building. This is the "viewport-priority"
+ * order used once the camera is meaningfully placed - most importantly when a
+ * deep-link (clash review, element focus) has already pointed the camera at a
+ * specific spot while the geometry is still streaming in.
+ *
+ * Ties (equidistant tiles) fall back to the geometry-mass order so the meatier
+ * tile of two at the same distance still wins, then to manifest order for full
+ * determinism. Pure: no THREE, no camera object, no mutation of the input.
+ */
+export function orderTilesByViewport(tiles: TileInfo[], pose: CameraPose): TileInfo[] {
+  return tiles
+    .map((tile, index) => ({ tile, index, dist: tileCameraDistanceSq(tile, pose) }))
+    .sort((a, b) => {
+      // 1. Nearer the camera = show first (the whole point of viewport order).
+      if (a.dist !== b.dist) return a.dist - b.dist;
+      // 2. Equidistant: prefer the tile carrying more of the building.
+      const nodeDelta = num(b.tile.node_count) - num(a.tile.node_count);
+      if (nodeDelta !== 0) return nodeDelta;
+      const sizeDelta = num(b.tile.byte_size) - num(a.tile.byte_size);
+      if (sizeDelta !== 0) return sizeDelta;
+      // 3. Stable, deterministic fallback: original manifest order.
+      return a.index - b.index;
+    })
+    .map((entry) => entry.tile);
+}

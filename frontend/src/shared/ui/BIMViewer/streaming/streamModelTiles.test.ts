@@ -160,6 +160,29 @@ describe('streamModelTiles progressive contract', () => {
     expect(fetchedHashes).toEqual(['huge', 'medium', 'small']);
   });
 
+  it('streams viewport-first when a camera pose is provided', async () => {
+    installFetch(
+      manifest([
+        // 'far' carries the most geometry, so mass order would fetch it first;
+        // the camera pose must override that and fetch the nearest tile first.
+        tile('far', { center: [0, 0, 10], node_count: 100 }),
+        tile('near', { center: [0, 0, 1], node_count: 1 }),
+        tile('mid', { center: [0, 0, 3], node_count: 50 }),
+      ]),
+    );
+    await streamModelTiles('m1', {
+      fetchConcurrency: 1,
+      getCameraPose: () => ({ position: [50, 50, 50], target: [0, 0, 0] }),
+    });
+    expect(fetchedHashes).toEqual(['near', 'mid', 'far']);
+  });
+
+  it('keeps geometry-mass order when the camera pose probe returns null', async () => {
+    installFetch(manifest([tile('small', { node_count: 2 }), tile('huge', { node_count: 900 })]));
+    await streamModelTiles('m1', { fetchConcurrency: 1, getCameraPose: () => null });
+    expect(fetchedHashes).toEqual(['huge', 'small']);
+  });
+
   it('skips a tile that fails to download and keeps the rest', async () => {
     installFetch(manifest([tile('a'), tile('b'), tile('c')]), ['b']);
     const result = await streamModelTiles('m1');

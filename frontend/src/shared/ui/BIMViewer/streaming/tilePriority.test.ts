@@ -2,7 +2,12 @@
 // Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import { describe, expect, it } from 'vitest';
 
-import { orderTilesForStreaming } from './tilePriority';
+import {
+  orderTilesForStreaming,
+  orderTilesByViewport,
+  tileCenterInViewerSpace,
+  type CameraPose,
+} from './tilePriority';
 import type { TileInfo } from './tileTypes';
 
 function mkTile(overrides: Partial<TileInfo> = {}): TileInfo {
@@ -106,5 +111,84 @@ describe('orderTilesForStreaming', () => {
       mkTile({ id: 'floor1', node_count: 40, byte_size: 5_000, center: [0, 0, 3] }),
     ]);
     expect(ids(out)).toEqual(['core', 'floor1', 'floor2', 'trim']);
+  });
+});
+
+describe('tileCenterInViewerSpace', () => {
+  it('applies the viewer -90deg X rotation: (x, y, z) -> (x, z, -y)', () => {
+    expect(tileCenterInViewerSpace(mkTile({ center: [1, 2, 3] }))).toEqual([1, 3, -2]);
+  });
+
+  it('treats a missing / malformed centre as the origin', () => {
+    expect(
+      tileCenterInViewerSpace(mkTile({ center: undefined as unknown as number[] })),
+    ).toEqual([0, 0, 0]);
+    expect(tileCenterInViewerSpace(mkTile({ center: [Number.NaN, 1, 2] }))).toEqual([0, 2, -1]);
+  });
+});
+
+describe('orderTilesByViewport', () => {
+  it('orders nearest-to-target first (in viewer space)', () => {
+    // target at origin; centres map (x,y,z)->(x,z,-y), so distance is driven
+    // by the source Z here: near=1, mid=3, far=10.
+    const pose: CameraPose = { position: [100, 100, 100], target: [0, 0, 0] };
+    const out = orderTilesByViewport(
+      [
+        mkTile({ id: 'far', center: [0, 0, 10] }),
+        mkTile({ id: 'near', center: [0, 0, 1] }),
+        mkTile({ id: 'mid', center: [0, 0, 3] }),
+      ],
+      pose,
+    );
+    expect(ids(out)).toEqual(['near', 'mid', 'far']);
+  });
+
+  it('ranks against the target, not the eye position', () => {
+    // Eye sits on top of 'far', but the target is next to 'near' - the target
+    // must win so we load what the user is looking at, not where they stand.
+    const pose: CameraPose = { position: [0, 10, 0], target: [0, 1, 0] };
+    const out = orderTilesByViewport(
+      [
+        mkTile({ id: 'far', center: [0, 0, 10] }), // viewer [0,10,0] - under the eye
+        mkTile({ id: 'near', center: [0, 0, 1] }), // viewer [0,1,0]  - at the target
+      ],
+      pose,
+    );
+    expect(ids(out)).toEqual(['near', 'far']);
+  });
+
+  it('falls back to the eye position when no target is given', () => {
+    const pose: CameraPose = { position: [0, 1, 0] };
+    const out = orderTilesByViewport(
+      [
+        mkTile({ id: 'far', center: [0, 0, 10] }),
+        mkTile({ id: 'near', center: [0, 0, 1] }),
+      ],
+      pose,
+    );
+    expect(ids(out)).toEqual(['near', 'far']);
+  });
+
+  it('breaks an equidistant tie by geometry mass (node_count desc)', () => {
+    const pose: CameraPose = { position: [0, 0, 0], target: [0, 0, 0] };
+    const out = orderTilesByViewport(
+      [
+        mkTile({ id: 'light', center: [0, 0, 5], node_count: 3 }),
+        mkTile({ id: 'heavy', center: [0, 0, 5], node_count: 300 }),
+      ],
+      pose,
+    );
+    expect(ids(out)).toEqual(['heavy', 'light']);
+  });
+
+  it('does not mutate the input array', () => {
+    const pose: CameraPose = { position: [0, 0, 0], target: [0, 0, 0] };
+    const input = [
+      mkTile({ id: 'a', center: [0, 0, 9] }),
+      mkTile({ id: 'b', center: [0, 0, 1] }),
+    ];
+    const snapshot = ids(input);
+    orderTilesByViewport(input, pose);
+    expect(ids(input)).toEqual(snapshot);
   });
 });

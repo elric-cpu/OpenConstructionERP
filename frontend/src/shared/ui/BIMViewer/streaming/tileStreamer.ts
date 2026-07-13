@@ -24,7 +24,7 @@ import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { useAuthStore } from '@/stores/useAuthStore';
 
 import { getCachedTile, putCachedTile, tileCacheKey } from './tileCache';
-import { orderTilesForStreaming } from './tilePriority';
+import { orderTilesForStreaming, orderTilesByViewport, type CameraPose } from './tilePriority';
 import type { TileInfo, TileManifest } from './tileTypes';
 
 const GLB_MAGIC = 0x46546c67; // 'glTF' little-endian
@@ -164,6 +164,16 @@ export interface StreamOptions {
   signal?: AbortSignal;
   /** Max concurrent tile downloads (default 6). */
   fetchConcurrency?: number;
+  /**
+   * Optional probe for the current camera pose in viewer-world space. When it
+   * returns a pose, tiles are streamed viewport-first (nearest what the user is
+   * looking at), which matters when a deep-link (clash review / element focus)
+   * has already pointed the camera at a spot before the geometry finishes. When
+   * it returns null - the cold-open case, where the view only fits to the model
+   * after geometry arrives - the loader falls back to geometry-mass order. Read
+   * once at the start of streaming.
+   */
+  getCameraPose?: () => CameraPose | null;
 }
 
 /**
@@ -178,9 +188,14 @@ export async function streamModelTiles(
   const manifest = await fetchTileManifest(modelId, opts.signal);
   if (!manifest) return null;
 
-  // Stream the tiles that carry the most of the building first, so the bulk of
-  // the structure shows up while the small trailing tiles are still arriving.
-  const tiles = orderTilesForStreaming(manifest.tiles);
+  // Order the stream. With a known camera pose (a deep-link already aimed the
+  // view), go viewport-first so the region on screen fills in before the far
+  // side. Otherwise stream the tiles that carry the most of the building first,
+  // so the bulk of the structure shows up while the small trailing tiles arrive.
+  const pose = opts.getCameraPose?.() ?? null;
+  const tiles = pose
+    ? orderTilesByViewport(manifest.tiles, pose)
+    : orderTilesForStreaming(manifest.tiles);
   const total = tiles.length;
 
   const loader = new GLTFLoader();
