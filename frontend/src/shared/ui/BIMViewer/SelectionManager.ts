@@ -47,6 +47,16 @@ export class SelectionManager {
    *  selection machinery firing alongside it. */
   private suspended = false;
 
+  /** Pending hover coordinates + the scheduled animation-frame id used to
+   *  coalesce a burst of `mousemove` events into a single hover raycast per
+   *  frame. A high-Hz mouse / trackpad fires far more move events than there
+   *  are rendered frames, and each hover previously raycast the ENTIRE scene
+   *  recursively — the dominant idle-interaction cost on a large model. We
+   *  now remember only the latest cursor position and resolve the hover once
+   *  on the next frame. */
+  private hoverRafId: number | null = null;
+  private pendingHoverCoords: THREE.Vector2 | null = null;
+
   /** Store original materials so they can be restored after deselection. */
   private originalMaterials = new Map<string, THREE.Material>();
   private highlightMaterial: THREE.MeshStandardMaterial;
@@ -206,6 +216,7 @@ export class SelectionManager {
   setSuspended(suspended: boolean): void {
     this.suspended = suspended;
     if (suspended) {
+      this.cancelPendingHover();
       if (this.hoveredId && !this.selectedIds.has(this.hoveredId)) {
         this.restoreMaterial(this.hoveredId);
       }
@@ -311,7 +322,47 @@ export class SelectionManager {
 
   private onMouseMove(e: MouseEvent): void {
     if (this.suspended) return;
-    const coords = this.getMouseCoords(e);
+    // While any pointer button is held the user is orbiting / panning /
+    // dollying the camera, not hovering geometry. Skip the (whole-scene)
+    // hover raycast entirely during a drag and drop any lingering hover —
+    // this removes the per-move raycast that used to fire continuously while
+    // rotating a large model. `buttons` is the live bitmask of held buttons,
+    // so this covers left-rotate, right-pan and middle-dolly alike.
+    if (e.buttons !== 0) {
+      this.pendingHoverCoords = null;
+      this.clearHover();
+      return;
+    }
+    // Coalesce a burst of move events into at most one raycast per animation
+    // frame: remember the latest cursor position and resolve the hover on the
+    // next frame. Without a rAF (SSR / a test env with no shim) fall back to
+    // resolving synchronously so behaviour is unchanged where scheduling is
+    // unavailable.
+    this.pendingHoverCoords = this.getMouseCoords(e);
+    if (typeof requestAnimationFrame !== 'function') {
+      this.processPendingHover();
+      return;
+    }
+    if (this.hoverRafId === null) {
+      this.hoverRafId = requestAnimationFrame(() => {
+        this.hoverRafId = null;
+        this.processPendingHover();
+      });
+    }
+  }
+
+  /**
+   * Resolve the hover for the most recent cursor position. Split out of
+   * `onMouseMove` so the whole-scene raycast runs at most once per frame (see
+   * the rAF coalescing above) and so tests can drive it deterministically.
+   */
+  private processPendingHover(): void {
+    const coords = this.pendingHoverCoords;
+    this.pendingHoverCoords = null;
+    // A drag may have started or the tool been suspended between the move
+    // event that scheduled this and the frame it runs on — bail rather than
+    // apply a hover mid-drag.
+    if (!coords || this.suspended) return;
     const hit = this.raycast(coords);
     const elementId = hit
       ? (hit.object.userData as { elementId?: string }).elementId ?? null
@@ -337,6 +388,33 @@ export class SelectionManager {
 
     this.canvas.style.cursor = elementId ? 'pointer' : 'default';
     this.callbacks.onElementHover?.(elementId);
+  }
+
+  /** Drop any active hover highlight + cursor. Used when a drag starts so a
+   *  stale hover doesn't linger under the moving camera. Fires
+   *  `onElementHover(null)` once on the transition, never repeatedly. */
+  private clearHover(): void {
+    if (this.hoveredId === null) {
+      this.canvas.style.cursor = '';
+      return;
+    }
+    if (!this.selectedIds.has(this.hoveredId)) {
+      this.restoreMaterial(this.hoveredId);
+    }
+    this.hoveredId = null;
+    this.canvas.style.cursor = '';
+    this.callbacks.onElementHover?.(null);
+  }
+
+  /** Cancel any scheduled hover raycast and forget the pending coordinates.
+   *  Called on suspend / dispose so a queued frame can't fire against a
+   *  torn-down tool. */
+  private cancelPendingHover(): void {
+    if (this.hoverRafId !== null && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(this.hoverRafId);
+    }
+    this.hoverRafId = null;
+    this.pendingHoverCoords = null;
   }
 
   /** Select an element programmatically. */
@@ -477,6 +555,7 @@ export class SelectionManager {
 
   /** Dispose event listeners and materials. */
   dispose(): void {
+    this.cancelPendingHover();
     this.canvas.removeEventListener('pointerdown', this.boundOnPointerDown);
     this.canvas.removeEventListener('pointerup', this.boundOnPointerUp);
     this.canvas.removeEventListener('mousemove', this.boundOnMouseMove);
