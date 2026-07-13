@@ -399,6 +399,26 @@ async def attach_demo_assets(
         return {"status": "error", "bundle": bundle_key}
 
 
+async def _ensure_bim_artifacts(session: AsyncSession, pid: uuid.UUID, mid: uuid.UUID) -> None:
+    """Best-effort bake of a seeded model's GLB + streaming tileset + Parquet.
+
+    Delegates to :meth:`BIMHubService.ensure_artifacts`, which is idempotent
+    and self-guards each step. Runs inside the seed transaction: the model and
+    its elements are already flushed, so the same-session reads see them, and
+    the GLB / tiles / Parquet are written straight to storage. A demo seed must
+    never fail because artifact baking hit a problem, so everything is guarded.
+    Called on both the fresh-attach path and the already-attached early return
+    so an instance seeded before artifact baking was wired in still gets the
+    sidecars backfilled on the next startup.
+    """
+    from app.modules.bim_hub.service import BIMHubService
+
+    try:
+        await BIMHubService(session).ensure_artifacts(pid, mid)
+    except Exception as exc:  # noqa: BLE001 - seed artifacts are best-effort
+        logger.warning("Seed artifact baking failed for model %s (non-fatal): %s", mid, exc)
+
+
 async def _attach_one_bim_model(
     session: AsyncSession,
     pid: uuid.UUID,
@@ -421,6 +441,7 @@ async def _attach_one_bim_model(
 
     mid = _u(str(pid), "bim", model_def["model_format"])
     if await session.get(BIMModel, mid) is not None:
+        await _ensure_bim_artifacts(session, pid, mid)  # backfill on re-seed
         return mid, {}, True  # already attached on a previous run
 
     canonical_key: str | None = None
@@ -477,6 +498,7 @@ async def _attach_one_bim_model(
             )
         )
     await session.flush()
+    await _ensure_bim_artifacts(session, pid, mid)
     return mid, elem_uuid, bool(canonical_key)
 
 
@@ -686,6 +708,7 @@ async def _attach_retail_procedural_model(
 
     mid = _u(str(pid), "bim", "retail_procedural")
     if await session.get(BIMModel, mid) is not None:
+        await _ensure_bim_artifacts(session, pid, mid)  # backfill on re-seed
         return mid, {}, True  # already attached on a previous run
 
     canonical_key: str | None = None
@@ -741,6 +764,7 @@ async def _attach_retail_procedural_model(
             )
         )
     await session.flush()
+    await _ensure_bim_artifacts(session, pid, mid)
     return mid, elem_uuid, bool(canonical_key)
 
 

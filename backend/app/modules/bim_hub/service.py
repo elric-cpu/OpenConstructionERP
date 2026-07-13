@@ -25,7 +25,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import noload, selectinload
 
 from app.core.events import event_bus
 from app.modules.bim_hub import file_storage as bim_file_storage
@@ -777,8 +777,13 @@ class BIMHubService:
         project_id = str(model.project_id)
         mid = str(model_id)
 
-        # Only GLB carries the triangles we tile cheaply. DAE-only (pre-v1.5)
-        # models keep the monolith path until they are re-converted to GLB.
+        # Only GLB carries the triangles we tile cheaply. If the model has only
+        # a DAE (demo seeds, CSV/Excel/DAE uploads), synthesize a plain GLB from
+        # it once - preserving per-mesh node names - so the tiler can bake and
+        # the fast viewer stops loading a multi-MB COLLADA on the main thread.
+        # A DAE that cannot be converted keeps the monolith path unchanged.
+        await self._ensure_glb(project_id, mid)
+
         found = await bim_file_storage.find_geometry_key(project_id, mid, prefer_ext=".glb")
         if found is None or found[1] != ".glb":
             return None
@@ -876,6 +881,195 @@ class BIMHubService:
         except Exception:  # noqa: BLE001 - a read failure -> caller falls back
             logger.exception("Failed to read geometry blob key=%s", key)
             return None
+
+    async def _ensure_glb(self, project_id: str, model_id: str) -> bool:
+        """Ensure a ``.glb`` geometry blob exists, converting from DAE if needed.
+
+        The fast viewer, the tiler and the property-panel lookup all key off the
+        glTF node name, which must equal ``BIMElement.mesh_ref`` / ``stable_id``
+        / the Parquet ``id`` column. Only the CAD-conversion path emits a GLB
+        today; DAE-only models (demo seeds, CSV/Excel/DAE drops) would otherwise
+        load as a multi-MB COLLADA on the main thread and never tile. This
+        converts the DAE to a plain, uncompressed GLB exactly once, rebuilding
+        the node<->mesh name pairing by bbox matching (see
+        :func:`ifc_processor._convert_dae_to_glb`) so element identity survives.
+
+        Idempotent: returns ``True`` immediately when a GLB already exists.
+        Best-effort: a conversion failure leaves the DAE in place (still a valid
+        viewer fallback) and returns ``False``.
+        """
+        # TODO(compression): a later, optional layer can wrap the GLB produced
+        # here with a meshopt/gltfpack pass (separate dependency, not added now);
+        # this method is the single write point such a step would hook.
+        glb_found = await bim_file_storage.find_geometry_key(project_id, model_id, prefer_ext=".glb")
+        if glb_found is not None and glb_found[1] == ".glb":
+            return True
+
+        dae_found = await bim_file_storage.find_geometry_key(project_id, model_id, prefer_ext=".dae")
+        if dae_found is None or dae_found[1] != ".dae":
+            return False
+
+        dae_bytes = await self._read_blob_bytes(dae_found[0])
+        if not dae_bytes:
+            return False
+
+        def _convert(data: bytes) -> bytes | None:
+            import tempfile
+
+            from app.modules.bim_hub import ifc_processor
+
+            with tempfile.TemporaryDirectory(prefix="oe-bim-glb-") as tmp:
+                tmp_dir = Path(tmp)
+                dae_path = tmp_dir / "geometry.dae"
+                dae_path.write_bytes(data)
+                glb_path = ifc_processor._convert_dae_to_glb(dae_path, tmp_dir)
+                if glb_path is None or not glb_path.is_file():
+                    return None
+                return glb_path.read_bytes()
+
+        try:
+            # CPU/memory-bound (trimesh loads the whole mesh graph): off the loop.
+            glb_bytes = await asyncio.to_thread(_convert, dae_bytes)
+        except Exception:  # noqa: BLE001 - conversion is best-effort
+            logger.exception("ensure_glb: DAE->GLB conversion crashed for model %s", model_id)
+            return False
+
+        if not glb_bytes:
+            logger.info("ensure_glb: no GLB produced for model %s - keeping DAE fallback", model_id)
+            return False
+
+        await bim_file_storage.save_geometry(
+            project_id=project_id,
+            model_id=model_id,
+            ext=".glb",
+            content=glb_bytes,
+        )
+        logger.info("ensure_glb: converted DAE->GLB for model %s (%d bytes)", model_id, len(glb_bytes))
+        return True
+
+    async def ensure_parquet(self, project_id: str, model_id: str) -> bool:
+        """Synthesize the ``elements.parquet`` property sidecar from DB rows.
+
+        The property-filter panels and the per-element "all properties" popover
+        query ``data/bim/{project}/{model}/elements.parquet`` by the ``id``
+        column, which must equal ``mesh_ref`` (== the glTF node name). Only the
+        CAD path writes that sidecar today, so DAE / CSV / demo models return an
+        empty panel. This backfills one row per ``oe_bim_element``, keyed by
+        ``mesh_ref`` (falling back to ``stable_id`` so ``id == mesh_ref == node
+        name`` still holds), flattening the ``properties`` and ``quantities``
+        JSONB alongside the identity columns.
+
+        Idempotent: skips when the sidecar already exists. Best-effort: a write
+        failure is logged and returns ``False`` without touching the import.
+        """
+        from app.modules.bim_hub import dataframe_store
+
+        existing = await asyncio.to_thread(dataframe_store._existing_parquet_path, project_id, model_id, None)
+        if existing is not None:
+            return True
+
+        try:
+            model_uuid = uuid.UUID(model_id)
+        except (ValueError, TypeError):
+            return False
+
+        # ``noload`` on boq_links: this bulk read never needs the BOQ links, and
+        # loading them (the relationship is lazy="selectin") would fire an extra
+        # query per batch of elements for nothing.
+        result = await self.session.execute(
+            select(BIMElement).where(BIMElement.model_id == model_uuid).options(noload(BIMElement.boq_links))
+        )
+        elements = list(result.scalars().all())
+        if not elements:
+            return False
+
+        rows: list[dict[str, Any]] = []
+        for el in elements:
+            # ``id`` MUST equal mesh_ref (== the glTF node name); fall back to
+            # stable_id so the invariant id == mesh_ref == node name still holds.
+            row: dict[str, Any] = {"id": el.mesh_ref or el.stable_id, "stable_id": el.stable_id}
+            if el.element_type is not None:
+                row["element_type"] = el.element_type
+            if el.name is not None:
+                row["name"] = el.name
+            if el.storey is not None:
+                row["storey"] = el.storey
+            if el.discipline is not None:
+                row["discipline"] = el.discipline
+            # Flatten properties then quantities; earlier (identity) keys win so
+            # the id column can never be shadowed by a same-named property.
+            for key, value in (el.properties or {}).items():
+                row.setdefault(str(key), value)
+            for key, value in (el.quantities or {}).items():
+                row.setdefault(str(key), value)
+            rows.append(row)
+
+        try:
+            await asyncio.to_thread(
+                dataframe_store.write_dataframe,
+                project_id=project_id,
+                model_id=model_id,
+                rows=rows,
+            )
+        except Exception:  # noqa: BLE001 - the property panel is best-effort
+            logger.exception("ensure_parquet: failed to synthesize sidecar for model %s", model_id)
+            return False
+        logger.info("ensure_parquet: synthesized %d-row sidecar for model %s", len(rows), model_id)
+        return True
+
+    async def ensure_artifacts(
+        self,
+        project_id: uuid.UUID | str,
+        model_id: uuid.UUID | str,
+    ) -> None:
+        """Idempotently produce the viewer + property artifacts for a model.
+
+        Three artifacts, in order:
+
+        1. a plain (uncompressed) ``geometry.glb`` - converted from the model's
+           DAE when only a DAE exists (see :meth:`_ensure_glb`);
+        2. a baked streaming tileset (spatial-octree sub-GLBs) via
+           :meth:`ensure_tileset`;
+        3. an ``elements.parquet`` property sidecar keyed by ``id == mesh_ref``
+           via :meth:`ensure_parquet`.
+
+        Every BIM import path (CAD conversion, CSV/Excel/DAE upload, demo seed)
+        calls this so the fast viewer and the property-filter panels behave the
+        same for every model regardless of source. Each step is idempotent and
+        independently guarded: a failure in one is logged and never aborts the
+        import or the remaining steps. The CPU-bound bake already runs off the
+        event loop inside the callees.
+
+        ``project_id`` is advisory - the model's own ``project_id`` keys every
+        step, so a caller cannot mis-file the artifacts.
+        """
+        try:
+            model_uuid = model_id if isinstance(model_id, uuid.UUID) else uuid.UUID(str(model_id))
+        except (ValueError, TypeError):
+            logger.warning("ensure_artifacts: invalid model_id %r - skipping", model_id)
+            return
+
+        model = await self.model_repo.get(model_uuid)
+        if model is None:
+            logger.warning("ensure_artifacts: model %s not found - skipping", model_id)
+            return
+        pid = str(model.project_id)
+        mid = str(model.id)
+
+        try:
+            await self._ensure_glb(pid, mid)
+        except Exception:  # noqa: BLE001 - artifacts are best-effort
+            logger.exception("ensure_artifacts: GLB step failed for model %s", mid)
+
+        try:
+            await self.ensure_tileset(model.id)
+        except Exception:  # noqa: BLE001 - artifacts are best-effort
+            logger.exception("ensure_artifacts: tileset step failed for model %s", mid)
+
+        try:
+            await self.ensure_parquet(pid, mid)
+        except Exception:  # noqa: BLE001 - artifacts are best-effort
+            logger.exception("ensure_artifacts: parquet step failed for model %s", mid)
 
     async def list_models(
         self,

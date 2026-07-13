@@ -1150,6 +1150,12 @@ async def upload_bim_data(
     # never delays the upload response.
     if created_elements:
         background_tasks.add_task(_run_import_validation, model_id)
+        # Bake the fast-viewer + property artifacts (GLB from DAE, streaming
+        # tileset, Parquet property sidecar) off-request so a non-CAD upload
+        # gets the same fast viewer and populated property panel as the CAD
+        # path. Best-effort and idempotent (see _ensure_model_artifacts). Runs
+        # after the request session commits the model + elements.
+        background_tasks.add_task(_ensure_model_artifacts, project_id, str(model_id))
 
     return {
         "model_id": str(model_id),
@@ -1297,6 +1303,26 @@ async def _run_import_validation(model_uuid: uuid.UUID) -> None:
             model_uuid,
             exc,
         )
+
+
+async def _ensure_model_artifacts(project_id: str, model_id: str) -> None:
+    """Best-effort: ensure a model's GLB + streaming tileset + Parquet sidecar.
+
+    Delegates to :meth:`BIMHubService.ensure_artifacts`, which is idempotent
+    and self-guards each step. Opens its own :func:`async_session_factory`
+    session so it is safe to run from a background worker or a
+    ``BackgroundTasks`` callback (the request session is closed by then, and
+    the model + elements are committed before the callback fires). Any failure
+    is logged and swallowed - a good import must never fail because the
+    (advisory) artifact bake hit a problem.
+    """
+    from app.database import async_session_factory
+
+    try:
+        async with async_session_factory() as session:
+            await BIMHubService(session).ensure_artifacts(project_id, model_id)
+    except Exception as exc:  # noqa: BLE001 - artifacts are best-effort
+        logger.warning("Artifact baking failed for model %s (non-fatal): %s", model_id, exc)
 
 
 async def _process_cad_in_background(
@@ -1877,6 +1903,13 @@ async def _process_cad_in_background(
         # turn a good import into a hard error, so it is fully guarded.
         if element_count > 0:
             await _run_import_validation(model_uuid)
+
+        # Bake the streaming tileset now (and backfill GLB / Parquet if either
+        # was skipped). The CAD path already wrote the GLB + Parquet, so those
+        # steps are no-ops here; this proactively bakes the octree tiles that
+        # otherwise only bake lazily on the first viewer open. Idempotent and
+        # best-effort - it never turns a good import into an error.
+        await _ensure_model_artifacts(project_id, model_id)
 
     except Exception as exc:
         logger.exception("Background CAD processing failed for model %s: %s", model_id, exc)
