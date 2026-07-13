@@ -108,3 +108,56 @@ async def test_mixed_calendars_each_measured_on_its_own_week() -> None:
     # Successor's own six-day span: from its early_start, 6 working days on a
     # Mon-Sat week lands one calendar day sooner than a five-day span would.
     assert by_id["s"]["early_finish"] - by_id["s"]["early_start"] == 7
+
+
+@pytest.mark.parametrize("bad_work_days", [[7], [], [8, 9], ["x", None], [-1]])
+@pytest.mark.asyncio
+async def test_out_of_range_work_days_fall_back_and_never_hang(bad_work_days: list) -> None:
+    """A calendar with no valid 0-6 weekday must fall back to Mon-Fri, not spin.
+
+    ISO uses Mon=1..Sun=7; a caller that stores ``[7]`` (their "Sunday") gives
+    the engine a week with zero of its own working days (Mon=0..Sun=6). Without
+    the guard, ``_add_working_days`` would step forever looking for a working
+    day and overflow -> a single-worker hang. The parse must drop the invalid
+    entries and use Monday-Friday, so the run finishes exactly like the default.
+    """
+    got = {
+        r["id"]: r
+        for r in await calculate_cpm(
+            [{"id": "x", "duration": 3, "calendar": {"work_days": bad_work_days, "exceptions": []}}],
+            [],
+            project_start_date="2024-01-01",
+        )
+    }
+    default = {
+        r["id"]: r for r in await calculate_cpm([{"id": "x", "duration": 3}], [], project_start_date="2024-01-01")
+    }
+    assert got["x"]["early_finish"] == default["x"]["early_finish"] == 3
+
+
+@pytest.mark.asyncio
+async def test_six_day_predecessor_into_five_day_successor_keeps_float_non_negative() -> None:
+    """A six-day predecessor finishing on a Saturday must not push the five-day
+    successor negative.
+
+    The six-day predecessor (duration 5 from Monday 2024-01-01) finishes at
+    offset 5, which is Saturday - a working day on its own Mon-Sat week but not
+    on the successor's Mon-Fri week. The successor's early_start is driven to
+    that Saturday by the FS link, then must snap forward to Monday (offset 7) on
+    its OWN calendar so the working-day forward and backward passes stay
+    symmetric. Before the snap moved after the predecessor-max, the successor
+    kept the Saturday start and came out with negative total_float / a false
+    critical flag.
+    """
+    activities = [
+        {"id": "p", "duration": 5, "calendar": _SIX_DAY},
+        {"id": "s", "duration": 3, "calendar": _FIVE_DAY},
+    ]
+    relationships = [{"predecessor_id": "p", "successor_id": "s", "type": "FS", "lag": 0}]
+    by_id = {r["id"]: r for r in await calculate_cpm(activities, relationships, project_start_date="2024-01-01")}
+    assert by_id["p"]["early_finish"] == 5  # Saturday offset on the six-day week
+    assert by_id["s"]["early_start"] == 7  # snapped Sat -> Mon on the successor's own five-day week
+    assert by_id["s"]["early_finish"] == 10
+    # The real regression guard: no activity ends up with negative float.
+    assert by_id["p"]["total_float"] >= 0
+    assert by_id["s"]["total_float"] >= 0

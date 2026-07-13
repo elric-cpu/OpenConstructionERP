@@ -459,6 +459,10 @@ class GanttActivity(BaseModel):
     wbs_code: str
     activity_type: str
     status: str
+    # Per-activity work calendar (schedule_advanced Calendar), so the grid's
+    # calendar picker can show and clear the current assignment. None -> the
+    # activity uses the schedule default.
+    calendar_id: UUID | None = None
     # Activity metadata passthrough. Generated activities carry provenance
     # markers here (e.g. duration_source/duration_method = "estimated_fallback"
     # when the duration was estimated from unit-based production rates), which

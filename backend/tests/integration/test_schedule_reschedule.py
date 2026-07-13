@@ -242,3 +242,114 @@ async def test_reschedule_honours_per_activity_work_calendar() -> None:
             assert succ_sixday_start < succ_default_start
         finally:
             schedule_router._verify_schedule_owner = original  # type: ignore[assignment]
+
+
+@pytest.mark.asyncio
+async def test_reschedule_inherits_project_default_calendar() -> None:
+    """Activities with no calendar of their own follow the project default one.
+
+    Neither activity carries a ``calendar_id`` here. On the built-in
+    Monday-Friday fallback the predecessor idles every Saturday; once the
+    project has a default Monday-Saturday calendar (``is_default``), the
+    schedule-wide resolution picks it up so the predecessor works the Saturdays
+    and its FS successor starts earlier. Proves reschedule consults the
+    project's default named calendar, not just a Monday-Friday constant.
+    """
+    from app.modules.schedule_advanced.schemas import CalendarCreate
+    from app.modules.schedule_advanced.service import ScheduleAdvancedService
+
+    async with transactional_session(disable_fks=True) as session:
+        service = ScheduleService(session)
+        project_id = uuid.uuid4()
+        schedule = await service.create_schedule(
+            ScheduleCreate(project_id=project_id, name="Default calendar QA", start_date="2024-01-01")
+        )
+        schedule_id = schedule.id
+        pred = await service.create_activity(
+            ActivityCreate(schedule_id=schedule_id, name="Trade", start_date="2024-01-01", end_date="2024-01-12")
+        )
+        succ = await service.create_activity(
+            ActivityCreate(schedule_id=schedule_id, name="Follow-on", start_date="2024-01-01", end_date="2024-01-03")
+        )
+        pred_id, succ_id = pred.id, succ.id
+
+        async def _noop_verify(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+            return None
+
+        original = schedule_router._verify_schedule_owner
+        schedule_router._verify_schedule_owner = _noop_verify  # type: ignore[assignment]
+        try:
+            await schedule_router.create_relationship(
+                schedule_id=schedule_id,
+                data=RelationshipCreate(
+                    predecessor_id=pred_id, successor_id=succ_id, relationship_type="FS", lag_days=0
+                ),
+                session=session,
+                _user_id=uuid.uuid4(),
+                payload={"role": "admin"},
+                service=service,
+            )
+
+            activities = await schedule_router.reschedule_schedule(
+                schedule_id=schedule_id,
+                _user_id=uuid.uuid4(),
+                payload={"role": "admin"},
+                session=session,
+                service=service,
+            )
+            succ_default_start = _by_id(activities, succ_id).start_date
+
+            # Give the project a default six-day calendar; no activity is assigned
+            # to it, so it must be picked up as the schedule-wide default.
+            adv = ScheduleAdvancedService(session)
+            await adv.create_calendar(
+                CalendarCreate(
+                    project_id=project_id,
+                    name="Project six-day",
+                    work_days=[0, 1, 2, 3, 4, 5],
+                    holidays=[],
+                    is_default=True,
+                )
+            )
+            session.expire_all()
+            activities = await schedule_router.reschedule_schedule(
+                schedule_id=schedule_id,
+                _user_id=uuid.uuid4(),
+                payload={"role": "admin"},
+                session=session,
+                service=service,
+            )
+            succ_sixday_start = _by_id(activities, succ_id).start_date
+
+            assert succ_sixday_start < succ_default_start
+        finally:
+            schedule_router._verify_schedule_owner = original  # type: ignore[assignment]
+
+
+@pytest.mark.asyncio
+async def test_setting_a_new_default_calendar_clears_the_previous_one() -> None:
+    """At most one calendar per project stays ``is_default`` so resolution is stable."""
+    from app.modules.schedule_advanced.schemas import CalendarCreate, CalendarUpdate
+    from app.modules.schedule_advanced.service import ScheduleAdvancedService
+
+    async with transactional_session(disable_fks=True) as session:
+        adv = ScheduleAdvancedService(session)
+        project_id = uuid.uuid4()
+        first = await adv.create_calendar(CalendarCreate(project_id=project_id, name="Five-day", is_default=True))
+        # A second default via create must demote the first.
+        second = await adv.create_calendar(
+            CalendarCreate(project_id=project_id, name="Six-day", work_days=[0, 1, 2, 3, 4, 5], is_default=True)
+        )
+        session.expire_all()
+        cals = await adv.calendar_repo.list_for_project(project_id)
+        defaults = [c for c in cals if c.is_default]
+        assert len(defaults) == 1
+        assert defaults[0].id == second.id
+
+        # Promoting the first back via update must demote the second.
+        await adv.update_calendar(first.id, CalendarUpdate(is_default=True))
+        session.expire_all()
+        cals = await adv.calendar_repo.list_for_project(project_id)
+        defaults = [c for c in cals if c.is_default]
+        assert len(defaults) == 1
+        assert defaults[0].id == first.id

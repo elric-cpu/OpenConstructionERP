@@ -25,13 +25,29 @@ _DEFAULT_CALENDAR: dict = {
 
 
 def _parse_work_days(calendar: dict | None) -> set[int]:
-    """Extract working day indices from a calendar dict."""
+    """Extract working day indices (0=Mon .. 6=Sun) from a calendar dict.
+
+    Values outside 0..6 and non-numeric junk are dropped, and an empty result
+    falls back to the Monday-Friday default. This guarantees at least one
+    reachable working weekday, so the day-stepping loops in ``_add_working_days``
+    / ``_sub_working_days`` always terminate: a malformed calendar such as
+    ``work_days=[7]`` (a common "Sunday = ISO 7" mistake) can never spin them
+    forever into an ``OverflowError``.
+    """
     if not calendar:
         return _DEFAULT_CALENDAR["work_days"]
     raw = calendar.get("work_days")
     if raw is None:
         return _DEFAULT_CALENDAR["work_days"]
-    return set(int(d) for d in raw)
+    valid: set[int] = set()
+    for d in raw:
+        try:
+            n = int(d)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= n <= 6:
+            valid.add(n)
+    return valid or _DEFAULT_CALENDAR["work_days"]
 
 
 def _parse_exceptions(calendar: dict | None) -> set[date]:
@@ -293,16 +309,9 @@ async def calculate_cpm(
     # ── Forward Pass ─────────────────────────────────────────────────────
     for aid in topo_order:
         act = act_map[aid]
-        # "Start no earlier than" floor, snapped forward to the next working day
-        # so early_start lands on a working day. An early_start on a
-        # weekend/holiday is asymmetric with the working-day backward pass and
-        # yields a spurious negative float and a false is_critical. This covers
-        # both a root's manual weekend start (a nonzero offset) and the whole
-        # schedule starting on a non-working day (offset 0 on a non-working
-        # origin). Snapping an offset that already lands on a working day - the
-        # common case, including every successor and a working-day origin -
-        # returns it unchanged, so the no-start_offset path stays byte-identical.
-        es = _snap_to_working_day(act["start_offset"], act["work_days"], act["exceptions"], p_start)
+        # "Start no earlier than" floor: a root's own manual start (a nonzero
+        # offset), else 0 for a network-driven successor.
+        es = act["start_offset"]
 
         for link in predecessors[aid]:
             pred = act_map[link["pred"]]
@@ -322,7 +331,16 @@ async def calculate_cpm(
 
             es = max(es, candidate)
 
-        act["early_start"] = max(es, 0)
+        # Snap the resolved early_start onto THIS activity's own working calendar.
+        # An early_start on a day the activity does not work is asymmetric with
+        # the working-day backward pass and yields a spurious negative float and
+        # a false is_critical. This covers a root starting on its own non-working
+        # day (a weekend/holiday, or the whole schedule starting on a non-working
+        # origin) AND a predecessor on a different calendar finishing on a day
+        # this activity does not work (e.g. a six-day trade feeding a five-day
+        # follow-on). Snapping a value already on a working day - every
+        # same-calendar case - is a no-op, so existing schedules are unchanged.
+        act["early_start"] = max(_snap_to_working_day(es, act["work_days"], act["exceptions"], p_start), 0)
         act["early_finish"] = _add_working_days(
             act["early_start"], act["duration"], act["work_days"], act["exceptions"], p_start
         )

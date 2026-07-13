@@ -400,6 +400,24 @@ class CalendarRepository(_BaseRepo):
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
+    async def clear_defaults_except(self, project_id: uuid.UUID, keep_id: uuid.UUID | None = None) -> None:
+        """Unset ``is_default`` on every calendar in the project except ``keep_id``.
+
+        Keeps at most one default calendar per project so schedule resolution
+        stays deterministic: the calendar most recently flagged default wins,
+        matching what the UI shows after the user picks a new default.
+
+        Args:
+            project_id: The project whose calendars are reconciled.
+            keep_id: The calendar allowed to remain default (the one just set);
+                ``None`` clears every default.
+        """
+        stmt = update(Calendar).where(Calendar.project_id == project_id).where(Calendar.is_default.is_(True))
+        if keep_id is not None:
+            stmt = stmt.where(Calendar.id != keep_id)
+        await self.session.execute(stmt.values(is_default=False))
+        await self.session.flush()
+
 
 # ── Takt / line-of-balance repositories ────────────────────────────────────
 

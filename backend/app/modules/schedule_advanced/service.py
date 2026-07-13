@@ -1742,7 +1742,10 @@ class ScheduleAdvancedService:
 
     async def create_calendar(self, data: CalendarCreate) -> Calendar:
         cal = Calendar(**data.model_dump())
-        return await self.calendar_repo.create(cal)
+        created = await self.calendar_repo.create(cal)
+        if created.is_default:
+            await self.calendar_repo.clear_defaults_except(created.project_id, keep_id=created.id)
+        return created
 
     async def get_calendar(self, cid: uuid.UUID) -> Calendar:
         c = await self.calendar_repo.get_by_id(cid)
@@ -1756,6 +1759,8 @@ class ScheduleAdvancedService:
         if fields:
             await self.calendar_repo.update_fields(cid, **fields)
             await self.session.refresh(c)
+        if c.is_default:
+            await self.calendar_repo.clear_defaults_except(c.project_id, keep_id=c.id)
         return c
 
     async def delete_calendar(self, cid: uuid.UUID) -> None:

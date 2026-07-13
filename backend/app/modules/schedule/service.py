@@ -1759,6 +1759,7 @@ class ScheduleService:
                     wbs_code=act.wbs_code,
                     activity_type=act.activity_type,
                     status=effective_status,
+                    calendar_id=act.calendar_id,
                     metadata=act.metadata_ or {},
                 )
             )
@@ -1869,6 +1870,46 @@ class ScheduleService:
             }
         return resolved
 
+    async def _resolve_schedule_default_calendar(self, schedule: Schedule) -> dict:
+        """Resolve the schedule-wide work calendar the CPM engine falls back to.
+
+        Precedence: an explicit ``metadata.calendar`` override carried on the
+        schedule wins; otherwise the project's default named calendar (the
+        ``schedule_advanced`` ``Calendar`` flagged ``is_default``) so activities
+        without their own calendar inherit the project default the calendar UI
+        advertises; otherwise a Monday-Friday week. The calendar model stores
+        ``holidays``, which the engine consumes as ``exceptions``.
+
+        Args:
+            schedule: The schedule being rescheduled.
+
+        Returns:
+            The ``{"work_days": [...], "exceptions": [...]}`` shape the core CPM
+            engine (:func:`app.core.cpm.calculate_cpm`) consumes.
+        """
+        meta = getattr(schedule, "metadata_", None)
+        cal = meta.get("calendar") if isinstance(meta, dict) else None
+        if isinstance(cal, dict) and cal.get("work_days"):
+            return resolve_calendar(schedule)
+
+        project_id = getattr(schedule, "project_id", None)
+        if project_id is not None:
+            from app.modules.schedule_advanced.models import Calendar
+
+            rows = await self.session.execute(
+                select(Calendar).where(Calendar.project_id == project_id).where(Calendar.is_default.is_(True)).limit(1)
+            )
+            default_cal = rows.scalars().first()
+            if default_cal is not None:
+                try:
+                    work_days = [int(d) for d in (default_cal.work_days or [])]
+                except (TypeError, ValueError):
+                    work_days = []
+                exceptions = [str(h) for h in (default_cal.holidays or []) if h]
+                return {"work_days": work_days or [0, 1, 2, 3, 4], "exceptions": exceptions}
+
+        return resolve_calendar(schedule)
+
     async def reschedule(self, schedule_id: uuid.UUID) -> list[Activity]:
         """Recompute activity dates from the dependency network via CPM.
 
@@ -1940,7 +1981,7 @@ class ScheduleService:
             for r in relationships
         ]
 
-        calendar = resolve_calendar(schedule)
+        calendar = await self._resolve_schedule_default_calendar(schedule)
         cpm_results = await calculate_cpm(
             act_dicts,
             rel_dicts,
