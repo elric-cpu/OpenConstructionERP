@@ -102,20 +102,22 @@ class TestIsEncryptedPdf:
 
 
 class TestUploadCaps:
-    def test_default_is_unlimited(self, monkeypatch):
-        """No env var set → 0 (unlimited) per product default 2026-05-13."""
+    _DEFAULT = 200 * 1024 * 1024
+
+    def test_default_is_200mb(self, monkeypatch):
+        """No env var set → finite 200 MB cap (the container-OOM fix)."""
         monkeypatch.delenv("OE_TAKEOFF_MAX_UPLOAD_MB", raising=False)
-        assert _max_upload_bytes() == 0
+        assert _max_upload_bytes() == self._DEFAULT
 
-    def test_zero_env_is_unlimited(self, monkeypatch):
-        """Explicit OE_TAKEOFF_MAX_UPLOAD_MB=0 → 0 (unlimited)."""
+    def test_zero_env_is_default(self, monkeypatch):
+        """Explicit OE_TAKEOFF_MAX_UPLOAD_MB=0 → 200 MB default (not unlimited)."""
         monkeypatch.setenv("OE_TAKEOFF_MAX_UPLOAD_MB", "0")
-        assert _max_upload_bytes() == 0
+        assert _max_upload_bytes() == self._DEFAULT
 
-    def test_negative_env_is_unlimited(self, monkeypatch):
-        """Negative env value treated as unlimited (defensive)."""
+    def test_negative_env_is_default(self, monkeypatch):
+        """Negative env value falls back to the 200 MB default (defensive)."""
         monkeypatch.setenv("OE_TAKEOFF_MAX_UPLOAD_MB", "-5")
-        assert _max_upload_bytes() == 0
+        assert _max_upload_bytes() == self._DEFAULT
 
     def test_env_override(self, monkeypatch):
         """Operator-configured cap returns bytes for that many MB."""
@@ -123,9 +125,9 @@ class TestUploadCaps:
         assert _max_upload_bytes() == 50 * 1024 * 1024
 
     def test_garbage_env_falls_back_to_default(self, monkeypatch):
-        """Unparseable env value falls back to unlimited."""
+        """Unparseable env value falls back to the 200 MB default."""
         monkeypatch.setenv("OE_TAKEOFF_MAX_UPLOAD_MB", "not-a-number")
-        assert _max_upload_bytes() == 0
+        assert _max_upload_bytes() == self._DEFAULT
 
 
 class TestOcrTuning:
@@ -317,54 +319,42 @@ class TestUploadDocumentGates:
         assert "OE_TAKEOFF_MAX_UPLOAD_MB" in detail
 
     @pytest.mark.asyncio
-    async def test_oversize_upload_accepted_when_unlimited(self, monkeypatch):
-        """Product default: no env → no 413 even for huge payloads.
+    async def test_within_default_cap_not_rejected(self, monkeypatch, tmp_path):
+        """A 2 MB upload is under the 200 MB default cap → never a 413.
 
-        The upload gate must not be the place that rejects large files;
-        memory safety comes from streaming chunked I/O upstream, not from
-        a fixed cap. We only verify the *gate* passes — downstream
-        parser failure is irrelevant for this regression test.
+        The size gate only rejects genuinely oversized files; an ordinary
+        drawing must pass it. The parse is stubbed (isolated in a child
+        process in production), so this exercises only the gate.
         """
         monkeypatch.delenv("OE_TAKEOFF_MAX_UPLOAD_MB", raising=False)
-        svc = _make_service()
-        # 2 MB payload; in production this could be 5 GB — the gate
-        # logic itself is O(1), so size is immaterial to the assertion.
-        big = b"%PDF-1.4\n" + b"x" * (2 * 1024 * 1024)
-        # Stub the parser so the test doesn't touch real PDF code paths
-        # — we only care that the size gate does not raise 413.
-        svc.session.add = MagicMock()
-
-        async def _fake_flush():
-            return None
-
-        svc.session.flush = _fake_flush
-        # Patch out the actual heavy work; we only test the gate.
         import app.modules.takeoff.service as svc_mod
 
-        monkeypatch.setattr(svc_mod, "_count_pdf_pages", lambda *a, **k: 1)
-        monkeypatch.setattr(
-            svc_mod,
-            "_extract_pdf_pages",
-            lambda *a, **k: [{"page": 1, "text": "hello"}],
-        )
+        monkeypatch.setattr(svc_mod, "_takeoff_documents_dir", lambda: tmp_path / "td")
+
+        async def _fake_parse(*a, **k):
+            return (1, [{"page": 1, "text": "hello", "tables": [], "has_text": True}], False)
+
+        monkeypatch.setattr(svc_mod, "_parse_pdf_isolated", _fake_parse)
 
         class _AwaitableCreate:
             async def create(self, doc):
                 return doc
 
+        svc = _make_service()
         svc.repo = _AwaitableCreate()
-        # Should not raise 413 — we explicitly tolerate any other outcome
-        # (the simulated parser path lets it succeed cleanly).
+
+        big = b"%PDF-1.4\n" + b"x" * (2 * 1024 * 1024)
+        # Should not raise 413 — tolerate any other outcome.
         try:
             await svc.upload_document(
-                filename="huge.pdf",
+                filename="ordinary.pdf",
                 content=big,
                 size_bytes=len(big),
                 owner_id=str(uuid.uuid4()),
             )
         except HTTPException as exc:
             assert exc.status_code != 413, (
-                f"Unlimited config must not produce a 413 — got: {exc.status_code} {exc.detail}"
+                f"A 2 MB upload must not produce a 413 — got: {exc.status_code} {exc.detail}"
             )
 
     @pytest.mark.asyncio
@@ -458,6 +448,17 @@ class TestScannedPdfNeedsOcr:
             "_takeoff_documents_dir",
             lambda: tmp_path / "takeoff",
         )
+
+        # The isolated parser reports a 3-page PDF whose pages carry no text
+        # layer (a scanned drawing). The upload should persist as needs_ocr.
+        async def _fake_parse(*a, **k):
+            return (
+                3,
+                [{"page": i + 1, "text": "", "tables": [], "has_text": False} for i in range(3)],
+                False,
+            )
+
+        monkeypatch.setattr(takeoff_service, "_parse_pdf_isolated", _fake_parse)
         svc = _make_service()
         scanned = b"%PDF-1.4\n" + b"scanned-bytes" * 100  # no /Encrypt, non-empty
 

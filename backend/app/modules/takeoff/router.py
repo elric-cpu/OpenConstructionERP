@@ -86,7 +86,7 @@ from app.modules.takeoff.schemas import (
     TakeoffMeasurementSummary,
     TakeoffMeasurementUpdate,
 )
-from app.modules.takeoff.service import TakeoffService, no_text_layer_info
+from app.modules.takeoff.service import TakeoffService, _max_upload_bytes, no_text_layer_info
 
 logger = logging.getLogger(__name__)
 
@@ -4158,9 +4158,6 @@ async def save_session_to_project(
     }
 
 
-MAX_PDF_SIZE = 200 * 1024 * 1024  # 200 MB
-
-
 def _get_service(session: SessionDep) -> TakeoffService:
     return TakeoffService(session)
 
@@ -4219,7 +4216,21 @@ async def upload_document(
             detail=f"Only PDF files are supported, got .{ext}",
         )
 
-    content = await file.read()
+    # Bounded read: pull at most cap+1 bytes so a multi-GB upload can never be
+    # fully materialised in the API process. Reading cap+1 lets us detect an
+    # over-cap file (len > cap) while capping our in-memory footprint to the
+    # allowed maximum. The service re-checks the same cap (defence in depth).
+    cap = _max_upload_bytes()
+    content = await file.read(cap + 1)
+    if len(content) > cap:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"PDF file is too large (over {cap // 1024 // 1024} MB). This "
+                "deployment caps takeoff uploads; raise the limit by setting "
+                "OE_TAKEOFF_MAX_UPLOAD_MB on the server."
+            ),
+        )
 
     # Magic byte check - every legitimate PDF starts with "%PDF-".
     # Block JPGs/HTML/other files that have been renamed to .pdf to bypass

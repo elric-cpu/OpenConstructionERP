@@ -263,10 +263,30 @@ class _StubRepo:
 
 class TestUploadDocumentErrorPath:
     @pytest.mark.asyncio
-    async def test_unparseable_pdf_raises_generic_http_and_logs_server_side(self, monkeypatch, caplog):
-        """User-facing detail stays generic; server log keeps the details."""
-        _install_fake_pdfplumber(RuntimeError("pdfplumber-boom"))
-        _install_fake_pymupdf(RuntimeError("pymupdf-boom"))
+    async def test_unparseable_pdf_raises_generic_http_and_logs_server_side(
+        self, monkeypatch, caplog, tmp_path
+    ):
+        """A definitively unreadable PDF → generic 400, no server-side leak.
+
+        The isolated worker ran cleanly (exit 0) but neither parser could read
+        a single page (``page_count == 0``, no pages), so the upload is
+        rejected with a generic message and the bytes we wrote are cleaned up.
+        The parser's own diagnostics now live in the child's stderr; the
+        parent logs the rejection summary.
+        """
+        import subprocess
+
+        monkeypatch.setattr(takeoff_service, "_takeoff_documents_dir", lambda: tmp_path / "td")
+
+        def _fake_worker(pdf_path, *, max_pages, timeout_s):
+            return subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=b'{"page_count": 0, "pages": [], "truncated": false}',
+                stderr=b"",
+            )
+
+        monkeypatch.setattr(takeoff_service, "_run_pdf_worker", _fake_worker)
 
         svc = object.__new__(takeoff_service.TakeoffService)
         svc.session = MagicMock()
@@ -292,16 +312,12 @@ class TestUploadDocumentErrorPath:
         assert "Traceback" not in detail
         assert "Failed to parse" in detail
 
-        # Server-side: full diagnostic landed in the log.
-        double_failure = [rec for rec in caplog.records if "both pdfplumber and pymupdf failed" in rec.getMessage()]
-        assert double_failure, "double-failure not logged"
-        # The filename still appears in the server log — that's fine
-        # because logs are server-side only.
-        assert "weird.pdf" in double_failure[0].getMessage()
-        # Rejection summary line is there too.
+        # Parent-side rejection summary is logged. The filename appears
+        # server-side (logs are server-only) but not in the user-facing detail.
         rejection = [rec for rec in caplog.records if "rejecting upload" in rec.getMessage()]
-        assert rejection
+        assert rejection, "rejection summary not logged"
         assert rejection[0].levelno == logging.WARNING
+        assert "weird.pdf" in rejection[0].getMessage()
 
 
 # ---------------------------------------------------------------------------

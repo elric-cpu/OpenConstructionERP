@@ -159,12 +159,10 @@ class TestServiceDoesNotDuplicateMagicByteCheck:
             "_takeoff_documents_dir",
             lambda: tmp_path / "td",
         )
-        monkeypatch.setattr(takeoff_service, "_count_pdf_pages", lambda *a, **k: 1)
-        monkeypatch.setattr(
-            takeoff_service,
-            "_extract_pdf_pages",
-            lambda *a, **k: [{"page": 1, "text": "ok"}],
-        )
+        async def _fake_parse(*a, **k):
+            return (1, [{"page": 1, "text": "ok", "tables": [], "has_text": True}], False)
+
+        monkeypatch.setattr(takeoff_service, "_parse_pdf_isolated", _fake_parse)
 
         class _AwaitableCreate:
             async def create(self, doc):

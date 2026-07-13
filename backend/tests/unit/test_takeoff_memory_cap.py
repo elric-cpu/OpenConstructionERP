@@ -4,10 +4,10 @@
 
 Covers bullet 7 of the R7 hardening sweep:
   * Large PDFs (>50 pages or >100 MB) must not OOM the worker.
-  * The ``OE_TAKEOFF_MAX_UPLOAD_MB`` env var is the primary gate.
-  * When the limit is set, uploads above the cap return 413.
-  * The default (no env var) does NOT cap uploads — memory safety
-    comes from streaming I/O upstream, not a hard byte cap.
+  * The ``OE_TAKEOFF_MAX_UPLOAD_MB`` env var overrides the byte cap.
+  * When a smaller limit is set, uploads above it return 413.
+  * The default (no env var) is a finite 200 MB cap - an unset / 0 /
+    negative value means "use 200 MB", never "unlimited".
   * The per-page text extraction budget is bounded so a 5000-page PDF
     with 100 KB of text per page doesn't construct a 500 MB string
     in a single join — we assert the full_text is not absurdly large.
@@ -78,12 +78,10 @@ class TestUploadCap:
             "_takeoff_documents_dir",
             lambda: tmp_path / "td",
         )
-        monkeypatch.setattr(takeoff_service, "_count_pdf_pages", lambda *a, **k: 1)
-        monkeypatch.setattr(
-            takeoff_service,
-            "_extract_pdf_pages",
-            lambda *a, **k: [{"page": 1, "text": "hello"}],
-        )
+        async def _fake_parse(*a, **k):
+            return (1, [{"page": 1, "text": "hello", "tables": [], "has_text": True}], False)
+
+        monkeypatch.setattr(takeoff_service, "_parse_pdf_isolated", _fake_parse)
 
         class _AwaitableCreate:
             async def create(self, doc):
@@ -124,16 +122,16 @@ class TestTextExtractionBudget:
             lambda: tmp_path / "td",
         )
 
-        # Stub the page extractor to return 50 pages with 1 KB each.
+        # Stub the isolated parser to return 50 pages with 1 KB each.
         page_text = "A" * 1024  # 1 KB per page
-        fake_page_data = [{"page": i + 1, "text": page_text, "tables": []} for i in range(50)]
+        fake_page_data = [
+            {"page": i + 1, "text": page_text, "tables": [], "has_text": True} for i in range(50)
+        ]
 
-        monkeypatch.setattr(takeoff_service, "_count_pdf_pages", lambda *a, **k: 50)
-        monkeypatch.setattr(
-            takeoff_service,
-            "_extract_pdf_pages",
-            lambda *a, **k: fake_page_data,
-        )
+        async def _fake_parse(*a, **k):
+            return (50, fake_page_data, False)
+
+        monkeypatch.setattr(takeoff_service, "_parse_pdf_isolated", _fake_parse)
 
         class _AwaitableCreate:
             def __init__(self):
@@ -164,13 +162,15 @@ class TestTextExtractionBudget:
         monkeypatch.setenv("OE_TAKEOFF_MAX_UPLOAD_MB", "100")
         assert _max_upload_bytes() == 100 * 1024 * 1024
 
-    def test_cap_zero_means_unlimited(self, monkeypatch) -> None:
+    def test_cap_zero_means_default(self, monkeypatch) -> None:
+        """0 is not 'unlimited' anymore - it falls back to the 200 MB default."""
         monkeypatch.setenv("OE_TAKEOFF_MAX_UPLOAD_MB", "0")
-        assert _max_upload_bytes() == 0
+        assert _max_upload_bytes() == 200 * 1024 * 1024
 
-    def test_cap_absent_means_unlimited(self, monkeypatch) -> None:
+    def test_cap_absent_means_default(self, monkeypatch) -> None:
+        """No env var → finite 200 MB default (never unlimited)."""
         monkeypatch.delenv("OE_TAKEOFF_MAX_UPLOAD_MB", raising=False)
-        assert _max_upload_bytes() == 0
+        assert _max_upload_bytes() == 200 * 1024 * 1024
 
 
 # ---------------------------------------------------------------------------
@@ -191,14 +191,14 @@ class TestLargePageCountMemorySafety:
         )
 
         page_text = "B" * 2048  # 2 KB per page
-        fake_page_data = [{"page": i + 1, "text": page_text, "tables": []} for i in range(100)]
+        fake_page_data = [
+            {"page": i + 1, "text": page_text, "tables": [], "has_text": True} for i in range(100)
+        ]
 
-        monkeypatch.setattr(takeoff_service, "_count_pdf_pages", lambda *a, **k: 100)
-        monkeypatch.setattr(
-            takeoff_service,
-            "_extract_pdf_pages",
-            lambda *a, **k: fake_page_data,
-        )
+        async def _fake_parse(*a, **k):
+            return (100, fake_page_data, False)
+
+        monkeypatch.setattr(takeoff_service, "_parse_pdf_isolated", _fake_parse)
 
         class _AwaitableCreate:
             async def create(self, doc):

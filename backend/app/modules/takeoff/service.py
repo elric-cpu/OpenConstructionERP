@@ -2,12 +2,18 @@
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Takeoff business logic."""
 
-import io
+import asyncio
+import contextlib
+import json
 import logging
 import math
 import os
 import re
+import subprocess
+import sys
+import tempfile
 import uuid
+from collections.abc import Iterator
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -77,23 +83,31 @@ def _is_encrypted_pdf(content: bytes) -> bool:
     return bool(re.search(rb"/Encrypt\s+(?:\d|<<)", tail))
 
 
-def _max_upload_bytes() -> int:
-    """Effective per-upload byte cap from ``OE_TAKEOFF_MAX_UPLOAD_MB``.
+_DEFAULT_MAX_UPLOAD_MB = 200
 
-    Returns 0 ("unlimited") when the env var is missing, empty,
-    unparseable, zero, or negative - matches the product policy
-    (v2.9.12) of NOT capping uploads by default. Operators on
-    constrained deployments can opt in via the env var.
+
+def _max_upload_bytes() -> int:
+    """Effective per-upload byte cap in bytes.
+
+    Defaults to 200 MB. ``OE_TAKEOFF_MAX_UPLOAD_MB`` overrides it with a
+    positive integer number of megabytes; an unset, empty, zero, negative or
+    unparseable value means "use the 200 MB default" (it does NOT mean
+    unlimited).
+
+    There is deliberately no "unlimited" setting anymore. The takeoff upload
+    parses arbitrary user PDFs, and an unbounded upload can drive the parser
+    past host RAM and OOM-kill the container (the incident this cap closes).
+    Operators who genuinely need larger uploads raise the number explicitly.
     """
     raw = os.environ.get("OE_TAKEOFF_MAX_UPLOAD_MB", "").strip()
     if not raw:
-        return 0
+        return _DEFAULT_MAX_UPLOAD_MB * 1024 * 1024
     try:
         mb = int(raw)
     except (ValueError, TypeError):
-        return 0
+        return _DEFAULT_MAX_UPLOAD_MB * 1024 * 1024
     if mb <= 0:
-        return 0
+        return _DEFAULT_MAX_UPLOAD_MB * 1024 * 1024
     return mb * 1024 * 1024
 
 
@@ -725,108 +739,53 @@ def _describe_pdf_input(content: bytes, *, filename: str | None = None) -> str:
     return f"filename={name_hint!r} size={size}B ext={ext!r} has_pdf_magic={has_magic}"
 
 
-def _extract_pdf_pages(content: bytes, *, filename: str | None = None) -> list[dict]:
-    """Extract text and tables from each page of a PDF.
+@contextlib.contextmanager
+def _spool_bytes_to_temp(content: bytes, *, suffix: str = ".pdf") -> Iterator[Path]:
+    """Write ``content`` to a temporary file and yield its path.
 
-    Returns a list of dicts: [{ page: 1, text: "...", tables: [...] }, ...]
-
-    Parsing failures are logged with the input fingerprint (size, magic
-    bytes, filename hint) so a production incident can be triaged
-    without needing access to the uploaded bytes themselves.  We return
-    an empty list on total failure - the caller still persists the
-    document row so the user can re-upload without losing ownership.
+    The shared PDF parser (:mod:`app.modules.takeoff.pdf_extract_worker`)
+    operates on a filesystem path so the exact same code runs both in-process
+    (the delegators below) and out-of-process (the isolated upload path).
+    This helper bridges the byte-oriented in-process callers to that
+    path-oriented parser. The temp file is always removed on exit.
     """
-    pages: list[dict] = []
-    input_fp = _describe_pdf_input(content, filename=filename)
+    fd, name = tempfile.mkstemp(prefix="oce-pdfparse-", suffix=suffix)
+    tmp = Path(name)
     try:
-        import pdfplumber
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(content or b"")
+        yield tmp
+    finally:
+        with contextlib.suppress(OSError):
+            tmp.unlink()
 
-        with pdfplumber.open(io.BytesIO(content)) as pdf:
-            empty_pages = 0
-            for i, page in enumerate(pdf.pages, start=1):
-                page_text = ""
-                page_tables: list[list[list[str]]] = []
 
-                tables = page.extract_tables()
-                if tables:
-                    for table in tables:
-                        cleaned = [[str(cell or "") for cell in row] for row in table]
-                        page_tables.append(cleaned)
-                        for row in cleaned:
-                            page_text += "\t".join(row) + "\n"
-                else:
-                    text = page.extract_text()
-                    if text:
-                        page_text = text
+def _extract_pdf_pages(content: bytes, *, filename: str | None = None) -> list[dict]:
+    """Extract text and tables from each page of a PDF (in-process).
 
-                has_text = bool(page_text.strip())
-                if not has_text:
-                    empty_pages += 1
-                pages.append(
-                    {
-                        "page": i,
-                        "text": page_text.strip(),
-                        "tables": page_tables,
-                        # Per-page text-layer flag. A page with no text layer
-                        # (scanned/raster drawing) is the OCR candidate; we keep
-                        # the signal per page so a mixed PDF (some text pages,
-                        # some scanned) is not collapsed to a single all-or-
-                        # nothing verdict downstream.
-                        "has_text": has_text,
-                    }
-                )
-            if empty_pages:
-                # See the pymupdf branch: an empty page is most likely a
-                # scanned/raster drawing, not a parse failure. Surface the
-                # count so it isn't silently treated as "no content".
-                logger.info(
-                    "takeoff.pdf_extract pdfplumber: %d of %d page(s) had no "
-                    "text (likely scanned - OCR needed to recover content) (%s)",
-                    empty_pages,
-                    len(pages),
-                    input_fp,
-                )
+    Thin delegator to
+    :func:`app.modules.takeoff.pdf_extract_worker.extract_pdf_data` so there
+    is a single parser implementation shared with the isolated upload path
+    (the worker carries the vector-density guard that stops a dense CAD sheet
+    from OOM-ing during ``extract_tables``). Kept for direct callers and
+    tests; returns an empty list on total failure, matching the historical
+    failure-safe contract.
+
+    Returns a list of dicts: ``[{page, text, tables, has_text}, ...]``.
+    """
+    from app.modules.takeoff import pdf_extract_worker
+
+    try:
+        with _spool_bytes_to_temp(content) as tmp:
+            result = pdf_extract_worker.extract_pdf_data(str(tmp), None, filename=filename)
     except Exception:
-        # First-pass parser failed - log it with the full stack and fall
-        # back to pymupdf.  We log at WARNING (not EXCEPTION) because a
-        # fallback is about to be attempted; the real red line is only
-        # drawn if both parsers fail.
-        logger.warning(
-            "takeoff.pdf_extract pdfplumber failed (%s) - falling back to pymupdf",
-            input_fp,
-            exc_info=True,
+        logger.exception(
+            "takeoff.pdf_extract delegation failed (%s) - returning no pages",
+            _describe_pdf_input(content, filename=filename),
         )
-        try:
-            import pymupdf
-
-            doc = pymupdf.open(stream=content, filetype="pdf")
-            empty_pages = 0
-            for i, page in enumerate(doc, start=1):
-                text = page.get_text()
-                has_text = bool(text.strip())
-                if not has_text:
-                    empty_pages += 1
-                pages.append({"page": i, "text": text.strip(), "tables": [], "has_text": has_text})
-            doc.close()
-            if empty_pages:
-                # A page with no text layer (e.g. a scanned/raster drawing)
-                # extracts as an empty string, which looks the same as a parse
-                # failure downstream. Surface it so the gap isn't silent - the
-                # caller can route these pages through OCR (the [cv] extra).
-                logger.info(
-                    "takeoff.pdf_extract pymupdf: %d of %d page(s) had no text "
-                    "layer (likely scanned - OCR needed to recover content) (%s)",
-                    empty_pages,
-                    len(pages),
-                    input_fp,
-                )
-        except Exception:
-            logger.exception(
-                "takeoff.pdf_extract both pdfplumber and pymupdf failed (%s) - document will have no extracted pages",
-                input_fp,
-            )
-
-    return pages
+        return []
+    pages = result.get("pages")
+    return pages if isinstance(pages, list) else []
 
 
 def no_text_layer_info(doc: Any) -> tuple[int, list[int]]:
@@ -897,38 +856,188 @@ def validate_page_for_document(doc: Any, page: int) -> None:
 
 
 def _count_pdf_pages(content: bytes, *, filename: str | None = None) -> int:
-    """Count the number of pages in a PDF.
+    """Count the number of pages in a PDF (in-process).
 
-    Mirrors :func:`_extract_pdf_pages` - pdfplumber first, pymupdf as a
-    fallback, zero on double-failure.  Both failure paths log the input
-    fingerprint so operators can correlate the log line with whatever
-    the caller uploaded without leaking the bytes themselves.
+    Thin delegator to
+    :func:`app.modules.takeoff.pdf_extract_worker.count_pdf_pages`, sharing the
+    single parser implementation. Returns 0 on double-failure, matching the
+    historical failure-safe contract.
     """
-    input_fp = _describe_pdf_input(content, filename=filename)
-    try:
-        import pdfplumber
+    from app.modules.takeoff import pdf_extract_worker
 
-        with pdfplumber.open(io.BytesIO(content)) as pdf:
-            return len(pdf.pages)
+    try:
+        with _spool_bytes_to_temp(content) as tmp:
+            return pdf_extract_worker.count_pdf_pages(str(tmp), filename=filename)
     except Exception:
+        logger.exception(
+            "takeoff.pdf_count delegation failed (%s) - reporting zero pages",
+            _describe_pdf_input(content, filename=filename),
+        )
+        return 0
+
+
+# ── Isolated PDF parsing (P0: never OOM-kill the API process) ────────────────
+
+_PARSE_MAX_PAGES = 300
+_PARSE_TIMEOUT_S = 120
+
+
+def _parse_max_pages() -> int:
+    """Max pages the isolated parser extracts. Env ``OE_TAKEOFF_MAX_PAGES``.
+
+    Defaults to 300, clamped to ``[1, 5000]``. The cap bounds the work (and
+    the JSON payload) for a pathological 10k-page upload; the true page count
+    is still reported so the UI shows the real total.
+    """
+    raw = os.environ.get("OE_TAKEOFF_MAX_PAGES", "").strip()
+    if not raw:
+        return _PARSE_MAX_PAGES
+    try:
+        n = int(raw)
+    except (ValueError, TypeError):
+        return _PARSE_MAX_PAGES
+    return max(1, min(5000, n))
+
+
+def _parse_timeout_s() -> float:
+    """Wall-clock timeout for the isolated parser. Env ``OE_TAKEOFF_PARSE_TIMEOUT_S``.
+
+    Defaults to 120 s, clamped to ``[10, 1800]``. A parse that blows past this
+    (a hostile PDF built to spin) is killed and the upload degrades gracefully
+    instead of tying up a worker forever.
+    """
+    raw = os.environ.get("OE_TAKEOFF_PARSE_TIMEOUT_S", "").strip()
+    if not raw:
+        return float(_PARSE_TIMEOUT_S)
+    try:
+        secs = float(raw)
+    except (ValueError, TypeError):
+        return float(_PARSE_TIMEOUT_S)
+    return max(10.0, min(1800.0, secs))
+
+
+def _backend_root() -> Path:
+    """Absolute path to the ``backend`` root (the directory that holds ``app``).
+
+    ``service.py`` lives at ``backend/app/modules/takeoff/service.py`` so the
+    backend root is four parents up. Used to launch the worker with ``-m`` in
+    both the source tree and a wheel install.
+    """
+    return Path(__file__).resolve().parents[3]
+
+
+def _pdf_worker_command(pdf_path: Path, max_pages: int) -> list[str]:
+    """Build the ``python -m ...`` argv for the isolated parser."""
+    return [
+        sys.executable,
+        "-m",
+        "app.modules.takeoff.pdf_extract_worker",
+        str(pdf_path),
+        str(max_pages),
+    ]
+
+
+def _pdf_worker_env() -> dict[str, str]:
+    """Environment for the worker subprocess with the backend root on PYTHONPATH."""
+    env = dict(os.environ)
+    root = str(_backend_root())
+    prev = env.get("PYTHONPATH", "")
+    if prev:
+        env["PYTHONPATH"] = root + os.pathsep + prev
+    else:
+        env["PYTHONPATH"] = root
+    return env
+
+
+def _run_pdf_worker(
+    pdf_path: Path,
+    *,
+    max_pages: int,
+    timeout_s: float,
+) -> subprocess.CompletedProcess:
+    """Run the isolated parser synchronously (call off the event loop)."""
+    return subprocess.run(
+        _pdf_worker_command(pdf_path, max_pages),
+        capture_output=True,
+        timeout=timeout_s,
+        cwd=str(_backend_root()),
+        env=_pdf_worker_env(),
+        check=False,
+    )
+
+
+async def _parse_pdf_isolated(
+    pdf_path: Path,
+    *,
+    filename: str | None = None,
+    max_pages: int | None = None,
+    timeout_s: float | None = None,
+) -> tuple[int, list[dict], bool] | None:
+    """Parse a PDF in a memory-capped child process, off the event loop.
+
+    Returns ``(page_count, page_data, truncated)`` on a clean run - including
+    the "unreadable document" case, which comes back as ``(0, [], False)`` so
+    the caller can apply its definitive parse-failure handling. Returns
+    ``None`` when the parse could not complete at all: a timeout, a crash /
+    OOM (non-zero exit), unreadable worker output, or a launch failure. The
+    caller treats ``None`` as "degrade and still persist the upload" rather
+    than a hard error.
+
+    This never raises for a parse problem and never runs a PDF parser in the
+    API process, so no PDF - however large, dense or malformed - can take the
+    server down.
+    """
+    max_pages = max_pages if max_pages is not None else _parse_max_pages()
+    timeout_s = timeout_s if timeout_s is not None else _parse_timeout_s()
+    try:
+        proc = await asyncio.to_thread(
+            _run_pdf_worker,
+            pdf_path,
+            max_pages=max_pages,
+            timeout_s=timeout_s,
+        )
+    except subprocess.TimeoutExpired:
         logger.warning(
-            "takeoff.pdf_count pdfplumber failed (%s) - falling back to pymupdf",
-            input_fp,
+            "takeoff.pdf_worker timed out after %ss (filename=%r) - degrading upload",
+            timeout_s,
+            filename,
+        )
+        return None
+    except Exception:
+        # Launch failure (interpreter / module missing, OS refusal, ...).
+        logger.warning(
+            "takeoff.pdf_worker could not run (filename=%r) - degrading upload",
+            filename,
             exc_info=True,
         )
-        try:
-            import pymupdf
+        return None
 
-            doc = pymupdf.open(stream=content, filetype="pdf")
-            count = len(doc)
-            doc.close()
-            return count
-        except Exception:
-            logger.exception(
-                "takeoff.pdf_count both pdfplumber and pymupdf failed (%s) - reporting zero pages",
-                input_fp,
-            )
-            return 0
+    if proc.returncode != 0:
+        stderr = (proc.stderr or b"").decode("utf-8", "replace")[:500]
+        logger.warning(
+            "takeoff.pdf_worker exited %s (filename=%r) - degrading upload. stderr=%s",
+            proc.returncode,
+            filename,
+            stderr,
+        )
+        return None
+
+    try:
+        data = json.loads(proc.stdout or b"")
+    except (ValueError, TypeError):
+        logger.warning(
+            "takeoff.pdf_worker returned unparseable output (filename=%r) - degrading upload",
+            filename,
+            exc_info=True,
+        )
+        return None
+
+    page_count = int(data.get("page_count", 0) or 0)
+    pages = data.get("pages") or []
+    if not isinstance(pages, list):
+        pages = []
+    truncated = bool(data.get("truncated", False))
+    return page_count, pages, truncated
 
 
 # ── Revision compare (Item 17) ──────────────────────────────────────────────
@@ -1042,21 +1151,31 @@ class TakeoffService:
     ) -> TakeoffDocument:
         """Upload and process a PDF document for takeoff.
 
-        Pre-parser gates (Indian-user ticket, v3.0.x):
+        Pre-parser gates:
 
-        1. 0-byte uploads → 400 (don't hand garbage to pdfplumber).
-        2. Optional ``OE_TAKEOFF_MAX_UPLOAD_MB`` cap → 413 with the
-           env-var name in the message so the user/operator can act.
+        1. 0-byte uploads → 400 (don't hand garbage to the parser).
+        2. Size cap (``_max_upload_bytes``, 200 MB default, overridable via
+           ``OE_TAKEOFF_MAX_UPLOAD_MB``) → 413 with the env-var name in the
+           message so the user/operator can act.
         3. Password-protected PDFs → 400 with a hint about Acrobat/qpdf.
 
-        Scanned PDFs (no embedded text layer) are persisted with
-        ``status="needs_ocr"`` instead of erroring - the user sees the
-        upload in the list and the operator gets a one-line log hint
-        telling them to install the ``[cv]`` extra to enable OCR.
+        The bytes are written to disk BEFORE parsing, then parsing runs in an
+        isolated, wall-clock-bounded, memory-capped child process
+        (:func:`_parse_pdf_isolated`). A huge, vector-dense or malformed PDF
+        can crash or OOM that child, but it can never OOM-kill the API worker
+        (the container-down P0 this closes).
 
-        If both pdfplumber and pymupdf fail the document is still
-        persisted (with 0 pages and empty text); the structured error
-        line + input fingerprint goes to the server log.
+        Outcomes:
+
+        * Clean parse → document persisted with the extracted pages.
+        * Scanned PDF (no text layer) → persisted with ``status="needs_ocr"``
+          plus a one-line log hint about the ``[cv]`` extra for OCR.
+        * Degraded parse (child timed out / crashed / OOM / worker missing) →
+          document still persisted, with 0 pages, empty text and a
+          ``parse_degraded`` metadata flag, so the user keeps their upload.
+        * Definitive parse failure (child ran fine but neither parser could
+          read a single page) → the written bytes are removed and a generic
+          400 is returned; the diagnostic stays server-side.
         """
         # Gate 1: zero-byte upload.
         if not content or size_bytes == 0:
@@ -1092,12 +1211,37 @@ class TakeoffService:
                 ),
             )
 
-        # Count pages (failure-safe: logs internally and returns 0)
-        page_count = _count_pdf_pages(content, filename=filename)
+        # Persist the uploaded bytes to disk FIRST, before any parsing, so the
+        # document is never lost to a parser problem. The parse then runs in an
+        # isolated, memory-capped child process (``_parse_pdf_isolated``): a
+        # huge, vector-dense or malformed PDF can crash or OOM that child, but
+        # it can never take down the API worker (the P0 this fix closes).
+        documents_dir = _takeoff_documents_dir()
+        documents_dir.mkdir(parents=True, exist_ok=True)
+        doc_id = uuid.uuid4()
+        file_path = documents_dir / f"{doc_id}.pdf"
+        file_path.write_bytes(content)
 
-        # Extract text from each page (failure-safe: logs internally)
-        page_data = _extract_pdf_pages(content, filename=filename)
-        full_text = "\n\n".join(p["text"] for p in page_data if p["text"])
+        parse_degraded = False
+        parse_truncated = False
+        parsed = await _parse_pdf_isolated(file_path, filename=filename)
+        if parsed is None:
+            # The isolated parser could not complete (timeout / crash / OOM /
+            # missing worker). Keep the upload so the user does not lose their
+            # file, just with no extracted pages until it is re-processed.
+            parse_degraded = True
+            page_count = 0
+            page_data: list[dict] = []
+            logger.warning(
+                "takeoff.upload_document: isolated PDF parse degraded for "
+                "filename=%r size=%dB - persisting document with no extracted pages",
+                filename,
+                size_bytes,
+            )
+        else:
+            page_count, page_data, parse_truncated = parsed
+
+        full_text = "\n\n".join(p["text"] for p in page_data if p.get("text"))
 
         # Per-page text-layer audit. A page is an OCR candidate when it has no
         # text layer (scanned/raster drawing). We read the per-page ``has_text``
@@ -1138,12 +1282,15 @@ class TakeoffService:
                     is_scanned,
                 )
 
-        if page_count == 0 and not page_data:
-            # Both parsers failed - neither _count_pdf_pages nor
-            # _extract_pdf_pages raised (they log + swallow by design),
-            # but the user uploaded something unreadable.  Tell the
-            # caller in generic terms; the real diagnostic is already
-            # in the server log.
+        if not parse_degraded and page_count == 0 and not page_data:
+            # The isolated parser ran cleanly but neither pdfplumber nor pymupdf
+            # could read a single page - the file is genuinely unreadable. This
+            # is the ONLY definitive parse-failure case and it keeps the
+            # historical 400. A DEGRADED parse (worker timeout / crash / OOM) is
+            # NOT this case: it was persisted above so the user keeps the upload.
+            # Remove the bytes we wrote before rejecting so nothing is orphaned.
+            with contextlib.suppress(OSError):
+                file_path.unlink()
             logger.warning(
                 "takeoff.upload_document produced zero pages and empty text for "
                 "filename=%r size=%dB - rejecting upload",
@@ -1154,16 +1301,6 @@ class TakeoffService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Failed to parse PDF document. Please check the file and try again.",
             )
-
-        # Save the PDF file to disk so it can be retrieved later for viewing.
-        # WRITE always lands under the active resolved data root (never a
-        # back-compat fallback) so it survives redeploys when OE_DATA_DIR points
-        # at a persistent volume.
-        documents_dir = _takeoff_documents_dir()
-        documents_dir.mkdir(parents=True, exist_ok=True)
-        doc_id = uuid.uuid4()
-        file_path = documents_dir / f"{doc_id}.pdf"
-        file_path.write_bytes(content)
 
         # Scanned PDFs without OCR get a distinct status so the UI
         # can surface a "needs OCR" affordance instead of silently
@@ -1179,6 +1316,14 @@ class TakeoffService:
             "pages_without_text": no_text_count,
             "pages_without_text_list": pages_without_text,
         }
+        if parse_degraded:
+            # Surfaced so the UI / an operator can offer a re-process action and
+            # so support can tell "empty because degraded" from "empty because
+            # scanned". The bytes are on disk; only the extraction is missing.
+            doc_metadata["parse_degraded"] = True
+        if parse_truncated:
+            doc_metadata["parse_truncated"] = True
+            doc_metadata["parse_page_limit"] = _parse_max_pages()
 
         doc = TakeoffDocument(
             id=doc_id,
