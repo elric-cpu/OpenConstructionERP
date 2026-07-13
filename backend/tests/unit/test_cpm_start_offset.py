@@ -126,3 +126,39 @@ async def test_weekend_anchored_root_on_the_critical_chain_is_not_false_negative
     assert by_id["r"]["early_start"] == 7  # snapped Sat -> Mon
     # r drives the finish through s, so it is legitimately critical at float 0.
     assert by_id["r"]["is_critical"] is True
+
+
+@pytest.mark.asyncio
+async def test_non_working_project_origin_root_is_not_falsely_critical() -> None:
+    """The whole schedule starting on a weekend must not falsely flag its root.
+
+    The trigger is a non-working DATE, not a nonzero offset: when the project
+    origin (schedule.start_date) is itself a Saturday, the first root sits at
+    offset 0, so the snap has to apply there too. Pre-fix that root got
+    total_float=-1 and a false is_critical. The offset is snapped forward to the
+    first working day regardless of it being zero.
+    """
+    # 2024-01-06 is a Saturday; the root defaults to offset 0 (no start_offset).
+    activities = [{"id": "sat_origin_root", "duration": 4}]
+    by_id = {r["id"]: r for r in await calculate_cpm(activities, [], project_start_date="2024-01-06")}
+    root = by_id["sat_origin_root"]
+    assert root["total_float"] >= 0  # pre-fix -1
+    assert root["early_start"] == 2  # Sat 01-06 -> Mon 01-08
+
+
+@pytest.mark.asyncio
+async def test_holiday_project_origin_root_is_not_falsely_critical() -> None:
+    """A working-day origin that is a holiday must snap past the holiday too.
+
+    2024-01-01 is a Monday but marked a holiday, so offset 0 lands on a
+    non-working date even though the weekday is a working one. Pre-fix the root
+    got total_float=-3 and a false is_critical.
+    """
+    calendar = {"work_days": [0, 1, 2, 3, 4], "exceptions": ["2024-01-01"]}
+    activities = [{"id": "holiday_origin_root", "duration": 3}]
+    by_id = {
+        r["id"]: r for r in await calculate_cpm(activities, [], calendar=calendar, project_start_date="2024-01-01")
+    }
+    root = by_id["holiday_origin_root"]
+    assert root["total_float"] >= 0  # pre-fix -3
+    assert root["early_start"] == 1  # Mon 01-01 (holiday) -> Tue 01-02

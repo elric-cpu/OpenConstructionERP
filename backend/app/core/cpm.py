@@ -132,6 +132,13 @@ def _snap_to_working_day(
     floor forward keeps early_start on a working day. An offset already on a
     working day is returned unchanged.
     """
+    # A calendar with no working weekday at all (malformed input, e.g. an
+    # out-of-range work_days list) would spin forever, so fall back to the
+    # offset unchanged. With at least one working weekday the loop always
+    # terminates: exceptions is finite, so a working weekday eventually lands
+    # outside it.
+    if not work_days & {0, 1, 2, 3, 4, 5, 6}:
+        return offset
     current = project_start + timedelta(days=offset)
     while current.weekday() not in work_days or current in exceptions:
         current += timedelta(days=1)
@@ -273,15 +280,16 @@ async def calculate_cpm(
     # ── Forward Pass ─────────────────────────────────────────────────────
     for aid in topo_order:
         act = act_map[aid]
-        # "Start no earlier than" floor. A nonzero floor (a root's manual start)
-        # is snapped forward to the next working day so early_start lands on a
-        # working day: an early_start on a weekend/holiday is asymmetric with
-        # the working-day backward pass and yields a spurious negative float and
-        # a false is_critical. A zero floor (successors, and the default) is left
-        # untouched so the no-start_offset path stays byte-identical.
-        es = act["start_offset"]
-        if es > 0:
-            es = _snap_to_working_day(es, work_days, exceptions, p_start)
+        # "Start no earlier than" floor, snapped forward to the next working day
+        # so early_start lands on a working day. An early_start on a
+        # weekend/holiday is asymmetric with the working-day backward pass and
+        # yields a spurious negative float and a false is_critical. This covers
+        # both a root's manual weekend start (a nonzero offset) and the whole
+        # schedule starting on a non-working day (offset 0 on a non-working
+        # origin). Snapping an offset that already lands on a working day - the
+        # common case, including every successor and a working-day origin -
+        # returns it unchanged, so the no-start_offset path stays byte-identical.
+        es = _snap_to_working_day(act["start_offset"], work_days, exceptions, p_start)
 
         for link in predecessors[aid]:
             pred = act_map[link["pred"]]
