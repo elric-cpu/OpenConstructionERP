@@ -39,6 +39,11 @@ export class SceneManager {
   readonly controls: OrbitControls;
 
   private animationId: number | null = null;
+  /** Guards dispose() against being run twice. Teardown is now deferred by the
+   *  React wrappers (see DeferredTeardown), which widens the window in which a
+   *  stray second dispose could arrive; forceContextLoss() in particular must
+   *  not run against an already-released context. */
+  private _disposed = false;
   private resizeObserver: ResizeObserver | null = null;
   private container: HTMLElement;
   private gridHelper: THREE.GridHelper | null = null;
@@ -1152,8 +1157,10 @@ export class SceneManager {
     return box.isEmpty() ? null : box;
   }
 
-  /** Dispose all Three.js resources. */
+  /** Dispose all Three.js resources. Idempotent: a second call is a no-op. */
   dispose(): void {
+    if (this._disposed) return;
+    this._disposed = true;
     if (this.animationId !== null) {
       cancelAnimationFrame(this.animationId);
       this.animationId = null;

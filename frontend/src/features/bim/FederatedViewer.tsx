@@ -25,6 +25,7 @@ import { Maximize2, Minimize2, Ruler, X } from 'lucide-react';
 
 import { Button } from '@/shared/ui';
 import { useDisplayQuantity } from '@/shared/hooks/useDisplayQuantity';
+import { DeferredTeardown } from '@/shared/ui/BIMViewer/deferredTeardown';
 
 import {
   FederatedViewerScene,
@@ -54,6 +55,15 @@ interface Props {
   federationId: string;
 }
 
+/** What the scene-setup effect builds and later needs to dispose. Held in a
+ *  ref so a deferred teardown can dispose it after the fact, or a fast remount
+ *  (React StrictMode) can cancel that teardown and reuse it. */
+interface BuiltFederatedViewer {
+  canvas: HTMLCanvasElement;
+  scene: FederatedViewerScene;
+  disposeNow: () => void;
+}
+
 /* ── Test seam ─────────────────────────────────────────────────────── */
 // Tests need to mock the Three.js scene without monkey-patching the
 // class export (vitest's vi.mock on the same module hits circular-import
@@ -80,6 +90,16 @@ export const FederatedViewer = forwardRef<FederatedViewerHandle, Props>(
     /** Members we've already pushed into the scene - keyed by modelId so
      * a re-render with the same data is a no-op. */
     const loadedMemberIds = useRef<Set<string>>(new Set());
+    // React StrictMode (and any unmount-then-immediately-remount) would
+    // otherwise dispose the live scene in the cleanup and rebuild it on the
+    // next mount, on a just-force-lost GL context (black canvas / "WebGL
+    // unavailable"). We defer the teardown by one task and, if the effect
+    // re-runs first, cancel it and reuse the live scene. See the scene
+    // lifecycle effect below.
+    const teardownRef = useRef<DeferredTeardown | null>(null);
+    teardownRef.current ??= new DeferredTeardown();
+    const viewerTeardown = teardownRef.current;
+    const builtRef = useRef<BuiltFederatedViewer | null>(null);
 
     const [colorByDiscipline, setColorByDiscipline] = useState(false);
     const [memberVisibility, setMemberVisibility] = useState<
@@ -104,6 +124,17 @@ export const FederatedViewer = forwardRef<FederatedViewerHandle, Props>(
     useEffect(() => {
       const canvas = canvasRef.current;
       if (!canvas) return;
+      // If a deferred teardown is still pending on THIS canvas, React
+      // re-mounted us faster than it could run (StrictMode's double-mount).
+      // Nothing was torn down yet, so cancel it and reuse the live scene -
+      // already-pushed members stay tracked in loadedMemberIds, so the loader
+      // effect below re-runs to a no-op instead of rebuilding on a force-lost
+      // context. Re-arm the same teardown for the next unmount and return.
+      const pendingBuilt = builtRef.current;
+      if (viewerTeardown.pending && pendingBuilt && pendingBuilt.canvas === canvas) {
+        viewerTeardown.cancel();
+        return () => viewerTeardown.schedule(pendingBuilt.disposeNow);
+      }
       // The scene constructor throws WebGLUnavailableError when WebGL2 is not
       // available (or three.js fails to acquire a context). Fail soft: surface
       // a friendly notice rather than letting the throw escape and trip the
@@ -127,11 +158,23 @@ export const FederatedViewer = forwardRef<FederatedViewerHandle, Props>(
       // the overlays can render element info / distances.
       scene.setOnPick((r) => setPick(r));
       scene.setOnMeasure((m) => setMeasurement(m));
-      return () => {
+      const disposeNow = () => {
+        // A fast re-mount may already have installed a new scene; only clear
+        // the shared refs while they still point at THIS one. The dispose
+        // itself always runs so the old scene's GPU memory is freed.
+        const isActive = sceneRef.current === scene;
         scene.dispose();
-        sceneRef.current = null;
-        loadedMemberIds.current.clear();
+        if (isActive) {
+          sceneRef.current = null;
+          loadedMemberIds.current.clear();
+          builtRef.current = null;
+        }
       };
+      builtRef.current = { canvas, scene, disposeNow };
+      // Defer the teardown by one task so a synchronous re-mount (StrictMode)
+      // can cancel it via the reuse guard above; a genuine unmount has no
+      // matching re-mount, so the timer fires and disposes for real.
+      return () => viewerTeardown.schedule(disposeNow);
     }, []);
 
     /* ── Dark-mode sync ──────────────────────────────────────────── */

@@ -56,6 +56,7 @@ import {
 import { fetchBIMElementContext, fetchBIMElementProperties } from '@/features/bim/api';
 import { SceneManager } from './SceneManager';
 import { ElementManager } from './ElementManager';
+import { DeferredTeardown } from './deferredTeardown';
 import {
   applySmartView,
   revertSmartView,
@@ -683,6 +684,16 @@ function resolveElementQuantity(el: BIMElementData, dim: QuantityDimension): num
 
 /* ── BIM Viewer Component ──────────────────────────────────────────────── */
 
+/** What the scene-setup effect builds and later needs to dispose. Held in a
+ *  ref so a deferred teardown can dispose it after the fact, or a fast remount
+ *  can cancel that teardown and reuse it. See the DeferredTeardown wiring in
+ *  the scene-setup effect. */
+interface BuiltViewer {
+  canvas: HTMLCanvasElement;
+  scene: SceneManager;
+  disposeNow: () => void;
+}
+
 export function BIMViewer({
   modelId,
   projectId,
@@ -761,6 +772,18 @@ export function BIMViewer({
   const sectionBoxRef = useRef<SectionBox | null>(null);
   const walkModeRef = useRef<WalkMode | null>(null);
   const measureToolRef = useRef<MeasureTool | null>(null);
+  // React StrictMode (and any unmount-then-immediately-remount) would otherwise
+  // dispose the live WebGL scene in the cleanup and rebuild it on the next
+  // mount. The rebuild lands on a just-force-lost GL context (black canvas /
+  // "WebGL unavailable"), and it hands a fresh, empty ElementManager a modelId
+  // the element effect still records as loaded - so a bbox-only model renders
+  // nothing. We defer the teardown by one task and, if the effect re-runs
+  // first, cancel it and REUSE the live scene + managers. See the scene-setup
+  // effect below.
+  const teardownRef = useRef<DeferredTeardown | null>(null);
+  teardownRef.current ??= new DeferredTeardown();
+  const viewerTeardown = teardownRef.current;
+  const builtViewerRef = useRef<BuiltViewer | null>(null);
   const [viewerToolsReady, setViewerToolsReady] = useState(false);
   /** "Locate me" pin (device GPS -> project anchor -> scene point). Created
    *  when the scene is ready and the project has a geo anchor. */
@@ -1121,6 +1144,21 @@ export function BIMViewer({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    // If a teardown from a just-unmounted pass is still pending on THIS canvas,
+    // React re-mounted us faster than the deferred dispose could run - almost
+    // always React's StrictMode double-mount in development. Nothing was torn
+    // down yet, so cancel the pending dispose and reuse the live scene +
+    // managers instead of force-losing the GL context and rebuilding on top of
+    // it. The React-state mirrors (sceneManagerReady / viewerToolsReady) were
+    // never cleared - the clearing lives inside the deferred dispose we are
+    // cancelling - so they already reflect the live scene. Re-arm the same
+    // deferred teardown for the next unmount and return.
+    const pendingBuilt = builtViewerRef.current;
+    if (viewerTeardown.pending && pendingBuilt && pendingBuilt.canvas === canvas) {
+      viewerTeardown.cancel();
+      return () => viewerTeardown.schedule(pendingBuilt.disposeNow);
+    }
+
     // Creating the WebGLRenderer can throw from deep inside three.js when the
     // browser cannot give us a GL context (WebGL disabled, GPU driver
     // blocklisted, remote desktop, headless without a software rasteriser).
@@ -1396,7 +1434,16 @@ export function BIMViewer({
     };
     canvas.addEventListener('mousemove', handleMouseMoveForTooltip);
 
-    return () => {
+    // The actual teardown. It is DEFERRED (see the return below), not run
+    // inline, so React's StrictMode double-mount can cancel it and reuse this
+    // scene.
+    const disposeNow = () => {
+      // A fast re-mount may already have installed a NEW scene into the shared
+      // refs before this (deferred) teardown of the OLD one runs. Only clear
+      // the refs / state mirrors while they still point at THIS scene, so we
+      // never null out the successor's wiring. The resource disposal below
+      // always runs - the old scene's GPU memory must be freed regardless.
+      const isActive = sceneRef.current === scene;
       canvas.removeEventListener('mousemove', handleMouseMoveForTooltip);
       unsubscribeHiddenCount();
       unsubWalkLock?.();
@@ -1410,17 +1457,28 @@ export function BIMViewer({
       selectionMgr.dispose();
       elementMgr.dispose();
       scene.dispose();
-      sceneRef.current = null;
-      elementMgrRef.current = null;
-      selectionMgrRef.current = null;
-      measureMgrRef.current = null;
-      clipMgrRef.current = null;
-      sectionBoxRef.current = null;
-      walkModeRef.current = null;
-      measureToolRef.current = null;
-      setViewerToolsReady(false);
-      setSceneManagerReady(null);
+      if (isActive) {
+        sceneRef.current = null;
+        elementMgrRef.current = null;
+        selectionMgrRef.current = null;
+        measureMgrRef.current = null;
+        clipMgrRef.current = null;
+        sectionBoxRef.current = null;
+        walkModeRef.current = null;
+        measureToolRef.current = null;
+        builtViewerRef.current = null;
+        setViewerToolsReady(false);
+        setSceneManagerReady(null);
+      }
     };
+    builtViewerRef.current = { canvas, scene, disposeNow };
+
+    // Defer the teardown by one task. A synchronous re-mount (StrictMode) runs
+    // the reuse guard at the top of this effect first and cancels it; a genuine
+    // unmount has no matching re-mount, so the timer fires and disposes for
+    // real. Disposing one task late, on a canvas React has already detached, is
+    // safe.
+    return () => viewerTeardown.schedule(disposeNow);
     // Intentionally only run on mount — stable refs
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
