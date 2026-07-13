@@ -186,6 +186,8 @@ def _activity_to_response(activity: object) -> ActivityResponse:
         constraint_date=getattr(activity, "constraint_date", None),
         activity_code=getattr(activity, "activity_code", None),
         bim_element_ids=getattr(activity, "bim_element_ids", None),
+        # Per-activity work calendar (#348)
+        calendar_id=getattr(activity, "calendar_id", None),
     )
 
 

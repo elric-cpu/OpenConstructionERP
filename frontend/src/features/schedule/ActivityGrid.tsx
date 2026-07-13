@@ -1,6 +1,6 @@
 // DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 // Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, RotateCcw, GitBranch, Diamond, Minus } from 'lucide-react';
@@ -82,6 +82,16 @@ export function ActivityGrid({
     enabled: !!projectId,
   });
 
+  // Optimistic value for the per-row calendar picker while its change is in
+  // flight, keyed by activity id (value is the calendar id, or null for the
+  // project default). The <select> is controlled off this map layered over the
+  // stored calendar_id, so it shows the picked calendar immediately, reflects
+  // the real calendar once the async calendar list loads, and reverts to the
+  // stored value if the save fails.
+  const [pendingCal, setPendingCal] = useState<Record<string, string | null>>({});
+  const calendarValue = (a: Activity) =>
+    a.id in pendingCal ? (pendingCal[a.id] ?? '') : (a.calendar_id ?? '');
+
   const updateMutation = useMutation({
     mutationFn: ({ id, body }: { id: string; body: Partial<Activity> }) =>
       scheduleApi.updateActivity(id, body),
@@ -135,8 +145,17 @@ export function ActivityGrid({
         title: t('toasts.error', { defaultValue: 'Error' }),
         message: error.message,
       });
-      // Refetch so a rejected change reverts the select to the stored value.
       invalidateGantt();
+    },
+    // Drop the optimistic value once the change settles: on success the gantt
+    // has been refetched so the stored calendar_id now matches; on failure the
+    // select falls back to the unchanged stored value.
+    onSettled: (_data, _err, variables) => {
+      setPendingCal((m) => {
+        const next = { ...m };
+        delete next[variables.id];
+        return next;
+      });
     },
   });
 
@@ -189,6 +208,7 @@ export function ActivityGrid({
     // Empty value -> clear (fall back to the project default). No-op if unchanged.
     const next = raw || null;
     if ((a.calendar_id ?? null) === next) return;
+    setPendingCal((m) => ({ ...m, [a.id]: next }));
     setCalendarMutation.mutate({ id: a.id, calendarId: next });
   };
 
@@ -371,11 +391,10 @@ export function ActivityGrid({
                     </td>
                     <td className="px-2 py-1.5 align-middle">
                       <select
-                        key={`cal-${a.id}-${a.calendar_id ?? ''}`}
                         data-testid={`grid-calendar-${a.id}`}
                         aria-label={t('schedule.calendar.column', { defaultValue: 'Calendar' })}
                         className={CELL_INPUT_CLS}
-                        defaultValue={a.calendar_id ?? ''}
+                        value={calendarValue(a)}
                         disabled={cellsDisabled}
                         onChange={(e) => commitCalendar(a, e.target.value)}
                       >

@@ -245,6 +245,90 @@ async def test_reschedule_honours_per_activity_work_calendar() -> None:
 
 
 @pytest.mark.asyncio
+async def test_reschedule_ignores_a_foreign_project_calendar() -> None:
+    """An activity carrying a calendar from another project falls back to default.
+
+    A ``calendar_id`` can be copied in from another project (for example through
+    a schedule import), pointing at a calendar the schedule's own project does
+    not own. Reschedule must not measure the activity on that other tenant's
+    work week; the project-scoped lookup finds nothing and the activity
+    reschedules on the schedule-wide default, exactly as if it carried no
+    calendar. Proves the read path is project-scoped like the write path.
+    """
+    from app.modules.schedule_advanced.models import Calendar
+
+    async with transactional_session(disable_fks=True) as session:
+        service = ScheduleService(session)
+        project_id = uuid.uuid4()
+        other_project_id = uuid.uuid4()
+        schedule = await service.create_schedule(
+            ScheduleCreate(project_id=project_id, name="Tenant QA", start_date="2024-01-01")
+        )
+        schedule_id = schedule.id
+        pred = await service.create_activity(
+            ActivityCreate(schedule_id=schedule_id, name="Trade", start_date="2024-01-01", end_date="2024-01-12")
+        )
+        succ = await service.create_activity(
+            ActivityCreate(schedule_id=schedule_id, name="Follow-on", start_date="2024-01-01", end_date="2024-01-03")
+        )
+        pred_id, succ_id = pred.id, succ.id
+
+        # A six-day calendar owned by a DIFFERENT project.
+        foreign = Calendar(
+            project_id=other_project_id,
+            name="Foreign six-day",
+            work_days=[0, 1, 2, 3, 4, 5],
+            holidays=[],
+            is_default=False,
+        )
+        session.add(foreign)
+        await session.flush()
+        foreign_id = foreign.id
+
+        async def _noop_verify(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+            return None
+
+        original = schedule_router._verify_schedule_owner
+        schedule_router._verify_schedule_owner = _noop_verify  # type: ignore[assignment]
+        try:
+            await schedule_router.create_relationship(
+                schedule_id=schedule_id,
+                data=RelationshipCreate(
+                    predecessor_id=pred_id, successor_id=succ_id, relationship_type="FS", lag_days=0
+                ),
+                session=session,
+                _user_id=uuid.uuid4(),
+                payload={"role": "admin"},
+                service=service,
+            )
+            activities = await schedule_router.reschedule_schedule(
+                schedule_id=schedule_id,
+                _user_id=uuid.uuid4(),
+                payload={"role": "admin"},
+                session=session,
+                service=service,
+            )
+            succ_default_start = _by_id(activities, succ_id).start_date
+
+            # Assign the FOREIGN calendar and reschedule again.
+            await service.activity_repo.update_fields(pred_id, calendar_id=foreign_id)
+            session.expire_all()
+            activities = await schedule_router.reschedule_schedule(
+                schedule_id=schedule_id,
+                _user_id=uuid.uuid4(),
+                payload={"role": "admin"},
+                session=session,
+                service=service,
+            )
+            succ_foreign_start = _by_id(activities, succ_id).start_date
+
+            # The foreign six-day calendar is ignored: the successor is unmoved.
+            assert succ_foreign_start == succ_default_start
+        finally:
+            schedule_router._verify_schedule_owner = original  # type: ignore[assignment]
+
+
+@pytest.mark.asyncio
 async def test_reschedule_inherits_project_default_calendar() -> None:
     """Activities with no calendar of their own follow the project default one.
 

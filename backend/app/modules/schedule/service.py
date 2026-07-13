@@ -1825,20 +1825,29 @@ class ScheduleService:
             return 0
         return max((d - project_start).days, 0)
 
-    async def _resolve_activity_calendars(self, activities: list[Activity]) -> dict[str, dict]:
+    async def _resolve_activity_calendars(self, activities: list[Activity], project_id: uuid.UUID) -> dict[str, dict]:
         """Load each activity's per-activity work calendar as ``{work_days, exceptions}``.
 
         An activity may point at a named work calendar (``Activity.calendar_id``
         -> a ``schedule_advanced`` ``Calendar``) so its own duration is measured
         on its own work week - a six-day trade, or a crew with its own holidays.
         Returns a map keyed by activity-id string, only for activities whose
-        ``calendar_id`` resolves to an existing calendar; the rest fall back to
-        the schedule-wide calendar inside the CPM engine. The calendar model
-        stores ``holidays``, which the engine consumes as ``exceptions``.
-        Calendars are batch-loaded in a single query.
+        ``calendar_id`` resolves to an existing calendar in this project; the
+        rest fall back to the schedule-wide calendar inside the CPM engine. The
+        calendar model stores ``holidays``, which the engine consumes as
+        ``exceptions``. Calendars are batch-loaded in a single query.
+
+        The lookup is scoped to ``project_id`` so a foreign or dangling
+        ``calendar_id`` (for example one copied in through a schedule import from
+        another project) resolves to nothing and falls back to the schedule-wide
+        calendar, rather than silently scheduling the activity on another
+        tenant's work week. This mirrors the write path
+        (``progress_service.set_calendar``), which rejects a cross-project
+        calendar with a 404.
 
         Args:
             activities: The schedule's activities.
+            project_id: The owning project; calendars outside it are ignored.
 
         Returns:
             ``{activity_id: {"work_days": [...], "exceptions": [...]}}`` for the
@@ -1850,7 +1859,9 @@ class ScheduleService:
 
         from app.modules.schedule_advanced.models import Calendar
 
-        rows = await self.session.execute(select(Calendar).where(Calendar.id.in_(calendar_ids)))
+        rows = await self.session.execute(
+            select(Calendar).where(Calendar.id.in_(calendar_ids)).where(Calendar.project_id == project_id)
+        )
         cal_by_id = {c.id: c for c in rows.scalars().all()}
 
         resolved: dict[str, dict] = {}
@@ -1952,7 +1963,7 @@ class ScheduleService:
         # Each activity may carry its own named work calendar so its duration is
         # measured on its own work week (a six-day trade, a crew with its own
         # holidays); the rest fall back to the schedule-wide calendar.
-        activity_calendars = await self._resolve_activity_calendars(activities)
+        activity_calendars = await self._resolve_activity_calendars(activities, schedule.project_id)
 
         # Feed each root's own start into the engine as a "start no earlier
         # than" floor (a day-offset from the project origin) so its successors
