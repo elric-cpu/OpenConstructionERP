@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [11.4.0] - 2026-07-13
+
+Scheduling gains work calendars. You can define named work weeks for a project (a standard five-day week, a six-day trade week, or any custom set of working days), each with its own hours per day and its own list of public holidays, and assign one to any activity from the schedule table. Rescheduling then measures each activity's duration on its own calendar, so a six-day trade finishes sooner than a five-day one over the same work, and a crew that keeps its own holidays finishes later, while the dates, float and critical path stay consistent. Activities left on the project default reschedule exactly as before, so existing schedules do not move.
+
 ## [11.3.0] - 2026-07-13
 
 This release makes PDF takeoff reliable and hardens the whole platform against out-of-memory crashes. Opening a PDF from Project Files no longer floods the console with 404s, because takeoff opens against a real takeoff document instead of a file id it could not resolve. Uploading a large or drawing-heavy file can no longer take the container down: every document, revision, PDF-split and photo upload now streams to disk under a size cap instead of reading the whole body into memory, and PDF parsing runs in an isolated, memory-capped subprocess with a page cap, so a heavy file degrades gracefully instead of triggering a silent out-of-memory kill. The same care already runs across element matching, reporting, BIM, the point cloud and file search, with a global request-size limit above all of it. The Alembic warning that filled container logs is resolved, it was only the health check resolving the migrations path from the wrong directory and never a sign of a real problem.
