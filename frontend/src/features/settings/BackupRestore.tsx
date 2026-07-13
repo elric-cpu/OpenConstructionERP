@@ -51,6 +51,9 @@ interface RestoreResult {
   imported: Record<string, number>;
   skipped: Record<string, number>;
   warnings: string[];
+  // Number of embedded files (drawings, documents, photos) written back to
+  // storage. Optional so older backends that omit it still typecheck.
+  files_restored?: number;
 }
 
 // Supported backup format major version. Compatibility is derived locally from
@@ -265,13 +268,22 @@ export function BackupRestore() {
           (a, b) => a + b,
           0,
         );
+        const filesRestored = result.files_restored ?? 0;
         addToast({
           type: 'success',
           title: t('backup.restore_success', { defaultValue: 'Backup restored' }),
-          message: t('backup.restore_success_detail', {
-            defaultValue: '{{count}} records imported successfully',
-            count: totalRecords,
-          }),
+          message:
+            filesRestored > 0
+              ? t('backup.restore_success_detail_files', {
+                  defaultValue:
+                    '{{count}} records and {{files}} files imported successfully',
+                  count: totalRecords,
+                  files: filesRestored,
+                })
+              : t('backup.restore_success_detail', {
+                  defaultValue: '{{count}} records imported successfully',
+                  count: totalRecords,
+                }),
         });
         setSelectedFile(null);
         setValidation(null);

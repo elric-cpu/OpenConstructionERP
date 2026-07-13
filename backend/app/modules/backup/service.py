@@ -60,16 +60,36 @@ BACKUP_FORMAT_VERSION = "1.0.0"
 # Application identifier embedded in every backup manifest.
 APP_ID = "openestimate"
 
-# Sensitive fields stripped from every row before serialisation. Password
-# hashes plus any AI provider key (every ``*_api_key`` column on ai_settings),
-# so a backup file that gets copied between machines never carries a secret in
-# plain text.
-_STRIP_FIELDS: frozenset[str] = frozenset({"hashed_password", "password_hash", "key_hash"})
+# Sensitive fields stripped from every row before serialisation, so a backup
+# file copied between machines never carries a secret in plain text. A column is
+# stripped when its name matches exactly or ends with a secret-bearing suffix.
+# The suffixes are deliberately narrow (no bare ``_key``) so the storage-key
+# columns a restore needs - ``object_key``, ``storage_key``, ``file_path`` - are
+# never stripped.
+_STRIP_FIELDS: frozenset[str] = frozenset(
+    {
+        "hashed_password",
+        "password_hash",
+        "key_hash",
+        "password",
+        "api_key",
+        "apikey",
+        "secret",
+        "token",
+        "access_token",
+        "refresh_token",
+        "client_secret",
+        "webhook_secret",
+        "private_key",
+    }
+)
+_SENSITIVE_SUFFIXES: tuple[str, ...] = ("_api_key", "_secret", "_token", "_password")
 
 
 def _is_sensitive_field(key: str) -> bool:
     """True for a column that must never be written into a backup archive."""
-    return key in _STRIP_FIELDS or key.endswith("_api_key")
+    k = key.lower()
+    return k in _STRIP_FIELDS or k.endswith(_SENSITIVE_SUFFIXES)
 
 
 # Spool to disk after 16 MiB of in-memory buffer.
@@ -77,6 +97,12 @@ _SPOOL_THRESHOLD_BYTES = 16 * 1024 * 1024
 
 # Chunk size when streaming the finished archive to the response.
 _STREAM_CHUNK_BYTES = 64 * 1024
+
+# Hard ceiling on the decompressed size of any single backup entry. A crafted
+# "zip bomb" declares a tiny compressed size but inflates to gigabytes; every
+# entry is read through ``_read_zip_member`` which aborts past this limit, so a
+# restore cannot exhaust memory on a small VPS.
+_MAX_ENTRY_UNCOMPRESSED_BYTES = 1024 * 1024 * 1024  # 1 GiB per entry
 
 # (backup_key, table_name, module_path, class_name) - restore-order
 # parents-before-children. Mirrors the registry that previously lived in
@@ -187,6 +213,19 @@ def build_scope_clause(by_key: dict[str, type], backup_key: str, user_id: str) -
     if not clauses:
         return None
     return or_(*clauses) if len(clauses) > 1 else clauses[0]
+
+
+def _owner_columns(backup_key: str) -> frozenset[str]:
+    """Columns that anchor a table's rows to their owning user.
+
+    These are the direct-ownership predicates from ``_BACKUP_SCOPE`` (``owner_id``
+    on projects and assemblies, ``created_by`` on schedules, ``user_id`` on
+    ai_settings). On restore they are forced to the restoring user so ownership
+    is pinned to the caller rather than trusted from an attacker-supplied
+    archive. Child tables have no direct owner column here; they inherit their
+    owner through the parent whose owner column is forced.
+    """
+    return frozenset(pred[1] for pred in _BACKUP_SCOPE.get(backup_key, []) if pred[0] == "eq")
 
 
 def _get_model_class(module_path: str, class_name: str) -> type:
@@ -489,6 +528,26 @@ async def stream_spooled_async(
             pass
 
 
+def _read_zip_member(zf: zipfile.ZipFile, name: str, cap: int = _MAX_ENTRY_UNCOMPRESSED_BYTES) -> bytes:
+    """Read one ZIP member, aborting if it decompresses past ``cap`` bytes.
+
+    ``ZipFile.read`` inflates the whole member with no size ceiling, so a bomb
+    that declares a tiny size but expands to gigabytes would OOM the process.
+    Reading in chunks and stopping at ``cap`` bounds the damage from an untrusted
+    archive. Raises ``ValueError`` when the limit is exceeded.
+    """
+    out = bytearray()
+    with zf.open(name) as fh:
+        while True:
+            chunk = fh.read(1024 * 1024)
+            if not chunk:
+                break
+            out.extend(chunk)
+            if len(out) > cap:
+                raise ValueError(f"Backup entry {name!r} exceeds the {cap}-byte decompression limit")
+    return bytes(out)
+
+
 def parse_backup_zip(raw: bytes) -> tuple[dict[str, Any], dict[str, list[dict]]]:
     """Parse a backup ZIP, returning ``(manifest, data_by_key)``."""
     import zipfile as _zf
@@ -502,7 +561,7 @@ def parse_backup_zip(raw: bytes) -> tuple[dict[str, Any], dict[str, list[dict]]]
         raise ValueError("ZIP is missing manifest.json")
 
     try:
-        manifest = json.loads(zf.read("manifest.json"))
+        manifest = json.loads(_read_zip_member(zf, "manifest.json"))
     except (json.JSONDecodeError, KeyError) as exc:
         raise ValueError("manifest.json is not valid JSON") from exc
 
@@ -516,7 +575,7 @@ def parse_backup_zip(raw: bytes) -> tuple[dict[str, Any], dict[str, list[dict]]]
         if name.endswith(".json"):
             key = name.removesuffix(".json")
             try:
-                data[key] = json.loads(zf.read(name))
+                data[key] = json.loads(_read_zip_member(zf, name))
             except json.JSONDecodeError:
                 logger.warning("Skipping malformed JSON file in backup: %s", name)
 
@@ -586,21 +645,114 @@ class RestoreError(Exception):
 RESTORE_SKIP_KEYS: frozenset[str] = frozenset({"users", "ai_settings"})
 
 
-def remap_owner_refs(record: dict[str, Any], old_owner: str, new_owner: str) -> dict[str, Any]:
-    """Repoint a row's ownership columns from the exporter to the restorer.
+def remap_owner_refs(
+    record: dict[str, Any],
+    old_owner: str,
+    new_owner: str,
+    owner_columns: frozenset[str] = frozenset(),
+) -> dict[str, Any]:
+    """Repoint a row's ownership to the restoring user.
 
-    A backup is scoped to one user's own project graph, so any column holding
-    the exporter's user id (``owner_id``, ``created_by``, ``user_id``,
-    ``uploaded_by`` and so on) is an ownership reference. Rewriting every field
-    equal to ``old_owner`` to ``new_owner`` makes the imported data land under
-    the restoring account on the new machine, and it is the only thing that
-    makes the data visible there at all, because the two machines mint
-    different user ids. Non-user columns are untouched: a field holding exactly
-    the exporter's UUID is, in practice, always a user reference.
+    Two steps. First the table's ``owner_columns`` (the direct-ownership anchors,
+    see ``_owner_columns``) are forced to ``new_owner`` unconditionally. This is a
+    security boundary, not a convenience: the archive and the ``created_by`` in
+    its manifest are both supplied by whoever runs the restore, so ownership is
+    pinned to the caller here and never trusted from the file. Without it a
+    crafted backup could insert rows stamped with another account's user id and
+    have them surface inside that person's workspace.
+
+    Second, any other field still equal to ``old_owner`` (the exporter's id from
+    the manifest) is repointed to ``new_owner`` as well, so secondary references
+    like ``uploaded_by`` follow the data onto the new machine for the common case
+    of a user moving their own backup between their own computers.
     """
-    if not old_owner or old_owner == new_owner:
-        return record
-    return {key: (new_owner if isinstance(val, str) and val == old_owner else val) for key, val in record.items()}
+    out = dict(record)
+    for col in owner_columns:
+        if col in out:
+            out[col] = new_owner
+    if old_owner and old_owner != new_owner:
+        out = {key: (new_owner if isinstance(val, str) and val == old_owner else val) for key, val in out.items()}
+    return out
+
+
+_FILE_KEY_ATTRS: tuple[str, ...] = ("file_path", "storage_key", "object_key")
+
+
+def _row_file_key(obj: Any) -> str | None:
+    """The storage key a row points at, if any (documents, drawings, photos)."""
+    for attr in _FILE_KEY_ATTRS:
+        val = getattr(obj, attr, None)
+        if isinstance(val, str) and val:
+            return val
+    return None
+
+
+async def _import_table_rows(
+    session: Any,
+    model_cls: type,
+    records: list[dict[str, Any]],
+    backup_key: str,
+    warnings: list[str],
+    file_key_sink: set[str] | None = None,
+) -> tuple[int, int]:
+    """Insert already-remapped ``records`` for one table, resiliently.
+
+    The fast path adds every row inside a single SAVEPOINT and flushes once. If
+    any row trips a constraint - a globally unique code that already exists on
+    this machine, or a reference to an account that was not part of the transfer
+    - the SAVEPOINT rolls back and the rows are retried one per SAVEPOINT, so
+    only the offending rows are skipped (each with a warning) and every other
+    row still imports. Without this, one stray row would fail the whole-table
+    flush and roll the entire restore back, which is exactly the "the backup
+    restores into nothing" symptom a transfer between two machines can hit.
+
+    Returns ``(imported, skipped)``.
+    """
+    if not records:
+        return 0, 0
+
+    # Fast path: the whole table in one SAVEPOINT.
+    try:
+        async with session.begin_nested():
+            objs = [deserialize_row(model_cls, record) for record in records]
+            for obj in objs:
+                session.add(obj)
+            await session.flush()
+        if file_key_sink is not None:
+            for obj in objs:
+                key = _row_file_key(obj)
+                if key:
+                    file_key_sink.add(key)
+        return len(records), 0
+    except Exception:
+        # A row tripped a constraint; fall back to per-row so the rest of the
+        # table still imports. The failed SAVEPOINT has rolled back, expunging
+        # the objects it added, so the retries below start from a clean slate.
+        pass
+
+    imported = 0
+    skipped = 0
+    for record in records:
+        try:
+            obj = deserialize_row(model_cls, record)
+        except Exception as exc:
+            skipped += 1
+            logger.warning("Skipped record in %s: %s", backup_key, str(exc)[:100])
+            continue
+        try:
+            async with session.begin_nested():
+                session.add(obj)
+                await session.flush()
+            imported += 1
+            if file_key_sink is not None:
+                key = _row_file_key(obj)
+                if key:
+                    file_key_sink.add(key)
+        except Exception as exc:
+            skipped += 1
+            warnings.append(f"{backup_key}: skipped a row ({str(exc)[:150]})")
+            logger.warning("Restore skipped a row in %s: %s", backup_key, str(exc)[:200])
+    return imported, skipped
 
 
 async def restore_backup_data(
@@ -610,6 +762,7 @@ async def restore_backup_data(
     manifest: dict[str, Any],
     data: dict[str, list[dict]],
     mode: str,
+    file_key_sink: set[str] | None = None,
 ) -> tuple[dict[str, int], dict[str, int], list[str]]:
     """Restore parsed backup ``data`` into the DB as ``user_id``.
 
@@ -620,8 +773,14 @@ async def restore_backup_data(
     whose id already exists. The ``users`` table is never touched (see
     ``RESTORE_SKIP_KEYS``) and every imported row's ownership is repointed to
     ``user_id`` (see ``remap_owner_refs``) so a backup transfers cleanly onto
-    another machine under the restoring account. A fatal clear or flush failure
-    raises :class:`RestoreError`.
+    another machine under the restoring account. Individual rows that violate a
+    constraint on import are skipped with a warning rather than sinking the
+    whole transfer; only a fatal failure while clearing existing data raises
+    :class:`RestoreError`, so the caller rolls back before anything is imported.
+
+    When ``file_key_sink`` is given, the storage keys referenced by successfully
+    imported rows are collected into it, so the caller can restrict file restore
+    to exactly the blobs those rows own.
     """
     tables = get_backup_tables()
     by_key = {key: cls for key, _table_name, cls in tables}
@@ -659,11 +818,15 @@ async def restore_backup_data(
             skipped[backup_key] = 0
             continue
 
-        count_imported = 0
+        # Repoint ownership to the restoring user and drop merge-mode duplicates
+        # before insert, so the resilient importer only ever sees rows meant to
+        # land on this machine. Ownership columns are forced to the caller so the
+        # archive can never stamp a row with another account's id.
+        owner_cols = _owner_columns(backup_key)
+        prepared: list[dict[str, Any]] = []
         count_skipped = 0
-
         for record in records:
-            record = remap_owner_refs(record, old_owner, new_owner)
+            record = remap_owner_refs(record, old_owner, new_owner, owner_cols)
             if mode == "merge":
                 record_id = record.get("id")
                 if record_id:
@@ -678,30 +841,27 @@ async def restore_backup_data(
                     if existing is not None:
                         count_skipped += 1
                         continue
-            try:
-                obj = deserialize_row(model_cls, record)
-                session.add(obj)
-                count_imported += 1
-            except Exception as exc:
-                count_skipped += 1
-                logger.warning("Skipped record in %s: %s", backup_key, str(exc)[:100])
+            prepared.append(record)
 
+        # Insert in FK order (parents before children, per table order). A single
+        # row that violates a constraint is skipped with a warning rather than
+        # aborting the whole transfer (see ``_import_table_rows``).
+        count_imported, import_skipped = await _import_table_rows(
+            session, model_cls, prepared, backup_key, warnings, file_key_sink
+        )
         imported[backup_key] = count_imported
-        skipped[backup_key] = count_skipped
-
-        # Flush per table for FK-ordered inserts. A flush failure is fatal: it
-        # aborts the whole restore rather than committing a partial import on
-        # top of a replace-mode delete that already cleared everything.
-        try:
-            await session.flush()
-        except Exception as exc:
-            raise RestoreError(str(exc), stage="import", table=backup_key) from exc
+        skipped[backup_key] = count_skipped + import_skipped
 
     return imported, skipped, warnings
 
 
-async def restore_backup_files(raw: bytes, *, backend: Any = None) -> tuple[int, list[str]]:
-    """Write a backup's embedded ``files/`` blobs into local storage.
+async def restore_backup_files(
+    raw: bytes,
+    *,
+    backend: Any = None,
+    allowed_keys: set[str] | None = None,
+) -> tuple[int, list[str]]:
+    """Write a backup's embedded ``files/`` blobs into storage, safely.
 
     Export can embed the binaries referenced by ``file_path`` columns
     (documents, drawings, photos) under ``files/<backup_key>/<storage-key>``.
@@ -710,6 +870,15 @@ async def restore_backup_files(raw: bytes, *, backend: Any = None) -> tuple[int,
     transaction: a file that fails to write is reported as a warning and never
     undoes the data restore, exactly as the export lists an unreadable file as
     a warning rather than aborting. Returns ``(written_count, warnings)``.
+
+    Two guards keep an untrusted archive from touching storage it does not own,
+    because storage keys are a namespace shared across accounts:
+      * ``allowed_keys`` (when given) is the set of storage keys that rows
+        actually imported in this restore point at. Only those are written, so a
+        crafted archive cannot push blobs for arbitrary keys.
+      * an existing blob is never overwritten. A transfer fills in the files a
+        fresh machine is missing; it must not clobber a blob already in storage,
+        which could belong to someone else.
     ``backend`` defaults to the configured storage backend and is injectable
     for tests.
     """
@@ -736,8 +905,14 @@ async def restore_backup_files(raw: bytes, *, backend: Any = None) -> tuple[int,
         if len(parts) < 3 or not parts[2]:
             continue
         key = parts[2]
+        # Only restore a file that backs a row actually imported this restore.
+        if allowed_keys is not None and key not in allowed_keys:
+            continue
         try:
-            await backend.put(key, zf.read(name))
+            if await backend.exists(key):
+                warnings.append(f"Kept existing file, not overwritten: {key}")
+                continue
+            await backend.put(key, _read_zip_member(zf, name))
             written += 1
         except Exception as exc:
             warnings.append(f"Failed to restore file {key}: {str(exc)[:200]}")

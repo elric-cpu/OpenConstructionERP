@@ -152,6 +152,11 @@ async def restore_backup(
 
     from app.database import async_session_factory
 
+    # Storage keys of the files backing rows we actually import. File restore
+    # runs post-commit and only writes blobs in this set, so an archive cannot
+    # push files for keys its rows do not own.
+    restored_file_keys: set[str] = set()
+
     # The whole restore runs inside ONE transaction: commit on full success,
     # or a single rollback on ANY failure so the DB is never left half-wiped.
     async with async_session_factory() as session:
@@ -162,6 +167,7 @@ async def restore_backup(
                 manifest=manifest,
                 data=data,
                 mode=mode,
+                file_key_sink=restored_file_keys,
             )
             await session.commit()
         except RestoreError as exc:
@@ -183,7 +189,7 @@ async def restore_backup(
     # Data committed. Now write any embedded files back to storage. This runs
     # outside the DB transaction and is best-effort: a file that fails to write
     # is a warning, not a reason to undo the (already committed) data restore.
-    files_restored, file_warnings = await restore_backup_files(raw)
+    files_restored, file_warnings = await restore_backup_files(raw, allowed_keys=restored_file_keys)
     warnings.extend(file_warnings)
 
     total_imported = sum(imported.values())

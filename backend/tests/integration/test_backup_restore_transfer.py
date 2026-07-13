@@ -181,3 +181,87 @@ async def test_merge_restore_keeps_the_restorers_own_ai_settings(session):
     assert kept.preferred_model == "b-model"
     assert kept.anthropic_api_key == "sk-b", "the restoring account keeps its own AI keys"
     assert (await session.execute(select(func.count()).select_from(AISettings))).scalar_one() == 2
+
+
+@pytest.mark.asyncio
+async def test_one_colliding_row_does_not_sink_the_whole_transfer(session):
+    """A single unique-code collision skips that row, it does not abort restore.
+
+    ``Assembly.code`` is globally unique. If both machines happen to hold an
+    assembly with the same code (each created independently, so different ids),
+    the incoming row cannot be inserted. That must cost only the one assembly, a
+    warning, not the entire transfer - otherwise the user's projects and BOQs
+    would vanish because of one duplicate recipe code.
+    """
+    from app.modules.assemblies.models import Assembly
+    from app.modules.projects.models import Project
+
+    # B already owns an assembly with a code that A also used on its machine.
+    session.add(Assembly(code="SHARED-01", name="B wall", unit="m3", owner_id=MACHINE_B_USER))
+    await session.flush()
+
+    # A's backup: a project plus an assembly that reuses that same global code
+    # under a different id, exactly the independent-creation case.
+    data = {
+        "projects": [{"id": str(PROJECT_ID), "name": "Tower", "owner_id": str(MACHINE_A_USER), "currency": "EUR"}],
+        "assemblies": [
+            {
+                "id": str(uuid.uuid4()),
+                "code": "SHARED-01",
+                "name": "A wall",
+                "unit": "m3",
+                "owner_id": str(MACHINE_A_USER),
+            }
+        ],
+    }
+
+    imported, skipped, warnings = await restore_backup_data(
+        session,
+        user_id=str(MACHINE_B_USER),
+        manifest={"created_by": str(MACHINE_A_USER)},
+        data=data,
+        mode="merge",
+    )
+
+    # The project imported even though the sibling assembly could not.
+    assert imported["projects"] == 1
+    assert imported["assemblies"] == 0
+    assert skipped["assemblies"] == 1
+    assert any("assembl" in w.lower() for w in warnings), "the skipped row is reported"
+
+    proj = (await session.execute(select(Project).where(Project.id == PROJECT_ID))).scalar_one()
+    assert str(proj.owner_id) == str(MACHINE_B_USER)
+
+    # The code stays unique: B's original row survives, A's was not inserted.
+    rows = (await session.execute(select(Assembly).where(Assembly.code == "SHARED-01"))).scalars().all()
+    assert len(rows) == 1
+    assert str(rows[0].owner_id) == str(MACHINE_B_USER)
+
+
+@pytest.mark.asyncio
+async def test_restore_pins_ownership_to_the_caller_not_the_archive(session):
+    """A crafted backup cannot inject a row owned by another account.
+
+    Both the row's owner_id and the manifest created_by are attacker-controlled.
+    Here A restores a backup whose project claims owner_id = B (a real other
+    account that exists on this instance) with created_by left empty to defeat
+    the value-based remap. Ownership must still be forced to A, the caller.
+    """
+    from app.modules.projects.models import Project
+
+    data = {
+        "projects": [{"id": str(PROJECT_ID), "name": "Injected", "owner_id": str(MACHINE_B_USER), "currency": "EUR"}]
+    }
+
+    imported, _skipped, _warnings = await restore_backup_data(
+        session,
+        user_id=str(MACHINE_A_USER),  # the caller
+        manifest={},  # no created_by, so only forcing can pin ownership
+        data=data,
+        mode="merge",
+    )
+
+    assert imported["projects"] == 1
+    proj = (await session.execute(select(Project).where(Project.id == PROJECT_ID))).scalar_one()
+    assert str(proj.owner_id) == str(MACHINE_A_USER), "ownership is pinned to the caller"
+    assert str(proj.owner_id) != str(MACHINE_B_USER), "the archive's owner_id is not trusted"

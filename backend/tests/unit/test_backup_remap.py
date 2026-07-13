@@ -69,3 +69,37 @@ def test_secrets_are_stripped_from_exports() -> None:
     assert not _is_sensitive_field("name")
     assert not _is_sensitive_field("owner_id")
     assert not _is_sensitive_field("quantity")
+
+
+def test_remap_forces_owner_columns_to_the_caller() -> None:
+    # A crafted archive can put any user id in an owner column. Forcing the
+    # table's ownership columns to the restoring user pins every row to the
+    # caller regardless of what the archive claims - the anti-injection boundary.
+    victim = "victim-99999999-9999-9999-9999-999999999999"
+    caller = "caller-88888888-8888-8888-8888-888888888888"
+    record = {"id": "p1", "owner_id": victim, "name": "Injected"}
+    # The attacker leaves created_by empty to defeat the value-based remap...
+    out = remap_owner_refs(record, "", caller, owner_columns=frozenset({"owner_id"}))
+    # ...but the owner column is forced to the caller anyway.
+    assert out["owner_id"] == caller
+    assert out["name"] == "Injected"
+
+
+def test_remap_without_owner_columns_keeps_value_only_behaviour() -> None:
+    # With no owner_columns a field is repointed only when it equals the exporter
+    # id, so a non-matching value is left as-is (the default 3-arg call).
+    record = {"owner_id": "someone-else"}
+    assert remap_owner_refs(record, "", "caller")["owner_id"] == "someone-else"
+
+
+def test_secret_detection_is_broad_but_never_strips_storage_keys() -> None:
+    # Broadened detection catches more credential-shaped column names...
+    assert _is_sensitive_field("webhook_secret")
+    assert _is_sensitive_field("access_token")
+    assert _is_sensitive_field("api_key")
+    assert _is_sensitive_field("smtp_password")
+    # ...without ever stripping the storage-key columns a file restore needs.
+    assert not _is_sensitive_field("object_key")
+    assert not _is_sensitive_field("storage_key")
+    assert not _is_sensitive_field("file_path")
+    assert not _is_sensitive_field("sort_key")
