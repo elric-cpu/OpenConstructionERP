@@ -93,4 +93,30 @@ describe('AdaptiveResolution', () => {
     const s = feed(ar, 33, 20);
     expect(s).toBeLessThan(1);
   });
+
+  // Desktop orbit profile: a conservative 0.75 floor from a 2.0 ceiling (the
+  // capped hi-dpi ratio), used while the camera is actively moving.
+  describe('desktop orbit profile (floor 0.75, ceiling 2.0)', () => {
+    it('never trims below the conservative 0.75 floor', () => {
+      const ar = mk({ minScale: 0.75, maxScale: 2 });
+      expect(feed(ar, SLOW, 80)).toBe(0.75);
+    });
+
+    it('recovers back up to the 2.0 ceiling when frames are fast again', () => {
+      const ar = mk({ minScale: 0.75, maxScale: 2 });
+      feed(ar, SLOW, 80);
+      expect(ar.scale).toBe(0.75);
+      expect(feed(ar, FAST, 80)).toBe(2);
+    });
+  });
+
+  // Safety net for a low-res quality preset (fast/walk pin the ratio at 0.5):
+  // the SceneManager clamps the floor to the ceiling, so min === max, and the
+  // controller must then be a no-op rather than fight the preset.
+  it('is a no-op when the floor equals the ceiling (clamped in a low-res preset)', () => {
+    const ar = mk({ minScale: 0.5, maxScale: 0.5 });
+    expect(ar.scale).toBe(0.5);
+    expect(feed(ar, SLOW, 80)).toBe(0.5);
+    expect(feed(ar, FAST, 80)).toBe(0.5);
+  });
 });

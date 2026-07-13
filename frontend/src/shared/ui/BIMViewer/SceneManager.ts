@@ -11,6 +11,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CameraTween, type CameraState } from './CameraTween';
 import { AdaptiveResolution } from './adaptiveResolution';
+import { cappedDevicePixelRatio } from './pixelRatio';
 import type { BIMQualityMode } from '@/stores/useBIMViewerStore';
 
 export interface Viewpoint {
@@ -31,6 +32,33 @@ export type ViewPreset =
   | 'iso_se'
   | 'iso_sw'
   | 'fit';
+
+/** Runtime options for {@link SceneManager.setAdaptiveResolution}. */
+export interface AdaptiveProfile {
+  /** Lowest pixel ratio the controller may drop to during motion. */
+  floor: number;
+  /** Snap straight back to the ceiling the instant the camera settles (desktop
+   *  orbit) instead of easing back up over several frames (touch walk). */
+  snapToFullOnIdle?: boolean;
+  /** Rendered frames ignored before the first adjustment (controller default
+   *  when omitted). */
+  warmupFrames?: number;
+  /** Minimum rendered frames between adjustments (controller default when
+   *  omitted). */
+  cooldownFrames?: number;
+  /** Scale change per adjustment (controller default when omitted). */
+  step?: number;
+}
+
+function sameAdaptiveProfile(a: AdaptiveProfile, b: AdaptiveProfile): boolean {
+  return (
+    a.floor === b.floor &&
+    (a.snapToFullOnIdle ?? false) === (b.snapToFullOnIdle ?? false) &&
+    a.warmupFrames === b.warmupFrames &&
+    a.cooldownFrames === b.cooldownFrames &&
+    a.step === b.step
+  );
+}
 
 export class SceneManager {
   readonly scene: THREE.Scene;
@@ -67,6 +95,12 @@ export class SceneManager {
   /** Timestamp of the last RENDERED frame, for adaptive frame-time sampling.
    *  Reset to 0 while idle so an idle gap is never counted as a slow frame. */
   private _lastRenderTs = 0;
+  /** Snap the pixel ratio back to the ceiling the instant the camera settles
+   *  (desktop orbit) rather than easing it back (touch walk). */
+  private _adaptiveSnapOnIdle = false;
+  /** The active adaptive profile, kept so a quality-preset change can rebuild
+   *  the controller with the same floor / snap behaviour. */
+  private _adaptiveProfile: AdaptiveProfile | null = null;
   /** Active camera tween (W6.6) — null when the camera is at rest. */
   private _tween: CameraTween | null = null;
   /** Reject the pending flyTo() promise when a new tween cancels it. */
@@ -156,12 +190,11 @@ export class SceneManager {
     // remote desktops where the full-quality context fails to create. See
     // createRenderer() for the per-attempt option ladder.
     this.renderer = SceneManager.createRenderer(canvas);
-    // Pixel ratio capped at 1 — high-DPI rendering on a 5 000-mesh BIM
-    // scene quadruples the per-frame fragment cost for marginal visual
-    // gain on the engineering-readability use case. Users who want a
-    // sharper picture can take a screenshot via the browser at any
-    // zoom; the live viewport stays fluid.
-    this.renderer.setPixelRatio(1);
+    // Pixel ratio capped at MAX_PIXEL_RATIO (2.0): retina / 2x displays render
+    // fully sharp, while a 3x phone or a 4K panel is trimmed so a heavy model's
+    // per-frame fragment cost stays bounded on high-DPI hardware. See
+    // pixelRatio.ts; the ceiling is one named constant so it stays tunable.
+    this.renderer.setPixelRatio(cappedDevicePixelRatio());
     // Shadow map disabled — see DirectionalLight comment below.
     this.renderer.shadowMap.enabled = false;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -334,7 +367,6 @@ export class SceneManager {
     if (this._qualityMode === mode) return;
     this._qualityMode = mode;
 
-    const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
     switch (mode) {
       case 'fast':
         // Half-resolution rendering (visible jaggies on edges) +
@@ -353,7 +385,7 @@ export class SceneManager {
         // Retina-grade pixelRatio + boosted exposure + warm sky/ground
         // hemisphere bounce. Combined with ElementManager's edge
         // overlay this reads as a presentation-quality CAD render.
-        this.renderer.setPixelRatio(Math.min(2, dpr));
+        this.renderer.setPixelRatio(cappedDevicePixelRatio());
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         this.renderer.toneMappingExposure = 1.25;
         if (this._ambientLight) this._ambientLight.intensity = 0.4;
@@ -378,7 +410,7 @@ export class SceneManager {
       default:
         // Restore constructor defaults (do NOT touch shadowMap or other
         // permanent flags — those are not part of the preset surface).
-        this.renderer.setPixelRatio(1);
+        this.renderer.setPixelRatio(cappedDevicePixelRatio());
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         this.renderer.toneMappingExposure = 1.0;
         if (this._ambientLight) this._ambientLight.intensity = 0.6;
@@ -391,18 +423,10 @@ export class SceneManager {
     this.updateSize();
     this._needsRender = true;
 
-    // If adaptive resolution is running (touch site mode), the preset just
-    // moved the pixel ratio out from under it. Adopt the new ratio as the
-    // adaptive ceiling and restart the controller so the two never fight
-    // (otherwise adaptive would immediately drag the picture back down).
-    if (this._adaptive) {
-      this._adaptiveBaseRatio = this.renderer.getPixelRatio();
-      this._adaptive = new AdaptiveResolution({
-        minScale: 0.5,
-        maxScale: this._adaptiveBaseRatio,
-      });
-      this._lastRenderTs = 0;
-    }
+    // If adaptive resolution is running, the preset just moved the pixel ratio
+    // out from under it. Rebuild the controller so its ceiling adopts the new
+    // ratio (and the floor re-clamps to it) instead of fighting the preset.
+    if (this._adaptive) this.buildAdaptive();
   }
 
   private updateSize(): void {
@@ -450,32 +474,76 @@ export class SceneManager {
       // Idle: forget the last render time so the gap to the next drawn frame
       // is not mistaken for one very slow frame.
       this._lastRenderTs = 0;
+      // Desktop orbit: the instant the camera settles, snap the pixel ratio
+      // back to the ceiling so a still frame is always crisp (the trim only
+      // pays off while the camera is moving). One full-res frame is drawn to
+      // show the restored resolution.
+      if (
+        this._adaptiveSnapOnIdle &&
+        this.renderer.getPixelRatio() !== this._adaptiveBaseRatio
+      ) {
+        this.renderer.setPixelRatio(this._adaptiveBaseRatio);
+        this.updateSize();
+        this._adaptive.reset();
+        this._needsRender = true;
+      }
     }
   };
 
-  /**
-   * Turn adaptive render resolution on or off (touch site mode). While on,
-   * the pixel ratio is trimmed toward 0.5 when frames run slow and eased back
-   * up when there is headroom, bounded above by whatever ratio was in force
-   * when it was enabled (so it never sharpens past the manual quality
-   * ceiling). Turning it off restores that ratio exactly. Idempotent.
-   */
-  setAdaptiveResolution(enabled: boolean): void {
-    if (enabled === (this._adaptive !== null)) return;
-    if (enabled) {
-      this._adaptiveBaseRatio = this.renderer.getPixelRatio();
-      this._adaptive = new AdaptiveResolution({
-        minScale: 0.5,
-        maxScale: this._adaptiveBaseRatio,
-      });
-      this._lastRenderTs = 0;
-    } else {
+  /** (Re)build the adaptive controller from the stored profile and the
+   *  renderer's current pixel ratio (its ceiling). The floor is clamped to the
+   *  ceiling so a low-res quality preset (fast/walk pin the ratio at 0.5) makes
+   *  the controller a harmless no-op instead of fighting the preset. */
+  private buildAdaptive(): void {
+    const p = this._adaptiveProfile;
+    if (!p) {
       this._adaptive = null;
+      return;
+    }
+    this._adaptiveBaseRatio = this.renderer.getPixelRatio();
+    this._adaptive = new AdaptiveResolution({
+      minScale: Math.min(p.floor, this._adaptiveBaseRatio),
+      maxScale: this._adaptiveBaseRatio,
+      warmupFrames: p.warmupFrames,
+      cooldownFrames: p.cooldownFrames,
+      step: p.step,
+    });
+    this._adaptiveSnapOnIdle = p.snapToFullOnIdle ?? false;
+    this._lastRenderTs = 0;
+  }
+
+  /**
+   * Turn adaptive render resolution on or off. While on, the pixel ratio is
+   * trimmed toward `opts.floor` when frames run slow and eased back up when
+   * there is headroom, bounded above by the ratio in force when it was enabled
+   * (so it never sharpens past the manual quality ceiling). Touch walk holds
+   * the trimmed ratio; desktop orbit passes `snapToFullOnIdle` so the picture
+   * returns to full resolution the instant the camera settles. Turning it off
+   * restores the ceiling ratio exactly. Idempotent for an unchanged profile.
+   */
+  setAdaptiveResolution(enabled: boolean, opts: AdaptiveProfile = { floor: 0.5 }): void {
+    if (!enabled) {
+      if (!this._adaptive && !this._adaptiveProfile) return;
+      this._adaptive = null;
+      this._adaptiveProfile = null;
+      this._adaptiveSnapOnIdle = false;
       this._lastRenderTs = 0;
       this.renderer.setPixelRatio(this._adaptiveBaseRatio);
       this.updateSize();
       this._needsRender = true;
+      return;
     }
+    // Re-enabling with the same profile is a no-op so the driving React effect
+    // can re-run freely without churning the controller mid-orbit.
+    if (
+      this._adaptive &&
+      this._adaptiveProfile &&
+      sameAdaptiveProfile(this._adaptiveProfile, opts)
+    ) {
+      return;
+    }
+    this._adaptiveProfile = opts;
+    this.buildAdaptive();
   }
 
   /** Mark the scene as needing a re-render on the next animation frame.
