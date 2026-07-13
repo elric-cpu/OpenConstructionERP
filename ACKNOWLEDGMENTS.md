@@ -65,3 +65,5 @@ while making sure community input is recognized.
 | [serviteur](https://github.com/serviteur) | [#296](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/296) |
 | [cosanostratr](https://github.com/cosanostratr) | [#97](https://github.com/datadrivenconstruction/OpenConstructionERP/pull/97) |
 | [hibohsuc-svg](https://github.com/hibohsuc-svg) | [#289](https://github.com/datadrivenconstruction/OpenConstructionERP/discussions/289) |
+| [Mourdi59](https://github.com/Mourdi59) | [#347](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/347) |
+| [Mourdi59](https://github.com/Mourdi59) | [#348](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/348) |

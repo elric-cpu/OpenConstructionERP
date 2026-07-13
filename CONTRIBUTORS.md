@@ -26,6 +26,13 @@ implementation is our own.
   Later raised ideas for driving BOQ quantities from live BIM parameters, surfacing real
   server errors on Excel paste, and resolving linked elements per model in multi-model
   setups ([#206](https://github.com/datadrivenconstruction/OpenConstructionERP/pull/206)).
+  More recently proposed BOQ per-element quantity formulas with a projection editor and a
+  batch of multi-model BIM viewer fixes
+  ([#347](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/347)), and a
+  schedule dependency editor, an editable activity data grid and a per-activity work
+  calendar for the Gantt
+  ([#348](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/348)). Both
+  shipped as our own implementation.
 - **rjohny** ([@rjohny55](https://github.com/rjohny55)): multi-area patch set
   ([#161](https://github.com/datadrivenconstruction/OpenConstructionERP/pull/161)),
   defensive guards for the slow-query SQLAlchemy listener and the module-presence probe
