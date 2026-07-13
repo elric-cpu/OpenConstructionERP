@@ -19,6 +19,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { SceneManager } from './SceneManager';
 import type { BIMQualityMode } from '@/stores/useBIMViewerStore';
 import { modelIdFromGeometryUrl, streamModelTiles } from './streaming/tileStreamer';
+import { installBVH, ensureBoundsTree, disposeBounds } from './bvh';
 
 // Module-level in-flight buffer fetches, shared across ElementManager
 // instances. React StrictMode's dev double-mount creates two managers
@@ -682,6 +683,10 @@ export class ElementManager {
     // Placeholder boxes have Z_UP→Y_UP conversion baked into
     // createBoxMesh() (Y↔Z swap), so no group rotation needed.
     this.sceneManager.scene.add(this.elementGroup);
+    // Patch three's raycast for BVH-accelerated picking. Idempotent and
+    // behaviour-preserving (meshes without a bounds tree raycast as before);
+    // the loaded meshes opt in via buildPickingBVH() once geometry arrives.
+    installBVH();
   }
 
   /** Load elements and (optionally) create placeholder meshes.
@@ -1208,6 +1213,7 @@ export class ElementManager {
     if (this.daeGroup) {
       this.daeGroup.traverse((obj) => {
         if (obj instanceof THREE.Mesh) {
+          disposeBounds(obj.geometry);
           obj.geometry?.dispose();
         }
       });
@@ -1726,6 +1732,12 @@ export class ElementManager {
       }
     }
 
+    // Build a BVH per individually-rendered mesh so click / hover picking
+    // descends a tree instead of scanning every triangle. Runs after the
+    // batching decision so batched-away meshes (hidden, picked via the
+    // BatchedMesh) are skipped.
+    this.buildPickingBVH();
+
     this.sceneManager.zoomToFit();
     this.sceneManager.requestRender();
 
@@ -1858,6 +1870,34 @@ export class ElementManager {
         `draw calls ${drawCallsBefore} → ${drawCallsAfter} ` +
         `(${Math.round((1 - drawCallsAfter / Math.max(1, drawCallsBefore)) * 100)}% reduction)`,
     );
+  }
+
+  /**
+   * Give every individually-rendered mesh a bounds tree so raycast picking is
+   * accelerated. Meshes collapsed into a BatchedMesh are skipped - they are
+   * hidden and their picking is resolved through the BatchedMesh + batchHandle,
+   * so a per-mesh tree would only waste memory. Each build is wrapped so a
+   * single un-indexable geometry can't abort the pass, and the whole pass is
+   * capped so a pathological un-batchable model can't stall the load; anything
+   * without a tree simply keeps the stock (correct, slower) raycast path.
+   */
+  private buildPickingBVH(): void {
+    // Above this many individual meshes the eager build cost outweighs the
+    // per-pick saving during load; such a model has almost certainly batched
+    // anyway. Kept just above the 10k batching threshold for the mixed case
+    // where small material groups stay un-batched.
+    const MAX_EAGER_BVH_MESHES = 12_000;
+    const pickable = this.allDaeMeshes.filter(
+      (m) => !(m.userData as { batchHandle?: unknown }).batchHandle,
+    );
+    if (pickable.length === 0 || pickable.length > MAX_EAGER_BVH_MESHES) return;
+    let built = 0;
+    for (const mesh of pickable) {
+      if (ensureBoundsTree(mesh.geometry)) built++;
+    }
+    if (built > 0 && typeof import.meta !== 'undefined' && import.meta.env?.DEV) {
+      console.info(`[BIM] built ${built}/${pickable.length} picking BVH(s)`);
+    }
   }
 
   /** Returns true if DAE geometry was loaded. */
@@ -3115,6 +3155,7 @@ export class ElementManager {
   /** Remove all elements from the scene. */
   clear(): void {
     for (const mesh of this.meshMap.values()) {
+      disposeBounds(mesh.geometry);
       mesh.geometry.dispose();
       this.elementGroup.remove(mesh);
     }
@@ -3125,6 +3166,7 @@ export class ElementManager {
     if (this.daeGroup) {
       this.daeGroup.traverse((obj) => {
         if (obj instanceof THREE.Mesh) {
+          disposeBounds(obj.geometry);
           obj.geometry?.dispose();
         }
       });

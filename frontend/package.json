@@ -48,6 +48,7 @@
     "react-router-dom": "^6.30.4",
     "recharts": "^3.9.0",
     "three": "^0.185.0",
+    "three-mesh-bvh": "^0.9.11",
     "y-webrtc": "^10.3.0",
     "y-websocket": "^3.0.0",
     "yjs": "^13.6.31",
