@@ -3634,6 +3634,11 @@ class MatchElementsService:
                         source="manual",
                         confidence=g.confidence or "",
                         cad_element_ids=list(g.element_ids or []),
+                        # Issue #347: the match session is scoped to a single BIM
+                        # model, so bind the position to it. The picker then
+                        # resolves against the right model in multi-model
+                        # projects instead of the project's first-ready one.
+                        cad_model_id=(str(sess.bim_model_id) if sess.bim_model_id else None),
                         validation_status="pending",
                         metadata_=metadata,
                         sort_order=max_ord,
@@ -3752,6 +3757,9 @@ class MatchElementsService:
                     source="cad_import",
                     confidence=g.confidence or "",
                     cad_element_ids=list(g.element_ids or []),
+                    # Issue #347: bind the position to the match session's model
+                    # so the BIM quantity picker resolves against it.
+                    cad_model_id=(str(sess.bim_model_id) if sess.bim_model_id else None),
                     validation_status="pending",
                     metadata_=metadata,
                     sort_order=max_ord,

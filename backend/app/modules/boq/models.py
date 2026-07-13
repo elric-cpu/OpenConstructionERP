@@ -128,6 +128,16 @@ class Position(Base):
         default=list,
         server_default="[]",
     )
+    # ── Issue #347: owning BIM model of the linked elements ──────────────
+    # ``cad_element_ids`` on its own is ambiguous in a multi-model project:
+    # a stable_id is unique only per model (index ix_bim_element_model_stable)
+    # and even a DB-UUID id must be resolved against the right model's element
+    # set. This records the model that owns the elements in ``cad_element_ids``
+    # so the BOQ "pick quantity from BIM" picker and the mini 3D preview
+    # resolve each position against ITS model instead of the project's "first
+    # ready" one. NULL = legacy/unknown - callers fall back to the
+    # project-level model (pre-#347 behaviour, safe for single-model projects).
+    cad_model_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     validation_status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending")
 
     # ── Phase 12.2 expansion fields ──────────────────────────────────────

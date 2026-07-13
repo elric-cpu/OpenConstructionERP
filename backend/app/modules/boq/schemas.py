@@ -778,6 +778,12 @@ class PositionResponse(BaseModel):
     source: str
     confidence: float | None
     cad_element_ids: list[str]
+    # Issue #347: the BIM model that owns the elements in ``cad_element_ids``.
+    # Threaded to the BOQ grid so the "pick quantity from BIM" picker and mini
+    # 3D preview resolve each row against its own model instead of the
+    # project's first-ready one. None for legacy/manual rows (client falls back
+    # to the project-level model).
+    cad_model_id: str | None = None
     validation_status: str
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
     sort_order: int

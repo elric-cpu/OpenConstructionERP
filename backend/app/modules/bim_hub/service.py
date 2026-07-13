@@ -2127,8 +2127,13 @@ class BIMHubService:
                 detail="This BIM element is already linked to that BOQ position",
             ) from exc
 
-        # Keep Position.cad_element_ids in sync (legacy JSON mirror).
-        await self._append_cad_element_id(data.boq_position_id, data.bim_element_id)
+        # Keep Position.cad_element_ids in sync (legacy JSON mirror) and record
+        # the element's owning model on the position (Issue #347).
+        await self._append_cad_element_id(
+            data.boq_position_id,
+            data.bim_element_id,
+            model_id=element.model_id,
+        )
 
         # Auto-populate BOQ position quantity from linked element quantities.
         await self._sync_boq_quantity_from_links(data.boq_position_id)
@@ -2167,21 +2172,36 @@ class BIMHubService:
         self,
         position_id: uuid.UUID,
         element_id: uuid.UUID,
+        model_id: uuid.UUID | None = None,
     ) -> None:
         """Append ``element_id`` to ``Position.cad_element_ids`` if missing.
 
         Initialises the array when the column is NULL (legacy rows) and
-        skips duplicates. No-op when the position no longer exists - the
-        caller is responsible for verifying position existence beforehand.
+        skips duplicates. When ``model_id`` is supplied and the position has
+        no owning model yet, records it in ``Position.cad_model_id`` (Issue
+        #347) so the BOQ "pick quantity from BIM" picker resolves this row
+        against the right model in a multi-model project. First link wins -
+        an existing ``cad_model_id`` is left untouched. No-op when the
+        position no longer exists - the caller is responsible for verifying
+        position existence beforehand.
         """
         pos = await self.session.get(Position, position_id)
         if pos is None:
             return
+        changed = False
         current = list(pos.cad_element_ids or [])
         elem_str = str(element_id)
         if elem_str not in current:
             current.append(elem_str)
             pos.cad_element_ids = current
+            changed = True
+        # Issue #347: bind the position to the element's owning model on first
+        # link. Nullable + first-link-wins keeps legacy / single-model rows on
+        # the pre-#347 project-level fallback.
+        if model_id is not None and getattr(pos, "cad_model_id", None) is None:
+            pos.cad_model_id = str(model_id)
+            changed = True
+        if changed:
             # Re-assign to force SQLAlchemy to notice the mutation on JSON.
             await self.session.flush()
 
@@ -2892,22 +2912,42 @@ class BIMHubService:
         Returns a small summary ``{"links_scanned", "positions_updated"}``.
         """
         # ── Load links (optionally scoped to project) ─────────────────
+        # Issue #347: left-join the element so we also learn each link's owning
+        # model (to back-fill Position.cad_model_id) without dropping orphan
+        # links (element deleted) from the cad_element_ids rewrite.
         if project_id is not None:
             stmt = (
-                select(BOQElementLink.boq_position_id, BOQElementLink.bim_element_id)
+                select(
+                    BOQElementLink.boq_position_id,
+                    BOQElementLink.bim_element_id,
+                    BIMElement.model_id,
+                )
                 .join(Position, Position.id == BOQElementLink.boq_position_id)
                 .join(BOQ, BOQ.id == Position.boq_id)
+                .join(BIMElement, BIMElement.id == BOQElementLink.bim_element_id, isouter=True)
                 .where(BOQ.project_id == project_id)
             )
         else:
-            stmt = select(BOQElementLink.boq_position_id, BOQElementLink.bim_element_id)
+            stmt = select(
+                BOQElementLink.boq_position_id,
+                BOQElementLink.bim_element_id,
+                BIMElement.model_id,
+            ).join(BIMElement, BIMElement.id == BOQElementLink.bim_element_id, isouter=True)
 
         result = await self.session.execute(stmt)
         grouped: dict[uuid.UUID, set[str]] = {}
+        model_by_pos: dict[uuid.UUID, str] = {}
         links_scanned = 0
-        for pos_id, elem_id in result.all():
+        for pos_id, elem_id, elem_model_id in result.all():
             links_scanned += 1
             grouped.setdefault(pos_id, set()).add(str(elem_id))
+            if elem_model_id is not None:
+                # One owning model per position; deterministic pick (min) so a
+                # position whose links span models still resolves consistently.
+                mid = str(elem_model_id)
+                prev = model_by_pos.get(pos_id)
+                if prev is None or mid < prev:
+                    model_by_pos[pos_id] = mid
 
         # Also make sure positions that exist in the project but have NO
         # links get their cad_element_ids reset to [] (so stale ids from a
@@ -2923,10 +2963,19 @@ class BIMHubService:
             pos = await self.session.get(Position, pos_id)
             if pos is None:
                 continue
+            changed = False
             desired = sorted(elem_ids)
             current = list(pos.cad_element_ids or [])
             if sorted(current) != desired:
                 pos.cad_element_ids = desired
+                changed = True
+            # Issue #347: fill the owning model when the position has links but
+            # no binding yet (first-link-wins; never clobber an existing one).
+            owning = model_by_pos.get(pos_id)
+            if owning is not None and getattr(pos, "cad_model_id", None) is None:
+                pos.cad_model_id = owning
+                changed = True
+            if changed:
                 positions_updated += 1
 
         await self.session.flush()

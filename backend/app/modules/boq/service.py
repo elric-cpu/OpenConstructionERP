@@ -1433,6 +1433,9 @@ def _build_position_response(pos: Position) -> PositionResponse:
         source=pos.source,
         confidence=(_str_to_float(pos.confidence) if pos.confidence is not None else None),
         cad_element_ids=pos.cad_element_ids,
+        # Issue #347: surface the owning BIM model so the grid picker resolves
+        # against the right model in multi-model projects.
+        cad_model_id=getattr(pos, "cad_model_id", None),
         validation_status=pos.validation_status,
         metadata_=pos.metadata_,
         sort_order=pos.sort_order,
@@ -2219,6 +2222,9 @@ class BOQService:
             source=source.source,
             confidence=source.confidence,
             cad_element_ids=list(source.cad_element_ids) if source.cad_element_ids else [],
+            # Issue #347: carry the owning model so a duplicate resolves its BIM
+            # links against the same model as the original.
+            cad_model_id=getattr(source, "cad_model_id", None),
             validation_status="pending",
             metadata_=_root_meta,
             sort_order=max_order + 1,
@@ -2256,6 +2262,8 @@ class BOQService:
                     source=child.source,
                     confidence=child.confidence,
                     cad_element_ids=(list(child.cad_element_ids) if child.cad_element_ids else []),
+                    # Issue #347: carry the owning model onto the cloned child.
+                    cad_model_id=getattr(child, "cad_model_id", None),
                     validation_status="pending",
                     metadata_=_child_meta,
                     sort_order=max_order,
@@ -5388,6 +5396,9 @@ class BOQService:
             pos_source = pos.source
             pos_confidence = pos.confidence
             pos_cad_element_ids = list(pos.cad_element_ids) if pos.cad_element_ids else []
+            # Issue #347: preserve the owning BIM model on the revision copy so
+            # its BIM links resolve against the same model as the baseline.
+            pos_cad_model_id = getattr(pos, "cad_model_id", None)
             pos_metadata = dict(pos.metadata_) if pos.metadata_ else {}
             pos_sort_order = pos.sort_order
             # Preserve the reusable code (Issue #127) so a duplicated BOQ -
@@ -5416,6 +5427,7 @@ class BOQService:
                 source=pos_source,
                 confidence=pos_confidence,
                 cad_element_ids=pos_cad_element_ids,
+                cad_model_id=pos_cad_model_id,
                 validation_status="pending",
                 reference_code=pos_reference_code,
                 metadata_=pos_metadata,

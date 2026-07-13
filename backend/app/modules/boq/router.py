@@ -376,6 +376,8 @@ def _position_to_response(position: object) -> PositionResponse:
         source=position.source,  # type: ignore[attr-defined]
         confidence=_coerce_confidence(position.confidence),  # type: ignore[attr-defined]
         cad_element_ids=position.cad_element_ids,  # type: ignore[attr-defined]
+        # Issue #347: owning BIM model of the linked elements (multi-model picker).
+        cad_model_id=getattr(position, "cad_model_id", None),
         validation_status=position.validation_status,  # type: ignore[attr-defined]
         metadata=position.metadata_,  # type: ignore[attr-defined]
         sort_order=position.sort_order,  # type: ignore[attr-defined]

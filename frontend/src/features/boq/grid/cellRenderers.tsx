@@ -46,6 +46,7 @@ import {
 import { RESOURCE_TYPES, getResourceTypeLabel } from '../boqResourceTypes';
 import { countComments } from '../CommentDrawer';
 import { BIMQuantityPicker } from './BIMQuantityPicker';
+import { resolveRowModelId } from './resolveRowModelId';
 import { MiniGeometryPreview } from '@/shared/ui/MiniGeometryPreview';
 import { fetchBIMElementsByIds, fetchBIMElementProperties } from '@/features/bim/api';
 import type { BIMElementData } from '@/shared/ui/BIMViewer/ElementManager';
@@ -1368,7 +1369,10 @@ export function BimLinkCellRenderer(params: ICellRendererParams) {
     ? bimLinks.filter((x): x is string => typeof x === 'string' && x.length > 0)
     : [];
   const bimLinkCount = bimLinkIds.length;
-  const hasBimLink = bimLinkCount > 0 && !!ctx?.bimModelId;
+  // Issue #347: resolve against the row's own model when it has one, falling
+  // back to the project-level model only for legacy / single-model rows.
+  const bimModelId = resolveRowModelId(data.cad_model_id as string | null | undefined, ctx?.bimModelId);
+  const hasBimLink = bimLinkCount > 0 && !!bimModelId;
 
   // PDF + DWG link metadata is stored under position.metadata so the
   // relationship is persistent and survives reloads.
@@ -1561,7 +1565,7 @@ export function BimLinkCellRenderer(params: ICellRendererParams) {
           </>,
           document.body,
         )}
-      {showPreview && anchorRect && ctx?.bimModelId &&
+      {showPreview && anchorRect && bimModelId &&
         createPortal(
           <>
             {/* Backdrop blur overlay */}
@@ -1571,7 +1575,7 @@ export function BimLinkCellRenderer(params: ICellRendererParams) {
             />
             <BimLinkPopover
               ref={popoverRef}
-              modelId={ctx.bimModelId}
+              modelId={bimModelId}
               elementIds={bimLinkIds}
               style={popoverStyle!}
               onClose={() => setShowPreview(false)}
@@ -5506,7 +5510,10 @@ export function BimQtyPickerCellRenderer(params: ICellRendererParams) {
   const cadElementIds: string[] = Array.isArray(data.cad_element_ids)
     ? data.cad_element_ids.filter((x: unknown): x is string => typeof x === 'string' && (x as string).length > 0)
     : [];
-  const hasBimLink = cadElementIds.length > 0 && !!ctx?.bimModelId;
+  // Issue #347: prefer the row's own owning model over the project-level one so
+  // a multi-model project picks quantities from the right model per row.
+  const bimModelId = resolveRowModelId(data.cad_model_id as string | null | undefined, ctx?.bimModelId);
+  const hasBimLink = cadElementIds.length > 0 && !!bimModelId;
 
   const [showPicker, setShowPicker] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -5534,11 +5541,11 @@ export function BimQtyPickerCellRenderer(params: ICellRendererParams) {
       >
         <Ruler size={13} />
       </button>
-      {showPicker && ctx?.bimModelId && anchorRect && (
+      {showPicker && bimModelId && anchorRect && (
         <BIMQuantityPicker
           positionId={data.id}
           cadElementIds={cadElementIds}
-          bimModelId={ctx.bimModelId}
+          bimModelId={bimModelId}
           currentQuantity={data.quantity ?? 0}
           currentUnit={data.unit ?? ''}
           anchorRect={anchorRect}

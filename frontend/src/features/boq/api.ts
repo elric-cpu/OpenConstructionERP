@@ -49,6 +49,14 @@ export interface Position {
   /** BIM element IDs linked to this position (cross-highlight source). */
   cad_element_ids?: string[];
   /**
+   * Issue #347 - the BIM model that owns the elements in `cad_element_ids`.
+   * Threaded to the grid so the "pick quantity from BIM" picker and mini 3D
+   * preview resolve each row against its own model in a multi-model project.
+   * null/undefined for legacy or manual rows: callers fall back to the
+   * project-level "first ready" model (safe for single-model projects).
+   */
+  cad_model_id?: string | null;
+  /**
    * Issue #127 — reusable code, distinct from `ordinal`. When two positions
    * in the SAME project share a `reference_code` they form a link group: one
    * `master` plus N `instance`s that inherit its definition.
