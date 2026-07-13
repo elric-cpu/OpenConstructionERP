@@ -124,6 +124,7 @@ import {
   zoomAtCursorScroll,
   wheelZoomStep,
   orthoSnap,
+  orthoSnapVertexDrag,
   dropTrailingDuplicateVertex,
   snapToVertex,
   VERTEX_SNAP_SCREEN_PX,
@@ -1027,11 +1028,28 @@ export default function TakeoffViewerModule({
   // banner hidden rather than blocking the drawing.
   useEffect(() => {
     setNoTextLayer(null);
-    setNoTextBannerDismissed(false);
-    if (!initialPdfUrl) return;
+    if (!initialPdfUrl) {
+      setNoTextBannerDismissed(false);
+      return;
+    }
     const match = initialPdfUrl.match(/\/documents\/([^/?#]+)/);
     const docId = match?.[1];
-    if (!docId) return;
+    if (!docId) {
+      setNoTextBannerDismissed(false);
+      return;
+    }
+    // Restore a per-document dismissal (issue #346): a banner the user already
+    // closed for this drawing stays closed when the document is reopened,
+    // instead of resetting on every mount. Keyed by the stable document id,
+    // following the takeoff.groupColors.<id> idiom used in this component.
+    let dismissed = false;
+    try {
+      dismissed =
+        localStorage.getItem(`takeoff.ocrBannerDismissed.${decodeURIComponent(docId)}`) === 'true';
+    } catch {
+      /* ignore private-mode / quota read failures */
+    }
+    setNoTextBannerDismissed(dismissed);
     let cancelled = false;
     (async () => {
       try {
@@ -1839,6 +1857,16 @@ export default function TakeoffViewerModule({
         ctx.moveTo(sp0.x * dpr * zoom, sp0.y * dpr * zoom);
         ctx.lineTo(sp1.x * dpr * zoom, sp1.y * dpr * zoom);
         ctx.stroke();
+      } else if (scalePoints.length === 1 && liveCursor) {
+        // Live rubber-band from the first calibration point to the (possibly
+        // ortho-snapped) cursor so the pick is WYSIWYG (issue #343).
+        const sp0 = scalePoints[0]!;
+        ctx.beginPath();
+        ctx.setLineDash([4 * dpr, 4 * dpr]);
+        ctx.moveTo(sp0.x * dpr * zoom, sp0.y * dpr * zoom);
+        ctx.lineTo(liveCursor.x * dpr * zoom, liveCursor.y * dpr * zoom);
+        ctx.stroke();
+        ctx.setLineDash([]);
       }
     }
 
@@ -2193,7 +2221,11 @@ export default function TakeoffViewerModule({
         canVertexSnap && activePoints.length > 1
           ? [...snapVerticesRef.current, ...activePoints.slice(0, -1)]
           : snapVerticesRef.current;
-      const vsnap = vertexSnapRef.current && canVertexSnap
+      // While calibrating (settingScale) neither draw-path snap applies: the
+      // calibration pick has its own ortho below, and letting an in-progress
+      // measurement's vertices or ortho anchor hijack the scale click would
+      // corrupt the calibration (issue #343).
+      const vsnap = !settingScale && vertexSnapRef.current && canVertexSnap
         ? snapToVertex(point, snapPool, zoom, VERTEX_SNAP_SCREEN_PX)
         : null;
       if (vsnap) {
@@ -2215,6 +2247,7 @@ export default function TakeoffViewerModule({
           return;
         }
       } else if (
+        !settingScale &&
         (orthoLock || shiftHeldRef.current) &&
         activePoints.length > 0 &&
         (activeTool === 'distance' ||
@@ -2229,7 +2262,14 @@ export default function TakeoffViewerModule({
 
       // Setting scale mode (legacy meters-only dialog OR new calibration).
       if (settingScale) {
-        const newPoints = [...scalePoints, point];
+        // Square the second calibration point against the first when the ortho
+        // lock is engaged, so calibrating along a known horizontal / vertical
+        // dimension line is exact (issue #343). Matches the live preview line.
+        const calPoint =
+          scalePoints.length === 1 && (orthoLock || shiftHeldRef.current)
+            ? orthoSnap(scalePoints[0]!, point)
+            : point;
+        const newPoints = [...scalePoints, calPoint];
         setScalePoints(newPoints);
         if (newPoints.length === 2) {
           const np0 = newPoints[0]!;
@@ -2846,11 +2886,42 @@ export default function TakeoffViewerModule({
       if (!drag) return;
       const cur = pointerToPdf(e);
       if (!cur) return;
+      // The ortho lock constrains edits too, not only drawing (issue #343):
+      // squaring an existing edge on a vertex drag, or sliding a whole
+      // measurement onto a 0 / 45 / 90 axis. Same trigger as the draw path.
+      const ortho = orthoLock || shiftHeldRef.current;
       let next: Point[];
       if (drag.mode === 'vertex') {
-        next = drag.origPoints.map((p, i) => (i === drag.vertexIndex ? cur : p));
+        // Square the dragged vertex against its neighbour edge(s). Closed shapes
+        // (area / volume / cloud) wrap around; open runs and the arrow anchor on
+        // the adjacent vertex only. A count is a single point and the rectangle /
+        // highlight boxes are two-corner, so neither has a vertex chain to square
+        // and both stay freehand.
+        const dm = measurementsRef.current.find((x) => x.id === drag.measurementId);
+        const dt = dm?.type;
+        const orthoVertex =
+          dt === 'distance' ||
+          dt === 'polyline' ||
+          dt === 'area' ||
+          dt === 'volume' ||
+          dt === 'cloud' ||
+          dt === 'arrow';
+        const vpt =
+          ortho && orthoVertex
+            ? orthoSnapVertexDrag(
+                drag.origPoints,
+                drag.vertexIndex,
+                cur,
+                dt === 'area' || dt === 'volume' || dt === 'cloud',
+              )
+            : cur;
+        next = drag.origPoints.map((p, i) => (i === drag.vertexIndex ? vpt : p));
       } else {
-        next = translatePoints(drag.origPoints, cur.x - drag.startPt.x, cur.y - drag.startPt.y);
+        // Constrain the whole-measurement move by snapping the translation
+        // VECTOR (anchored at the drag start), so the shape slides along an axis
+        // without being reshaped.
+        const tip = ortho ? orthoSnap(drag.startPt, cur) : cur;
+        next = translatePoints(drag.origPoints, tip.x - drag.startPt.x, tip.y - drag.startPt.y);
       }
       drag.moved = true;
       drag.lastPoints = next;
@@ -2865,7 +2936,7 @@ export default function TakeoffViewerModule({
         selfIntersecting: Boolean(patch.selfIntersecting),
       });
     },
-    [pointerToPdf],
+    [pointerToPdf, orthoLock],
   );
 
   /* ── Mouse move: edit drag, rect preview, live readout, hover ─────── */
@@ -2879,6 +2950,21 @@ export default function TakeoffViewerModule({
         return;
       }
       const pt = pointerToPdf(e);
+
+      // Calibration live preview (issue #343): while placing the second scale
+      // point, track the cursor (ortho-snapped against the first point when the
+      // lock is engaged) so the render rubber-bands the scale line and the pick
+      // is WYSIWYG. Calibration owns the cursor, so skip the measure-tool
+      // readout and hover below.
+      if (settingScale) {
+        if (pt && scalePoints.length === 1) {
+          const a = scalePoints[0]!;
+          setLiveCursor(orthoLock || shiftHeldRef.current ? orthoSnap(a, pt) : pt);
+        } else if (liveCursor) {
+          setLiveCursor(null);
+        }
+        return;
+      }
 
       if ((activeTool === 'rectangle' || activeTool === 'highlight' || activeTool === 'rectarea') && rectStartPoint) {
         if (!pt) return;
@@ -2953,7 +3039,7 @@ export default function TakeoffViewerModule({
         setHoverInfo(null);
       }
     },
-    [activeTool, rectStartPoint, pointerToPdf, handleEditDragMove, activePoints, orthoLock, liveCursor, editableOnPage, hoverInfo],
+    [activeTool, rectStartPoint, pointerToPdf, handleEditDragMove, activePoints, orthoLock, liveCursor, editableOnPage, hoverInfo, settingScale, scalePoints],
   );
 
   /** Clear the transient HUD / hover state when the pointer leaves the canvas. */
@@ -6485,7 +6571,19 @@ export default function TakeoffViewerModule({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setNoTextBannerDismissed(true)}
+                  onClick={() => {
+                    setNoTextBannerDismissed(true);
+                    // Remember the dismissal for this document so it does not
+                    // reappear on the next open (issue #346). Local-only files
+                    // (no document id) stay session-only.
+                    if (documentId) {
+                      try {
+                        localStorage.setItem(`takeoff.ocrBannerDismissed.${documentId}`, 'true');
+                      } catch {
+                        /* ignore quota / private-mode failures */
+                      }
+                    }
+                  }}
                   className="shrink-0 rounded p-0.5 text-amber-700 hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-900/40"
                   aria-label={t('takeoff.needs_ocr_banner_dismiss', { defaultValue: 'Dismiss' })}
                 >
