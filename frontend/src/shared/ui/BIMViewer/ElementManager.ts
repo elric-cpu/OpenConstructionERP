@@ -817,18 +817,46 @@ export class ElementManager {
     //     the merged group feeds the existing processLoadedScene() unchanged.
     //     Any failure — no tileset, a bad tile, a parse error — falls through
     //     to the monolithic path below, so this can only speed loading up.
+    let previewGroup: THREE.Group | null = null;
     try {
       const streamModelId = modelIdFromGeometryUrl(geometryUrl);
       if (streamModelId) {
-        const streamed = await streamModelTiles(streamModelId, { onProgress });
+        // Progressive reveal: show each tile the instant it parses instead of
+        // waiting for the whole model. Gated to the initial open (nothing on
+        // screen yet) - on a model switch the previous model is still shown
+        // until processLoadedScene swaps it, so a progressive preview there
+        // would briefly overlap the two; that case keeps the old atomic swap.
+        const progressive = !this.geometryLoaded;
+        const streamed = await streamModelTiles(streamModelId, {
+          onProgress,
+          onTileParsed: progressive
+            ? (group) => {
+                if (!previewGroup) {
+                  this.clearPlaceholders();
+                  // Apply the same -90 deg X rotation processLoadedScene will,
+                  // so the building the user watches assemble sits exactly where
+                  // the finished, batched model ends up (no jump on completion).
+                  group.rotation.x = -Math.PI / 2;
+                  this.elementGroup.add(group);
+                  previewGroup = group;
+                }
+                this.sceneManager.requestRender();
+              }
+            : undefined,
+        });
         if (streamed) {
+          // processLoadedScene reparents this same group into daeGroup and
+          // collapses it into BatchedMeshes - the big-model batching is intact;
+          // the rotation it re-applies matches the preview, so nothing moves.
           this.processLoadedScene(streamed.group, undefined, true);
           onProgress?.(1);
           return;
         }
       }
     } catch (streamErr) {
-      // Streaming is a pure optimization; never let it break the load.
+      // Streaming is a pure optimization; never let it break the load. Drop any
+      // partial preview so it can't double up with the monolithic geometry.
+      if (previewGroup) this.elementGroup.remove(previewGroup);
       console.warn('[BIM] tile streaming failed, using monolithic GLB', streamErr);
     }
 

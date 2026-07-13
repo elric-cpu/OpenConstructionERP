@@ -24,6 +24,7 @@ import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { useAuthStore } from '@/stores/useAuthStore';
 
 import { getCachedTile, putCachedTile, tileCacheKey } from './tileCache';
+import { orderTilesForStreaming } from './tilePriority';
 import type { TileInfo, TileManifest } from './tileTypes';
 
 const GLB_MAGIC = 0x46546c67; // 'glTF' little-endian
@@ -151,6 +152,15 @@ export interface StreamResult {
 
 export interface StreamOptions {
   onProgress?: (fraction: number) => void;
+  /**
+   * Called after each tile is parsed and its meshes are added to the shared
+   * group, passing that same group. Lets the caller reveal geometry
+   * progressively - add the group to the scene on the first call, request a
+   * render on every call - instead of waiting for the whole model. It is the
+   * same group returned in StreamResult, so attaching it once is enough; it
+   * simply fills in over the following calls.
+   */
+  onTileParsed?: (group: THREE.Group) => void;
   signal?: AbortSignal;
   /** Max concurrent tile downloads (default 6). */
   fetchConcurrency?: number;
@@ -168,29 +178,34 @@ export async function streamModelTiles(
   const manifest = await fetchTileManifest(modelId, opts.signal);
   if (!manifest) return null;
 
-  const tiles: TileInfo[] = manifest.tiles;
+  // Stream the tiles that carry the most of the building first, so the bulk of
+  // the structure shows up while the small trailing tiles are still arriving.
+  const tiles = orderTilesForStreaming(manifest.tiles);
+  const total = tiles.length;
 
-  // Phase A - download every tile (cache-first) with bounded concurrency. A
-  // failed tile becomes null and is skipped rather than aborting the load.
-  const buffers = await mapPool(tiles, opts.fetchConcurrency ?? 6, async (tile) => {
-    try {
-      return await fetchTileBytes(modelId, tile.hash, opts.signal);
-    } catch {
-      return null;
-    }
-  });
-
-  // Phase B - parse on the main thread, one tile at a time, yielding between
-  // tiles so the browser can render progress and stay responsive (no single
-  // multi-second parse freeze).
   const loader = new GLTFLoader();
   const group = new THREE.Group();
   group.name = 'streamed-tiles';
   let parsedTiles = 0;
+  let done = 0;
 
-  for (let i = 0; i < buffers.length; i += 1) {
-    if (opts.signal?.aborted) break;
-    const buffer = buffers[i];
+  // One pipelined pass with bounded concurrency: each worker downloads a tile
+  // (cache-first), parses it, reparents its meshes into the shared group, and
+  // reveals it via onTileParsed - so parsing starts as soon as the first bytes
+  // land (not after every tile has downloaded) and the model fills in
+  // progressively instead of popping in whole at the end. A tile that fails to
+  // download or parse is skipped, never fatal. JS is single-threaded, so the
+  // shared counters and the group mutations need no locking. A macroYield keeps
+  // input and rendering responsive between parses.
+  await mapPool(tiles, opts.fetchConcurrency ?? 6, async (tile) => {
+    if (opts.signal?.aborted) return;
+    let buffer: ArrayBuffer | null = null;
+    try {
+      buffer = await fetchTileBytes(modelId, tile.hash, opts.signal);
+    } catch {
+      buffer = null;
+    }
+    if (opts.signal?.aborted) return;
     if (buffer) {
       const scene = await parseTile(loader, buffer);
       if (scene) {
@@ -199,11 +214,13 @@ export async function streamModelTiles(
           group.add(child);
         }
         parsedTiles += 1;
+        opts.onTileParsed?.(group);
       }
     }
-    opts.onProgress?.((i + 1) / buffers.length);
+    done += 1;
+    opts.onProgress?.(done / total);
     await macroYield();
-  }
+  });
 
   if (parsedTiles === 0) return null;
   return { group, tileCount: parsedTiles, meshCount: group.children.length };
