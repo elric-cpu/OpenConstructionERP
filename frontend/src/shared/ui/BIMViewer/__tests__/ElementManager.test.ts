@@ -45,6 +45,38 @@ function sampleElements(): BIMElementData[] {
   ];
 }
 
+describe('ElementManager default material (opaque by default, founder call)', () => {
+  let mgr: ElementManager;
+
+  beforeEach(() => {
+    mgr = new ElementManager(makeFakeSceneManager());
+    mgr.loadElements(sampleElements(), { skipPlaceholders: false });
+  });
+
+  it('renders elements opaque by default so there is no per-frame transparency sort', () => {
+    const mat = mgr.getMesh('w1')!.material as THREE.Material & {
+      transparent: boolean;
+      opacity: number;
+    };
+    expect(mat.transparent).toBe(false);
+    expect(mat.opacity).toBe(1);
+  });
+
+  it('the per-category see-through toggle still yields transparency over the opaque default', () => {
+    mgr.setCategoryOpacity('Walls', 0.3);
+    const mat = mgr.getMesh('w1')!.material as THREE.Material & {
+      transparent: boolean;
+      opacity: number;
+    };
+    expect(mat.transparent).toBe(true);
+    expect(mat.opacity).toBeCloseTo(0.3);
+    // Restoring to full opacity returns the element to solid.
+    mgr.setCategoryOpacity('Walls', 1);
+    const restored = mgr.getMesh('w1')!.material as THREE.Material & { transparent: boolean };
+    expect(restored.transparent).toBe(false);
+  });
+});
+
 describe('ElementManager.setCategoryOpacity', () => {
   let scene: SceneManager;
   let mgr: ElementManager;

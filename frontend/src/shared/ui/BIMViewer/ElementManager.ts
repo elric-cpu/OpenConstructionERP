@@ -1943,8 +1943,14 @@ export class ElementManager {
         color: getDisciplineColor(discipline),
         roughness: 0.7,
         metalness: 0.1,
-        transparent: true,
-        opacity: 0.85,
+        // Opaque by default: an alpha-blended default forced a per-frame
+        // back-to-front sort across every element and disabled early-z, which
+        // is the single biggest frame-rate cost on a heavy model. The
+        // see-through looks (per-category opacity, isolation ghost, glass) set
+        // their own transparency at the moment they are used, so making the
+        // default solid changes only the resting appearance, not those tools.
+        transparent: false,
+        opacity: 1.0,
         wireframe: this.wireframeEnabled,
       });
       this.baseMaterials.set(key, mat);
@@ -2023,8 +2029,11 @@ export class ElementManager {
         color,
         roughness: 0.6,
         metalness: 0.08,
-        transparent: true,
-        opacity: 0.85,
+        // Opaque by default (see getMaterial): avoids a per-frame transparency
+        // sort across every placeholder box. Per-category opacity / ghost still
+        // apply their own transparency on demand.
+        transparent: false,
+        opacity: 1.0,
         wireframe: this.wireframeEnabled,
       });
       this.baseMaterials.set(key, mat);
@@ -2090,8 +2099,8 @@ export class ElementManager {
    *            Lighting calcs simplified to vertex-flat normals → up to
    *            2× fragment perf on shaded geometry; opaque glass kills
    *            alpha-sort.
-   *   default — current behaviour (PBR standard, translucent everything,
-   *            full lighting). Migration-safe.
+   *   default — PBR standard, opaque non-glass surface (glass stays a
+   *            translucent pane), full lighting. Migration-safe.
    *   visual  — PBR + glass alone stays transparent + per-mesh edge
    *            overlay (LineSegments built from EdgesGeometry) gives a
    *            CAD-render look. The opaque non-glass surface lets the
@@ -2100,8 +2109,10 @@ export class ElementManager {
    *            navigating in first-person.
    */
   applyQualityMode(mode: BIMQualityMode): void {
-    // Per-mode property targets.
-    const baseOpaque = mode !== 'default';
+    // Per-mode property targets. The default non-glass surface is now opaque in
+    // every mode (founder call): an alpha-blended default cost a per-frame
+    // transparency sort on the whole model for a marginal look. See-through is
+    // still available on demand (per-category opacity, isolation ghost).
     const baseFlat = mode === 'fast' || mode === 'walk';
     const baseRoughness = mode === 'visual' ? 0.5 : baseFlat ? 1.0 : 0.7;
     const baseMetalness = mode === 'visual' ? 0.15 : baseFlat ? 0.0 : 0.1;
@@ -2123,8 +2134,8 @@ export class ElementManager {
       const m = mat as THREE.MeshStandardMaterial & {
         flatShading?: boolean;
       };
-      m.transparent = !baseOpaque;
-      m.opacity = baseOpaque ? 1.0 : 0.85;
+      m.transparent = false;
+      m.opacity = 1.0;
       if ('flatShading' in m) m.flatShading = baseFlat;
       if ('roughness' in m) m.roughness = baseRoughness;
       if ('metalness' in m) m.metalness = baseMetalness;
