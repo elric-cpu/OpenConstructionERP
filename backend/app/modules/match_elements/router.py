@@ -44,6 +44,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.i18n import get_locale
+from app.core.upload_guards import reject_if_xlsx_bomb
+from app.core.upload_streaming import stream_upload_to_temp
 from app.core.validation.messages import translate
 from app.dependencies import CurrentUserId, SessionDep, verify_project_access
 from app.modules.match_elements import pipeline, schemas
@@ -74,6 +76,20 @@ _MATCH_IMAGES_DIR: Path = Path.home() / ".openestimator" / "match_images"
 # than a downstream provider 4xx. Mirrors the design's 10 MB limit.
 _MAX_IMAGE_BYTES: int = 50 * 1024 * 1024
 
+# Per-upload byte caps for the file-backed sources. These bound the COMPRESSED
+# request body: stream_upload_to_temp spools the upload to disk in 1 MB chunks
+# and aborts past the cap, so an oversized file never lands fully in RAM (the
+# old ``await file.read()`` pulled the whole body into memory and could OOM the
+# 2 GB worker). reject_if_xlsx_bomb then bounds the DECOMPRESSED spreadsheet,
+# and _MAX_PDF_PAGES bounds the per-page PDF work.
+_MAX_EXCEL_BYTES: int = 100 * 1024 * 1024  # 100 MB compressed .xlsx
+_MAX_PDF_BYTES: int = 200 * 1024 * 1024  # 200 MB tender PDF
+# A printed BoQ / priced schedule runs to tens of pages; a few hundred is
+# already generous. pdfplumber's per-page extract_tables() balloons memory on a
+# vector-dense CAD sheet, so a document with hundreds of such pages can OOM the
+# worker - cap the page count before any extraction and reject with a clear 413.
+_MAX_PDF_PAGES: int = 500
+
 # Accepted upload MIME types and their magic-byte signatures. We gate on
 # the actual bytes (not just the Content-Type header or extension) so a
 # renamed ``.exe`` / ``.zip`` can't slip a non-image into the vision
@@ -99,6 +115,46 @@ def _detect_image_mime(content: bytes) -> str | None:
     if len(content) >= 12 and content[0:4] == b"RIFF" and content[8:12] == b"WEBP":
         return "image/webp"
     return None
+
+
+def _reject_if_too_many_pdf_pages(content: bytes) -> None:
+    """Reject a PDF with more pages than the per-page extractor can safely take.
+
+    pdfplumber's ``extract_tables()`` runs per page and balloons memory on
+    vector-dense CAD sheets, so a document with hundreds of pages can OOM the
+    worker before the import finishes. Counting pages with pymupdf is cheap - it
+    reads the page tree and never decodes page content - so this is a fast
+    front-door guard ahead of :func:`parse_boq_pdf`.
+
+    A file pymupdf cannot open (or a missing pymupdf) is deferred to the parser,
+    which surfaces its own error for unreadable bytes; this guard only rejects a
+    validly-opened PDF whose page count exceeds ``_MAX_PDF_PAGES``.
+
+    Raises:
+        HTTPException: 413 when the PDF has more than ``_MAX_PDF_PAGES`` pages.
+    """
+    try:
+        import pymupdf
+    except Exception:
+        return
+
+    try:
+        doc = pymupdf.open(stream=content, filetype="pdf")
+    except Exception:
+        return
+    try:
+        page_count = int(doc.page_count)
+    finally:
+        doc.close()
+
+    if page_count > _MAX_PDF_PAGES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"PDF has too many pages ({page_count}); the limit is {_MAX_PDF_PAGES}. "
+                "Upload only the priced BoQ pages, or split the document."
+            ),
+        )
 
 
 def _u(s: str) -> uuid.UUID:
@@ -186,9 +242,27 @@ async def create_session_from_excel(
             detail=("Only .xlsx files are supported. Save your BoQ as Excel (not .xls / .csv) and re-upload."),
         )
 
-    content = await file.read()
+    # Stream the upload to a temp file in 1 MB chunks (aborts past the cap) so
+    # an oversized body never lands fully in RAM, then read the now-bounded
+    # bytes for the parser.
+    try:
+        async with stream_upload_to_temp(file, max_bytes=_MAX_EXCEL_BYTES, suffix=".xlsx") as upload:
+            content = upload.path.read_bytes()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Spreadsheet exceeds the {_MAX_EXCEL_BYTES // (1024 * 1024)} MB upload limit. "
+                "Split the BoQ or remove embedded media and re-upload."
+            ),
+        ) from exc
+
     if not content:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    # Reject a decompression bomb (a small .xlsx whose XML expands to GBs once
+    # openpyxl materialises the sheet) before handing the bytes to the parser.
+    reject_if_xlsx_bomb(content)
 
     try:
         rows = parse_boq_xlsx(content)
@@ -259,7 +333,21 @@ async def create_session_from_pdf(
             detail="Only .pdf files are supported. Upload the tender PDF (not an image or Office file).",
         )
 
-    content = await file.read()
+    # Stream the upload to a temp file in 1 MB chunks (aborts past the cap) so
+    # an oversized body never lands fully in RAM, then read the now-bounded
+    # bytes for the parser.
+    try:
+        async with stream_upload_to_temp(file, max_bytes=_MAX_PDF_BYTES, suffix=".pdf") as upload:
+            content = upload.path.read_bytes()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"PDF exceeds the {_MAX_PDF_BYTES // (1024 * 1024)} MB upload limit. "
+                "Upload the priced BoQ pages only, or split the document."
+            ),
+        ) from exc
+
     if not content:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
     # Magic-byte gate - reject anything that is not actually a PDF before
@@ -269,6 +357,11 @@ async def create_session_from_pdf(
             status_code=400,
             detail="The uploaded file is not a valid PDF (missing %PDF- header). Re-export and try again.",
         )
+
+    # Cap the page count before any per-page table extraction - the per-page
+    # pdfplumber pass is what OOM-killed the takeoff container on vector-dense
+    # sheets, so a document with hundreds of pages is rejected here with a 413.
+    _reject_if_too_many_pdf_pages(content)
 
     try:
         rows = parse_boq_pdf(content)
