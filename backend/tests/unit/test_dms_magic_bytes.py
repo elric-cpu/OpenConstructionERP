@@ -26,11 +26,12 @@ stubbed out so no I/O occurs.
 
 from __future__ import annotations
 
+import io
 import uuid
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import UploadFile
 
 from app.core.file_signature import (
     ALLOWED_CAD_TYPES,
@@ -175,13 +176,20 @@ def test_blocked_extension_segment(filename: str, expected: str | None) -> None:
 # We stub out the repo and filesystem I/O so the test stays pure-Python.
 
 
-def _make_upload_file(filename: str, content: bytes) -> Any:
-    """Minimal FastAPI UploadFile mock."""
-    mock = MagicMock()
-    mock.filename = filename
-    mock.content_type = "application/pdf"  # attacker-controlled header — ignored
-    mock.read = AsyncMock(return_value=content)
-    return mock
+def _make_upload_file(filename: str, content: bytes) -> UploadFile:
+    """Build a real BytesIO-backed FastAPI ``UploadFile`` for tests.
+
+    A real UploadFile (not a MagicMock) is used so the service's streaming read
+    - ``file.read(chunk)`` in a loop until EOF - terminates. A mock whose
+    ``read`` ignores the size argument and returns the whole body on every call
+    would spin forever. ``content_type`` stays attacker-controlled and ignored;
+    the service derives the stored MIME from the magic bytes.
+    """
+    return UploadFile(
+        filename=filename,
+        file=io.BytesIO(content),
+        headers={"content-type": "application/pdf"},
+    )
 
 
 # Fake PE-header bytes (Windows Portable Executable).
@@ -308,6 +316,52 @@ async def test_upload_service_rejects_blocked_extension() -> None:
         await svc.upload_document(project_id, upload, "drawing", "user-1")
     assert exc_info.value.status_code == 400
     assert ".exe" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_upload_document_over_cap_streams_to_413(monkeypatch) -> None:
+    """An oversized document upload aborts during streaming with a 413.
+
+    The cap is shrunk so the test proves the streaming abort fires without
+    allocating a real 100 MB body - the point of the fix is that an oversized
+    body is never fully buffered in RAM before the size check.
+    """
+    from fastapi import HTTPException
+
+    import app.modules.documents.service as svc_mod
+
+    monkeypatch.setattr(svc_mod, "MAX_FILE_SIZE", 1024)
+    svc = svc_mod.DocumentService(AsyncMock())
+    svc.repo = AsyncMock()  # never reached - the 413 fires before any DB write
+
+    upload = _make_upload_file("big.pdf", b"%PDF-1.4\n" + b"x" * 4096)  # 4 KB > 1 KB cap
+    with pytest.raises(HTTPException) as exc:
+        await svc.upload_document(uuid.uuid4(), upload, "drawing", "user-1")
+    assert exc.value.status_code == 413
+    assert "too large" in str(exc.value.detail).lower()
+
+
+@pytest.mark.asyncio
+async def test_upload_photo_over_cap_streams_to_413(monkeypatch) -> None:
+    """An oversized photo upload aborts during streaming with a 413."""
+    from fastapi import HTTPException
+
+    import app.modules.documents.service as svc_mod
+
+    monkeypatch.setattr(svc_mod, "MAX_PHOTO_SIZE", 1024)
+    svc = svc_mod.PhotoService(AsyncMock())
+    svc.repo = AsyncMock()
+
+    # image/jpeg content-type so the photo path reaches the streaming read; the
+    # header precheck rejects non-image content types earlier.
+    upload = UploadFile(
+        filename="big.jpg",
+        file=io.BytesIO(b"\xff\xd8\xff\xe0" + b"x" * 4096),
+        headers={"content-type": "image/jpeg"},
+    )
+    with pytest.raises(HTTPException) as exc:
+        await svc.upload_photo(project_id=uuid.uuid4(), file=upload, category="site", user_id="user-1")
+    assert exc.value.status_code == 413
 
 
 # ── 7. Photo uploads are restricted to image signatures ──────────────────

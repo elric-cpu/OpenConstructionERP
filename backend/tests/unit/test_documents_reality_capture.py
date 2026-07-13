@@ -24,11 +24,13 @@ I/O are stubbed so the tests run on py3.11 in CI without PostgreSQL.
 
 from __future__ import annotations
 
+import io
 import uuid
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import UploadFile
 
 from app.modules.documents.service import (
     REALITY_CAPTURE_EXTENSIONS,
@@ -97,13 +99,19 @@ _LAS_HEADER = b"LASF" + b"\x00" * 20
 _E57_HEADER = b"ASTM-E57" + b"\x00" * 16
 
 
-def _make_upload_file(filename: str, content: bytes) -> Any:
-    """Minimal FastAPI UploadFile mock."""
-    mock = MagicMock()
-    mock.filename = filename
-    mock.content_type = "application/octet-stream"
-    mock.read = AsyncMock(return_value=content)
-    return mock
+def _make_upload_file(filename: str, content: bytes) -> UploadFile:
+    """Build a real BytesIO-backed FastAPI ``UploadFile`` for tests.
+
+    A real UploadFile (not a MagicMock) is used so the service's streaming read
+    - ``file.read(chunk)`` in a loop until EOF - terminates. A mock whose
+    ``read`` ignores the size argument and returns the whole body on every call
+    would spin forever.
+    """
+    return UploadFile(
+        filename=filename,
+        file=io.BytesIO(content),
+        headers={"content-type": "application/octet-stream"},
+    )
 
 
 async def _run_upload(filename: str, content: bytes, category: str) -> Any:

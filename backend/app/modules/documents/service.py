@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cde_states import CDEState, CDEStateMachine
 from app.core.i18n import get_locale
 from app.core.json_merge import merge_metadata
+from app.core.upload_streaming import stream_upload_to_temp
 from app.core.validation.messages import translate
 from app.modules.bim_hub.models import BIMElement
 from app.modules.documents.activity_service import record_activity
@@ -484,21 +485,25 @@ class DocumentService:
             if reality_capture_ext is not None:
                 category = "reality_capture"
 
-        # Enforce size cap (defence in depth - max also expected at the
-        # API gateway level). Done after reading because UploadFile is a
-        # streaming object: we cap on read by checking length before
-        # acceptance. 100 MB is enough for typical AEC drawings and
-        # contracts; oversized assets belong on direct-to-S3 paths.
-        content = await file.read()
-        if len(content) > MAX_FILE_SIZE:
+        # Enforce the size cap while streaming (defence in depth; a cap is also
+        # expected at the API gateway). A bare ``await file.read()`` here pulls
+        # the entire body into RAM before the length check, so a multi-GB upload
+        # would OOM-kill the single worker first. Stream to a temp file in 1 MB
+        # chunks (aborts past the cap), then read the now-bounded bytes back for
+        # the magic-byte checks and the on-disk write below. 100 MB is enough
+        # for typical AEC drawings and contracts; oversized assets belong on
+        # direct-to-S3 paths.
+        try:
+            async with stream_upload_to_temp(file, max_bytes=MAX_FILE_SIZE) as staged:
+                content = staged.path.read_bytes()
+        except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 detail=(
-                    f"File too large: {len(content)} bytes "
-                    f"(max {MAX_FILE_SIZE} bytes / "
-                    f"{MAX_FILE_SIZE // (1024 * 1024)} MB)."
+                    f"File too large (max {MAX_FILE_SIZE // (1024 * 1024)} MB). "
+                    "Upload a smaller file or use a direct-to-storage path."
                 ),
-            )
+            ) from exc
 
         # Magic-byte validation - BLOCKED_EXTENSIONS only rejects known-bad
         # names; this catches an attacker who renames evil.exe → evil.pdf.
@@ -730,12 +735,14 @@ class DocumentService:
                 detail=f"File type '{bad_ext}' is not allowed for security reasons.",
             )
 
-        content = await file.read()
-        if len(content) > MAX_FILE_SIZE:
+        try:
+            async with stream_upload_to_temp(file, max_bytes=MAX_FILE_SIZE) as staged:
+                content = staged.path.read_bytes()
+        except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=(f"File too large: {len(content)} bytes (max {MAX_FILE_SIZE} bytes)."),
-            )
+                detail=(f"File too large (max {MAX_FILE_SIZE // (1024 * 1024)} MB)."),
+            ) from exc
 
         from app.core.file_signature import (
             ALLOWED_CAD_TYPES,
@@ -1262,20 +1269,23 @@ class PhotoService:
         if category not in VALID_PHOTO_CATEGORIES:
             category = "site"
 
-        # Enforce size cap (defence in depth; max also expected at the
-        # API gateway level). 50 MB is enough for 12 MP JPEGs and
-        # construction-site phone photos; bigger assets belong on
-        # direct-to-S3 paths.
-        content = await file.read()
-        if len(content) > MAX_PHOTO_SIZE:
+        # Enforce the size cap while streaming (defence in depth; a cap is also
+        # expected at the API gateway). A bare ``await file.read()`` here pulls
+        # the entire body into RAM before any check, so a multi-GB upload would
+        # OOM-kill the single worker before the size guard could fire. Stream to
+        # a temp file in 1 MB chunks (aborts past the cap), then read the
+        # now-bounded bytes back for the magic-byte / pixel / EXIF checks below.
+        try:
+            async with stream_upload_to_temp(file, max_bytes=MAX_PHOTO_SIZE) as staged:
+                content = staged.path.read_bytes()
+        except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 detail=(
-                    f"Photo too large: {len(content)} bytes "
-                    f"(max {MAX_PHOTO_SIZE} bytes / "
-                    f"{MAX_PHOTO_SIZE // (1024 * 1024)} MB)."
+                    f"Photo too large (max {MAX_PHOTO_SIZE // (1024 * 1024)} MB). "
+                    "Resize the image or upload it at a lower resolution."
                 ),
-            )
+            ) from exc
 
         # Magic-byte cross-check - content_type is fully attacker-controlled
         # (it's a request header), so we re-derive the real format from the
@@ -1967,17 +1977,16 @@ class SheetService:
         raw_name = file.filename or "untitled.pdf"
         safe_name = _sanitize_filename(raw_name)
 
-        content = await file.read()
-        # Defence-in-depth size cap (also expected at API gateway level).
-        if len(content) > MAX_FILE_SIZE:
+        # Stream to a temp file (aborts past the cap) so a multi-GB upload never
+        # lands fully in RAM, then read the now-bounded bytes back for the split.
+        try:
+            async with stream_upload_to_temp(file, max_bytes=MAX_FILE_SIZE, suffix=".pdf") as staged:
+                content = staged.path.read_bytes()
+        except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=(
-                    f"PDF too large: {len(content)} bytes "
-                    f"(max {MAX_FILE_SIZE} bytes / "
-                    f"{MAX_FILE_SIZE // (1024 * 1024)} MB)."
-                ),
-            )
+                detail=(f"PDF too large (max {MAX_FILE_SIZE // (1024 * 1024)} MB)."),
+            ) from exc
 
         # Save the original PDF to uploads
         file_uuid = uuid.uuid4().hex[:12]
