@@ -353,9 +353,7 @@ class TestUploadDocumentGates:
                 owner_id=str(uuid.uuid4()),
             )
         except HTTPException as exc:
-            assert exc.status_code != 413, (
-                f"A 2 MB upload must not produce a 413 — got: {exc.status_code} {exc.detail}"
-            )
+            assert exc.status_code != 413, f"A 2 MB upload must not produce a 413 — got: {exc.status_code} {exc.detail}"
 
     @pytest.mark.asyncio
     async def test_encrypted_pdf_rejected_with_actionable_message(self):

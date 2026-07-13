@@ -78,6 +78,7 @@ class TestUploadCap:
             "_takeoff_documents_dir",
             lambda: tmp_path / "td",
         )
+
         async def _fake_parse(*a, **k):
             return (1, [{"page": 1, "text": "hello", "tables": [], "has_text": True}], False)
 
@@ -124,9 +125,7 @@ class TestTextExtractionBudget:
 
         # Stub the isolated parser to return 50 pages with 1 KB each.
         page_text = "A" * 1024  # 1 KB per page
-        fake_page_data = [
-            {"page": i + 1, "text": page_text, "tables": [], "has_text": True} for i in range(50)
-        ]
+        fake_page_data = [{"page": i + 1, "text": page_text, "tables": [], "has_text": True} for i in range(50)]
 
         async def _fake_parse(*a, **k):
             return (50, fake_page_data, False)
@@ -191,9 +190,7 @@ class TestLargePageCountMemorySafety:
         )
 
         page_text = "B" * 2048  # 2 KB per page
-        fake_page_data = [
-            {"page": i + 1, "text": page_text, "tables": [], "has_text": True} for i in range(100)
-        ]
+        fake_page_data = [{"page": i + 1, "text": page_text, "tables": [], "has_text": True} for i in range(100)]
 
         async def _fake_parse(*a, **k):
             return (100, fake_page_data, False)

@@ -159,6 +159,7 @@ class TestServiceDoesNotDuplicateMagicByteCheck:
             "_takeoff_documents_dir",
             lambda: tmp_path / "td",
         )
+
         async def _fake_parse(*a, **k):
             return (1, [{"page": 1, "text": "ok", "tables": [], "has_text": True}], False)
 

@@ -263,9 +263,7 @@ class _StubRepo:
 
 class TestUploadDocumentErrorPath:
     @pytest.mark.asyncio
-    async def test_unparseable_pdf_raises_generic_http_and_logs_server_side(
-        self, monkeypatch, caplog, tmp_path
-    ):
+    async def test_unparseable_pdf_raises_generic_http_and_logs_server_side(self, monkeypatch, caplog, tmp_path):
         """A definitively unreadable PDF → generic 400, no server-side leak.
 
         The isolated worker ran cleanly (exit 0) but neither parser could read
