@@ -22,7 +22,7 @@ from sqlalchemy import func, select
 
 from app.modules.backup.service import (
     RESTORE_SKIP_KEYS,
-    _STRIP_FIELDS,
+    _is_sensitive_field,
     build_scope_clause,
     get_backup_tables,
     restore_backup_data,
@@ -43,7 +43,7 @@ async def _export_scope(session, owner_id):
     for key, _t, cls in tables:
         clause = build_scope_clause(by_key, key, str(owner_id))
         rows = [] if clause is None else (await session.execute(select(cls).where(clause))).scalars().all()
-        data[key] = [{k: v for k, v in serialize_row(r).items() if k not in _STRIP_FIELDS} for r in rows]
+        data[key] = [{k: v for k, v in serialize_row(r).items() if not _is_sensitive_field(k)} for r in rows]
     return data
 
 
@@ -148,3 +148,36 @@ async def test_restore_leaves_other_users_untouched_and_repoints_ownership(sessi
     assert (await session.execute(select(func.count()).select_from(User))).scalar_one() == 2
     proj = (await session.execute(select(Project).where(Project.id == PROJECT_ID))).scalar_one()
     assert str(proj.owner_id) == str(MACHINE_B_USER)
+
+
+@pytest.mark.asyncio
+async def test_merge_restore_keeps_the_restorers_own_ai_settings(session):
+    """A's ai_settings must never collide with or overwrite B's, and no key leaks."""
+    from app.modules.ai.models import AISettings
+
+    session.add(AISettings(user_id=MACHINE_A_USER, preferred_model="a-model", anthropic_api_key="sk-a"))
+    session.add(AISettings(user_id=MACHINE_B_USER, preferred_model="b-model", anthropic_api_key="sk-b"))
+    await session.flush()
+
+    data = await _export_scope(session, MACHINE_A_USER)
+    assert data["ai_settings"], "export should include A's ai_settings row"
+    # The exported row must not carry the API key in plain text.
+    assert data["ai_settings"][0].get("anthropic_api_key") is None
+
+    session.expunge_all()
+
+    # B restores in MERGE mode. Repointing A's row to user_id=B would collide with
+    # B's own unique row, but ai_settings is skipped, so there is no crash.
+    imported, _skipped, _warnings = await restore_backup_data(
+        session,
+        user_id=str(MACHINE_B_USER),
+        manifest={"created_by": str(MACHINE_A_USER)},
+        data=data,
+        mode="merge",
+    )
+
+    assert imported["ai_settings"] == 0
+    kept = (await session.execute(select(AISettings).where(AISettings.user_id == MACHINE_B_USER))).scalar_one()
+    assert kept.preferred_model == "b-model"
+    assert kept.anthropic_api_key == "sk-b", "the restoring account keeps its own AI keys"
+    assert (await session.execute(select(func.count()).select_from(AISettings))).scalar_one() == 2

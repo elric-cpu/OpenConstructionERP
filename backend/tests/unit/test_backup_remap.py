@@ -7,7 +7,11 @@ to the restoring user, and the ``users`` table must be skipped entirely.
 
 from __future__ import annotations
 
-from app.modules.backup.service import RESTORE_SKIP_KEYS, remap_owner_refs
+from app.modules.backup.service import (
+    RESTORE_SKIP_KEYS,
+    _is_sensitive_field,
+    remap_owner_refs,
+)
 
 
 def test_remap_repoints_every_matching_field() -> None:
@@ -49,5 +53,19 @@ def test_remap_does_not_mutate_the_input() -> None:
     assert record["owner_id"] == old
 
 
-def test_users_table_is_never_restored() -> None:
+def test_account_config_tables_are_never_restored() -> None:
+    # Account-level config, not work data: kept as the restoring user's own.
     assert "users" in RESTORE_SKIP_KEYS
+    assert "ai_settings" in RESTORE_SKIP_KEYS
+
+
+def test_secrets_are_stripped_from_exports() -> None:
+    # Password hashes and every AI provider key stay out of the archive.
+    assert _is_sensitive_field("hashed_password")
+    assert _is_sensitive_field("password_hash")
+    assert _is_sensitive_field("anthropic_api_key")
+    assert _is_sensitive_field("openai_api_key")
+    # Ordinary work-data columns are kept.
+    assert not _is_sensitive_field("name")
+    assert not _is_sensitive_field("owner_id")
+    assert not _is_sensitive_field("quantity")

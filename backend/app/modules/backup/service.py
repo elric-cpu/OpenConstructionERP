@@ -60,8 +60,17 @@ BACKUP_FORMAT_VERSION = "1.0.0"
 # Application identifier embedded in every backup manifest.
 APP_ID = "openestimate"
 
-# Sensitive fields stripped from every row before serialisation.
+# Sensitive fields stripped from every row before serialisation. Password
+# hashes plus any AI provider key (every ``*_api_key`` column on ai_settings),
+# so a backup file that gets copied between machines never carries a secret in
+# plain text.
 _STRIP_FIELDS: frozenset[str] = frozenset({"hashed_password", "password_hash", "key_hash"})
+
+
+def _is_sensitive_field(key: str) -> bool:
+    """True for a column that must never be written into a backup archive."""
+    return key in _STRIP_FIELDS or key.endswith("_api_key")
+
 
 # Spool to disk after 16 MiB of in-memory buffer.
 _SPOOL_THRESHOLD_BYTES = 16 * 1024 * 1024
@@ -291,7 +300,9 @@ async def build_backup(
                         rows = []
                     else:
                         rows = (await session.execute(select(model_cls).where(clause))).scalars().all()
-                    serialised = [{k: v for k, v in serialize_row(r).items() if k not in _STRIP_FIELDS} for r in rows]
+                    serialised = [
+                        {k: v for k, v in serialize_row(r).items() if not _is_sensitive_field(k)} for r in rows
+                    ]
                     payload = json.dumps(serialised, indent=2, ensure_ascii=False, default=str)
                     zf.writestr(f"{backup_key}.json", payload)
                     record_counts[backup_key] = len(serialised)
@@ -560,14 +571,19 @@ class RestoreError(Exception):
         self.table = table
 
 
-# Tables never re-created on restore. A backup is one user's own work data, and
-# the account restoring it already exists on the target machine with its own
-# id, email and password. Cloning the exporter's ``users`` row would collide on
-# the unique email and fail the NOT NULL password (the hash is stripped from
-# every backup), which is exactly why a cross-machine restore used to abort.
-# Instead we skip the table and repoint ownership to the restoring user - see
-# ``remap_owner_refs``.
-RESTORE_SKIP_KEYS: frozenset[str] = frozenset({"users"})
+# Tables never touched on restore: account-level config, not the project work
+# data a transfer is about. The account restoring a backup already exists on the
+# target machine with its own id, email, password and AI settings.
+#   users:        cloning the exporter's row collides on the unique email and
+#                 fails the NOT NULL password (the hash is stripped from every
+#                 backup), which is exactly why a cross-machine restore aborted.
+#   ai_settings:  one row per user (unique user_id); repointing it to the
+#                 restoring user would collide with that user's own settings.
+#                 The restoring account keeps its own AI keys, which are the
+#                 right ones for its environment anyway.
+# Ownership on every other imported row is repointed to the restoring user via
+# ``remap_owner_refs``, so the actual work data lands under that account.
+RESTORE_SKIP_KEYS: frozenset[str] = frozenset({"users", "ai_settings"})
 
 
 def remap_owner_refs(record: dict[str, Any], old_owner: str, new_owner: str) -> dict[str, Any]:
