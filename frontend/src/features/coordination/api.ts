@@ -3,12 +3,12 @@
 /**
  * API helpers for the Coordination Hub dashboard.
  *
- * Endpoints (mounted at /api/v1/coordination):
- *   GET /v1/coordination/projects/{pid}/dashboard
- *   GET /v1/coordination/projects/{pid}/trade-matrix
- *   GET /v1/coordination/projects/{pid}/timeline?days=N
- *   GET /v1/coordination/projects/{pid}/thresholds
- *   PUT /v1/coordination/projects/{pid}/thresholds/{metric}
+ * Endpoints (mounted at /api/v1/coordination-hub, legacy /api/v1/coordination_hub):
+ *   GET /v1/coordination_hub/projects/{pid}/dashboard
+ *   GET /v1/coordination_hub/projects/{pid}/trade-matrix
+ *   GET /v1/coordination_hub/projects/{pid}/timeline?days=N
+ *   GET /v1/coordination_hub/projects/{pid}/thresholds
+ *   PUT /v1/coordination_hub/projects/{pid}/thresholds/{metric}
  */
 
 import { apiGet, apiPut, getAuthToken } from '@/shared/lib/api';
@@ -26,7 +26,7 @@ export function fetchCoordinationDashboard(
   projectId: string,
 ): Promise<CoordinationDashboard> {
   return apiGet<CoordinationDashboard>(
-    `/v1/coordination/projects/${projectId}/dashboard`,
+    `/v1/coordination_hub/projects/${projectId}/dashboard`,
   );
 }
 
@@ -35,7 +35,7 @@ export function fetchTradeMatrix(
   projectId: string,
 ): Promise<TradeMatrixResponse> {
   return apiGet<TradeMatrixResponse>(
-    `/v1/coordination/projects/${projectId}/trade-matrix`,
+    `/v1/coordination_hub/projects/${projectId}/trade-matrix`,
   );
 }
 
@@ -45,7 +45,7 @@ export function fetchCoordinationTimeline(
   days = 30,
 ): Promise<CoordinationTimelineResponse> {
   return apiGet<CoordinationTimelineResponse>(
-    `/v1/coordination/projects/${projectId}/timeline?days=${days}`,
+    `/v1/coordination_hub/projects/${projectId}/timeline?days=${days}`,
   );
 }
 
@@ -59,7 +59,7 @@ export function fetchCoordinationThresholds(
   projectId: string,
 ): Promise<CoordinationThresholdsResponse> {
   return apiGet<CoordinationThresholdsResponse>(
-    `/v1/coordination/projects/${projectId}/thresholds`,
+    `/v1/coordination_hub/projects/${projectId}/thresholds`,
   );
 }
 
@@ -75,7 +75,7 @@ export async function downloadCoordinationSnapshot(
 ): Promise<void> {
   const token = getAuthToken();
   const res = await fetch(
-    `/api/v1/coordination/projects/${projectId}/export.csv`,
+    `/api/v1/coordination_hub/projects/${projectId}/export.csv`,
     {
       method: 'GET',
       headers: {
@@ -115,7 +115,7 @@ export function updateCoordinationThreshold(
   body: CoordinationThresholdUpdate,
 ): Promise<ThresholdRow> {
   return apiPut<ThresholdRow, CoordinationThresholdUpdate>(
-    `/v1/coordination/projects/${projectId}/thresholds/${encodeURIComponent(metric)}`,
+    `/v1/coordination_hub/projects/${projectId}/thresholds/${encodeURIComponent(metric)}`,
     body,
   );
 }

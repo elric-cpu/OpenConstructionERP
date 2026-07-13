@@ -4,8 +4,8 @@
  *
  * Routes each upload to the endpoint that owns its kind so files land in
  * the right pipeline instead of all becoming generic documents:
- *   - BIM models (RVT / IFC / …) → POST /api/v1/bim/upload-cad/
- *   - DWG / DXF drawings        → POST /api/v1/dwg/drawings/upload/
+ *   - BIM models (RVT / IFC / …) → POST /api/v1/bim_hub/upload-cad/
+ *   - DWG / DXF drawings        → POST /api/v1/dwg_takeoff/drawings/upload/
  *   - everything else           → POST /api/v1/documents/upload/
  * The dedicated BIM/DWG endpoints stream the body server-side, so a large
  * model still uploads safely; only the documents path uses the resumable
@@ -66,10 +66,13 @@ export function UploadDialog({
   const directUploadUrl = useCallback(
     (kind: FileKind | null): string | null => {
       if (kind === 'bim_model') {
-        return `/api/v1/bim/upload-cad/?project_id=${projectId}`;
+        // Module mounts at /api/v1/bim_hub (dir name), not /api/v1/bim -
+        // the short prefix 404s and the CAD upload silently failed here.
+        return `/api/v1/bim_hub/upload-cad/?project_id=${projectId}`;
       }
       if (kind === 'dwg_drawing') {
-        return `/api/v1/dwg/drawings/upload/?project_id=${projectId}`;
+        // Same: the dwg_takeoff module mounts at /api/v1/dwg_takeoff.
+        return `/api/v1/dwg_takeoff/drawings/upload/?project_id=${projectId}`;
       }
       if (kind === 'photo') {
         // Site photos go to the photo pipeline so a real ProjectPhoto is

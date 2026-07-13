@@ -1226,42 +1226,55 @@ export default function TakeoffViewerModule({
     let activeTask: { cancel: () => void } | null = null;
 
     (async () => {
-      const page = await pdfDoc.getPage(currentPage);
-      if (cancelled) return;
-
-      const viewport = page.getViewport({ scale: zoom * window.devicePixelRatio });
-      const canvas = canvasRef.current!;
-      const ctx = canvas.getContext('2d')!;
-
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      canvas.style.width = `${viewport.width / window.devicePixelRatio}px`;
-      canvas.style.height = `${viewport.height / window.devicePixelRatio}px`;
-
-      if (overlayRef.current) {
-        overlayRef.current.width = viewport.width;
-        overlayRef.current.height = viewport.height;
-        overlayRef.current.style.width = canvas.style.width;
-        overlayRef.current.style.height = canvas.style.height;
-        overlayRef.current.getContext('2d')?.clearRect(0, 0, viewport.width, viewport.height);
-      }
-
-      const task = page.render({ canvasContext: ctx, viewport });
-      activeTask = task;
+      // Guard the whole render (getPage + page.render) in one try/catch.
+      // A rapid zoom or page-flip supersedes an in-flight render - pdf.js
+      // throws RenderingCancelledException, or "Cannot use the same canvas
+      // during multiple render() operations" - a page-flip mid-getPage
+      // rejects, and teardown aborts the worker. None of these are
+      // actionable. The old code rethrew every non-cancellation error out of
+      // this fire-and-forget IIFE, surfacing as "Uncaught (in promise)" in the
+      // console (and getPage at the top was unguarded entirely). The sibling
+      // PDF viewers (InlinePdfAnnotator / PunchPinBoard / PdfCompare) all
+      // swallow this; do the same - swallow, dev-only warn.
       try {
+        const page = await pdfDoc.getPage(currentPage);
+        if (cancelled) return;
+
+        const viewport = page.getViewport({ scale: zoom * window.devicePixelRatio });
+        const canvas = canvasRef.current!;
+        const ctx = canvas.getContext('2d')!;
+
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        canvas.style.width = `${viewport.width / window.devicePixelRatio}px`;
+        canvas.style.height = `${viewport.height / window.devicePixelRatio}px`;
+
+        if (overlayRef.current) {
+          overlayRef.current.width = viewport.width;
+          overlayRef.current.height = viewport.height;
+          overlayRef.current.style.width = canvas.style.width;
+          overlayRef.current.style.height = canvas.style.height;
+          overlayRef.current.getContext('2d')?.clearRect(0, 0, viewport.width, viewport.height);
+        }
+
+        const task = page.render({ canvasContext: ctx, viewport });
+        activeTask = task;
         await task.promise;
+        if (cancelled) return;
+        // Setting overlayRef.width/height above reset the overlay bitmap, wiping
+        // any measurements the draw effect painted while this render was
+        // suspended on getPage. Bump a nonce the draw effect depends on so it
+        // repaints over the freshly rendered page (issue #297); record that the
+        // main canvas now holds this page for the thumbnail downscale (#301).
+        mainRenderedPageRef.current = currentPage;
+        setRenderNonce((n) => n + 1);
       } catch (err: any) {
-        if (err?.name !== 'RenderingCancelledException') throw err;
-        return; // superseded render: the follow-up effect run repaints.
+        // Superseded/cancelled render or a teardown abort - expected, silent.
+        if (err?.name === 'RenderingCancelledException' || cancelled) return;
+        if (import.meta.env.DEV) {
+          console.warn('[takeoff] page render skipped:', err);
+        }
       }
-      if (cancelled) return;
-      // Setting overlayRef.width/height above reset the overlay bitmap, wiping
-      // any measurements the draw effect painted while this render was
-      // suspended on getPage. Bump a nonce the draw effect depends on so it
-      // repaints over the freshly rendered page (issue #297); record that the
-      // main canvas now holds this page for the thumbnail downscale (#301).
-      mainRenderedPageRef.current = currentPage;
-      setRenderNonce((n) => n + 1);
     })();
 
     return () => {
