@@ -136,7 +136,9 @@ class TakeoffDocument(Base):
     # only. Nullable with no server_default: NULL = never calibrated at the
     # document level (fall back to the legacy per-measurement stamps), so every
     # existing row reads unchanged and no backfill is needed. create_all +
-    # postgres_auto_migrate add the column, so no alembic migration is needed.
+    # postgres_auto_migrate add the column on normal deploys, and migration
+    # v3239_takeoff_page_scales keeps the revision graph and any external /
+    # migration-driven DB consistent.
     page_scales: Mapped[dict | None] = mapped_column(  # type: ignore[assignment]
         JSON, nullable=True, default=None
     )
