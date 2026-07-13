@@ -53,6 +53,7 @@ import { ScheduleCodesPanel } from './ScheduleCodesPanel';
 import { ScheduleResourcePanel } from './ScheduleResourcePanel';
 import { ScheduleRealtimePanel } from './ScheduleRealtimePanel';
 import { DependencyEditor } from './DependencyEditor';
+import { ActivityGrid } from './ActivityGrid';
 import { scheduleGuide } from './scheduleGuide';
 import { fetchBIMModels } from '@/features/bim/api';
 import type {
@@ -1484,10 +1485,11 @@ function ScheduleDetail({
                   </button>
                 ))}
               </div>
-              {/* Zoom only applies to the timeline views (table / gantt). */}
+              {/* Zoom only applies to the Gantt timeline; the Table view is a
+                  data grid with no timescale, so hide the zoom control there. */}
               <div
                 className={`flex items-center gap-1 rounded-lg border border-border-light p-0.5 ${
-                  viewMode !== 'table' && viewMode !== 'gantt' ? 'hidden' : ''
+                  viewMode !== 'gantt' ? 'hidden' : ''
                 }`}
               >
                 {(['day', 'week', 'month', 'quarter', 'year'] as const).map((level) => (
@@ -1767,6 +1769,14 @@ function ScheduleDetail({
                   todayLine={true}
                   onActivityResize={handleActivityResize}
                   onActivityClick={(id) => setSelectedActivityId(id)}
+                />
+              ) : viewMode === 'table' ? (
+                <ActivityGrid
+                  scheduleId={schedule.id}
+                  activities={filteredActivities}
+                  criticalActivityIds={criticalActivityIds}
+                  onEditDependencies={(id) => setSelectedActivityId(id)}
+                  onAddActivity={() => setShowAddActivity(true)}
                 />
               ) : (
                 <GanttChart
