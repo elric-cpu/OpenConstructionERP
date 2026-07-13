@@ -56,6 +56,7 @@ Endpoints:
         GET    /models/{model_id}/dataframe/columns/{col}/values - Value counts for a column
 """
 
+import contextlib
 import csv
 import gzip as _gzip
 import io
@@ -75,6 +76,8 @@ from app.core.http_headers import content_disposition_attachment
 from app.core.i18n import get_locale
 from app.core.rate_limiter import upload_limiter
 from app.core.storage import resolve_data_dir as _resolve_data_dir
+from app.core.upload_guards import reject_if_xlsx_bomb
+from app.core.upload_streaming import StreamedUpload, stream_upload_to_temp
 from app.core.validation.messages import translate
 from app.dependencies import CurrentUserId, RequirePermission, RequireRole, SessionDep, accessible_project_ids
 from app.modules.bim_hub import file_storage as bim_file_storage
@@ -968,6 +971,12 @@ def _rows_to_elements(
 # Upload (DataFrame + optional DAE geometry)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# Upload size caps for the DataFrame + geometry drop. The element table is read
+# back into memory for the CSV/openpyxl parse, so it is capped tighter than the
+# geometry blob, which only ever streams to disk on its way to storage.
+MAX_BIM_DATA_BYTES: int = 100 * 1024 * 1024  # 100 MB CSV/xlsx element table
+MAX_BIM_GEOMETRY_BYTES: int = 500 * 1024 * 1024  # 500 MB DAE/GLB/glTF geometry
+
 
 @router.post("/upload/", status_code=201)
 async def upload_bim_data(
@@ -1028,18 +1037,40 @@ async def upload_bim_data(
             detail="Unsupported data file type. Please upload CSV (.csv) or Excel (.xlsx) file.",
         )
 
-    data_content = await data_file.read()
+    # Stream the element table to a bounded temp file (1 MB chunks, aborts past
+    # the cap) so an oversized body never lands fully in RAM, then read the now
+    # bounded bytes back for the CSV/openpyxl parser.
+    data_suffix = pathlib.Path(data_filename).suffix or ".csv"
+    try:
+        async with stream_upload_to_temp(
+            data_file,
+            max_bytes=MAX_BIM_DATA_BYTES,
+            suffix=data_suffix,
+        ) as data_upload:
+            data_content = data_upload.path.read_bytes()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=(
+                f"Data file exceeds the {MAX_BIM_DATA_BYTES // (1024 * 1024)} MB upload limit. "
+                "Split the element table or export a lighter file."
+            ),
+        ) from exc
+
     if not data_content:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Uploaded data file is empty.",
         )
 
-    # No upload size cap - per product policy.
+    # xlsx is a zip container; reject a decompression bomb before openpyxl
+    # expands the full sheet in memory.
+    if data_filename.endswith((".xlsx", ".xls")):
+        reject_if_xlsx_bomb(data_content)
 
-    # --- Validate geometry file (if provided) ---
-    has_geometry = False
-    geometry_content: bytes | None = None
+    # --- Validate geometry file type (if provided) ---
+    # The bytes are streamed to disk later (inside the upload stack) so a large
+    # mesh export never has to sit in memory; here we only reject a bad type.
     if geometry_file is not None:
         geo_filename = (geometry_file.filename or "").lower()
         if not geo_filename.endswith((".dae", ".glb", ".gltf")):
@@ -1047,9 +1078,6 @@ async def upload_bim_data(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Unsupported geometry file type. Please upload DAE (.dae), GLB (.glb), or glTF (.gltf) file.",
             )
-        geometry_content = await geometry_file.read()
-        if geometry_content:
-            has_geometry = True
 
     # --- Parse data file ---
     try:
@@ -1075,43 +1103,70 @@ async def upload_bim_data(
             detail="No data rows found in the uploaded file.",
         )
 
-    # --- Convert rows to element dicts ---
-    element_dicts = _rows_to_elements(rows, has_geometry=has_geometry)
-    if not element_dicts:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No valid elements found. Ensure the file has an 'element_id' column.",
+    # Stream the geometry (if any) to a bounded temp file and keep it on disk
+    # through model creation so it can be persisted by path - a large DAE/GLB
+    # export never lands fully in RAM. The stack removes any leftover temp file
+    # once the geometry has been handed to storage.
+    async with contextlib.AsyncExitStack() as upload_stack:
+        geometry_upload: StreamedUpload | None = None
+        if geometry_file is not None:
+            geo_suffix = pathlib.Path(geometry_file.filename or "geometry.dae").suffix or ".dae"
+            try:
+                geometry_upload = await upload_stack.enter_async_context(
+                    stream_upload_to_temp(
+                        geometry_file,
+                        max_bytes=MAX_BIM_GEOMETRY_BYTES,
+                        suffix=geo_suffix,
+                    )
+                )
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=(
+                        f"Geometry file exceeds the {MAX_BIM_GEOMETRY_BYTES // (1024 * 1024)} MB "
+                        "upload limit. Export a lighter mesh or split the model."
+                    ),
+                ) from exc
+        has_geometry = geometry_upload is not None and geometry_upload.size > 0
+
+        # --- Convert rows to element dicts ---
+        element_dicts = _rows_to_elements(rows, has_geometry=has_geometry)
+        if not element_dicts:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No valid elements found. Ensure the file has an 'element_id' column.",
+            )
+
+        # --- Determine format from geometry file extension ---
+        geo_ext = ""
+        if geometry_file and geometry_file.filename:
+            geo_ext = pathlib.Path(geometry_file.filename).suffix.lstrip(".").lower()
+
+        model_format = geo_ext if geo_ext else "csv"
+
+        # --- Create BIM model ---
+        from app.modules.bim_hub.schemas import BIMModelCreate
+
+        model_data = BIMModelCreate(
+            project_id=uuid.UUID(project_id),
+            name=name,
+            discipline=discipline,
+            model_format=model_format,
+            status="processing",
         )
+        model = await service.create_model(model_data, user_id=user_id)
+        model_id = model.id
 
-    # --- Determine format from geometry file extension ---
-    geo_ext = ""
-    if geometry_file and geometry_file.filename:
-        geo_ext = pathlib.Path(geometry_file.filename).suffix.lstrip(".").lower()
-
-    model_format = geo_ext if geo_ext else "csv"
-
-    # --- Create BIM model ---
-    from app.modules.bim_hub.schemas import BIMModelCreate
-
-    model_data = BIMModelCreate(
-        project_id=uuid.UUID(project_id),
-        name=name,
-        discipline=discipline,
-        model_format=model_format,
-        status="processing",
-    )
-    model = await service.create_model(model_data, user_id=user_id)
-    model_id = model.id
-
-    # --- Save geometry file to configured storage backend ---
-    if has_geometry and geometry_content:
-        ext = pathlib.Path(geometry_file.filename or "geometry.dae").suffix or ".dae"  # type: ignore[union-attr]
-        await bim_file_storage.save_geometry(
-            project_id=project_id,
-            model_id=str(model_id),
-            ext=ext,
-            content=geometry_content,
-        )
+        # --- Save geometry to storage (streamed from the temp path) ---
+        if has_geometry and geometry_upload is not None:
+            ext = pathlib.Path(geometry_file.filename or "geometry.dae").suffix or ".dae"  # type: ignore[union-attr]
+            await bim_file_storage.save_geometry_from_path(
+                project_id=project_id,
+                model_id=str(model_id),
+                ext=ext,
+                src_path=geometry_upload.path,
+                size=geometry_upload.size,
+            )
 
     # --- Import elements ---
     from app.modules.bim_hub.schemas import BIMElementCreate

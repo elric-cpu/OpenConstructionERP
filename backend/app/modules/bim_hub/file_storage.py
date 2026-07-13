@@ -113,6 +113,32 @@ async def save_geometry(
     return key
 
 
+async def save_geometry_from_path(
+    project_id: uuid.UUID | str,
+    model_id: uuid.UUID | str,
+    ext: str,
+    src_path: pathlib.Path,
+    *,
+    size: int | None = None,
+) -> str:
+    """Persist a geometry blob from a file path (streaming).
+
+    Use this instead of :func:`save_geometry` when the upload is a large
+    DAE/GLB/glTF export - it avoids loading the whole mesh into memory
+    (on the local backend ``put_stream`` is a single ``rename``).  ``size``
+    is purely for the log line; it's read from the path if not provided.
+    """
+    key = geometry_key(project_id, model_id, ext)
+    await _backend().put_stream(key, src_path)
+    if size is None:
+        try:
+            size = src_path.stat().st_size
+        except OSError:
+            size = -1
+    logger.info("Saved BIM geometry (streamed) to key=%s (%d bytes)", key, size)
+    return key
+
+
 async def save_original_cad(
     project_id: uuid.UUID | str,
     model_id: uuid.UUID | str,
