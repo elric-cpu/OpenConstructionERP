@@ -709,7 +709,14 @@ def _jwt_secret_persist_dir() -> Path:
     override = os.environ.get("OE_DATA_DIR") or os.environ.get("DATA_DIR") or os.environ.get("OE_CLI_DATA_DIR")
     if override and override.strip():
         return Path(override.strip())
-    return Path.home() / ".openestimate"
+    try:
+        return Path.home() / ".openestimate"
+    except RuntimeError:
+        # Path.home() raises when no home directory can be resolved (a minimal
+        # container with HOME unset and no passwd entry). Fall back to a
+        # relative dir rather than aborting boot; the caller tolerates a failed
+        # persist by falling back to a per-process secret.
+        return Path(".openestimate")
 
 
 def _operator_supplied_jwt_secret() -> str | None:

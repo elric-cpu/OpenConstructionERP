@@ -129,6 +129,15 @@ class TestPersistDir:
         monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda _cls: home))
         assert _jwt_secret_persist_dir() == home / ".openestimate"
 
+    def test_falls_back_when_home_unresolvable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # No data-dir override (the autouse fixture cleared them) and Path.home()
+        # cannot resolve a home dir - the resolver must not abort boot.
+        def _boom(_cls: type[pathlib.Path]) -> pathlib.Path:
+            raise RuntimeError("no home directory")
+
+        monkeypatch.setattr(pathlib.Path, "home", classmethod(_boom))
+        assert _jwt_secret_persist_dir() == pathlib.Path(".openestimate")
+
 
 class TestEnsurePersistentJwtSecret:
     """The end-to-end auto-provision contract."""
