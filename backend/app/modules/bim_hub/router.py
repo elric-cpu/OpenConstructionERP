@@ -912,6 +912,38 @@ def _rows_to_elements(
         if not raw_element_type and props.get("category"):
             raw_element_type = props["category"]
 
+        # Fallback quantity recovery (issue #347): when the fixed-name pass
+        # above found nothing, a DDC export simply labelled its quantity columns
+        # differently. Recover them from the row / properties; only if there is
+        # still no numeric quantity at all fall back to coarse bounding-box
+        # figures, tagged so they read as estimated rather than measured.
+        if not quantities:
+            from app.modules.bim_hub.quantity_fallback import (
+                derive_quantities_from_bbox,
+                derive_quantities_from_columns,
+            )
+
+            derived = derive_quantities_from_columns({**row, **props})
+            for _dim, _qkey in (
+                ("area", "area_m2"),
+                ("volume", "volume_m3"),
+                ("length", "length_m"),
+                ("weight", "weight_kg"),
+            ):
+                if _dim in derived:
+                    quantities[_qkey] = derived[_dim]
+            if not quantities and bbox:
+                estimated = derive_quantities_from_bbox(bbox, raw_element_type)
+                for _dim, _qkey in (
+                    ("area", "area_m2"),
+                    ("volume", "volume_m3"),
+                    ("length", "length_m"),
+                ):
+                    if _dim in estimated:
+                        quantities[_qkey] = estimated[_dim]
+                if quantities:
+                    props.setdefault("quantities_source", "geometry_bbox")
+
         element: dict[str, Any] = {
             "stable_id": eid,
             "element_type": raw_element_type,

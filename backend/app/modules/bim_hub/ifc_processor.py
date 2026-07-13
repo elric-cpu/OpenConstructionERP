@@ -1540,6 +1540,39 @@ def _excel_elements_to_bim_result(
                 extras[k] = v
             properties = {**priority, **extras}
 
+        # Fallback quantity recovery (issue #347): the fixed-name pass above
+        # only matches exact column names, so a DDC export that labels its
+        # quantity columns differently (Qto_*.NetVolume, "Volume (m3)", ...)
+        # lands with no quantities. Recover them from the row / properties; only
+        # if there is still nothing numeric fall back to coarse bounding-box
+        # figures, tagged so they read as estimated rather than measured.
+        if not quantities:
+            from app.modules.bim_hub.quantity_fallback import (
+                derive_quantities_from_bbox,
+                derive_quantities_from_columns,
+            )
+
+            derived = derive_quantities_from_columns({**row, **properties})
+            for _dim, _qkey in (
+                ("area", "Area"),
+                ("volume", "Volume"),
+                ("length", "Length"),
+                ("weight", "Weight"),
+            ):
+                if _dim in derived:
+                    quantities[_qkey] = derived[_dim]
+            if not quantities and bbox:
+                estimated = derive_quantities_from_bbox(bbox, etype)
+                for _dim, _qkey in (
+                    ("area", "Area"),
+                    ("volume", "Volume"),
+                    ("length", "Length"),
+                ):
+                    if _dim in estimated:
+                        quantities[_qkey] = estimated[_dim]
+                if quantities:
+                    properties["quantities_source"] = "geometry_bbox"
+
         elements.append(
             {
                 "stable_id": stable_id,
