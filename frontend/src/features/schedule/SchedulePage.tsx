@@ -54,6 +54,7 @@ import { ScheduleResourcePanel } from './ScheduleResourcePanel';
 import { ScheduleRealtimePanel } from './ScheduleRealtimePanel';
 import { DependencyEditor } from './DependencyEditor';
 import { ActivityGrid } from './ActivityGrid';
+import { WorkCalendarManager } from './WorkCalendarManager';
 import { scheduleGuide } from './scheduleGuide';
 import { fetchBIMModels } from '@/features/bim/api';
 import type {
@@ -1099,7 +1100,7 @@ function ScheduleDetail({
   const { confirm, ...confirmProps } = useConfirm();
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>('week');
   const [viewMode, setViewMode] = useState<
-    'table' | 'gantt' | 'evm' | '4d' | 'quality' | 'risk' | 'compare' | 'progress' | 'delay' | 'codes' | 'resources' | 'realtime' | 'interchange'
+    'table' | 'gantt' | 'evm' | '4d' | 'quality' | 'risk' | 'compare' | 'progress' | 'delay' | 'codes' | 'calendars' | 'resources' | 'realtime' | 'interchange'
   >('gantt');
   const [showAddActivity, setShowAddActivity] = useState(false);
   // #348: activity whose dependency editor is open (click a Gantt bar to edit).
@@ -1466,6 +1467,7 @@ function ScheduleDetail({
                   { key: 'progress' as const, label: t('schedule.view_progress', { defaultValue: 'Progress' }) },
                   { key: 'delay' as const, label: t('schedule.view_delay', { defaultValue: 'Delay' }) },
                   { key: 'codes' as const, label: t('schedule.view_codes', { defaultValue: 'Codes' }) },
+                  { key: 'calendars' as const, label: t('schedule.calendar.view', { defaultValue: 'Calendars' }) },
                   { key: 'resources' as const, label: t('schedule.view_resources', { defaultValue: 'Resources' }) },
                   { key: 'realtime' as const, label: t('schedule.view_realtime', { defaultValue: 'Live' }) },
                   { key: 'interchange' as const, label: t('schedule.view_interchange', { defaultValue: 'Interchange' }) },
@@ -1744,6 +1746,8 @@ function ScheduleDetail({
               />
             ) : viewMode === 'codes' ? (
               <ScheduleCodesPanel scheduleId={schedule.id} projectId={projectId} />
+            ) : viewMode === 'calendars' ? (
+              <WorkCalendarManager projectId={projectId} />
             ) : viewMode === 'resources' ? (
               <ScheduleResourcePanel
                 scheduleId={schedule.id}
@@ -1773,6 +1777,7 @@ function ScheduleDetail({
               ) : viewMode === 'table' ? (
                 <ActivityGrid
                   scheduleId={schedule.id}
+                  projectId={projectId}
                   activities={filteredActivities}
                   criticalActivityIds={criticalActivityIds}
                   onEditDependencies={(id) => setSelectedActivityId(id)}

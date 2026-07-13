@@ -41,6 +41,10 @@ export interface Activity {
   /** BIM elements pinned to this activity for 4D scheduling.  Backend
    *  populates this from the `Activity.bim_element_ids` JSON column. */
   bim_element_ids?: string[] | null;
+  /** #348: the named work calendar assigned to this activity, or null/absent
+   *  when it inherits the project default. A backend change surfaces this on
+   *  the gantt/activity response; read it defensively (undefined == Default). */
+  calendar_id?: string | null;
   color: string;
   sort_order: number;
   /** Activity metadata passthrough. BOQ-generated activities carry

@@ -274,6 +274,73 @@ export function projectDashboard(projectId: string): Promise<LPSDashboard> {
   );
 }
 
+/* ── Named work calendars (#348) ──────────────────────────────────────────
+ *
+ * Project-scoped named work calendars: a work-week (``work_days`` as Mon=0 ..
+ * Sun=6), hours per day and a holiday list (ISO dates). One calendar per
+ * project may be the default; individual activities can override it through
+ * ``scheduleApi.setActivityCalendar`` (schedule module). The working-day
+ * duration math the schedule uses honours whichever calendar applies, so a
+ * calendar edit / assignment is followed by a reschedule at the call site.
+ * Backed by /v1/schedule-advanced/calendars/.
+ */
+
+/** Body for creating a named work calendar (``project_id`` is required). */
+export interface ScheduleCalendarCreateBody {
+  project_id: string;
+  name: string;
+  /** Working weekdays as ints, Mon=0 .. Sun=6. */
+  work_days: number[];
+  work_hours_per_day?: number;
+  /** Non-working ISO dates (YYYY-MM-DD). */
+  holidays?: string[];
+  is_default?: boolean;
+}
+
+/** Partial update for a named work calendar. */
+export interface ScheduleCalendarUpdateBody {
+  name?: string;
+  work_days?: number[];
+  work_hours_per_day?: number;
+  holidays?: string[];
+  is_default?: boolean;
+}
+
+/** List the project's named work calendars. */
+export function listCalendars(projectId: string): Promise<ScheduleCalendar[]> {
+  return apiGet<ScheduleCalendar[]>(
+    `/v1/schedule-advanced/calendars/?project_id=${encodeURIComponent(projectId)}`,
+  );
+}
+
+/** Create a named work calendar in the project. */
+export function createCalendar(
+  body: ScheduleCalendarCreateBody,
+): Promise<ScheduleCalendar> {
+  return apiPost<ScheduleCalendar, ScheduleCalendarCreateBody>(
+    '/v1/schedule-advanced/calendars/',
+    body,
+  );
+}
+
+/** Patch a named work calendar (partial update). */
+export function updateCalendar(
+  calendarId: string,
+  patch: ScheduleCalendarUpdateBody,
+): Promise<ScheduleCalendar> {
+  return apiPatch<ScheduleCalendar, ScheduleCalendarUpdateBody>(
+    `/v1/schedule-advanced/calendars/${encodeURIComponent(calendarId)}`,
+    patch,
+  );
+}
+
+/** Delete a named work calendar. */
+export function deleteCalendar(calendarId: string): Promise<void> {
+  return apiDelete(
+    `/v1/schedule-advanced/calendars/${encodeURIComponent(calendarId)}`,
+  );
+}
+
 /* ── Phase plans ──────────────────────────────────────────────────────── */
 
 export function listPhasePlans(masterScheduleId: string): Promise<PhasePlan[]> {

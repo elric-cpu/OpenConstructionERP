@@ -2,10 +2,11 @@
 // Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, RotateCcw, GitBranch, Diamond, Minus } from 'lucide-react';
 import { Button, Badge, Card } from '@/shared/ui';
 import { useToastStore } from '@/stores/useToastStore';
+import { listCalendars } from '@/features/schedule-advanced/api';
 import { scheduleApi, type Activity } from './api';
 
 const TYPES = ['task', 'milestone', 'summary'] as const;
@@ -53,12 +54,14 @@ function addDaysIso(iso: string, days: number): string {
  */
 export function ActivityGrid({
   scheduleId,
+  projectId,
   activities,
   criticalActivityIds,
   onEditDependencies,
   onAddActivity,
 }: {
   scheduleId: string;
+  projectId: string;
   activities: Activity[];
   criticalActivityIds?: Set<string>;
   onEditDependencies: (activityId: string) => void;
@@ -70,6 +73,14 @@ export function ActivityGrid({
 
   const invalidateGantt = () =>
     queryClient.invalidateQueries({ queryKey: ['gantt', scheduleId] });
+
+  // #348: the project's named work calendars, for the per-row calendar picker.
+  // Keyed by projectId so the picker and the WorkCalendarManager share a cache.
+  const { data: calendars = [] } = useQuery({
+    queryKey: ['schedule-calendars', projectId],
+    queryFn: () => listCalendars(projectId),
+    enabled: !!projectId,
+  });
 
   const updateMutation = useMutation({
     mutationFn: ({ id, body }: { id: string; body: Partial<Activity> }) =>
@@ -103,10 +114,37 @@ export function ActivityGrid({
       }),
   });
 
-  const busy = updateMutation.isPending || rescheduleMutation.isPending;
-  // Only a full reschedule (which moves rows) locks editing; per-cell PATCHes
-  // leave the rest of the grid editable.
-  const cellsDisabled = rescheduleMutation.isPending;
+  // #348: assign (calendarId) or clear (null) an activity's work calendar, then
+  // recompute dates from the network - working-day durations depend on the
+  // calendar - and refetch the edges + bars. Mirrors DependencyEditor.afterChange().
+  const setCalendarMutation = useMutation({
+    mutationFn: ({ id, calendarId }: { id: string; calendarId: string | null }) =>
+      scheduleApi.setActivityCalendar(id, calendarId),
+    onSuccess: async () => {
+      await scheduleApi.reschedule(scheduleId);
+      await queryClient.invalidateQueries({ queryKey: ['schedule-relationships', scheduleId] });
+      await queryClient.invalidateQueries({ queryKey: ['gantt', scheduleId] });
+      addToast({
+        type: 'success',
+        title: t('schedule.calendar.assigned', { defaultValue: 'Calendar updated' }),
+      });
+    },
+    onError: (error: Error) => {
+      addToast({
+        type: 'error',
+        title: t('toasts.error', { defaultValue: 'Error' }),
+        message: error.message,
+      });
+      // Refetch so a rejected change reverts the select to the stored value.
+      invalidateGantt();
+    },
+  });
+
+  const busy =
+    updateMutation.isPending || rescheduleMutation.isPending || setCalendarMutation.isPending;
+  // Only an operation that moves rows (a full reschedule, or a calendar change
+  // that reschedules) locks editing; per-cell PATCHes leave the grid editable.
+  const cellsDisabled = rescheduleMutation.isPending || setCalendarMutation.isPending;
 
   // ── Cell commit handlers ────────────────────────────────────────────────
   const commitName = (a: Activity, raw: string) => {
@@ -147,6 +185,13 @@ export function ActivityGrid({
     updateMutation.mutate({ id: a.id, body: { end_date: end } });
   };
 
+  const commitCalendar = (a: Activity, raw: string) => {
+    // Empty value -> clear (fall back to the project default). No-op if unchanged.
+    const next = raw || null;
+    if ((a.calendar_id ?? null) === next) return;
+    setCalendarMutation.mutate({ id: a.id, calendarId: next });
+  };
+
   const columns = useMemo(
     () => [
       { key: 'wbs', label: t('schedule.wbs_code', { defaultValue: 'WBS' }), align: 'left' as const },
@@ -156,6 +201,7 @@ export function ActivityGrid({
       { key: 'end', label: t('schedule.end_date', { defaultValue: 'End' }), align: 'left' as const },
       { key: 'duration', label: t('schedule.duration', { defaultValue: 'Duration' }), align: 'right' as const },
       { key: 'progress', label: t('schedule.progress', { defaultValue: 'Progress' }), align: 'right' as const },
+      { key: 'calendar', label: t('schedule.calendar.column', { defaultValue: 'Calendar' }), align: 'left' as const },
       { key: 'deps', label: t('schedule.predecessors', { defaultValue: 'Predecessors' }), align: 'left' as const },
     ],
     [t],
@@ -203,7 +249,7 @@ export function ActivityGrid({
       <div className="overflow-x-auto">
         <table
           data-testid="activity-grid"
-          className="w-full min-w-[760px] border-collapse text-sm"
+          className="w-full min-w-[900px] border-collapse text-sm"
         >
           <thead>
             <tr className="border-b border-border-light bg-surface-secondary/30 text-2xs font-semibold uppercase tracking-wider text-content-tertiary">
@@ -322,6 +368,26 @@ export function ActivityGrid({
                       <Badge variant={isCritical ? 'error' : 'neutral'} size="sm">
                         {a.progress_pct}%
                       </Badge>
+                    </td>
+                    <td className="px-2 py-1.5 align-middle">
+                      <select
+                        key={`cal-${a.id}-${a.calendar_id ?? ''}`}
+                        data-testid={`grid-calendar-${a.id}`}
+                        aria-label={t('schedule.calendar.column', { defaultValue: 'Calendar' })}
+                        className={CELL_INPUT_CLS}
+                        defaultValue={a.calendar_id ?? ''}
+                        disabled={cellsDisabled}
+                        onChange={(e) => commitCalendar(a, e.target.value)}
+                      >
+                        <option value="">
+                          {t('schedule.calendar.default_option', { defaultValue: 'Default' })}
+                        </option>
+                        {calendars.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td className="px-2 py-1.5 align-middle">
                       <button
