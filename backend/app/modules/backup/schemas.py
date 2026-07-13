@@ -57,6 +57,7 @@ class RestoreResponse(BaseModel):
     imported: dict[str, int]
     skipped: dict[str, int]
     warnings: list[str]
+    files_restored: int = 0
 
 
 class ValidateResponse(BaseModel):

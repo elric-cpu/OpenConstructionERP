@@ -46,7 +46,7 @@ from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import inspect, or_, select
+from sqlalchemy import delete, inspect, or_, select
 
 from app.config import get_settings
 from app.database import async_session_factory
@@ -545,15 +545,204 @@ def deserialize_row(model_class: type, data: dict[str, Any]) -> Any:
     return model_class(**kwargs)
 
 
+class RestoreError(Exception):
+    """Abort signal for a restore that must roll back wholesale.
+
+    Raised on a fatal clear or flush failure so the caller rolls back the
+    single restore transaction and returns one clean error rather than
+    committing a half-applied database. ``stage`` is ``"clear"`` or
+    ``"import"`` and ``table`` is the backup key that failed.
+    """
+
+    def __init__(self, message: str, *, stage: str, table: str) -> None:
+        super().__init__(message)
+        self.stage = stage
+        self.table = table
+
+
+# Tables never re-created on restore. A backup is one user's own work data, and
+# the account restoring it already exists on the target machine with its own
+# id, email and password. Cloning the exporter's ``users`` row would collide on
+# the unique email and fail the NOT NULL password (the hash is stripped from
+# every backup), which is exactly why a cross-machine restore used to abort.
+# Instead we skip the table and repoint ownership to the restoring user - see
+# ``remap_owner_refs``.
+RESTORE_SKIP_KEYS: frozenset[str] = frozenset({"users"})
+
+
+def remap_owner_refs(record: dict[str, Any], old_owner: str, new_owner: str) -> dict[str, Any]:
+    """Repoint a row's ownership columns from the exporter to the restorer.
+
+    A backup is scoped to one user's own project graph, so any column holding
+    the exporter's user id (``owner_id``, ``created_by``, ``user_id``,
+    ``uploaded_by`` and so on) is an ownership reference. Rewriting every field
+    equal to ``old_owner`` to ``new_owner`` makes the imported data land under
+    the restoring account on the new machine, and it is the only thing that
+    makes the data visible there at all, because the two machines mint
+    different user ids. Non-user columns are untouched: a field holding exactly
+    the exporter's UUID is, in practice, always a user reference.
+    """
+    if not old_owner or old_owner == new_owner:
+        return record
+    return {key: (new_owner if isinstance(val, str) and val == old_owner else val) for key, val in record.items()}
+
+
+async def restore_backup_data(
+    session: Any,
+    *,
+    user_id: str,
+    manifest: dict[str, Any],
+    data: dict[str, list[dict]],
+    mode: str,
+) -> tuple[dict[str, int], dict[str, int], list[str]]:
+    """Restore parsed backup ``data`` into the DB as ``user_id``.
+
+    Runs inside the caller's transaction: the caller commits on success and
+    rolls back on any exception, so a restore is always all-or-nothing.
+    ``replace`` mode first clears the restoring user's own rows through the
+    same ownership scope the export used, then imports; ``merge`` skips rows
+    whose id already exists. The ``users`` table is never touched (see
+    ``RESTORE_SKIP_KEYS``) and every imported row's ownership is repointed to
+    ``user_id`` (see ``remap_owner_refs``) so a backup transfers cleanly onto
+    another machine under the restoring account. A fatal clear or flush failure
+    raises :class:`RestoreError`.
+    """
+    tables = get_backup_tables()
+    by_key = {key: cls for key, _table_name, cls in tables}
+    old_owner = str(manifest.get("created_by") or "")
+    new_owner = str(user_id)
+
+    imported: dict[str, int] = {}
+    skipped: dict[str, int] = {}
+    warnings: list[str] = []
+
+    if mode == "replace":
+        # FK-safe: children before parents. Scoped to the restoring user's own
+        # rows so another user's data is never cleared, and ``users`` is
+        # skipped so the restoring account is never deleted from under itself.
+        for backup_key, _table_name, model_cls in reversed(tables):
+            if backup_key in RESTORE_SKIP_KEYS:
+                continue
+            scope = build_scope_clause(by_key, backup_key, new_owner)
+            if scope is None:
+                continue
+            try:
+                await session.execute(delete(model_cls).where(scope))
+            except Exception as exc:
+                raise RestoreError(str(exc), stage="clear", table=backup_key) from exc
+
+    for backup_key, _table_name, model_cls in tables:
+        if backup_key in RESTORE_SKIP_KEYS:
+            imported[backup_key] = 0
+            skipped[backup_key] = 0
+            continue
+
+        records = data.get(backup_key, [])
+        if not records:
+            imported[backup_key] = 0
+            skipped[backup_key] = 0
+            continue
+
+        count_imported = 0
+        count_skipped = 0
+
+        for record in records:
+            record = remap_owner_refs(record, old_owner, new_owner)
+            if mode == "merge":
+                record_id = record.get("id")
+                if record_id:
+                    try:
+                        lookup_id = uuid.UUID(record_id) if isinstance(record_id, str) else record_id
+                    except (ValueError, TypeError):
+                        count_skipped += 1
+                        continue
+                    existing = (
+                        await session.execute(select(model_cls).where(model_cls.id == lookup_id))
+                    ).scalar_one_or_none()
+                    if existing is not None:
+                        count_skipped += 1
+                        continue
+            try:
+                obj = deserialize_row(model_cls, record)
+                session.add(obj)
+                count_imported += 1
+            except Exception as exc:
+                count_skipped += 1
+                logger.warning("Skipped record in %s: %s", backup_key, str(exc)[:100])
+
+        imported[backup_key] = count_imported
+        skipped[backup_key] = count_skipped
+
+        # Flush per table for FK-ordered inserts. A flush failure is fatal: it
+        # aborts the whole restore rather than committing a partial import on
+        # top of a replace-mode delete that already cleared everything.
+        try:
+            await session.flush()
+        except Exception as exc:
+            raise RestoreError(str(exc), stage="import", table=backup_key) from exc
+
+    return imported, skipped, warnings
+
+
+async def restore_backup_files(raw: bytes, *, backend: Any = None) -> tuple[int, list[str]]:
+    """Write a backup's embedded ``files/`` blobs into local storage.
+
+    Export can embed the binaries referenced by ``file_path`` columns
+    (documents, drawings, photos) under ``files/<backup_key>/<storage-key>``.
+    This writes them back so a transferred backup keeps those files, not just
+    the rows that point at them. It is best-effort and runs OUTSIDE the DB
+    transaction: a file that fails to write is reported as a warning and never
+    undoes the data restore, exactly as the export lists an unreadable file as
+    a warning rather than aborting. Returns ``(written_count, warnings)``.
+    ``backend`` defaults to the configured storage backend and is injectable
+    for tests.
+    """
+    written = 0
+    warnings: list[str] = []
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(raw))
+    except zipfile.BadZipFile:
+        return 0, ["Could not reopen the archive to restore files"]
+
+    names = [n for n in zf.namelist() if n.startswith("files/") and not n.endswith("/")]
+    if not names:
+        return 0, warnings
+
+    if backend is None:
+        from app.core.storage import get_storage_backend
+
+        backend = get_storage_backend()
+
+    for name in names:
+        # Embedded as ``files/<backup_key>/<storage-key>``; recover the storage
+        # key by dropping the first two path segments.
+        parts = name.split("/", 2)
+        if len(parts) < 3 or not parts[2]:
+            continue
+        key = parts[2]
+        try:
+            await backend.put(key, zf.read(name))
+            written += 1
+        except Exception as exc:
+            warnings.append(f"Failed to restore file {key}: {str(exc)[:200]}")
+
+    return written, warnings
+
+
 __all__ = [
     "APP_ID",
     "BACKUP_FORMAT_VERSION",
+    "RESTORE_SKIP_KEYS",
+    "RestoreError",
     "build_backup",
     "build_scope_clause",
     "cleanup_temp_file",
     "deserialize_row",
     "get_backup_tables",
     "parse_backup_zip",
+    "remap_owner_refs",
+    "restore_backup_data",
+    "restore_backup_files",
     "serialize_row",
     "spool_to_disk",
     "stream_spooled",
