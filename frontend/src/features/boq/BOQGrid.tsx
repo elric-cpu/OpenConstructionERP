@@ -135,6 +135,9 @@ const PASTE_PROTECTED_FIELDS = new Set(['total', '_actions', '_drag', '_checkbox
 /** Numeric column fields — pasted text must be parsed to a number. */
 const NUMERIC_FIELDS = new Set(['quantity', 'unit_rate']);
 
+/** Outcome of pasting one clipboard cell, so partial failures are not silent. */
+type CellPasteOutcome = 'applied' | 'unchanged' | 'blocked' | 'invalid';
+
 /**
  * Parse a pasted string into a number. Handles thousand separators
  * (both comma and period variants) and strips currency symbols.
@@ -2273,22 +2276,26 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
 
   /**
    * Apply a single pasted value to a cell, calling onUpdatePosition to persist it.
-   * Returns true if the paste was applied, false if it was rejected.
+   *
+   * Returns the outcome so the caller can tell the user what happened instead of
+   * dropping bad cells in silence (issue #347): `applied` wrote a new value,
+   * `unchanged` matched what was already there, `blocked` hit a read-only cell,
+   * and `invalid` means the clipboard text was not a usable number.
    */
   const applyCellPaste = useCallback(
-    (api: GridApi, rowIndex: number, colId: string, rawClipboard: string): boolean => {
+    (api: GridApi, rowIndex: number, colId: string, rawClipboard: string): CellPasteOutcome => {
       const rowNode = api.getDisplayedRowAtIndex(rowIndex);
-      if (!rowNode?.data?.id) return false;
+      if (!rowNode?.data?.id) return 'blocked';
 
       const data = rowNode.data as Record<string, unknown>;
-      if (!isCellPasteable(data, colId)) return false;
+      if (!isCellPasteable(data, colId)) return 'blocked';
 
       const oldValue = data[colId];
       let newValue: string | number = rawClipboard;
 
       if (NUMERIC_FIELDS.has(colId)) {
         const parsed = parseClipboardNumber(rawClipboard);
-        if (isNaN(parsed) || !isFinite(parsed) || parsed < 0) return false;
+        if (isNaN(parsed) || !isFinite(parsed) || parsed < 0) return 'invalid';
         // Issue #287: a pasted number is typed against the DISPLAYED measurement
         // system, so round it as the user sees it and then convert back to
         // metric-canonical storage. Identity for the metric system / unmapped
@@ -2302,12 +2309,12 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
       }
 
       // Skip if value is unchanged
-      if (oldValue === newValue) return false;
+      if (oldValue === newValue) return 'unchanged';
 
       const update: UpdatePositionData = { [colId]: newValue };
       const old: UpdatePositionData = { [colId]: oldValue };
       onUpdatePosition(data.id as string, update, old);
-      return true;
+      return 'applied';
     },
     [onUpdatePosition, isCellPasteable, displayQuantity],
   );
@@ -2389,6 +2396,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
         if (startColIdx === -1) return;
 
         let pastedCount = 0;
+        let invalidCount = 0;
         const totalRowCount = api.getDisplayedRowCount();
 
         for (let rowOffset = 0; rowOffset < clipboardRows.length; rowOffset++) {
@@ -2402,18 +2410,45 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
 
             const targetCol = allColumns[targetColIdx]!;
             const targetColId = targetCol.getColId();
-            const applied = applyCellPaste(api, targetRowIdx, targetColId, cells[colOffset] ?? '');
-            if (applied) pastedCount++;
+            const outcome = applyCellPaste(api, targetRowIdx, targetColId, cells[colOffset] ?? '');
+            if (outcome === 'applied') pastedCount++;
+            // A cell that carried data but was not a usable number is the silent
+            // drop from #347: count it so the user is warned. Read-only targets
+            // ('blocked') and no-op matches ('unchanged') stay quiet by design.
+            else if (outcome === 'invalid') invalidCount++;
           }
         }
 
-        if (pastedCount === 0) {
+        if (pastedCount === 0 && invalidCount === 0) {
           addToast(
             {
               type: 'error',
               title: t('boq.paste_failed', { defaultValue: 'Could not paste - invalid data or read-only cells' }),
             },
             { duration: 3000 },
+          );
+        } else if (pastedCount === 0) {
+          addToast(
+            {
+              type: 'error',
+              title: t('boq.paste_all_invalid', {
+                defaultValue: 'Could not paste, {{count}} values were not valid numbers',
+                count: invalidCount,
+              }),
+            },
+            { duration: 3500 },
+          );
+        } else if (invalidCount > 0) {
+          addToast(
+            {
+              type: 'warning',
+              title: t('boq.paste_partial', {
+                defaultValue: 'Pasted {{pasted}}, skipped {{skipped}} unreadable',
+                pasted: pastedCount,
+                skipped: invalidCount,
+              }),
+            },
+            { duration: 4000 },
           );
         } else {
           addToast(
@@ -2423,8 +2458,10 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
             },
             { duration: 2000 },
           );
+        }
 
-          // Flash pasted cells for visual feedback
+        // Flash the cells that actually took a value (success or partial paste).
+        if (pastedCount > 0) {
           const flashRowNodes = [];
           const flashColumns = [];
           for (let rowOffset = 0; rowOffset < clipboardRows.length; rowOffset++) {

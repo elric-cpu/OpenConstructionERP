@@ -55,20 +55,37 @@ function detectColumns(headerCells: string[]): Record<number, string> {
 
 const DEFAULT_ORDER = ['description', 'unit', 'quantity', 'unit_rate'];
 
+/**
+ * Parse a human-entered number in either 1,234.56 or 1.234,56 grouping.
+ * Returns NaN when the cell holds something that is not a number, so the
+ * caller can flag it instead of silently reading a bad value as zero.
+ */
 function parseNumber(s: string): number {
-  if (!s) return 0;
-  const cleaned = s.replace(/[^\d.,-]/g, '');
+  const trimmed = s.trim();
+  if (!trimmed) return NaN;
+  const cleaned = trimmed.replace(/[^\d.,-]/g, '');
+  if (!/\d/.test(cleaned)) return NaN;
   // Detect European format: 1.234,56
   if (/^\d{1,3}(\.\d{3})*(,\d+)?$/.test(cleaned)) {
-    return parseFloat(cleaned.replace(/\./g, '').replace(',', '.')) || 0;
+    return parseFloat(cleaned.replace(/\./g, '').replace(',', '.'));
   }
   // US/UK format: 1,234.56
-  return parseFloat(cleaned.replace(/,/g, '')) || 0;
+  return parseFloat(cleaned.replace(/,/g, ''));
 }
 
-function parseRows(raw: string): { rows: PastedRow[]; detectedHeaders: string[] } {
+export interface ParseResult {
+  rows: PastedRow[];
+  detectedHeaders: string[];
+  /** Data lines dropped because they carried no description. */
+  skippedEmpty: number;
+  /** Number cells that were present but could not be read as a number. */
+  invalidNumbers: number;
+}
+
+export function parseRows(raw: string): ParseResult {
   const lines = raw.split('\n').filter((l) => l.trim());
-  if (lines.length === 0) return { rows: [], detectedHeaders: [] };
+  if (lines.length === 0)
+    return { rows: [], detectedHeaders: [], skippedEmpty: 0, invalidNumbers: 0 };
 
   const firstLine = lines[0] ?? '';
   const firstRow = firstLine.split('\t');
@@ -90,6 +107,8 @@ function parseRows(raw: string): { rows: PastedRow[]; detectedHeaders: string[] 
   const dataLines = hasHeaders ? lines.slice(1) : lines;
   const rows: PastedRow[] = [];
   let autoOrdinal = 1;
+  let skippedEmpty = 0;
+  let invalidNumbers = 0;
 
   for (const line of dataLines) {
     const cells = line.split('\t');
@@ -99,18 +118,36 @@ function parseRows(raw: string): { rows: PastedRow[]; detectedHeaders: string[] 
     }
 
     const desc = row['description'] || '';
-    if (!desc) continue; // Skip empty descriptions
+    if (!desc) {
+      // A line carried some content but no description, so it cannot become a
+      // position. Count it so the user is told rather than left guessing.
+      skippedEmpty++;
+      continue;
+    }
+
+    const rawQty = row['quantity'] ?? '';
+    const rawRate = row['unit_rate'] ?? '';
+    let quantity = rawQty ? parseNumber(rawQty) : 1;
+    let unit_rate = rawRate ? parseNumber(rawRate) : 0;
+    if (Number.isNaN(quantity)) {
+      invalidNumbers++;
+      quantity = 1;
+    }
+    if (Number.isNaN(unit_rate)) {
+      invalidNumbers++;
+      unit_rate = 0;
+    }
 
     rows.push({
       ordinal: row['ordinal'] || String(autoOrdinal++).padStart(2, '0'),
       description: desc,
       unit: row['unit'] || 'pcs',
-      quantity: parseNumber(row['quantity'] || '1'),
-      unit_rate: parseNumber(row['unit_rate'] || '0'),
+      quantity,
+      unit_rate,
     });
   }
 
-  return { rows, detectedHeaders };
+  return { rows, detectedHeaders, skippedEmpty, invalidNumbers };
 }
 
 /* ── Component ────────────────────────────────────────────────────── */
@@ -122,7 +159,10 @@ export function ExcelPasteModal({ open, onClose, onImport, loading }: ExcelPaste
   const titleId = useId();
   useFocusTrap(panelRef, open);
 
-  const { rows, detectedHeaders } = useMemo(() => parseRows(raw), [raw]);
+  const { rows, detectedHeaders, skippedEmpty, invalidNumbers } = useMemo(
+    () => parseRows(raw),
+    [raw],
+  );
   const totalSum = useMemo(() => rows.reduce((s, r) => s + r.quantity * r.unit_rate, 0), [rows]);
 
   const handleImport = useCallback(() => {
@@ -209,6 +249,28 @@ export function ExcelPasteModal({ open, onClose, onImport, loading }: ExcelPaste
             <div className="flex items-center gap-2 text-amber-600">
               <AlertTriangle size={14} />
               <span className="text-xs">{t('boq.paste_no_data', { defaultValue: 'No valid rows detected. Make sure data is tab-separated.' })}</span>
+            </div>
+          )}
+
+          {/* Nothing is dropped in silence: tell the user what could not be read. */}
+          {(skippedEmpty > 0 || invalidNumbers > 0) && (
+            <div className="space-y-1 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2">
+              {skippedEmpty > 0 && (
+                <div className="flex items-center gap-2 text-amber-700">
+                  <AlertTriangle size={14} />
+                  <span className="text-xs">
+                    {t('boq.paste_skipped_rows', { defaultValue: '{{count}} rows had no description and were skipped', count: skippedEmpty })}
+                  </span>
+                </div>
+              )}
+              {invalidNumbers > 0 && (
+                <div className="flex items-center gap-2 text-amber-700">
+                  <AlertTriangle size={14} />
+                  <span className="text-xs">
+                    {t('boq.paste_invalid_numbers', { defaultValue: '{{count}} number cells could not be read and kept their default (qty 1, rate 0)', count: invalidNumbers })}
+                  </span>
+                </div>
+              )}
             </div>
           )}
 
