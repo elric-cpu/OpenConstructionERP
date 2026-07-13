@@ -227,6 +227,11 @@ class _StubCalendarRepo(_StubRepo):
                 return r
         return None
 
+    async def clear_defaults_except(self, project_id: uuid.UUID, keep_id: uuid.UUID | None = None) -> None:
+        for r in self.rows.values():
+            if r.project_id == project_id and r.is_default and r.id != keep_id:
+                r.is_default = False
+
 
 def _make_service() -> ScheduleAdvancedService:
     svc = ScheduleAdvancedService.__new__(ScheduleAdvancedService)
