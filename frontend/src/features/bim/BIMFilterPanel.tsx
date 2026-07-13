@@ -105,8 +105,10 @@ interface BIMFilterPanelProps {
   onClose?: () => void;
   onElementClick?: (elementId: string) => void;
   /** When set, the panel shows a "Link to BOQ" button that opens the
-   *  AddToBOQ modal populated with the current filtered subset. */
-  onQuickTakeoff?: () => void;
+   *  AddToBOQ modal populated with the current visible subset. Receives the
+   *  same isolation-aware `visibleElements` the button counts, so the linked
+   *  set matches the count and what Save-as-group / CSV export act on. */
+  onQuickTakeoff?: (visibleElements: BIMElementData[]) => void;
   /** Current visible-element count from the parent (after applyFilter). */
   visibleElementCount?: number | null;
   /** When set, the panel shows a "Save as group" button that opens the
@@ -1119,7 +1121,7 @@ export default function BIMFilterPanel({
             {onQuickTakeoff && (
               <button
                 type="button"
-                onClick={onQuickTakeoff}
+                onClick={() => onQuickTakeoff(visibleElements)}
                 className="flex-1 inline-flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] font-medium rounded-md bg-oe-blue text-white hover:bg-oe-blue-dark transition-colors"
                 title={t('bim.quick_takeoff_title', {
                   defaultValue: 'Create a BOQ position from the current filter',

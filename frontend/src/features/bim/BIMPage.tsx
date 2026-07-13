@@ -3044,15 +3044,20 @@ export function BIMPage() {
     [activeModelId, addToast, queryClient, t],
   );
 
-  // Kick a "quick takeoff" from the currently-applied filter - aggregate all
-  // elements that match the active filter predicate and open AddToBOQ with
-  // the full subset so the user can generate one BOQ position from e.g.
-  // "all walls on level 1".
-  const handleQuickTakeoff = useCallback(() => {
+  // Kick a "quick takeoff" from the current filter panel - open AddToBOQ with
+  // the visible subset so the user can generate one BOQ position from e.g.
+  // "all walls on level 1". The panel passes its own `visibleElements`, which
+  // honors element isolation as well as the filter, so the linked set is
+  // exactly what the button counted (and matches Save-as-group / CSV export).
+  // Fall back to recomputing from the predicate for any caller that does not
+  // pass a subset.
+  const handleQuickTakeoff = useCallback((visibleElements?: BIMElementData[]) => {
     if (!elementsQuery.data || elementsQuery.data.items.length === 0) return;
-    const subset = filterPredicate
-      ? elementsQuery.data.items.filter(filterPredicate)
-      : elementsQuery.data.items;
+    const subset =
+      visibleElements ??
+      (filterPredicate
+        ? elementsQuery.data.items.filter(filterPredicate)
+        : elementsQuery.data.items);
     if (subset.length === 0) {
       addToast({
         type: 'info',
