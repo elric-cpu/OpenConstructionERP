@@ -433,3 +433,11 @@ frontend/scripts/_i18n_*.py
 /translate_*.py
 # Pre-redesign backups (the existing *.backup.* rule misses the .bak suffix).
 *.pre-redesign.bak
+
+# --- Internal working notes: local only, never publish (constraint #9) ---
+# Underscore-prefixed markdown / text files anywhere in the tree are scratch:
+# agent handoffs, audit residue, a11y sweeps, planning notes, per-issue reply
+# drafts. They must never be tracked or ship in a build. Kept out of git here;
+# scripts/check_repo_hygiene.py and the wheel exclude enforce the same rule.
+**/_*.md
+**/_*.txt

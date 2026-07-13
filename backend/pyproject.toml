@@ -258,6 +258,13 @@ path = "hatch_build.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["app", "openconstructionerp"]
+# Never ship internal working notes. Underscore-prefixed markdown / text
+# files that end up next to source (agent handoffs, audit residue, planning
+# notes) are local-only per repo policy (constraint #9); exclude them from the
+# package walk so a stray one under ``app/`` can never reach the wheel even
+# when it is still on disk. scripts/check_repo_hygiene.py enforces the same
+# rule on the built wheel via ``--zip`` as a backstop.
+exclude = ["**/_*.md", "**/_*.txt"]
 
 # Bundle pre-built frontend into the wheel for pip install
 # Build frontend first: cd frontend && npm run build

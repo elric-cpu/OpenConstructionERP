@@ -52,6 +52,12 @@ DENY_PATTERNS = [
     r"(^|/)qa-screenshots/",
     r"(^|/)scripts/[^/]*_report\.(json|txt)$",
     r"(^|/)[^/]*__audit_report\.md$",
+    # Underscore-prefixed markdown / text working notes co-located next to
+    # source (agent handoffs, audit residue, a11y sweeps, planning notes,
+    # per-issue reply drafts) are local-only per constraint #9 - never tracked,
+    # never in a wheel. Matches any number of leading underscores in the
+    # basename; JSON scratch and normally-named docs are intentionally not hit.
+    r"(^|/)_+[^/]*\.(md|txt)$",
     # Cost-base build pipeline internal notes: reports, plans, feasibility
     # studies, dossiers, runbooks, activation notes and the platform
     # integration guide. Emitted beside the country parquets; local only.
