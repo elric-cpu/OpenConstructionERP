@@ -2616,7 +2616,10 @@ function DashboardPageInner() {
           if (!node) return null;
           const span = widgetSpans[id] ?? DASHBOARD_WIDGET_BY_ID[id]?.defaultSpan ?? 6;
           return (
-            <div key={id} className={DASH_SPAN_CLASS[span] ?? 'lg:col-span-6'}>
+            <div
+              key={id}
+              className={`h-full [&>*]:h-full ${DASH_SPAN_CLASS[span] ?? 'lg:col-span-6'}`}
+            >
               {node}
             </div>
           );

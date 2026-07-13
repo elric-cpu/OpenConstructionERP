@@ -221,7 +221,7 @@ export const DASHBOARD_WIDGETS: readonly DashboardWidgetMeta[] = [
     descKey: 'dashboard.layout.w_rfi_turnaround_desc',
     descDefault: 'Open and overdue requests for information, plus average response time',
     icon: HelpCircle,
-    defaultSpan: 2,
+    defaultSpan: 3,
   },
   {
     id: 'submittals_pending',
@@ -277,7 +277,7 @@ export const DASHBOARD_WIDGETS: readonly DashboardWidgetMeta[] = [
     descKey: 'dashboard.layout.w_latest_photos_desc',
     descDefault: 'Recent progress photos across your projects',
     icon: Camera,
-    defaultSpan: 3,
+    defaultSpan: 4,
   },
 ] as const;
 

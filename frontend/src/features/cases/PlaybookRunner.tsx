@@ -579,10 +579,12 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
 
           {/* Decorative case image (alt=""): the H1 already names the case. A
               plain white surface so the illustration reads as content rather
-              than a boxed-out card, and on wide screens the tile stretches to
-              the full height of the hero so the art shows as large as the block. */}
-          <div className="w-40 shrink-0 sm:w-52 lg:w-72">
-            <div className="aspect-[4/3] w-full overflow-hidden rounded-xl border border-border-light bg-white lg:aspect-auto lg:h-full">
+              than a boxed-out card. On wide screens the tile is absolutely
+              positioned to fill the column, so its height tracks the text
+              column (the image bottom lines up with the progress row) instead
+              of the art forcing the hero taller than the copy. */}
+          <div className="w-40 shrink-0 sm:w-52 lg:relative lg:w-72">
+            <div className="aspect-[4/3] w-full overflow-hidden rounded-xl border border-border-light bg-white lg:absolute lg:inset-0 lg:aspect-auto">
               <CaseArt
                 id={playbook.id}
                 fallbackIcon={PlaybookIcon}
