@@ -26,6 +26,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { getCachedTile, putCachedTile, tileCacheKey } from './tileCache';
 import { orderTilesForStreaming, orderTilesByViewport, type CameraPose } from './tilePriority';
 import type { TileInfo, TileManifest } from './tileTypes';
+import { WorkerTileParser } from './workerTileParser';
 import { yieldToEventLoop } from './yieldToEventLoop';
 
 const GLB_MAGIC = 0x46546c67; // 'glTF' little-endian
@@ -170,6 +171,14 @@ export interface StreamOptions {
    * once at the start of streaming.
    */
   getCameraPose?: () => CameraPose | null;
+  /**
+   * Parse each tile's GLB off the main thread in a Web Worker when one is
+   * available, falling back to a main-thread parse per tile on any failure.
+   * Defaults to on where Workers are supported. Set false to force the
+   * main-thread parse (the kill switch until an on-model perf trace confirms
+   * the win, and the seam the fallback tests drive).
+   */
+  parseOffThread?: boolean;
 }
 
 /**
@@ -200,38 +209,58 @@ export async function streamModelTiles(
   let parsedTiles = 0;
   let done = 0;
 
-  // One pipelined pass with bounded concurrency: each worker downloads a tile
-  // (cache-first), parses it, reparents its meshes into the shared group, and
-  // reveals it via onTileParsed - so parsing starts as soon as the first bytes
-  // land (not after every tile has downloaded) and the model fills in
-  // progressively instead of popping in whole at the end. A tile that fails to
-  // download or parse is skipped, never fatal. JS is single-threaded, so the
-  // shared counters and the group mutations need no locking. A macroYield keeps
-  // input and rendering responsive between parses.
-  await mapPool(tiles, opts.fetchConcurrency ?? 6, async (tile) => {
-    if (opts.signal?.aborted) return;
-    let buffer: ArrayBuffer | null = null;
-    try {
-      buffer = await fetchTileBytes(modelId, tile.hash, opts.signal);
-    } catch {
-      buffer = null;
-    }
-    if (opts.signal?.aborted) return;
-    if (buffer) {
-      const scene = await parseTile(loader, buffer);
-      if (scene) {
-        // Reparent the tile's children into the merged group (names preserved).
-        for (const child of [...scene.children]) {
-          group.add(child);
-        }
-        parsedTiles += 1;
-        opts.onTileParsed?.(group);
+  // Off-thread parse when a Worker is available: the heavy GLTFLoader.parse
+  // runs in the worker and the main thread only rebuilds the (three-native)
+  // toJSON payload. Any per-tile failure resolves null and we fall back to the
+  // main-thread parse below, so the stream never regresses.
+  const workerParser =
+    opts.parseOffThread !== false && WorkerTileParser.isSupported()
+      ? new WorkerTileParser()
+      : null;
+
+  try {
+    // One pipelined pass with bounded concurrency: each worker downloads a tile
+    // (cache-first), parses it, reparents its meshes into the shared group, and
+    // reveals it via onTileParsed - so parsing starts as soon as the first bytes
+    // land (not after every tile has downloaded) and the model fills in
+    // progressively instead of popping in whole at the end. A tile that fails to
+    // download or parse is skipped, never fatal. JS is single-threaded, so the
+    // shared counters and the group mutations need no locking. A yield keeps
+    // input and rendering responsive between parses.
+    await mapPool(tiles, opts.fetchConcurrency ?? 6, async (tile) => {
+      if (opts.signal?.aborted) return;
+      let buffer: ArrayBuffer | null = null;
+      try {
+        buffer = await fetchTileBytes(modelId, tile.hash, opts.signal);
+      } catch {
+        buffer = null;
       }
-    }
-    done += 1;
-    opts.onProgress?.(done / total);
-    await yieldToEventLoop();
-  });
+      if (opts.signal?.aborted) return;
+      if (buffer) {
+        // Off-thread first, then the existing main-thread parse as the fallback.
+        let scene: THREE.Object3D | null = null;
+        if (workerParser) {
+          scene = await workerParser.parse(buffer);
+        }
+        if (!scene) {
+          scene = await parseTile(loader, buffer);
+        }
+        if (scene) {
+          // Reparent the tile's children into the merged group (names preserved).
+          for (const child of [...scene.children]) {
+            group.add(child);
+          }
+          parsedTiles += 1;
+          opts.onTileParsed?.(group);
+        }
+      }
+      done += 1;
+      opts.onProgress?.(done / total);
+      await yieldToEventLoop();
+    });
+  } finally {
+    workerParser?.dispose();
+  }
 
   if (parsedTiles === 0) return null;
   return { group, tileCount: parsedTiles, meshCount: group.children.length };
