@@ -39,7 +39,14 @@ ctx.onmessage = (event: MessageEvent<ParseRequest>): void => {
       '',
       (gltf: GLTF) => {
         try {
-          ctx.postMessage({ id, ok: true, json: gltf.scene.toJSON() });
+          // Capture the node-name set the parse produced (the exact keys the
+          // viewer's mesh -> element match walks) so the main thread can verify
+          // the toJSON/ObjectLoader round-trip preserved every one of them.
+          const names: string[] = [];
+          gltf.scene.traverse((object) => {
+            if (object.name) names.push(object.name);
+          });
+          ctx.postMessage({ id, ok: true, json: gltf.scene.toJSON(), names });
         } catch {
           fail();
         }

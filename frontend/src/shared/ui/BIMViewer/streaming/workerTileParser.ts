@@ -30,9 +30,13 @@ export interface ParseRequest {
   buffer: ArrayBuffer;
 }
 
-/** Worker reply. On success `json` is Object3D.toJSON() output for ObjectLoader. */
+/**
+ * Worker reply. On success `json` is Object3D.toJSON() output for ObjectLoader
+ * and `names` is the node-name set the worker's parse produced, so the main
+ * thread can verify the round-trip preserved every match key.
+ */
 export type ParseResponse =
-  | { id: number; ok: true; json: unknown }
+  | { id: number; ok: true; json: unknown; names: string[] }
   | { id: number; ok: false };
 
 interface PendingParse {
@@ -54,6 +58,31 @@ const DEFAULT_TIMEOUT_MS = 8000;
 
 function defaultWorkerFactory(): Worker {
   return new Worker(new URL('./tileParse.worker.ts', import.meta.url), { type: 'module' });
+}
+
+/** Sorted list of every non-empty node name in an object tree. */
+function collectNodeNames(root: THREE.Object3D): string[] {
+  const names: string[] = [];
+  root.traverse((object) => {
+    if (object.name) names.push(object.name);
+  });
+  names.sort();
+  return names;
+}
+
+/**
+ * True when `object` carries exactly the node-name multiset `expected` (the
+ * names the worker's parse produced). Empty names are ignored - they never
+ * key a match. Order-independent.
+ */
+function nodeNamesPreserved(object: THREE.Object3D, expected: readonly string[]): boolean {
+  const got = collectNodeNames(object);
+  if (got.length !== expected.length) return false;
+  const want = [...expected].sort();
+  for (let i = 0; i < got.length; i += 1) {
+    if (got[i] !== want[i]) return false;
+  }
+  return true;
 }
 
 export class WorkerTileParser {
@@ -102,7 +131,20 @@ export class WorkerTileParser {
       return;
     }
     try {
-      pending.resolve(this.objectLoader.parse(message.json));
+      const object = this.objectLoader.parse(message.json);
+      // Fidelity self-check: the reconstruction must carry the exact node-name
+      // set the worker's parse produced. Those names are the keys the viewer's
+      // mesh -> element match walks, and a main-thread parse of the same buffer
+      // yields the same set, so an identical set means the match ratio cannot
+      // degrade. If the round-trip dropped or altered any name, discard the
+      // worker scene and resolve null so the caller falls back to a
+      // main-thread parse - the silent-break risk becomes an automatic
+      // safe fallback.
+      if (!nodeNamesPreserved(object, message.names)) {
+        pending.resolve(null);
+        return;
+      }
+      pending.resolve(object);
     } catch {
       // A malformed toJSON payload is not fatal - fall back to main thread.
       pending.resolve(null);

@@ -49,7 +49,15 @@ class FakeWorker {
   }
 }
 
-function namedTileJSON(): unknown {
+function nodeNames(root: THREE.Object3D): string[] {
+  const names: string[] = [];
+  root.traverse((o) => {
+    if (o.name) names.push(o.name);
+  });
+  return names;
+}
+
+function namedTile(): { json: unknown; names: string[] } {
   const root = new THREE.Group();
   root.name = 'tile-root';
   const mesh = new THREE.Mesh(
@@ -58,15 +66,15 @@ function namedTileJSON(): unknown {
   );
   mesh.name = '105545'; // mimics an RVT ElementId node name (the match key)
   root.add(mesh);
-  return root.toJSON();
+  return { json: root.toJSON(), names: nodeNames(root) };
 }
 
 describe('WorkerTileParser', () => {
   it('parses a tile off-thread and round-trips node names + hierarchy', async () => {
-    const json = namedTileJSON();
+    const { json, names } = namedTile();
     const parser = new WorkerTileParser({
       workerFactory: () =>
-        new FakeWorker((req) => ({ id: req.id, ok: true, json })) as unknown as Worker,
+        new FakeWorker((req) => ({ id: req.id, ok: true, json, names })) as unknown as Worker,
     });
     const obj = await parser.parse(new ArrayBuffer(16));
     expect(obj).not.toBeNull();
@@ -75,6 +83,25 @@ describe('WorkerTileParser', () => {
     const child = obj!.children.find((c) => c.name === '105545');
     expect(child).toBeDefined();
     expect((child as THREE.Mesh).geometry).toBeTruthy();
+    parser.dispose();
+  });
+
+  it('discards the worker scene when the round-trip drops a node name', async () => {
+    // The reconstruction of this json carries names [105545, tile-root]. The
+    // worker claims an extra name, standing in for a round-trip that lost a
+    // node - the mesh -> element match would degrade, so it must be discarded
+    // and resolve null (caller then falls back to the main-thread parse).
+    const { json } = namedTile();
+    const parser = new WorkerTileParser({
+      workerFactory: () =>
+        new FakeWorker((req) => ({
+          id: req.id,
+          ok: true,
+          json,
+          names: ['105545', 'tile-root', 'LOST-NODE'],
+        })) as unknown as Worker,
+    });
+    expect(await parser.parse(new ArrayBuffer(16))).toBeNull();
     parser.dispose();
   });
 
@@ -134,7 +161,7 @@ describe('WorkerTileParser', () => {
         new FakeWorker((req) => {
           const root = new THREE.Group();
           root.name = `tile-${req.id}`;
-          return { id: req.id, ok: true, json: root.toJSON() };
+          return { id: req.id, ok: true, json: root.toJSON(), names: [`tile-${req.id}`] };
         }) as unknown as Worker,
     });
     const [a, b, c] = await Promise.all([
