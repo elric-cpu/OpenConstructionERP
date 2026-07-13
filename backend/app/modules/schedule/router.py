@@ -66,6 +66,7 @@ from app.modules.schedule.schemas import (
     ProgressUpdateResponse,
     RelationshipCreate,
     RelationshipResponse,
+    RelationshipUpdate,
     RiskAnalysisResponse,
     ScheduleCreate,
     ScheduleDiffRequest,
@@ -1011,6 +1012,97 @@ async def delete_relationship(
 
     derived = await service._derive_dependencies_json(successor_id)
     await service.activity_repo.update_fields(successor_id, dependencies=derived)
+
+
+@router.patch(
+    "/relationships/{relationship_id}",
+    response_model=RelationshipResponse,
+    summary="Update CPM relationship",
+    description="Update the type and/or lag of an existing dependency edge. The "
+    "edge endpoints are immutable, so the self-reference and cycle guards that "
+    "run on create cannot be violated by a type/lag change.",
+    dependencies=[Depends(RequirePermission("schedule.update"))],
+)
+async def update_relationship(
+    relationship_id: uuid.UUID,
+    data: RelationshipUpdate,
+    session: SessionDep,
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    service: ScheduleService = Depends(_get_service),
+) -> RelationshipResponse:
+    """Update the type / lag of an existing dependency relationship.
+
+    Loads the edge, verifies the caller owns the parent project (admins
+    bypass), applies the partial change via the canonical relationship store,
+    then rebuilds the successor activity's derived ``dependencies`` JSON mirror
+    so the convenience field never drifts from the table. The predecessor /
+    successor endpoints are immutable, so no self-reference or cycle can be
+    introduced here - re-pointing an edge is a delete + create, which re-runs
+    the create-route guards.
+    """
+    from app.modules.schedule.models import ScheduleRelationship
+
+    rel = await session.get(ScheduleRelationship, relationship_id)
+    if rel is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Relationship not found")
+
+    # Existence-oracle-safe ownership check (404 on cross-tenant access).
+    await _verify_schedule_owner(service, session, rel.schedule_id, _user_id, payload)
+
+    successor_id = rel.successor_id
+    merged_type = data.relationship_type or rel.relationship_type
+    merged_lag = data.lag_days if data.lag_days is not None else rel.lag_days
+
+    await service.relationship_repo.update_edge(
+        relationship_id,
+        relationship_type=merged_type,
+        lag_days=merged_lag,
+    )
+    # Reflect the persisted values on the in-memory row, then snapshot the
+    # response BEFORE the mirror rebuild's expire_all(): serialising an expired
+    # ORM row afterwards would trigger a sync async-refresh (the MissingGreenlet
+    # trap the create route documents).
+    rel.relationship_type = merged_type
+    rel.lag_days = merged_lag
+    response = RelationshipResponse.model_validate(rel)
+
+    # Keep the successor activity's derived dependency JSON in lock-step with
+    # the canonical row so CPM / the Gantt read the new type/lag.
+    derived = await service._derive_dependencies_json(successor_id)
+    await service.activity_repo.update_fields(successor_id, dependencies=derived)
+
+    return response
+
+
+@router.post(
+    "/schedules/{schedule_id}/reschedule/",
+    response_model=list[ActivityResponse],
+    summary="Reschedule (CPM-driven dates)",
+    description="Recompute activity dates from the dependency network. Activities "
+    "with a predecessor are moved to their CPM early-date positions; root "
+    "activities keep their manually set start. Returns the updated activities.",
+    dependencies=[Depends(RequirePermission("schedule.update"))],
+)
+async def reschedule_schedule(
+    schedule_id: uuid.UUID,
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: ScheduleService = Depends(_get_service),
+) -> list[ActivityResponse]:
+    """Reschedule a schedule's activities from its dependency network.
+
+    Verifies the caller owns the parent project (admins bypass), runs the CPM
+    engine over the canonical relationship edges, projects the early-date
+    offsets onto calendar dates, and persists the moved bars plus the
+    critical-path flag / float columns. Root activities keep their manual
+    start. Called by the dependency editor after every edge change so the bars
+    move as soon as a link is added, retyped, relagged or removed.
+    """
+    await _verify_schedule_owner(service, session, schedule_id, _user_id, payload)
+    activities = await service.reschedule(schedule_id)
+    return [_activity_to_response(a) for a in activities]
 
 
 # ── CPM Calculation (Phase 13 - uses core/cpm.py engine) ────────────────────

@@ -11,7 +11,7 @@ Decimal-as-string in JSON.
 
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
@@ -617,6 +617,22 @@ class RelationshipCreate(BaseModel):
     relationship_type: str = Field(default="FS", pattern=r"^(FS|FF|SS|SF)$")
     # Negative lag allowed (lead time); bound both sides at int32.
     lag_days: int = Field(default=0, ge=-_INT32_MAX, le=_INT32_MAX)
+
+
+class RelationshipUpdate(BaseModel):
+    """Partial update of a CPM dependency relationship.
+
+    Only the type and/or lag of an existing edge may change; the endpoints
+    (predecessor / successor) are immutable - re-pointing an edge is a
+    delete + create so the self-reference and cycle guards run against the
+    new endpoints. Both fields are optional so a caller can PATCH just one.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="ignore")
+
+    relationship_type: Literal["FS", "FF", "SS", "SF"] | None = None
+    # Negative lag allowed (lead time); bound both sides at int32.
+    lag_days: int | None = Field(default=None, ge=-_INT32_MAX, le=_INT32_MAX)
 
 
 class RelationshipResponse(BaseModel):

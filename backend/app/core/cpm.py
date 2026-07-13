@@ -117,6 +117,26 @@ def _working_days_between(
     return count
 
 
+def offset_to_iso(offset: int, project_start: date) -> str:
+    """Project a CPM day-offset back onto an ISO calendar date.
+
+    The forward/backward pass emit integer offsets measured in elapsed
+    calendar days from the project origin. Rescheduling turns one back into a
+    ``YYYY-MM-DD`` string: ``project_start + offset days``. Kept here (next to
+    the engine that produces the offsets) so callers project dates the same
+    way the engine measured them.
+
+    Args:
+        offset: Day-offset from the CPM origin (may be zero; never negative
+            in practice - the forward pass floors early_start at zero).
+        project_start: The calendar date the offsets are measured from.
+
+    Returns:
+        The ISO date string ``(project_start + offset)``.
+    """
+    return (project_start + timedelta(days=int(offset))).isoformat()
+
+
 async def calculate_cpm(
     activities: list[dict],
     relationships: list[dict],

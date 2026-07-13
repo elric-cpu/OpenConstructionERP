@@ -52,6 +52,7 @@ import { ScheduleDelayPanel } from './ScheduleDelayPanel';
 import { ScheduleCodesPanel } from './ScheduleCodesPanel';
 import { ScheduleResourcePanel } from './ScheduleResourcePanel';
 import { ScheduleRealtimePanel } from './ScheduleRealtimePanel';
+import { DependencyEditor } from './DependencyEditor';
 import { scheduleGuide } from './scheduleGuide';
 import { fetchBIMModels } from '@/features/bim/api';
 import type {
@@ -1100,6 +1101,8 @@ function ScheduleDetail({
     'table' | 'gantt' | 'evm' | '4d' | 'quality' | 'risk' | 'compare' | 'progress' | 'delay' | 'codes' | 'resources' | 'realtime' | 'interchange'
   >('gantt');
   const [showAddActivity, setShowAddActivity] = useState(false);
+  // #348: activity whose dependency editor is open (click a Gantt bar to edit).
+  const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [showGenerateBOQ, setShowGenerateBOQ] = useState(false);
   const [selectedBOQId, setSelectedBOQId] = useState('');
   const [generateStartDate, setGenerateStartDate] = useState(
@@ -1353,6 +1356,12 @@ function ScheduleDetail({
     for (const a of ganttData?.activities ?? []) map[a.id] = a.name;
     return map;
   }, [ganttData]);
+
+  // #348: the activity object backing the open dependency editor (or null).
+  const selectedActivity = useMemo(
+    () => ganttData?.activities.find((a) => a.id === selectedActivityId) ?? null,
+    [ganttData, selectedActivityId],
+  );
 
   // Filtered activities for the Gantt chart (Improvement #5)
   const filteredActivities = useMemo(() => {
@@ -1757,6 +1766,7 @@ function ScheduleDetail({
                   showCriticalPath={!!cpmResult}
                   todayLine={true}
                   onActivityResize={handleActivityResize}
+                  onActivityClick={(id) => setSelectedActivityId(id)}
                 />
               ) : (
                 <GanttChart
@@ -1922,6 +1932,34 @@ function ScheduleDetail({
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Edit dependencies Modal (#348) - opens when a Gantt bar is clicked */}
+      <Modal
+        open={!!selectedActivity}
+        onClose={() => setSelectedActivityId(null)}
+        title={t('schedule.edit_dependencies', { defaultValue: 'Edit dependencies' })}
+      >
+        {selectedActivity && (
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm font-semibold text-content-primary">{selectedActivity.name}</p>
+              <p className="text-xs text-content-tertiary">
+                {formatDate(selectedActivity.start_date)} &ndash; {formatDate(selectedActivity.end_date)}
+              </p>
+            </div>
+            <DependencyEditor
+              scheduleId={schedule.id}
+              activity={selectedActivity}
+              activities={ganttData?.activities ?? []}
+            />
+            <div className="flex items-center justify-end pt-1">
+              <Button variant="ghost" type="button" onClick={() => setSelectedActivityId(null)}>
+                {t('common.done', { defaultValue: 'Done' })}
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Generate from BOQ Modal */}

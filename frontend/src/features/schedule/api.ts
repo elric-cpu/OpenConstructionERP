@@ -96,6 +96,41 @@ export interface CriticalPathResponse {
   all_activities: CPMActivityResult[];
 }
 
+/* ── Dependency relationships (#348) ────────────────────────────────────────
+ *
+ * The canonical CPM edge store. ``relationship_type`` is one of FS / FF / SS /
+ * SF; ``lag_days`` may be negative (a lead). The dependency editor lists a
+ * schedule's edges, filters to the ones pointing at the selected activity, and
+ * creates / retypes / relags / removes them, then calls ``reschedule`` so the
+ * bars move.
+ */
+
+export type RelationshipType = 'FS' | 'FF' | 'SS' | 'SF';
+
+export interface ScheduleRelationship {
+  id: string;
+  schedule_id: string;
+  predecessor_id: string;
+  successor_id: string;
+  relationship_type: RelationshipType;
+  lag_days: number;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RelationshipCreateBody {
+  predecessor_id: string;
+  successor_id: string;
+  relationship_type?: RelationshipType;
+  lag_days?: number;
+}
+
+export interface RelationshipUpdateBody {
+  relationship_type?: RelationshipType;
+  lag_days?: number;
+}
+
 export interface RiskAnalysisResponse {
   schedule_id: string;
   deterministic_days: number;
@@ -814,6 +849,31 @@ export const scheduleApi = {
     apiPost<CriticalPathResponse>(`/v1/schedule/schedules/${scheduleId}/calculate-cpm/`),
   getRiskAnalysis: (scheduleId: string) =>
     apiGet<RiskAnalysisResponse>(`/v1/schedule/schedules/${scheduleId}/risk-analysis/`),
+
+  // Dependency relationships (#348)
+  /** List a schedule's dependency edges (the canonical CPM store). */
+  listRelationships: (scheduleId: string) =>
+    apiGet<ScheduleRelationship[]>(
+      `/v1/schedule/schedules/${encodeURIComponent(scheduleId)}/relationships/`,
+    ),
+  /** Create a dependency edge (predecessor -> successor) with a type + lag. */
+  createRelationship: (scheduleId: string, body: RelationshipCreateBody) =>
+    apiPost<ScheduleRelationship, RelationshipCreateBody>(
+      `/v1/schedule/schedules/${encodeURIComponent(scheduleId)}/relationships/`,
+      body,
+    ),
+  /** Update an existing edge's type and/or lag (its endpoints are immutable). */
+  updateRelationship: (relationshipId: string, body: RelationshipUpdateBody) =>
+    apiPatch<ScheduleRelationship, RelationshipUpdateBody>(
+      `/v1/schedule/relationships/${encodeURIComponent(relationshipId)}`,
+      body,
+    ),
+  /** Delete a dependency edge. */
+  deleteRelationship: (relationshipId: string) =>
+    apiDelete(`/v1/schedule/relationships/${encodeURIComponent(relationshipId)}`),
+  /** Recompute activity dates from the dependency network (CPM); returns the moved activities. */
+  reschedule: (scheduleId: string) =>
+    apiPost<Activity[]>(`/v1/schedule/schedules/${encodeURIComponent(scheduleId)}/reschedule/`),
 
   // EVM (earned value) + 4D snapshot
   /** Scalar EVM rollup (PV/EV/AC, SPI/CPI, EAC) for a schedule at a data date. */

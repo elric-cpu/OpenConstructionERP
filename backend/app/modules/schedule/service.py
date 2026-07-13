@@ -480,6 +480,36 @@ def compute_duration(start_date: str, end_date: str, region: str | None = None) 
     return working_days
 
 
+def resolve_calendar(schedule: Schedule) -> dict:
+    """Resolve the CPM work calendar for a schedule (pure).
+
+    MVP: honour an explicit work-calendar override carried in the schedule
+    metadata (``metadata.calendar`` = ``{"work_days": [...], "exceptions":
+    [...]}``) when present; otherwise fall back to a Monday-Friday work week
+    with no holiday exceptions. Full per-project / per-activity calendar
+    resolution (and the calendar-editing UI) is deferred.
+
+    Args:
+        schedule: The schedule whose calendar is being resolved. Only its
+            ``metadata_`` is read, so the function stays pure and DB-free.
+
+    Returns:
+        The ``{"work_days": [...], "exceptions": [...]}`` shape the core CPM
+        engine (:func:`app.core.cpm.calculate_cpm`) consumes.
+    """
+    default_work_days = [0, 1, 2, 3, 4]
+    meta = getattr(schedule, "metadata_", None)
+    cal = meta.get("calendar") if isinstance(meta, dict) else None
+    if isinstance(cal, dict) and cal.get("work_days"):
+        try:
+            work_days = [int(d) for d in cal.get("work_days") or []]
+        except (TypeError, ValueError):
+            work_days = list(default_work_days)
+        exceptions = [str(e) for e in (cal.get("exceptions") or []) if e]
+        return {"work_days": work_days or list(default_work_days), "exceptions": exceptions}
+    return {"work_days": list(default_work_days), "exceptions": []}
+
+
 def _effective_activity_status(
     *,
     stored_status: str,
@@ -1752,6 +1782,134 @@ class ScheduleService:
         )
 
         return GanttData(activities=gantt_activities, summary=summary)
+
+    # ── Reschedule (CPM-driven dates) ──────────────────────────────────────
+
+    @staticmethod
+    def _resolve_project_start(schedule: Schedule, activities: list[Activity]) -> date:
+        """Pick the CPM origin date the day-offsets are measured from.
+
+        Prefers the schedule's own ``start_date``; falls back to the earliest
+        activity start, then to today. The forward pass floors early_start at
+        zero, so projected dates never precede this origin.
+        """
+        raw = schedule.start_date
+        if raw:
+            try:
+                return date.fromisoformat(str(raw)[:10])
+            except (ValueError, TypeError):
+                pass
+        earliest: date | None = None
+        for act in activities:
+            try:
+                d = date.fromisoformat(str(act.start_date)[:10])
+            except (ValueError, TypeError):
+                continue
+            if earliest is None or d < earliest:
+                earliest = d
+        return earliest or datetime.now(UTC).date()
+
+    async def reschedule(self, schedule_id: uuid.UUID) -> list[Activity]:
+        """Recompute activity dates from the dependency network via CPM.
+
+        Loads the schedule's activities and its canonical
+        :class:`ScheduleRelationship` edges, runs the core CPM engine on a
+        resolved work calendar, then projects each early-date day-offset back
+        onto a calendar date. Activities that have at least one predecessor are
+        CPM-driven: their ``start_date`` / ``end_date`` are rewritten from the
+        forward-pass early dates, so changing a link moves the successor's bar.
+        Root activities (no predecessor) keep their manually set dates - only
+        their critical-path flag, float columns and colour are refreshed.
+
+        Constraint pinning (must-start-on / as-late-as-possible) is out of
+        scope for this pass; roots anchor the network at their manual start.
+
+        Args:
+            schedule_id: The schedule to reschedule.
+
+        Returns:
+            The activities after the write, re-fetched in sort order. Empty
+            when the schedule has no activities.
+
+        Raises:
+            HTTPException 404 if the schedule does not exist.
+        """
+        from app.core.cpm import calculate_cpm, offset_to_iso
+
+        schedule = await self.get_schedule(schedule_id)
+        activities, _ = await self.list_activities_for_schedule(schedule_id, limit=10_000)
+        if not activities:
+            return []
+
+        relationships = await self.relationship_repo.list_for_schedule(schedule_id)
+        project_start = self._resolve_project_start(schedule, activities)
+
+        act_dicts = [{"id": str(a.id), "duration": a.duration_days or 0, "name": a.name} for a in activities]
+        rel_dicts = [
+            {
+                "predecessor_id": str(r.predecessor_id),
+                "successor_id": str(r.successor_id),
+                "type": r.relationship_type,
+                "lag": r.lag_days,
+            }
+            for r in relationships
+        ]
+
+        calendar = resolve_calendar(schedule)
+        cpm_results = await calculate_cpm(
+            act_dicts,
+            rel_dicts,
+            calendar=calendar,
+            project_start_date=project_start.isoformat(),
+        )
+        cpm_map = {r["id"]: r for r in cpm_results}
+
+        # Activities that appear as a successor of some edge are CPM-driven;
+        # the rest are roots whose manual start anchors the chain.
+        has_predecessor = {str(r.successor_id) for r in relationships}
+
+        # One uniform payload shape per row so the bulk UPDATE compiles a
+        # single statement (heterogeneous key sets would break executemany).
+        updates: list[dict[str, object]] = []
+        for act in activities:
+            cpm = cpm_map.get(str(act.id))
+            if cpm is None:
+                continue
+            if str(act.id) in has_predecessor:
+                new_start = offset_to_iso(cpm["early_start"], project_start)
+                new_end = offset_to_iso(cpm["early_finish"], project_start)
+            else:
+                new_start = act.start_date
+                new_end = act.end_date
+            is_critical = bool(cpm["is_critical"])
+            updates.append(
+                {
+                    "id": act.id,
+                    "start_date": new_start,
+                    "end_date": new_end,
+                    "early_start": str(cpm["early_start"]),
+                    "early_finish": str(cpm["early_finish"]),
+                    "late_start": str(cpm["late_start"]),
+                    "late_finish": str(cpm["late_finish"]),
+                    "total_float": cpm["total_float"],
+                    "free_float": cpm["free_float"],
+                    "is_critical": is_critical,
+                    "color": "#ef4444" if is_critical else "#0071e3",
+                }
+            )
+
+        await self.activity_repo.bulk_update_fields(updates)
+
+        await _safe_publish(
+            "schedule.rescheduled",
+            {"schedule_id": str(schedule_id), "count": len(updates)},
+            source_module="oe_schedule",
+        )
+
+        logger.info("Rescheduled schedule %s: %d activities updated", schedule_id, len(updates))
+
+        refreshed, _ = await self.list_activities_for_schedule(schedule_id, limit=10_000)
+        return refreshed
 
     # ── Generate from BOQ ─────────────────────────────────────────────────
 
