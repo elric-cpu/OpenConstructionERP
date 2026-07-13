@@ -229,6 +229,39 @@ def _section_is_empty(payload: Any) -> bool:
     return bool(isinstance(payload, dict | list) and not payload)
 
 
+# ── Export size guard ────────────────────────────────────────────────────────
+#
+# The CSV / XLSX / PDF writers below assemble the whole document in memory, and
+# openpyxl in particular holds a Python cell object per value. A snapshot with a
+# runaway row count (a project with a very large BoQ or incident log) can push
+# the single worker into swap while building the download, so the public entry
+# point rejects an oversized snapshot with a clear error before any writer runs.
+#
+# The cap is deliberately generous: a normal report is a handful of sections
+# with tens to low-hundreds of rows, so only a pathological snapshot is turned
+# away. This is a front-door guard, not a change to how any report is built.
+_MAX_EXPORT_ROWS = 200_000
+
+
+def _snapshot_row_count(data_snapshot: dict[str, Any] | None) -> int:
+    """Total table rows an export would materialise from *data_snapshot*.
+
+    Sums the rows every populated section contributes, mirroring the two table
+    shapes the writers produce: a record list or scalar list counts one row per
+    item, a dict counts one row per entry, a bare scalar is a single row. The
+    count is a safe upper bound on what the CSV / XLSX / PDF writers build in
+    memory and is computed without materialising a single cell.
+    """
+    if not isinstance(data_snapshot, dict):
+        return 0
+    total = 0
+    for payload in data_snapshot.values():
+        if _section_is_empty(payload):
+            continue
+        total += len(payload) if isinstance(payload, dict | list) else 1
+    return total
+
+
 # ── CSV export ──────────────────────────────────────────────────────────────
 
 
@@ -665,6 +698,19 @@ def export_report(
     fmt = (fmt or "").strip().lower()
     if fmt not in SUPPORTED_FORMATS:
         raise ExportFormatError(f"Unsupported export format '{fmt}'. Expected one of: {', '.join(SUPPORTED_FORMATS)}.")
+
+    # Defensive size cap for the in-memory file builders. csv / xlsx / pdf each
+    # assemble the whole document in RAM, so an oversized snapshot is turned
+    # away with a clear error rather than building an unbounded file and risking
+    # an OOM on the single worker. html is served from its own (streamed or
+    # pre-rendered) path and is not gated here.
+    if fmt in ("csv", "xlsx", "pdf"):
+        rows = _snapshot_row_count(data_snapshot)
+        if rows > _MAX_EXPORT_ROWS:
+            raise ExportFormatError(
+                f"This report has {rows:,} rows, above the export limit of "
+                f"{_MAX_EXPORT_ROWS:,} rows. Narrow the report scope or export in smaller batches."
+            )
 
     if fmt == "csv":
         blob = _export_csv(
