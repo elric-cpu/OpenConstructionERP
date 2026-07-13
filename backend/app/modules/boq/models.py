@@ -454,6 +454,24 @@ class QuantityLink(Base):
     quantity_field: Mapped[str] = mapped_column(String(64), nullable=False)
     target_field: Mapped[str] = mapped_column(String(32), nullable=False, default="quantity", server_default="quantity")
     aggregation: Mapped[str] = mapped_column(String(16), nullable=False, default="sum", server_default="sum")
+    # ── Issue #347: per-element quantity formulas ────────────────────────
+    # ``projection_mode`` splits HOW each element's contribution is derived:
+    #   'field'   - read ``quantity_field`` off the element's quantities map
+    #               (the original behaviour, still the default);
+    #   'formula' - evaluate ``formula`` per element against that element's
+    #               variables, then combine with the same ``aggregation``.
+    # Nullable + server_default so existing rows read as 'field' with no
+    # backfill; ``quantity_field`` is left NOT NULL (formula-mode links store
+    # an empty string there) so this stays a purely additive migration.
+    projection_mode: Mapped[str | None] = mapped_column(
+        String(16),
+        nullable=True,
+        default="field",
+        server_default="field",
+    )
+    # The arithmetic expression evaluated per element in 'formula' mode
+    # (e.g. ``area_m2 * 0.5``). NULL in 'field' mode.
+    formula: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active", server_default="active")
     source_model_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
     last_applied_quantity: Mapped[str | None] = mapped_column(String(50), nullable=True)

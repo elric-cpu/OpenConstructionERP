@@ -7454,6 +7454,8 @@ class BOQService:
         stable_ids: list[str],
         quantity_field: str,
         aggregation: str,
+        projection_mode: str = "field",
+        formula: str | None = None,
     ) -> tuple[Decimal, list[str], list[str]]:
         """Evaluate a link's extraction rule against current model elements.
 
@@ -7479,6 +7481,15 @@ class BOQService:
             ``(aggregated_quantity, contributing_stable_ids, missing_ids)``.
         """
         from app.modules.bim_hub.repository import BIMElementRepository
+        from app.modules.boq.quantity_formula import (
+            FormulaError,
+            build_element_vars,
+            evaluate_formula,
+        )
+
+        # Issue #347: 'formula' mode evaluates ``formula`` per element against
+        # that element's variables; 'field' mode reads ``quantity_field``.
+        use_formula = projection_mode == "formula" and bool((formula or "").strip())
 
         ids = list(stable_ids or [])
         elem_repo = BIMElementRepository(self.session)
@@ -7493,10 +7504,23 @@ class BOQService:
             if elem is None:
                 missing.append(sid)
                 continue
-            quantities = elem.quantities if isinstance(elem.quantities, dict) else {}
             if aggregation == "count":
-                # ``count`` does not need the field present - it counts
-                # resolvable elements. Still record the contribution.
+                # ``count`` is the number of RESOLVED elements, independent of
+                # the projection (a bound field value or a formula).
+                contributing.append(sid)
+                continue
+            quantities = elem.quantities if isinstance(elem.quantities, dict) else {}
+            if use_formula:
+                properties = elem.properties if isinstance(elem.properties, dict) else {}
+                element_vars = build_element_vars(quantities, properties)
+                try:
+                    values.append(evaluate_formula(formula or "", element_vars))
+                except FormulaError:
+                    # The formula references a variable this element lacks, or
+                    # hit a math error (e.g. division by zero). Surface it as a
+                    # missing contribution rather than a silent zero.
+                    missing.append(sid)
+                    continue
                 contributing.append(sid)
                 continue
             if quantity_field not in quantities:
@@ -7556,9 +7580,13 @@ class BOQService:
             boq_id=position.boq_id,
             model_id=data.model_id,
             element_stable_ids=list(data.element_stable_ids),
-            quantity_field=data.quantity_field,
+            # Issue #347: formula-mode links leave quantity_field empty (the
+            # schema validator normalises None -> "") since the column is NOT NULL.
+            quantity_field=data.quantity_field or "",
             target_field=data.target_field,
             aggregation=data.aggregation,
+            projection_mode=data.projection_mode,
+            formula=data.formula,
             status="active",
             source_model_version=str(model.version) if model.version else None,
             created_by=created_by,
@@ -7622,6 +7650,8 @@ class BOQService:
                 "quantity_field": link.quantity_field,
                 "target_field": link.target_field,
                 "aggregation": link.aggregation,
+                "projection_mode": getattr(link, "projection_mode", None) or "field",
+                "formula": getattr(link, "formula", None),
                 "source_model_version": link.source_model_version,
             }
             for link in links
@@ -7646,6 +7676,8 @@ class BOQService:
                 stable_ids=snap["element_stable_ids"],
                 quantity_field=snap["quantity_field"],
                 aggregation=snap["aggregation"],
+                projection_mode=snap.get("projection_mode") or "field",
+                formula=snap.get("formula"),
             )
             old_qty = _to_decimal(position.quantity)
             new_qty_q = _to_decimal(_quantize_money_str(new_qty))
@@ -7738,6 +7770,8 @@ class BOQService:
                 "element_stable_ids": list(link.element_stable_ids or []),
                 "quantity_field": link.quantity_field,
                 "aggregation": link.aggregation,
+                "projection_mode": getattr(link, "projection_mode", None) or "field",
+                "formula": getattr(link, "formula", None),
                 "source_model_version": link.source_model_version,
             }
             for link in await self.quantity_link_repo.list_for_boq(boq_id)
@@ -7836,6 +7870,8 @@ class BOQService:
                 stable_ids=snap["element_stable_ids"],
                 quantity_field=snap["quantity_field"],
                 aggregation=snap["aggregation"],
+                projection_mode=snap.get("projection_mode") or "field",
+                formula=snap.get("formula"),
             )
             pos_ordinal = position.ordinal
             if not contributing and missing:
@@ -7868,6 +7904,8 @@ class BOQService:
                 "model_version": latest_version,
                 "quantity_field": snap["quantity_field"],
                 "aggregation": snap["aggregation"],
+                "projection_mode": snap.get("projection_mode") or "field",
+                "formula": snap.get("formula"),
                 "element_stable_ids": list(snap["element_stable_ids"]),
                 "contributing_elements": contributing,
                 "missing_element_ids": missing,

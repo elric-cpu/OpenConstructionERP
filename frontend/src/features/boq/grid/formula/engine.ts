@@ -52,6 +52,14 @@ export interface FormulaContext {
   variables: Map<string, FormulaVariable>;
   /** Current row data — used by `col(...)` in calculated columns. */
   currentRow?: Record<string, unknown>;
+  /**
+   * Issue #347 — per-element BIM variables for quantity-link formulas
+   * (`area_m2`, `volume_m3`, `length_m`, …). Resolved as a bare identifier,
+   * NOT via `$VAR`. Only used by the per-element formula path; every other
+   * caller omits it, so bare identifiers keep their legacy "unknown
+   * identifier" behaviour.
+   */
+  elementVars?: Map<string, number>;
 }
 
 /** Sentinel returned by `pos()` / `section()` — supports member access via `.`. */
@@ -574,8 +582,10 @@ function parseFormulaExpr(input: string, ctx?: FormulaContext): Value {
         if (args.length === 0 && name in CONSTANTS) return CONSTANTS[name]!;
         return callMathFn(name, args);
       }
-      // Bare identifier → constant
+      // Bare identifier → constant, then per-element variable (Issue #347).
       if (name in CONSTANTS) return CONSTANTS[name]!;
+      const ev = ctx?.elementVars?.get(name);
+      if (ev !== undefined) return ev;
       throw new Error(`Unknown identifier: ${name}`);
     }
     throw new Error(`Unexpected token: ${JSON.stringify(t)}`);
