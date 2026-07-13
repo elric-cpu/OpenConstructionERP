@@ -33,6 +33,8 @@ import asyncio
 import logging
 import math
 import uuid
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -129,6 +131,73 @@ def guard_proxied_size(size_bytes: int) -> None:
                 ),
             },
         )
+
+
+@dataclass(frozen=True)
+class PointsPayload:
+    """Packed viewer buffer plus the counts behind the truncation signal.
+
+    ``total_count`` is the scan's full valid point count; ``returned_count`` is
+    how many survived server-side decimation. ``truncated`` lets the router tell
+    the client (via a response header) that the preview is a decimated subset, so
+    a user never mistakes a decimated cloud for the whole scan.
+    """
+
+    buffer: bytes
+    total_count: int
+    returned_count: int
+
+    @property
+    def truncated(self) -> bool:
+        return self.returned_count < self.total_count
+
+
+async def _spill_stream_to_temp(
+    stream: AsyncIterator[bytes],
+    *,
+    suffix: str,
+    max_bytes: int,
+) -> str:
+    """Spool an async byte stream to a temp file, capped at ``max_bytes``.
+
+    Writes each chunk straight to disk so the whole object never lands in RAM
+    (reading it all into memory is what OOMs the 2 GB core on a multi-GB scan).
+    Raises HTTP 413 - and removes the partial temp file - as soon as the running
+    total exceeds ``max_bytes`` (a non-positive cap disables the guard). Returns
+    the temp-file path; the caller owns cleanup on the success path.
+    """
+    import contextlib
+    import os
+    import tempfile
+
+    fd, tmp_name = tempfile.mkstemp(suffix=suffix)
+    written = 0
+    capped = max_bytes > 0
+    ok = False
+    try:
+        with os.fdopen(fd, "wb") as out:
+            async for chunk in stream:
+                written += len(chunk)
+                if capped and written > max_bytes:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail={
+                            "reason": "scan_too_large_to_preview",
+                            "max_bytes": int(max_bytes),
+                            "message": (
+                                "This scan is too large to preview inline. Very large "
+                                "reality-capture scans are handled by the out-of-core "
+                                "converter instead of being streamed through the server."
+                            ),
+                        },
+                    )
+                out.write(chunk)
+        ok = True
+    finally:
+        if not ok:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp_name)
+    return tmp_name
 
 
 class PointCloudService:
@@ -830,20 +899,30 @@ class PointCloudService:
         *,
         max_points: int = 1_500_000,
         payload: dict[str, Any] | None = None,
-    ) -> bytes:
+    ) -> PointsPayload:
         """Decode, decimate and pack a scan's points for the viewer.
 
         Reads the raw upload (E57 / LAS / LAZ) from storage, decimates it to
         ``max_points`` server-side and returns the compact OEPC binary buffer the
-        browser drops into a ``THREE.Points`` geometry. Backfills ``point_count``
-        and ``bbox_json`` on the row on first read so the list view shows real
-        extents without re-decoding.
+        browser drops into a ``THREE.Points`` geometry, plus the total vs returned
+        counts so the caller can flag a decimated preview. Backfills
+        ``point_count`` and ``bbox_json`` on the row on first read so the list
+        view shows real extents without re-decoding.
+
+        Memory-safe by construction: on a non-local backend the object is
+        streamed to a temp file under a hard byte cap (never pulled whole into
+        RAM), and the decoder refuses a source whose header declares more points
+        than the inline ceiling, so neither a multi-GB blob nor a decompression
+        bomb can OOM the core.
 
         Raises 404 (scan not visible / not uploaded yet), 409 (still uploading),
+        413 (too large to preview inline - too many bytes or too many points),
         501 (no reader installed for the format) or 422 (file undecodable).
         """
         from app.modules.pointcloud.decode import (
+            DEFAULT_MAX_TOTAL_POINTS,
             PointDecodeError,
+            PointDecodeTooLarge,
             PointDecodeUnavailable,
             decode_points,
         )
@@ -869,21 +948,31 @@ class PointCloudService:
         tmp_path: str | None = None
         try:
             if local_path is None:
-                raw = await self.storage.read_bytes(upload_key)
-                import tempfile
+                # Stream the object to a temp file under a hard byte cap instead
+                # of pulling the whole (5-200 GB) blob into RAM. Reuse the
+                # proxied-bytes ceiling: pulling an object into core to decimate
+                # it IS proxying it, so the same cap applies. ``aclosing`` frees
+                # the storage stream deterministically even if the cap trips.
+                from contextlib import aclosing
 
-                def _spill(data: bytes, suffix: str) -> str:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as fh:
-                        fh.write(data)
-                        return fh.name
-
-                tmp_path = await asyncio.to_thread(_spill, raw, f".{fmt or 'bin'}")
+                max_bytes = int(getattr(get_settings(), "pointcloud_max_proxied_bytes", 2 * 1024 * 1024 * 1024))
+                async with aclosing(self.storage.open_stream(upload_key)) as stream:
+                    tmp_path = await _spill_stream_to_temp(stream, suffix=f".{fmt or 'bin'}", max_bytes=max_bytes)
                 source_path = tmp_path
             else:
                 source_path = str(local_path)
 
+            # Source-size ceiling (header point count) so a huge cloud or a
+            # decompression bomb is refused before the decoder materialises it.
+            max_total_points = int(getattr(get_settings(), "pointcloud_max_decode_points", DEFAULT_MAX_TOTAL_POINTS))
             try:
-                decoded = await asyncio.to_thread(decode_points, Path(source_path), fmt, max_points=max_points)
+                decoded = await asyncio.to_thread(
+                    decode_points,
+                    Path(source_path),
+                    fmt,
+                    max_points=max_points,
+                    max_total_points=max_total_points,
+                )
             except PointDecodeUnavailable as exc:
                 raise HTTPException(
                     status_code=status.HTTP_501_NOT_IMPLEMENTED,
@@ -895,6 +984,20 @@ class PointCloudService:
                             "reader. LAS, LAZ and COPC work out of the box; install the "
                             "'pointcloud' extra (pip install openconstructionerp[pointcloud]) "
                             "to add E57 support."
+                        ),
+                    },
+                ) from exc
+            except PointDecodeTooLarge as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail={
+                        "reason": "scan_too_large_to_preview",
+                        "point_count": exc.total_count,
+                        "max_points": exc.max_total_points,
+                        "message": (
+                            "This scan has too many points to preview inline. Very large "
+                            "clouds are handled by the out-of-core converter instead of being "
+                            "decoded in the server."
                         ),
                     },
                 ) from exc
@@ -932,7 +1035,11 @@ class PointCloudService:
             except Exception:  # noqa: BLE001 - backfill is best-effort, never fail the read
                 logger.warning("Point-count/bbox backfill failed for scan %s", scan_id, exc_info=True)
 
-        return buffer
+        return PointsPayload(
+            buffer=buffer,
+            total_count=int(decoded.total_count),
+            returned_count=int(decoded.returned_count),
+        )
 
     def _local_path_for(self, upload_key: str):
         """Return the on-disk path for a key when storage is local, else None.
@@ -1240,6 +1347,7 @@ class PointCloudService:
 
 __all__ = [
     "PointCloudService",
+    "PointsPayload",
     "guard_proxied_size",
     "reset_ingest_gate",
 ]

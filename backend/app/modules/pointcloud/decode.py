@@ -48,6 +48,26 @@ class PointDecodeError(RuntimeError):
     cannot be decoded (truncated upload, wrong extension, empty scan)."""
 
 
+class PointDecodeTooLarge(RuntimeError):
+    """Raised when a scan declares more points than the inline decode ceiling.
+
+    The inline viewer decode materialises the full point set before decimating
+    to ``max_points``, so an enormous cloud - or a LAZ/E57 whose header declares
+    a huge point count (a decompression bomb) - would exhaust the 2 GB core even
+    though the *returned* buffer stays small. We read the point count from the
+    file header (cheap, no full decompress) and refuse above ``max_total_points``
+    with this error, which the API maps to 413 with guidance to use the
+    out-of-core converter. Carries the offending count + the ceiling.
+    """
+
+    def __init__(self, total_count: int, max_total_points: int) -> None:
+        self.total_count = int(total_count)
+        self.max_total_points = int(max_total_points)
+        super().__init__(
+            f"Scan declares {self.total_count:,} points, above the inline decode ceiling of {self.max_total_points:,}"
+        )
+
+
 @dataclass(slots=True)
 class DecodedPoints:
     """Decimated point payload, ready to pack for the wire.
@@ -71,6 +91,27 @@ class DecodedPoints:
 
 _E57_FORMATS = {"e57"}
 _LAS_FORMATS = {"las", "laz", "copc"}
+
+# Inline-decode point ceiling. The viewer decode loads every point before
+# decimating, so we refuse a source whose declared point count would blow the
+# 2 GB core. Roughly aligned with the ~2 GiB raw-byte cap the service enforces
+# on the object pull (~2 GiB of uncompressed LAS is ~60 M points); anything
+# larger belongs on the out-of-core converter, not the inline preview. Callers
+# override via the ``max_total_points`` argument (the service wires it to a
+# setting); ``0`` disables the ceiling.
+DEFAULT_MAX_TOTAL_POINTS: int = 60_000_000
+
+
+def _enforce_point_ceiling(total_count: int, max_total_points: int) -> None:
+    """Raise :class:`PointDecodeTooLarge` when ``total_count`` exceeds the ceiling.
+
+    A ``max_total_points`` of 0 (or negative) disables the guard. Called with the
+    header-declared count *before* a full decode so a decompression bomb is
+    rejected before it can allocate, and again with the running actual count as a
+    backstop for readers whose header does not expose a count.
+    """
+    if max_total_points > 0 and total_count > max_total_points:
+        raise PointDecodeTooLarge(total_count, max_total_points)
 
 
 def _decimate_indices(n: int, max_points: int) -> np.ndarray | None:
@@ -133,7 +174,7 @@ def _finalise(
     )
 
 
-def _decode_e57(path: Path, max_points: int) -> DecodedPoints:
+def _decode_e57(path: Path, max_points: int, max_total_points: int) -> DecodedPoints:
     try:
         import pye57  # type: ignore[import-untyped]
     except ImportError as exc:  # pragma: no cover - exercised via API 501 path
@@ -156,7 +197,20 @@ def _decode_e57(path: Path, max_points: int) -> DecodedPoints:
     total = 0
 
     scan_count = max(1, int(getattr(handle, "scan_count", 1)))
+    declared_total = 0
     for scan_idx in range(scan_count):
+        # Cheap pre-check: refuse before read_scan() allocates when the per-scan
+        # header exposes a declared point count. pye57 versions vary, so a miss
+        # falls through to the post-read backstop below.
+        try:
+            scan_header = handle.get_header(scan_idx)
+            declared = int(getattr(scan_header, "point_count", 0) or 0)
+        except Exception:  # noqa: BLE001 - header introspection is best-effort
+            declared = 0
+        if declared > 0:
+            declared_total += declared
+            _enforce_point_ceiling(declared_total, max_total_points)
+
         try:
             data = handle.read_scan(scan_idx, ignore_missing_fields=True, colors=True, intensity=True)
         except Exception as exc:  # noqa: BLE001
@@ -178,6 +232,8 @@ def _decode_e57(path: Path, max_points: int) -> DecodedPoints:
             mask = None
 
         total += x.shape[0]
+        # Backstop for readers whose header did not expose a per-scan count.
+        _enforce_point_ceiling(total, max_total_points)
         xs.append(x)
         ys.append(y)
         zs.append(z)
@@ -225,11 +281,21 @@ def _decode_e57(path: Path, max_points: int) -> DecodedPoints:
     return _finalise(xyz, rgb, intensity, total_count=total)
 
 
-def _decode_las(path: Path, max_points: int) -> DecodedPoints:
+def _decode_las(path: Path, max_points: int, max_total_points: int) -> DecodedPoints:
     try:
         import laspy  # type: ignore[import-untyped]
     except ImportError as exc:  # pragma: no cover - exercised via API 501 path
         raise PointDecodeUnavailable("las", "laspy[lazrs]") from exc
+
+    # Cheap header read first: the LAS/LAZ header declares the point-record count
+    # without decompressing the points, so we refuse a decompression bomb before
+    # laspy.read() materialises the whole cloud.
+    try:
+        with laspy.open(str(path)) as reader:
+            declared = int(reader.header.point_count)
+    except Exception as exc:  # noqa: BLE001 - laspy raises various errors
+        raise PointDecodeError(f"Could not read LAS/LAZ header: {exc}") from exc
+    _enforce_point_ceiling(declared, max_total_points)
 
     try:
         las = laspy.read(str(path))
@@ -271,17 +337,27 @@ def _decode_las(path: Path, max_points: int) -> DecodedPoints:
     return decoded
 
 
-def decode_points(path: Path, fmt: str, *, max_points: int = 1_500_000) -> DecodedPoints:
+def decode_points(
+    path: Path,
+    fmt: str,
+    *,
+    max_points: int = 1_500_000,
+    max_total_points: int = DEFAULT_MAX_TOTAL_POINTS,
+) -> DecodedPoints:
     """Decode and decimate a raw point-cloud file to a render-friendly payload.
 
     ``fmt`` is the normalised upload format (``e57`` / ``las`` / ``laz`` / ...).
-    Raises :class:`PointDecodeUnavailable` (map to 501) when the reader for the
-    format is not installed, :class:`PointDecodeError` (map to 422) when the file
-    is present but undecodable.
+    ``max_points`` is the render decimation cap; ``max_total_points`` is the
+    source-size ceiling checked against the file header before the full decode
+    (``0`` disables it). Raises :class:`PointDecodeUnavailable` (map to 501) when
+    the reader for the format is not installed, :class:`PointDecodeError` (map to
+    422) when the file is present but undecodable, and
+    :class:`PointDecodeTooLarge` (map to 413) when the scan declares more points
+    than the inline ceiling.
     """
     fmt = (fmt or "").lower().strip()
     if fmt in _E57_FORMATS:
-        return _decode_e57(path, max_points)
+        return _decode_e57(path, max_points, max_total_points)
     if fmt in _LAS_FORMATS:
-        return _decode_las(path, max_points)
+        return _decode_las(path, max_points, max_total_points)
     raise PointDecodeUnavailable(fmt or "unknown", "a supported reader (E57 or LAS/LAZ)")

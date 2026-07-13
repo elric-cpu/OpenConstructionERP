@@ -115,6 +115,7 @@ async def delete_scan(
     responses={
         200: {"content": {"application/octet-stream": {}}, "description": "OEPC binary point buffer"},
         409: {"description": "Scan is still uploading"},
+        413: {"description": "Scan is too large to preview inline (too many bytes or points)"},
         501: {"description": "No reader installed for the scan format"},
     },
 )
@@ -136,15 +137,21 @@ async def get_scan_points(
     the OEPC little-endian buffer the viewer reads in one pass. The body is not
     JSON; it is ``application/octet-stream``. Gated by tenant + project access.
     """
-    buffer = await service.get_points(scan_id, max_points=max_points, payload=payload)
+    result = await service.get_points(scan_id, max_points=max_points, payload=payload)
     return Response(
-        content=buffer,
+        content=result.buffer,
         media_type="application/octet-stream",
         headers={
             "Content-Disposition": f'inline; filename="{scan_id}.oepc"',
             # Decimated points are immutable for a given (scan, cap); let the
             # browser cache the buffer so re-opening the viewer is instant.
             "Cache-Control": "private, max-age=3600",
+            # Truncation signal: the preview is decimated to at most max_points,
+            # so report the full count and whether the buffer is a subsample - a
+            # user must never mistake a decimated cloud for the whole scan.
+            "X-Point-Count-Total": str(result.total_count),
+            "X-Point-Count-Returned": str(result.returned_count),
+            "X-Point-Truncated": "true" if result.truncated else "false",
         },
     )
 

@@ -20,6 +20,7 @@ an empty string and engine ``"none"`` - never raises.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,18 @@ MAX_CONTENT_CHARS: int = MAX_CONTENT_BYTES  # 1 char per byte upper bound
 # text (drawing block headers, sheet numbers); below this threshold we
 # still fall through to OCR to get the real body.
 EMBEDDED_TEXT_FALLBACK_THRESHOLD: int = 32
+
+# OCR rasterisation caps. ``page.get_pixmap`` has no size ceiling of its own,
+# so a large-format sheet (an A0 drawing at 150 DPI is ~35 MP) or a
+# maliciously oversized page can make a single render allocate hundreds of MB
+# and OOM a 2 GB worker. We clamp every page render so its pixmap never exceeds
+# ``MAX_OCR_PIXELS`` (mirroring geo_hub.raster_pipeline.MAX_RASTER_PIXELS) and
+# cap how many pages one document is OCR'd through so a 1000-page scan cannot
+# pin an OCR worker. Text OCR does not need a huge raster, so the pixel cap is
+# tighter than the 64 MP geo_hub uses for its visual rasters.
+OCR_RENDER_DPI: int = 150
+MAX_OCR_PIXELS: int = 40_000_000
+MAX_OCR_PAGES: int = 200
 
 
 @dataclass(frozen=True)
@@ -62,6 +75,25 @@ def _truncate(text: str) -> str:
     if len(text) > MAX_CONTENT_CHARS:
         return text[:MAX_CONTENT_CHARS]
     return text
+
+
+def _clamp_render_scale(width_pt: float, height_pt: float, dpi: int, max_pixels: int) -> float:
+    """Scale factor to rasterise a PDF page at ``dpi`` without exceeding ``max_pixels``.
+
+    PDF user space is 72 units per inch, so the base scale for ``dpi`` is
+    ``dpi / 72``. When a page is so large that the resulting pixmap would blow
+    past ``max_pixels`` we shrink the scale to land on the cap (the same
+    ``sqrt(cap / area)`` clamp geo_hub uses), so a 2 m x 2 m survey sheet renders
+    at a safe resolution instead of allocating hundreds of MB. Degenerate
+    (non-positive) page dimensions fall back to the unclamped scale.
+    """
+    scale = dpi / 72.0
+    if width_pt <= 0 or height_pt <= 0:
+        return scale
+    est_pixels = int(width_pt * scale) * int(height_pt * scale)
+    if est_pixels > max_pixels:
+        scale = math.sqrt(max_pixels / (width_pt * height_pt))
+    return scale
 
 
 def _extract_pdf_text(payload: bytes) -> tuple[str, int]:
@@ -124,9 +156,18 @@ def _extract_ocr_text(payload: bytes, mime: str | None) -> tuple[str, int | None
             with fitz.open(stream=payload, filetype="pdf") as doc:
                 page_count = doc.page_count
                 parts: list[str] = []
-                for page in doc:
+                for page_index, page in enumerate(doc):
+                    if page_index >= MAX_OCR_PAGES:
+                        logger.info(
+                            "OCR page cap (%d) reached; skipping the remaining %d page(s)",
+                            MAX_OCR_PAGES,
+                            page_count - MAX_OCR_PAGES,
+                        )
+                        break
+                    pix = None
                     try:
-                        pix = page.get_pixmap(dpi=150)
+                        scale = _clamp_render_scale(page.rect.width, page.rect.height, OCR_RENDER_DPI, MAX_OCR_PIXELS)
+                        pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
                         img_bytes = pix.tobytes("png")
                         with Image.open(BytesIO(img_bytes)) as img:
                             page_text = pytesseract.image_to_string(img) or ""
@@ -134,6 +175,11 @@ def _extract_ocr_text(payload: bytes, mime: str | None) -> tuple[str, int | None
                     except Exception:
                         logger.exception("OCR failed for PDF page; continuing")
                         continue
+                    finally:
+                        # Drop the page pixmap (can be ~100 MB) before the next
+                        # iteration so peak memory is a single page, never the
+                        # whole document's rasters.
+                        pix = None
                 return "\n".join(parts).strip(), page_count
         except Exception:
             logger.exception("OCR rasterisation pipeline failed for PDF")
