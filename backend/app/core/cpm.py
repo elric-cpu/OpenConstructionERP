@@ -117,6 +117,27 @@ def _working_days_between(
     return count
 
 
+def _snap_to_working_day(
+    offset: int,
+    work_days: set[int],
+    exceptions: set[date],
+    project_start: date,
+) -> int:
+    """Advance a day-offset to the first working day at or after it.
+
+    A "start no earlier than" floor that lands on a weekend or holiday would
+    give an activity an early_start on a non-working day, which is asymmetric
+    with the working-day backward pass (``_sub_working_days``) and produces a
+    spurious negative total_float and a false ``is_critical``. Snapping the
+    floor forward keeps early_start on a working day. An offset already on a
+    working day is returned unchanged.
+    """
+    current = project_start + timedelta(days=offset)
+    while current.weekday() not in work_days or current in exceptions:
+        current += timedelta(days=1)
+    return (current - project_start).days
+
+
 def offset_to_iso(offset: int, project_start: date) -> str:
     """Project a CPM day-offset back onto an ISO calendar date.
 
@@ -252,7 +273,15 @@ async def calculate_cpm(
     # ── Forward Pass ─────────────────────────────────────────────────────
     for aid in topo_order:
         act = act_map[aid]
-        es = act["start_offset"]  # floor: no earlier than the activity's own start
+        # "Start no earlier than" floor. A nonzero floor (a root's manual start)
+        # is snapped forward to the next working day so early_start lands on a
+        # working day: an early_start on a weekend/holiday is asymmetric with
+        # the working-day backward pass and yields a spurious negative float and
+        # a false is_critical. A zero floor (successors, and the default) is left
+        # untouched so the no-start_offset path stays byte-identical.
+        es = act["start_offset"]
+        if es > 0:
+            es = _snap_to_working_day(es, work_days, exceptions, p_start)
 
         for link in predecessors[aid]:
             pred = act_map[link["pred"]]

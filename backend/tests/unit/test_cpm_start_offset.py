@@ -83,3 +83,46 @@ async def test_successor_offset_does_not_pin_it_earlier_than_the_network() -> No
     by_id = {r["id"]: r for r in await calculate_cpm(activities, relationships, project_start_date="2024-01-01")}
     # The network (predecessor finish) wins over the day-2 floor.
     assert by_id["q"]["early_start"] == by_id["p"]["early_finish"]
+
+
+@pytest.mark.asyncio
+async def test_weekend_anchored_root_has_no_spurious_negative_float() -> None:
+    """Regression: a root whose manual start lands on a non-working day.
+
+    Seeding early_start with the raw calendar-day offset of a weekend start
+    broke the symmetry with the working-day backward pass (``_sub_working_days``
+    always lands on a working day), so an isolated root dated on a Saturday or
+    Sunday got a spurious NEGATIVE total_float and a false is_critical. The
+    engine snaps a nonzero start floor forward to the next working day, so
+    early_start lands on a working day and the float stays correct.
+    """
+    # 2024-01-01 is a Monday; day-offset 6 is Sunday 2024-01-07.
+    activities = [{"id": "sunday_root", "duration": 4, "start_offset": 6}]
+    by_id = {r["id"]: r for r in await calculate_cpm(activities, [], project_start_date="2024-01-01")}
+    root = by_id["sunday_root"]
+    # Pre-fix this was -2 (late_start 4 < early_start 6). Total float is never negative.
+    assert root["total_float"] >= 0
+    # early_start is snapped onto the next working day (Mon 2024-01-08 = offset 7).
+    assert root["early_start"] == 7
+
+
+@pytest.mark.asyncio
+async def test_weekend_anchored_root_on_the_critical_chain_is_not_false_negative() -> None:
+    """A weekend-anchored root that drives the longest chain gets float 0, not < 0.
+
+    Root ``r`` starts on a Saturday and feeds ``s``; the r->s chain defines the
+    project finish, so ``r`` is genuinely critical at float 0. Pre-fix the
+    calendar-day vs working-day mismatch made ``r``'s total_float negative - an
+    impossible, out-of-range value that reschedule would then persist (red bar).
+    """
+    # 2024-01-01 is a Monday; day-offset 5 is Saturday 2024-01-06.
+    activities = [
+        {"id": "r", "duration": 6, "start_offset": 5},
+        {"id": "s", "duration": 2, "start_offset": 0},
+    ]
+    relationships = [{"predecessor_id": "r", "successor_id": "s", "type": "FS", "lag": 0}]
+    by_id = {rec["id"]: rec for rec in await calculate_cpm(activities, relationships, project_start_date="2024-01-01")}
+    assert by_id["r"]["total_float"] >= 0
+    assert by_id["r"]["early_start"] == 7  # snapped Sat -> Mon
+    # r drives the finish through s, so it is legitimately critical at float 0.
+    assert by_id["r"]["is_critical"] is True
