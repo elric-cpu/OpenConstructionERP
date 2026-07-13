@@ -149,6 +149,11 @@ async def calculate_cpm(
         - id: str (UUID as string)
         - duration: int (working days)
         - name: str (optional, for logging)
+        - start_offset: int (optional) - earliest the activity may start, as a
+          calendar-day offset from the project origin. Acts as a "start no
+          earlier than" floor and defaults to 0. A root (no predecessor) passes
+          its own manual start here so its successors are scheduled after it,
+          not at the project origin.
 
     Each relationship dict must have:
         - predecessor_id: str
@@ -188,6 +193,11 @@ async def calculate_cpm(
             "id": aid,
             "duration": max(int(act.get("duration", 0)), 0),
             "name": act.get("name", ""),
+            # "Start no earlier than" floor as a calendar-day offset from the
+            # project origin. 0 (default) lets predecessors alone drive the
+            # date; a root passes its own manual start here so its successors
+            # anchor after it, not at the origin.
+            "start_offset": max(int(act.get("start_offset", 0) or 0), 0),
             "early_start": 0,
             "early_finish": 0,
             "late_start": 0,
@@ -242,7 +252,7 @@ async def calculate_cpm(
     # ── Forward Pass ─────────────────────────────────────────────────────
     for aid in topo_order:
         act = act_map[aid]
-        es = 0  # earliest start
+        es = act["start_offset"]  # floor: no earlier than the activity's own start
 
         for link in predecessors[aid]:
             pred = act_map[link["pred"]]

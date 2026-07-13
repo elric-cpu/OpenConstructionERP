@@ -1809,6 +1809,21 @@ class ScheduleService:
                 earliest = d
         return earliest or datetime.now(UTC).date()
 
+    @staticmethod
+    def _activity_start_offset(activity: Activity, project_start: date) -> int:
+        """Day-offset of an activity's manual start from the project origin.
+
+        Used to anchor a root activity in the CPM forward pass so its
+        successors are scheduled after it. Returns 0 when the activity has no
+        parseable start date or starts on/before the origin (the forward pass
+        floors early_start at zero anyway).
+        """
+        try:
+            d = date.fromisoformat(str(activity.start_date)[:10])
+        except (ValueError, TypeError):
+            return 0
+        return max((d - project_start).days, 0)
+
     async def reschedule(self, schedule_id: uuid.UUID) -> list[Activity]:
         """Recompute activity dates from the dependency network via CPM.
 
@@ -1844,7 +1859,24 @@ class ScheduleService:
         relationships = await self.relationship_repo.list_for_schedule(schedule_id)
         project_start = self._resolve_project_start(schedule, activities)
 
-        act_dicts = [{"id": str(a.id), "duration": a.duration_days or 0, "name": a.name} for a in activities]
+        # Activities that appear as a successor of some edge are CPM-driven;
+        # the rest are roots whose manual start anchors the chain.
+        has_predecessor = {str(r.successor_id) for r in relationships}
+
+        # Feed each root's own start into the engine as a "start no earlier
+        # than" floor (a day-offset from the project origin) so its successors
+        # are scheduled after it, not at the origin. Successors carry no floor:
+        # they are driven purely by the network, so a stale manual date can
+        # never pin them later than their predecessors allow.
+        act_dicts = [
+            {
+                "id": str(a.id),
+                "duration": a.duration_days or 0,
+                "name": a.name,
+                "start_offset": (0 if str(a.id) in has_predecessor else self._activity_start_offset(a, project_start)),
+            }
+            for a in activities
+        ]
         rel_dicts = [
             {
                 "predecessor_id": str(r.predecessor_id),
@@ -1863,10 +1895,6 @@ class ScheduleService:
             project_start_date=project_start.isoformat(),
         )
         cpm_map = {r["id"]: r for r in cpm_results}
-
-        # Activities that appear as a successor of some edge are CPM-driven;
-        # the rest are roots whose manual start anchors the chain.
-        has_predecessor = {str(r.successor_id) for r in relationships}
 
         # One uniform payload shape per row so the bulk UPDATE compiles a
         # single statement (heterogeneous key sets would break executemany).
