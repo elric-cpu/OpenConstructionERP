@@ -1091,11 +1091,10 @@ by any third-party trademark owners. Full attributions in [NOTICE](NOTICE).
 
 OpenConstructionERP is open-source software, available worldwide. It uses
 only standard cryptography for sign-in (bcrypt password hashing and signed
-JSON Web Tokens), which as published open source needs no special export
-licence. It may not be used in or exported to comprehensively sanctioned
-places (currently Cuba, Iran, North Korea, and the Crimea, Donetsk and
-Luhansk regions of Ukraine) or by sanctioned parties, and you remain
-responsible for the export and sanctions laws that apply to you. See
+JSON Web Tokens) and no bulk data encryption, so it needs no special export
+licence. As with any software, it may not be exported to or used in
+comprehensively sanctioned destinations or by sanctioned parties, and you
+remain responsible for the export and sanctions laws that apply to you. See
 [NOTICE](NOTICE) for details.
 
 ## License
