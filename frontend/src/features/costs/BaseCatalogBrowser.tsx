@@ -332,10 +332,10 @@ export function BaseCatalogBrowser({
           the rest. */}
       <div className="space-y-3">
         {familyRows.map(({ family, variants }) => {
-          // The Global CWICR base derives from the CIS / GESN-FER-TER norm
-          // lineage; badge it with the shared CIS emblem (its backend origin
-          // flag "un" has no icon). National families use their own flag.
-          const flagCode = family.key === 'global' ? 'cis' : family.origin_flag;
+          // Every family badges with its own origin flag; the Russia base
+          // (GESN / FER / TER norm lineage) carries the Russian flag from its
+          // backend origin_flag.
+          const flagCode = family.origin_flag;
           const loadedInFamily = variants.filter((v) => isLoaded(v)).length;
           const multiMarket = family.market_count > 1;
           // Keep a family open while searching, when the user opened it, or when

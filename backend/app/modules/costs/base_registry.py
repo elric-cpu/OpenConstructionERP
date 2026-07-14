@@ -90,7 +90,7 @@ class BaseFamily:
         key: Stable machine key (``"global"``, ``"china"``, ...).
         name: Display name of the family.
         norm_system: The official norm / classification the base derives from.
-        origin: Origin country label (``"International"`` for the global base).
+        origin: Origin country label (``"Russia"`` for the flagship global base).
         origin_flag: ISO 3166-1 alpha-2 code for the origin flag.
         description: One-line plain-language summary for the browser.
         variants: Loadable market bases in this family.
@@ -165,10 +165,10 @@ def _global_variant(row: tuple[str, str, str, str, str, str, str, str]) -> BaseV
 
 _GLOBAL_FAMILY = BaseFamily(
     key="global",
-    name="Global CWICR",
+    name="Russia",
     norm_system="GESN / FER / TER",
-    origin="International",
-    origin_flag="un",
+    origin="Russia",
+    origin_flag="ru",
     description=(
         "One comprehensive work-item catalogue, localized and repriced into 30 "
         "markets and nine languages. Pick your market to get it in your language, "
