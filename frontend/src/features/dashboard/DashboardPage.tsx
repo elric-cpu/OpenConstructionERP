@@ -1795,14 +1795,14 @@ function QuickUploadCard({ projects }: { projects?: ProjectSummary[] }) {
   const hasProjects = selectableProjects.length > 0;
 
   return (
-    <div className="animate-card-in" style={{ animationDelay: '120ms' }}>
-      <Card padding="none">
+    <div className="animate-card-in h-full" style={{ animationDelay: '120ms' }}>
+      <Card padding="none" className="h-full">
         <div
           onDrop={onDrop}
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
           className={[
-            'relative flex items-center gap-4 rounded-xl border-2 border-dashed px-5 py-5 transition-all',
+            'relative flex h-full items-center gap-4 rounded-xl border-2 border-dashed px-5 py-5 transition-all',
             dragOver
               ? 'border-oe-blue bg-oe-blue-subtle/40'
               : 'border-border-light bg-surface-secondary/30 hover:border-oe-blue/40',

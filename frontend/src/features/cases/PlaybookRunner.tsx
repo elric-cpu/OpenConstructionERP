@@ -651,18 +651,18 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                   >
                     <span
                       className={clsx(
-                        "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-2xs font-bold",
+                        "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold",
                         done || isCurrent
                           ? "bg-oe-blue text-white"
                           : "bg-surface-secondary text-content-secondary ring-1 ring-inset ring-border-light",
                       )}
                       aria-hidden="true"
                     >
-                      {done ? <Check size={12} strokeWidth={2.5} /> : i + 1}
+                      {done ? <Check size={16} strokeWidth={2.5} /> : i + 1}
                     </span>
                     <StepThumb
                       step={step}
-                      className="aspect-[16/9] w-16 shrink-0 sm:w-20"
+                      className="aspect-[16/9] w-20 shrink-0 sm:w-24"
                     />
                     <span className="min-w-0 flex-1">
                       <span
@@ -682,6 +682,19 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                       </span>
                     </span>
                   </button>
+                  {/* Transition arrow between steps: a bold, blue downward
+                      arrow makes the ordered flow obvious in the vertical rail
+                      (mobile single column + the xl sidebar). Hidden in the
+                      mid-width multi-column grid where a between-arrow reads
+                      wrong. */}
+                  {i < playbook.steps.length - 1 && (
+                    <span
+                      aria-hidden="true"
+                      className="my-1 flex justify-center text-oe-blue sm:hidden xl:flex"
+                    >
+                      <ArrowDown size={22} strokeWidth={2.75} />
+                    </span>
+                  )}
                 </li>
               );
             })}
