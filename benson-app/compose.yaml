@@ -1,0 +1,14 @@
+services:
+  api:
+    build: ./api
+    env_file: ./api/.env
+    restart: unless-stopped
+    volumes:
+      - data:/var/lib/benson
+  web:
+    build: ./web
+    depends_on: [api]
+    restart: unless-stopped
+    ports: ["8080:8080"]
+volumes:
+  data:

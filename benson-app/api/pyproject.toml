@@ -1,0 +1,25 @@
+[project]
+name = "benson-operations-api"
+version = "0.1.0"
+description = "Benson Home Solutions construction operations API"
+requires-python = ">=3.12"
+license = "AGPL-3.0-or-later"
+dependencies = [
+  "email-validator>=2.2,<3",
+  "fastapi>=0.116,<1",
+  "httpx>=0.28,<1",
+  "pydantic-settings>=2.10,<3",
+  "python-multipart>=0.0.20",
+  "uvicorn[standard]>=0.35,<1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.4,<9", "pytest-asyncio>=1.1,<2", "ruff>=0.12,<1"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
