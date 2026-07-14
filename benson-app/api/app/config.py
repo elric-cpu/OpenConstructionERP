@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     upload_max_bytes: int = Field(default=15_000_000, ge=1_000_000, le=25_000_000)
     upload_storage_path: Path = Path("./private-uploads")
     database_path: Path = Path("./benson-operations.sqlite3")
+    web_dist_path: Path | None = None
 
 
 @lru_cache

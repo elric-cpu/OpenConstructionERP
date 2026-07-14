@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile, status
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 from .ai_gateway import AiGatewayUnavailable, run_agent_prompt
 from .config import Settings, get_settings
@@ -199,3 +200,8 @@ async def agent_action(
         }
     )
     return result
+
+
+_web_dist_path = get_settings().web_dist_path
+if _web_dist_path is not None and _web_dist_path.is_dir():
+    app.mount("/", StaticFiles(directory=_web_dist_path, html=True), name="web")

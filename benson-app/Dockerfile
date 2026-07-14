@@ -7,14 +7,11 @@ RUN npm run build
 
 FROM python:3.14-slim
 WORKDIR /app
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends nginx \
-  && rm -rf /var/lib/apt/lists/*
 COPY api/pyproject.toml ./
 COPY api/app ./app
 RUN pip install --no-cache-dir .
-COPY --from=web-build /web/dist /usr/share/nginx/html
-COPY nginx.cloudrun.conf /etc/nginx/sites-enabled/default
+COPY --from=web-build /web/dist /app/web-dist
 RUN mkdir -p /var/lib/benson/private-uploads
 ENV PORT=8080
-CMD ["sh", "-c", "uvicorn app.main:app --host 127.0.0.1 --port 8000 & exec nginx -g 'daemon off;'"]
+ENV BENSON_WEB_DIST_PATH=/app/web-dist
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
