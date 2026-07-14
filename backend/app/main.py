@@ -1881,6 +1881,8 @@ def create_app() -> FastAPI:
         import os
         import subprocess
         import sys
+        import sysconfig
+        from pathlib import Path
 
         if os.environ.get("ALLOW_RUNTIME_UPGRADE", "true").lower() not in (
             "true",
@@ -1904,12 +1906,53 @@ def create_app() -> FastAPI:
         if force:
             cmd.insert(-1, "--force-reinstall")
 
+        # On Windows the running launcher keeps an open handle on its own
+        # console-script .exe, so pip cannot overwrite it and the whole
+        # install aborts with WinError 32 ("file in use by another process").
+        # Windows *does* allow renaming a running .exe, so move the locked
+        # launchers aside first; pip then writes fresh ones in their place.
+        # The renamed stubs stay locked until this process exits and are
+        # swept on the next upgrade. If pip ends up not regenerating a
+        # launcher (e.g. the target was already satisfied), we restore it.
+        renamed: list[tuple[Path, Path]] = []
+        if sys.platform == "win32":
+            scripts_dir = Path(sysconfig.get_path("scripts"))
+            for stale in scripts_dir.glob("*.oce-old-*"):
+                try:
+                    stale.unlink()
+                except OSError:
+                    pass  # a leftover still locked by an older process - skip
+            for exe_name in (
+                "openconstructionerp.exe",
+                "openconstructionerp-server.exe",
+                "openestimate.exe",
+                "openestimate-server.exe",
+            ):
+                exe = scripts_dir / exe_name
+                if not exe.exists():
+                    continue
+                aside = exe.with_name(f"{exe.name}.oce-old-{os.getpid()}")
+                try:
+                    exe.rename(aside)
+                    renamed.append((exe, aside))
+                except OSError:
+                    pass  # best effort - let pip surface the real error
+
         proc = subprocess.run(  # noqa: S603 - args are sanitised above
             cmd,
             capture_output=True,
             text=True,
             timeout=600,
         )
+
+        # Never leave the user without a launcher: if pip did not recreate
+        # one we moved aside, put the original back.
+        for original, aside in renamed:
+            if not original.exists() and aside.exists():
+                try:
+                    aside.rename(original)
+                except OSError:
+                    pass
 
         new_version = settings.app_version
         try:
