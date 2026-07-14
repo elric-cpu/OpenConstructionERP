@@ -8,3 +8,5 @@ __pycache__/
 private-uploads/
 node_modules/
 dist/
+playwright-report/
+test-results/

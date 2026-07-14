@@ -1,0 +1,27 @@
+name: Benson Rewrite Verify
+
+on:
+  push:
+    paths: ["benson-app/**", ".github/workflows/benson-verify.yml"]
+  pull_request:
+    paths: ["benson-app/**", ".github/workflows/benson-verify.yml"]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: benson-app/web/package-lock.json
+      - uses: astral-sh/setup-uv@v6
+      - run: npm ci
+        working-directory: benson-app/web
+      - run: npx playwright install --with-deps chromium
+        working-directory: benson-app/web
+      - run: uv sync --extra dev
+        working-directory: benson-app/api
+      - run: npm run verify
+        working-directory: benson-app

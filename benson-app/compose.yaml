@@ -1,7 +1,9 @@
 services:
   api:
     build: ./api
-    env_file: ./api/.env
+    env_file:
+      - path: ./api/.env
+        required: false
     restart: unless-stopped
     volumes:
       - data:/var/lib/benson

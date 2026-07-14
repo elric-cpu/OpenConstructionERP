@@ -1,7 +1,7 @@
 from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile, status
@@ -9,7 +9,14 @@ from fastapi.responses import HTMLResponse
 
 from .ai_gateway import AiGatewayUnavailable, run_agent_prompt
 from .config import Settings, get_settings
-from .domain import AgentActionRequest, AgentActionResult, BENSON_MODULES, LeadIntake, LeadReceipt, Role
+from .domain import (
+    AgentActionRequest,
+    AgentActionResult,
+    BENSON_MODULES,
+    LeadIntake,
+    LeadReceipt,
+    Role,
+)
 from .policy import ActionRisk, evaluate_agent_action
 from .storage import OperationsStore
 
@@ -19,8 +26,8 @@ app = FastAPI(
     description="Focused residential contractor operations for Benson Home Solutions.",
 )
 
-_audit: list[dict] = []
-_upload_sessions: dict[str, dict] = {}
+_audit: list[dict[str, Any]] = []
+_upload_sessions: dict[str, dict[str, Any]] = {}
 _allowed_upload_types = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
 
 
@@ -37,7 +44,7 @@ def require_website_key(
 
 
 @app.get("/api/health")
-async def health(settings: Settings = Depends(get_settings)) -> dict:
+async def health(settings: Settings = Depends(get_settings)) -> dict[str, Any]:
     return {
         "status": "healthy",
         "service": settings.app_name,
@@ -47,8 +54,8 @@ async def health(settings: Settings = Depends(get_settings)) -> dict:
 
 
 @app.get("/api/v1/config/modules")
-async def modules(role: Role = Role.OWNER) -> dict:
-    grouped: dict[str, list[dict]] = defaultdict(list)
+async def modules(role: Role = Role.OWNER) -> dict[str, Any]:
+    grouped: dict[str, list[dict[str, str]]] = defaultdict(list)
     for module in BENSON_MODULES:
         if role in module.roles:
             grouped[module.group].append({"id": module.id, "label": module.label})
@@ -56,10 +63,15 @@ async def modules(role: Role = Role.OWNER) -> dict:
 
 
 @app.get("/api/v1/dashboard")
-async def dashboard(settings: Settings = Depends(get_settings)) -> dict:
+async def dashboard(settings: Settings = Depends(get_settings)) -> dict[str, Any]:
     return {
         "generated_at": datetime.now(UTC),
-        "metrics": {"new_leads": store(settings).lead_count(), "active_jobs": 0, "open_tasks": 0, "unbilled_work": 0},
+        "metrics": {
+            "new_leads": store(settings).lead_count(),
+            "active_jobs": 0,
+            "open_tasks": 0,
+            "unbilled_work": 0,
+        },
         "attention": [],
         "schedule": [],
         "jobs": [],
@@ -74,10 +86,21 @@ async def dashboard(settings: Settings = Depends(get_settings)) -> dict:
 )
 async def website_lead(lead: LeadIntake, settings: Settings = Depends(get_settings)) -> LeadReceipt:
     receipt = LeadReceipt(upload_url="")
-    receipt.upload_url = f"{str(settings.upload_base_url).rstrip('/')}/uploads/{receipt.upload_session_id}"
+    receipt.upload_url = (
+        f"{str(settings.upload_base_url).rstrip('/')}/uploads/{receipt.upload_session_id}"
+    )
     store(settings).save_lead(receipt, lead)
-    _upload_sessions[str(receipt.upload_session_id)] = {"lead_id": str(receipt.lead_id), "files": []}
-    _audit.append({"event": "lead.accepted", "lead_id": str(receipt.lead_id), "at": receipt.accepted_at.isoformat()})
+    _upload_sessions[str(receipt.upload_session_id)] = {
+        "lead_id": str(receipt.lead_id),
+        "files": [],
+    }
+    _audit.append(
+        {
+            "event": "lead.accepted",
+            "lead_id": str(receipt.lead_id),
+            "at": receipt.accepted_at.isoformat(),
+        }
+    )
     return receipt
 
 
@@ -113,14 +136,30 @@ async def receive_uploads(
         destination = storage / stored_name
         destination.write_bytes(content)
         destination.chmod(0o600)
-        accepted.append({"name": upload.filename, "stored_name": stored_name, "type": upload.content_type, "size": len(content)})
+        accepted.append(
+            {
+                "name": upload.filename,
+                "stored_name": stored_name,
+                "type": upload.content_type,
+                "size": len(content),
+            }
+        )
     session["files"].extend(accepted)
-    _audit.append({"event": "lead.files_attached", "lead_id": session["lead_id"], "count": len(accepted), "at": datetime.now(UTC).isoformat()})
+    _audit.append(
+        {
+            "event": "lead.files_attached",
+            "lead_id": session["lead_id"],
+            "count": len(accepted),
+            "at": datetime.now(UTC).isoformat(),
+        }
+    )
     return "<main style='max-width:560px;margin:10vh auto;font:18px system-ui'><h1>Files attached.</h1><p>Thank you. Benson Home Solutions will review your request and follow up.</p></main>"
 
 
 @app.post("/api/v1/agent/actions", response_model=AgentActionResult)
-async def agent_action(request: AgentActionRequest, settings: Settings = Depends(get_settings)) -> AgentActionResult:
+async def agent_action(
+    request: AgentActionRequest, settings: Settings = Depends(get_settings)
+) -> AgentActionResult:
     requested_risks = [
         ActionRisk(prefix)
         for tool in request.tools
@@ -138,12 +177,25 @@ async def agent_action(request: AgentActionRequest, settings: Settings = Depends
         response = await run_agent_prompt(settings, request.prompt, system)
         summary = str(response.get("output_text") or "Agent response completed")
     except AiGatewayUnavailable:
-        return AgentActionResult(status="failed", summary="AI gateway unavailable; no records were changed", model=settings.fcc_model)
+        return AgentActionResult(
+            status="failed",
+            summary="AI gateway unavailable; no records were changed",
+            model=settings.fcc_model,
+        )
     result = AgentActionResult(
         status="confirmation_required" if confirmation_required else "completed",
         summary=summary,
-        proposed_actions=[{"tool": tool, "confirmation_required": confirmation_required} for tool in request.tools],
+        proposed_actions=[
+            {"tool": tool, "confirmation_required": confirmation_required} for tool in request.tools
+        ],
         model=settings.fcc_model,
     )
-    _audit.append({"event": "agent.run", "run_id": str(result.run_id), "role": request.role, "at": result.audited_at.isoformat()})
+    _audit.append(
+        {
+            "event": "agent.run",
+            "run_id": str(result.run_id),
+            "role": request.role,
+            "at": result.audited_at.isoformat(),
+        }
+    )
     return result

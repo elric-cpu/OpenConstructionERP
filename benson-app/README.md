@@ -24,6 +24,18 @@ npm run dev -- --host 0.0.0.0
 
 Use `benson-ai` rather than `localhost` when sharing local URLs.
 
+## Verification
+
+```bash
+cd web
+npm ci
+npx playwright install chromium
+cd ..
+npm run verify
+```
+
+The API gate runs Ruff formatting and linting, strict mypy, and pytest with an 80% coverage floor. The web gate runs Prettier, ESLint, TypeScript, a production Vite build, and local Playwright against desktop Chrome and Pixel 7 viewports. Browser checks cover the mobile navigation rail, overflow, empty-state honesty, and serious/critical axe accessibility findings.
+
 ## License
 
 AGPL-3.0-or-later. See the repository root for upstream copyright and attribution.

@@ -29,27 +29,67 @@ FIELD_STAFF = STAFF | {Role.FIELD}
 FINANCE_STAFF = {Role.OWNER, Role.ADMIN, Role.ACCOUNTING}
 
 BENSON_MODULES = [
-    ModuleDefinition(id="dashboard", label="Today", group="workspace", roles=FIELD_STAFF | FINANCE_STAFF),
+    ModuleDefinition(
+        id="dashboard", label="Today", group="workspace", roles=FIELD_STAFF | FINANCE_STAFF
+    ),
     ModuleDefinition(id="crm", label="Leads & CRM", group="sales", roles=STAFF),
-    ModuleDefinition(id="contacts", label="Contacts", group="sales", roles=STAFF | {Role.ACCOUNTING}),
+    ModuleDefinition(
+        id="contacts", label="Contacts", group="sales", roles=STAFF | {Role.ACCOUNTING}
+    ),
     ModuleDefinition(id="estimates", label="Estimates", group="sales", roles=STAFF),
-    ModuleDefinition(id="projects", label="Jobs", group="delivery", roles=FIELD_STAFF | FINANCE_STAFF),
+    ModuleDefinition(
+        id="projects", label="Jobs", group="delivery", roles=FIELD_STAFF | FINANCE_STAFF
+    ),
     ModuleDefinition(id="schedule", label="Schedule", group="delivery", roles=FIELD_STAFF),
     ModuleDefinition(id="field", label="Field Notes", group="delivery", roles=FIELD_STAFF),
-    ModuleDefinition(id="time", label="Time & Payroll Prep", group="delivery", roles=FIELD_STAFF | FINANCE_STAFF),
-    ModuleDefinition(id="documents", label="Documents", group="delivery", roles=FIELD_STAFF | FINANCE_STAFF | {Role.CUSTOMER}),
-    ModuleDefinition(id="procurement", label="Purchasing", group="operations", roles=STAFF | FINANCE_STAFF),
-    ModuleDefinition(id="subcontractors", label="Subcontractors", group="operations", roles=STAFF | FINANCE_STAFF | {Role.SUBCONTRACTOR}),
+    ModuleDefinition(
+        id="time", label="Time & Payroll Prep", group="delivery", roles=FIELD_STAFF | FINANCE_STAFF
+    ),
+    ModuleDefinition(
+        id="documents",
+        label="Documents",
+        group="delivery",
+        roles=FIELD_STAFF | FINANCE_STAFF | {Role.CUSTOMER},
+    ),
+    ModuleDefinition(
+        id="procurement", label="Purchasing", group="operations", roles=STAFF | FINANCE_STAFF
+    ),
+    ModuleDefinition(
+        id="subcontractors",
+        label="Subcontractors",
+        group="operations",
+        roles=STAFF | FINANCE_STAFF | {Role.SUBCONTRACTOR},
+    ),
     ModuleDefinition(id="inventory", label="Materials", group="operations", roles=FIELD_STAFF),
     ModuleDefinition(id="equipment", label="Equipment", group="operations", roles=FIELD_STAFF),
-    ModuleDefinition(id="quality", label="Quality & Punch", group="operations", roles=FIELD_STAFF | {Role.CUSTOMER}),
+    ModuleDefinition(
+        id="quality",
+        label="Quality & Punch",
+        group="operations",
+        roles=FIELD_STAFF | {Role.CUSTOMER},
+    ),
     ModuleDefinition(id="safety", label="Safety", group="operations", roles=FIELD_STAFF),
-    ModuleDefinition(id="service", label="Maintenance & Service", group="operations", roles=FIELD_STAFF | {Role.CUSTOMER}),
-    ModuleDefinition(id="finance", label="Job Cost & Billing", group="finance", roles=FINANCE_STAFF),
-    ModuleDefinition(id="quickbooks", label="QuickBooks Sync", group="finance", roles=FINANCE_STAFF),
-    ModuleDefinition(id="portal", label="Customer Portal", group="portal", roles=STAFF | {Role.CUSTOMER}),
-    ModuleDefinition(id="agent", label="Operations Agent", group="intelligence", roles=STAFF | FINANCE_STAFF),
-    ModuleDefinition(id="audit", label="Audit Trail", group="admin", roles={Role.OWNER, Role.ADMIN}),
+    ModuleDefinition(
+        id="service",
+        label="Maintenance & Service",
+        group="operations",
+        roles=FIELD_STAFF | {Role.CUSTOMER},
+    ),
+    ModuleDefinition(
+        id="finance", label="Job Cost & Billing", group="finance", roles=FINANCE_STAFF
+    ),
+    ModuleDefinition(
+        id="quickbooks", label="QuickBooks Sync", group="finance", roles=FINANCE_STAFF
+    ),
+    ModuleDefinition(
+        id="portal", label="Customer Portal", group="portal", roles=STAFF | {Role.CUSTOMER}
+    ),
+    ModuleDefinition(
+        id="agent", label="Operations Agent", group="intelligence", roles=STAFF | FINANCE_STAFF
+    ),
+    ModuleDefinition(
+        id="audit", label="Audit Trail", group="admin", roles={Role.OWNER, Role.ADMIN}
+    ),
 ]
 
 

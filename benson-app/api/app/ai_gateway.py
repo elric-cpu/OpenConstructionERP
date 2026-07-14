@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -32,7 +32,7 @@ async def run_agent_prompt(
             },
         )
         response.raise_for_status()
-        return response.json()
+        return cast(dict[str, Any], response.json())
     except (httpx.HTTPError, ValueError) as error:
         raise AiGatewayUnavailable("Benson AI gateway is temporarily unavailable") from error
     finally:
