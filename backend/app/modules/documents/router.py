@@ -34,7 +34,7 @@ from app.core.bulk_ops import BulkDeleteRequest
 from app.core.demo_placeholders import materialize_placeholder
 from app.core.i18n import get_locale
 from app.core.rate_limiter import upload_limiter
-from app.core.storage import is_within_safe_root
+from app.core.storage import is_within_safe_root, safe_data_roots
 from app.core.validation.messages import translate
 from app.dependencies import (
     CurrentUserId,
@@ -627,6 +627,72 @@ async def get_photo(
     return _photo_to_response(photo)
 
 
+def _resolve_photo_blob(
+    stored_path: str | None,
+    active_base: Path,
+    sub_parts: tuple[str, ...],
+) -> Path | None:
+    """Resolve a photo blob to an existing file, re-homing across data dirs.
+
+    Photos record an ABSOLUTE ``file_path`` at upload time. When the data dir
+    later changes - a fresh ``--data-dir`` per release, a restored backup, or
+    ``OE_DATA_DIR`` being introduced after the fact - that absolute path goes
+    stale and the blob 404s even though the same file is present under the
+    current base. That is exactly why previously uploaded photos stop showing
+    while freshly uploaded ones (written under the active base) still work.
+
+    This mirrors :meth:`LocalStorageBackend._existing_path_for`: try the stored
+    path first, then re-home by the tail after the base's own leaf name against
+    the active base and every other platform-owned data root. Containment is
+    re-checked with ``relative_to`` against each trusted base, and symlinks are
+    rejected, so a crafted path can never escape a data root. Read-only; never
+    used for writes. Returns ``None`` when the blob exists nowhere reachable.
+    """
+    if not stored_path:
+        return None
+    stored = Path(stored_path)
+    active_base = active_base.resolve()
+
+    # 1) Stored path as written - the common case for unchanged installs.
+    try:
+        primary = stored.resolve()
+        if primary.is_file() and not primary.is_symlink() and is_within_safe_root(primary, extra_roots=[active_base]):
+            return primary
+    except OSError:
+        pass
+
+    # 2) Re-home by the tail after the base's leaf name (everything after the
+    # last ``photos`` / ``thumbs`` segment), then probe the active base plus
+    # each other safe data root. This is what makes a photo written under a
+    # previous data dir resolve after the dir changes.
+    leaf = active_base.name.lower()
+    parts = stored.parts
+    lowered = [seg.lower() for seg in parts]
+    if leaf not in lowered:
+        return None
+    idx = len(lowered) - 1 - lowered[::-1].index(leaf)
+    key_parts = parts[idx + 1 :]
+    if not key_parts:
+        return None
+
+    candidate_bases = [active_base]
+    candidate_bases.extend(root.resolve().joinpath(*sub_parts) for root in safe_data_roots())
+    seen: set[Path] = set()
+    for raw_base in candidate_bases:
+        base = raw_base.resolve()
+        if base in seen:
+            continue
+        seen.add(base)
+        try:
+            candidate = base.joinpath(*key_parts).resolve()
+            candidate.relative_to(base)
+        except (OSError, ValueError):
+            continue
+        if candidate.is_file() and not candidate.is_symlink():
+            return candidate
+    return None
+
+
 # ── Serve photo file ────────────────────────────────────────────────────
 
 
@@ -643,28 +709,15 @@ async def serve_photo_file(
     """Serve the actual photo file."""
     photo = await service.get_photo(photo_id)
     await verify_project_access(photo.project_id, user_id, session)
-    file_path = Path(photo.file_path).resolve()
     photo_base = Path(PHOTO_BASE).resolve()
 
-    # Security + cross-release containment: the blob must resolve inside a
-    # directory the platform owns. A photo written under an earlier release can
-    # live under a sibling data root (e.g. legacy ~/.openestimator vs the now
-    # canonical ~/.openestimate), so accept PHOTO_BASE plus the platform-wide
-    # safe data roots. is_within_safe_root uses resolve()/relative_to under the
-    # hood, so it still defeats case-fold + symlink escapes.
-    if not is_within_safe_root(file_path, extra_roots=[photo_base]):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied",
-        )
-
-    if file_path.is_symlink():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Symlinks not permitted",
-        )
-
-    if not file_path.exists() or not file_path.is_file():
+    # Re-home the blob against the current data dir: a photo whose absolute
+    # ``file_path`` was written under an earlier data dir must still resolve, or
+    # previously uploaded photos silently 404 while new ones work. The helper
+    # enforces safe-root containment and rejects symlinks, so this stays as
+    # locked down as the previous explicit checks.
+    file_path = _resolve_photo_blob(photo.file_path, photo_base, ("photos",))
+    if file_path is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Photo file not found on disk",
@@ -715,38 +768,23 @@ async def serve_photo_thumbnail(
     """
     photo = await service.get_photo(photo_id)
     await verify_project_access(photo.project_id, user_id, session)
-    thumb_path_str = getattr(photo, "thumbnail_path", None)
 
     thumb_base = Path(PHOTO_THUMB_BASE).resolve()
     photo_base = Path(PHOTO_BASE).resolve()
 
-    if thumb_path_str:
-        thumb_path = Path(thumb_path_str).resolve()
-        # Accept the thumb-root plus the platform-wide safe data roots, so a
-        # thumbnail written under an earlier release's data dir still resolves.
-        # The resolve()/relative_to containment (case-fold + symlink-escape
-        # defence) is preserved by is_within_safe_root.
-        if is_within_safe_root(thumb_path, extra_roots=[thumb_base]):
-            if thumb_path.exists() and thumb_path.is_file() and not thumb_path.is_symlink():
-                return FileResponse(
-                    path=str(thumb_path),
-                    media_type="image/jpeg",
-                    headers={"Cache-Control": "public, max-age=86400"},
-                )
-        else:
-            logger.warning(
-                "Photo %s has thumbnail_path outside any safe root - ignoring",
-                photo_id,
-            )
-
-    # Fallback: serve the full file so the gallery never breaks.
-    file_path = Path(photo.file_path).resolve()
-    if not is_within_safe_root(file_path, extra_roots=[photo_base]):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied",
+    # Re-home the thumbnail against the current data dir (same stale-absolute
+    # path problem as the full-file route). Thumbs live under photos/thumbs.
+    thumb_path = _resolve_photo_blob(getattr(photo, "thumbnail_path", None), thumb_base, ("photos", "thumbs"))
+    if thumb_path is not None:
+        return FileResponse(
+            path=str(thumb_path),
+            media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=86400"},
         )
-    if file_path.is_symlink() or not file_path.exists() or not file_path.is_file():
+
+    # Fallback: serve the full file so the gallery never breaks, re-homed too.
+    file_path = _resolve_photo_blob(photo.file_path, photo_base, ("photos",))
+    if file_path is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Photo file not found on disk",
