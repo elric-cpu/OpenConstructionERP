@@ -282,7 +282,7 @@ MANIFEST = PartnerPackManifest(
     pack_version="0.1.0",
     description=(
         "Pre-configured partner pack for Canadian construction companies — "
-        "NBC 2020, CCDC 2, RSMeans Canada, bilingual fr-CA / en-CA UI."
+        "NBC 2020, CCDC 2, Canadian construction cost index, bilingual fr-CA / en-CA UI."
     ),
     # Locale & region
     default_locale="fr-CA",

@@ -792,7 +792,7 @@ Doka **MyDoka** customer portal:
 - Outstanding-items list pulled from yard ERP.
 - E-signed delivery receipts (HTML + PDF).
 - No re-use cycle metrics; no on-site condition reports; no offline mobile.
-- Built around the supplier's own SAP back-end; closed to non-Doka inventory.
+- Built around the supplier's own ERP back-end; closed to third-party inventory.
 
 Peri **PeriCloud**:
 - 3D pour planner browser viewer.

@@ -109,7 +109,7 @@ def _seconds_since(ts: datetime | None) -> float | None:
 # ── DWG version sniff & gating (Indian-user stability ticket 2026-05-13) ────
 
 
-# AutoCAD R14 (1997) is the oldest format we will hand to DDC. Older
+# DWG R14 (1997) is the oldest format we will hand to DDC. Older
 # versions are exotic and DDC genuinely cannot read them. Anything
 # between R14 and R18 sometimes works and sometimes does not - we
 # used to pre-emptively reject R14-R17 to spare users a misleading
@@ -121,13 +121,13 @@ _DWG_MIN_SUPPORTED_VERSION_CODE = "AC1014"
 # Human-readable labels for the DWG magic-byte version codes we care
 # about. The mapping comes from Open Design Alliance's specs.
 _DWG_VERSION_LABELS: dict[str, str] = {
-    "AC1014": "AutoCAD R14 (1997)",
-    "AC1015": "AutoCAD 2000 (R15)",
-    "AC1018": "AutoCAD 2004 (R16)",
-    "AC1021": "AutoCAD 2007 (R17)",
-    "AC1024": "AutoCAD 2010 (R18)",
-    "AC1027": "AutoCAD 2013 (R19)",
-    "AC1032": "AutoCAD 2018 (R22)",
+    "AC1014": "DWG R14 (1997)",
+    "AC1015": "DWG 2000 (R15)",
+    "AC1018": "DWG 2004 (R16)",
+    "AC1021": "DWG 2007 (R17)",
+    "AC1024": "DWG 2010 (R18)",
+    "AC1027": "DWG 2013 (R19)",
+    "AC1032": "DWG 2018 (R22)",
 }
 
 
@@ -1218,8 +1218,8 @@ class DwgTakeoffService:
            converter (which spends 90+ s on them and then returns a
            confusing "empty output" error).
 
-        2. ``_dwg_version_too_old`` rejects DWGs older than AutoCAD
-           2010 (R18). DDC's DwgExporter occasionally produces silent
+        2. ``_dwg_version_too_old`` rejects DWGs older than the
+           2010 (R18) format. DDC's DwgExporter occasionally produces silent
            empty output for R14/R15/R16/R17 files; the upgrade hint
            is a much better UX than "no entities found".
         """
@@ -1241,8 +1241,8 @@ class DwgTakeoffService:
                 status="error",
                 error_message=(
                     f"{version_label} is older than the supported DWG "
-                    f"format. Re-save the file as AutoCAD 2010 (R18) "
-                    f"or newer and upload again."
+                    f"format. Re-save it in DWG 2010 (R18) format or "
+                    f"newer from your CAD application and upload again."
                 ),
             )
             return
@@ -1374,9 +1374,9 @@ class DwgTakeoffService:
                 elif "converter crashed" in low:
                     nice_msg = (
                         "The DWG converter could not process this file. "
-                        "Try saving the drawing as DXF (in AutoCAD, File, "
-                        "Save As, AutoCAD DXF) and upload that instead. "
-                        "DXF is handled directly without requiring DDC."
+                        "Try exporting the drawing as DXF from your CAD "
+                        "application (File, Save As, DXF) and upload that "
+                        "instead. DXF is handled directly without requiring DDC."
                     )
                 else:
                     nice_msg = (f"DDC DwgExporter produced no output (exit {rc}): {stderr_msg}").strip()

@@ -1336,7 +1336,7 @@
           <h2 class="cat-title" data-i18n-html="page.standards.cat05_title">Cost data &amp; <em>seed catalogues</em></h2>
           <p class="cat-blurb" data-i18n-html="page.standards.cat05_blurb">
             What ships: <b>CWICR open core, ~55,000 priced positions</b> spanning UK and DACH catalogues.
-            <b>Honest:</b> we do not have live API connectors to BCIS, Sirados, Spon's or Destatis. Customers bring those in as XLSX/CSV imports today.
+            <b>Honest:</b> we do not have live API connectors to BCIS, Destatis or commercial price books. Customers bring those in as XLSX/CSV imports today.
           </p>
         </div>
 
@@ -1368,7 +1368,7 @@
             </div>
             <p class="std-fullname" data-i18n="page.standards.pricebook_fullname">XLSX / CSV / GAEB X81 import path</p>
             <p class="std-body" data-i18n-html="page.standards.pricebook_body">
-              No API connectors today. <b>Customers import their BCIS, Sirados, Spon's
+              No API connectors today. <b>Customers import their BCIS and price-book
               extracts as XLSX / CSV / GAEB X81 STLB.</b> Rates land in the per‑project catalogue with
               source provenance preserved on every line. See roadmap for native API integrations.
             </p>
@@ -1389,7 +1389,7 @@
             <p class="std-body" data-i18n-html="page.standards.catbinding_body">
               Each project binds to one or more cost catalogues with <b>provenance, currency code, vectorisation flag</b>.
               The platform auto‑picks a region‑matching catalogue on fresh installs (v7.3.0).
-              <em>Every rate keeps its source ID</em> - Sirados stays Sirados; CWICR stays CWICR.
+              <em>Every rate keeps its source ID</em> - an imported price book keeps its own ID; CWICR stays CWICR.
             </p>
             <div class="std-meta">
               <span class="std-meta-label" data-i18n="page.standards.meta_status">Status</span>
@@ -1459,13 +1459,13 @@
 
         <div class="roadmap" style="margin-top:14px;">
           <p class="roadmap-eyebrow" data-i18n="page.standards.roadmap3_eyebrow">Cost data connectors - planned</p>
-          <h4 data-i18n="page.standards.roadmap3_title">BCIS · Sirados live API integrations</h4>
+          <h4 data-i18n="page.standards.roadmap3_title">BCIS and price-book live API integrations</h4>
           <p data-i18n="page.standards.roadmap3_body">
             Today: customers import as XLSX/CSV/GAEB X81. Roadmap: live API connectors so updates flow continuously.
-            national cost index / Destatis BAU‑Index / Spon's index time series for indexation clauses are also tracked, not shipped.
+            national cost index / Destatis BAU‑Index time series for indexation clauses are also tracked, not shipped.
           </p>
           <div class="roadmap-tags">
-            <span>Cost data API</span><span>BCIS API</span><span data-i18n="page.standards.roadmap3_tag3">regional cost index live</span><span data-i18n="page.standards.roadmap3_tag4">Sirados live</span><span data-i18n="page.standards.roadmap3_tag5">national cost index series</span><span>Destatis BAU</span>
+            <span>Cost data API</span><span>BCIS API</span><span data-i18n="page.standards.roadmap3_tag3">regional cost index live</span><span data-i18n="page.standards.roadmap3_tag4">Price book live</span><span data-i18n="page.standards.roadmap3_tag5">national cost index series</span><span>Destatis BAU</span>
           </div>
         </div>
 
@@ -1764,7 +1764,7 @@
             <span class="principle-item-num">iii.</span>
             <div>
               <div class="principle-item-title" data-i18n="page.standards.principle3_title">Provenance over neatness</div>
-              <div class="principle-item-body" data-i18n="page.standards.principle3_body">Every imported rate keeps its source ID. CWICR stays CWICR; a customer's Sirados extract stays Sirados. We don't melt them into one anonymous library.</div>
+              <div class="principle-item-body" data-i18n="page.standards.principle3_body">Every imported rate keeps its source ID. CWICR stays CWICR; a customer's imported price-book extract keeps its own source ID. We don't melt them into one anonymous library.</div>
             </div>
           </div>
           <div class="principle-item">

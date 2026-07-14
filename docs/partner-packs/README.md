@@ -233,7 +233,7 @@ wheels and are independent of the core release cycle.
 | `bimhessen-de` | Germany (Hessen) | EUR | de | DIN 276, GAEB X83/X86, VOB 2023, ISO 19650 CDE, BKI | German BIM consultancy preset |
 | `doker-formwork` | Germany | EUR | de | DIN 18218, formwork-cycle rules | Formwork-supplier vertical |
 | `uk-jct` | United Kingdom | GBP | en-GB | NRM 1 + NRM 2, JCT clauses, BCIS | UK GC preset |
-| `us-rsmeans` | United States | USD | en-US | MasterFormat 2018, AIA A201-2017, RSMeans CCI | US GC preset |
+| `us-rsmeans` | United States | USD | en-US | MasterFormat 2018, AIA A201-2017, US construction cost index | US GC preset |
 | `aus-nzs` | Australia / NZ | AUD | en-AU | AS 1684, NZS 3604, Rawlinsons, AS 4000 | AU/NZ residential + commercial |
 | `brazil-sinapi` | Brazil | BRL | pt-BR | NBR 12721, RPS PDF, SINAPI | Latam tier-1 |
 | `india-cpwd` | India | INR | en-IN, hi | CPWD, IS standards, DSR | Indian public-works |

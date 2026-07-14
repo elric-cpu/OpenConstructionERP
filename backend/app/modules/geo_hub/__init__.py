@@ -18,7 +18,7 @@ Adds geospatial capabilities to OpenConstructionERP:
   geo dashboard is populated automatically when other modules emit
   domain events
 
-Design notes (see ``RESEARCH_CESIUM_BENTLEY.md``):
+Design notes (Cesium / 3D Tiles research):
 
 * CesiumJS, ``cesium-native``, ``3d-tiles-tools`` and ``gltf-pipeline``
   are all Apache-2.0 - one-way compatible with our AGPL-3.0 community

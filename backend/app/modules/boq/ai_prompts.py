@@ -160,9 +160,9 @@ Region: {region}
 
 Consider:
 1. Construction cost index changes - pick the one that fits the region:
-   - BKI / Statistisches Bundesamt (DACH / Germany / Austria)
+   - Statistisches Bundesamt (DACH / Germany / Austria)
    - BCIS (UK / Ireland / Australia / NZ - RICS heritage)
-   - ENR / RSMeans (US / Canada)
+   - national construction cost indices (US / Canada)
    - SINAPI / FGV / IPCA-construção (Brazil)
    - INDEC ICC (Argentina) / DANE (Colombia) / INEGI (Mexico)
    - GESN / FER / Rosstat-construction (Russia / CIS)

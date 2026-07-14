@@ -71,7 +71,7 @@ Three free government sources supplied the underlying numbers:
 | **BLS OEWS** (May 2024, Nashville MSA #34980) | Mean hourly wages by occupation (SOC codes) | Labor cost components |
 | **TDOT Average Bid Prices** (2024) | Real bid prices for validation | Sanity check of our calculated rates against the market |
 
-Material rates were put together from local Nashville market estimates (Home Depot, Lowe's, and regional suppliers).
+Material rates were put together from local Nashville market estimates (national home-improvement retailers and regional suppliers).
 
 ### Phase 3: Component Decomposition
 
@@ -295,7 +295,7 @@ This is a different approach from **unit-price estimating**, which carries one r
 | **Transparency** | Estimators see *why* a rate is $10.33/SF, not just the bottom line |
 | **Regional adaptation** | Swap Nashville labor wages for Denver wages and the rates update on their own |
 | **Time adjustment** | Move equipment rates from the USACE 2022 edition to 2026 and costs follow |
-| **Cross-validation** | Compare calculated rates against TDOT or RSMeans bid prices |
+| **Cross-validation** | Compare calculated rates against TDOT or commercial cost-database bid prices |
 | **Sensitivity analysis** | Model the impact of wage changes, material price volatility, or equipment choice |
 | **Audit trail** | Each component points back to its source (a BLS SOC code, a USACE equipment code, a market rate) |
 
@@ -305,9 +305,9 @@ The make-or-break input is the **productivity rate**, the number of hours of eac
 
 | Source | Type | Best For |
 |--------|------|----------|
-| RSMeans | Published manhours/unit | General building |
-| Craftsman NCE | Published manhours/unit | Residential/light commercial |
-| Richardson Engineering | Published manhours/unit | Heavy civil/industrial |
+| Commercial unit-cost database | Published manhours/unit | General building |
+| Commercial estimator handbook | Published manhours/unit | Residential/light commercial |
+| Commercial heavy-civil database | Published manhours/unit | Heavy civil/industrial |
 | USACE EP 1110-1-8 | Equipment hours/unit (derived) | Government work |
 | DOT standard specifications | Implicit in bid items | Highway/infrastructure |
 | Historic project data | Your own records | Project-specific |
@@ -508,7 +508,7 @@ We group the sources into three tiers: **Government Free** (authoritative, no co
 | **Regions** | State-wide (some states publish district-level too) |
 | **Update** | Annual or quarterly |
 | **Access** | Free from state DOT websites |
-| **Best states** | TN, CA, FL, WI, TX, NY (via DOTestimate) |
+| **Best states** | TN, CA, FL, WI, TX, NY (via a third-party DOT data portal) |
 
 **Our use:** Cross-validation of our calculated rates against real market prices. The TDOT 2024 data lives in `data/tdot_bid_prices.json`.
 
@@ -521,97 +521,91 @@ We group the sources into three tiers: **Government Free** (authoritative, no co
 | Florida | https://www.fdot.gov/fpo/fpc/reports/historicalitemaveragecost | Power BI |
 | Wisconsin | https://wisconsindot.gov/.../average-unit-price.pdf | PDF |
 | Texas | https://www.txdot.gov/.../average-low-bid-prices.html | Excel |
-| New York | Via DOTestimate.com | Web platform |
+| New York | Via a third-party DOT data portal | Web platform |
 
 **Key insight:** DOT bid prices are the **gold standard for sitework and civil unit costs** because they track actual market conditions. They are, however, composite rates that bundle labor plus material plus equipment plus overhead plus profit into one figure, not resource-decomposed. Use them for **validation**, not as component sources.
 
 ### 7.2 Commercial Subscription Sources
 
-#### 7.2.1 RSMeans (Gordian)
+#### 7.2.1 Commercial Unit-Cost Databases
 
 | Attribute | Value |
 |-----------|-------|
-| **What** | 92,000+ unit cost line items with labor/material/equipment breakdowns, crew compositions, daily outputs, and city cost indexes |
-| **Regions** | National average plus 970+ city adjustment factors |
-| **Update** | Quarterly (Jan, Apr, Jul, Oct) |
-| **Cost** | $2,195/yr (single dataset) up to $35,752/yr (complete) |
-| **Format** | Online, CD (CostWorks), print, API (enterprise) |
-| **URL** | https://www.rsmeans.com |
+| **What** | Large commercial unit-cost line-item databases (tens of thousands of items) with labor/material/equipment breakdowns, crew compositions, daily outputs, and city cost indexes |
+| **Regions** | National average plus hundreds of city adjustment factors |
+| **Update** | Typically quarterly |
+| **Format** | Online, print, API (enterprise) |
+| **Access** | Paid subscription; imported into OCERP as XLSX/CSV |
 
-**Why RSMeans matters:** it is the industry standard for US construction cost data. Its structure lines up almost perfectly with OCERP's `components` field (labor plus material plus equipment breakdown, crew compositions). The MasterFormat line numbering maps straight onto `classification.masterformat`.
+**Why they matter:** a comprehensive commercial unit-cost database lines up almost perfectly with OCERP's `components` field (labor plus material plus equipment breakdown, crew compositions). MasterFormat line numbering maps straight onto `classification.masterformat`.
 
 **How the fields line up:**
 
 ```
-RSMeans line number  -> code (e.g., "RSM-033053.40-3950")
-RSMeans description   -> description
-RSMeans unit          -> unit
-RSMeans bare cost     -> rate
-RSMeans city index    -> metadata.city_cost_index
-RSMeans crew details  -> components (labor, material, equipment)
-RSMeans CSI division  -> classification.masterformat
+source line number   -> code (e.g., "US-033053.40-3950")
+source description    -> description
+source unit           -> unit
+source bare cost      -> rate
+source city index     -> metadata.city_cost_index
+source crew details   -> components (labor, material, equipment)
+source CSI division    -> classification.masterformat
 ```
 
-**Limitation:** RSMeans data is copyrighted and *cannot be redistributed freely*. For OCERP it could ship as a premium data connector that users subscribe to separately, or serve as a reference and benchmarking source during development.
+**Limitation:** commercial cost data is copyrighted and *cannot be redistributed freely*. For OCERP it can ship as a premium data connector that users subscribe to separately, or serve as a reference and benchmarking source during development.
 
-#### 7.2.2 Craftsman National Construction Estimator (NCE)
+#### 7.2.2 Commercial Estimator Handbooks
 
 | Attribute | Value |
 |-----------|-------|
-| **What** | 6,000+ unit cost items with manhours, crew sizes, labor/material/total costs |
+| **What** | Mid-size unit-cost references (several thousand items) with manhours, crew sizes, labor/material/total costs |
 | **Regions** | National with area modification factors |
-| **Update** | Annual (74th edition = 2026) |
-| **Cost** | $59 (eBook) / $118 (paperback) |
-| **Format** | PDF, print, National Estimator Cloud, API (licensing available) |
-| **URL** | https://craftsman-book.com/national-construction-estimator |
+| **Update** | Annual editions |
+| **Format** | PDF, print, cloud, API (licensing available) |
+| **Access** | Low-cost book or subscription; imported as XLSX/CSV |
 
-**Why NCE matters:** it is the most affordable comprehensive construction cost book, and API access is available for integration. Good fit for residential and light commercial work, and it maps directly onto OCERP components.
+**Why they matter:** an affordable commercial estimator handbook is a good fit for residential and light commercial work, often with API access for integration, and it maps directly onto OCERP components.
 
-#### 7.2.3 ENR Construction Cost Index
+#### 7.2.3 Published Construction Cost Indexes
 
 | Attribute | Value |
 |-----------|-------|
-| **What** | Cost escalation indexes (CCI, BCI) plus 66 material prices in 20 cities |
-| **Regions** | 20 US cities plus national average |
+| **What** | Construction cost escalation indexes (building and general construction) plus material prices across a set of cities |
+| **Regions** | Around 20 US cities plus national average |
 | **Update** | Monthly |
-| **Cost** | $99.99/yr (digital); Cost Data Dashboard around $2,000/yr |
-| **URL** | https://www.enr.com/economics |
+| **Access** | Paid subscription; index values imported as XLSX/CSV |
 
-**Why ENR matters:** it is not a unit cost database, but it is essential for **time-adjusting historical costs** into current dollars. The CCI and BCI are the most widely cited construction inflation indexes. The 66-city material price data (concrete, steel, lumber) can populate individual `CostItem` entries with `source: "enr_materials"`.
+**Why they matter:** published cost indexes are not unit cost databases, but they are essential for **time-adjusting historical costs** into current dollars. The building and general construction indexes are the most widely cited construction inflation measures. The multi-city material price data (concrete, steel, lumber) can populate individual `CostItem` entries with `source: "enr_materials"`.
 
-#### 7.2.4 Richardson Engineering (via Eos Group)
+#### 7.2.4 Commercial Heavy-Civil / Industrial Databases
 
 | Attribute | Value |
 |-----------|-------|
-| **What** | 190,000+ line items across 520 phases. Heavy civil/industrial focus. Manhours, materials, equipment, subcontractor pricing |
-| **Regions** | 130+ North American labor markets; 30+ international |
-| **Cost** | around $3,000 to $5,000/yr |
-| **URL** | https://eosgroup.com/richardson-engineering-database/ |
+| **What** | Very large line-item databases (100,000+ items across hundreds of phases). Heavy civil/industrial focus. Manhours, materials, equipment, subcontractor pricing |
+| **Regions** | 100+ North American labor markets; some international coverage |
+| **Access** | Paid subscription; imported as XLSX/CSV |
 
-**Why Richardson matters:** it is the best source for heavy civil and industrial process-plant estimating. Its 130+ labor market rates are more granular than BLS OEWS, and the 520-phase structure lines up with sitework scope.
+**Why they matter:** a commercial heavy-civil database is the best source for heavy civil and industrial process-plant estimating. Its per-labor-market rates are more granular than BLS OEWS, and the phase structure lines up with sitework scope.
 
 ### 7.3 Industry Free / Low-Cost Sources
 
-#### 7.3.1 ICC Building Valuation Data (BVD)
+#### 7.3.1 Building Valuation Datasets
 
 | Attribute | Value |
 |-----------|-------|
 | **What** | $/SF construction costs by occupancy group and construction type |
 | **Regions** | National with regional modifiers |
 | **Update** | Semi-annual |
-| **Cost** | Free with ICC membership (around $200/yr) |
-| **URL** | https://www.iccsafe.org/.../building-valuation-data/ |
+| **Access** | Published by code / membership bodies; imported as XLSX/CSV |
 
 **Use case:** Conceptual and square-foot estimating only. Not suited to detailed estimating, but handy for order-of-magnitude validation.
 
-#### 7.3.2 Marshall and Swift / Cotality
+#### 7.3.2 Replacement-Cost Valuation Databases
 
 | Attribute | Value |
 |-----------|-------|
 | **What** | Square-foot and unit-in-place replacement costs for insurance and tax assessment |
 | **Regions** | US and Canada with local multipliers |
-| **Cost** | $100 to $1,000+/yr depending on the product |
-| **URL** | https://www.cotality.com/products/marshall-swift |
+| **Access** | Paid subscription; imported as XLSX/CSV |
 
 **Use case:** Building valuation rather than sitework. The segregated cost breakdowns could populate OCERP `components` for building-level items.
 
@@ -719,7 +713,7 @@ Bid prices are **composite rates** (labor plus material plus equipment plus over
 }
 ```
 
-#### RSMeans -> CostItem (Conceptual Mapping)
+#### Commercial Cost Database -> CostItem (Conceptual Mapping)
 
 ```json
 {
@@ -755,12 +749,12 @@ Apply these `source` field values consistently:
 | `caltrans_bid` | California DOT contract cost data |
 | `fdot_bid` | Florida DOT historical item average cost |
 | `dot_bid` | Generic state DOT bid prices |
-| `rsmeans` | RSMeans / Gordian construction cost data |
-| `craftsman_nce` | Craftsman National Construction Estimator |
-| `enr_index` | ENR Construction Cost Index / material prices |
-| `marshall_swift` | Marshall and Swift / Cotality valuation data |
-| `richardson` | Richardson Engineering (Eos Group) |
-| `icc_bvd` | ICC Building Valuation Data |
+| `rsmeans` | Commercial unit-cost database import |
+| `craftsman_nce` | Commercial estimator handbook |
+| `enr_index` | Published construction cost index / material prices |
+| `marshall_swift` | Replacement-cost valuation data |
+| `richardson` | Commercial heavy-civil cost database |
+| `icc_bvd` | Building valuation dataset |
 | `cwicr` | DDC CWICR database (legacy) |
 | `manual` | Manually compiled from multiple sources |
 | `file_import` | Imported from a user-uploaded spreadsheet |
@@ -843,9 +837,9 @@ The CWICR import relies on `collection`, `department`, `section`, and `subsectio
 |-----------|---------------|-------------|--------|
 | Equipment rates | FEMA Schedule (free, current) | USACE EP 1110-1-8 | PDF -> JSON |
 | Labor wages | BLS OEWS (free API) | Davis-Bacon (county-level) | CSV/XLSX -> JSON |
-| Material prices | Local supplier quotes | Home Depot/Lowe's web | Manual -> JSON |
-| Bid prices (validation) | State DOT website | DOTestimate.com | Excel/PDF -> JSON |
-| Productivity rates | RSMeans (paid) | Craftsman NCE (paid) | API/book -> JSON |
+| Material prices | Local supplier quotes | Home-improvement retailer websites | Manual -> JSON |
+| Bid prices (validation) | State DOT website | Third-party DOT data portal | Excel/PDF -> JSON |
+| Productivity rates | Commercial cost database (paid) | Commercial estimator handbook (paid) | API/book -> JSON |
 
 ### 10.3 Create Reference Data Files
 
@@ -961,10 +955,10 @@ variance_pct = (our_rate - tdot_rate) / tdot_rate * 100
 
 | Check | Method |
 |-------|--------|
-| Labor hours per unit | Compare to RSMeans or Craftsman NCE manhour tables |
+| Labor hours per unit | Compare to published commercial manhour tables |
 | Equipment hours per unit | Compare to USACE productivity guides |
 | Material quantities per unit | Verify against construction takeoff standards |
-| Total rate per SF/CY/LF | Compare to similar items in other regions (CWICR for EUR, RSMeans for USD) |
+| Total rate per SF/CY/LF | Compare to similar items in other regions (CWICR for EUR, a commercial database for USD) |
 | Component cost percentages | For sitework, labor is usually 30 to 50%, material 30 to 50%, equipment 10 to 30% |
 
 ### 11.4 Continuity Checks
@@ -1108,15 +1102,15 @@ The import script (`scripts/import_tennessee_costs.py`) auto-generates codes in 
 | BLS OEWS | Gov Free | Labor wages | National/state/metro | Annual | API/CSV | $0 | **Labor wages (primary)** |
 | Davis-Bacon | Gov Free | Prevailing wages | County | Annual | HTML/PDF | $0 | **Federal project wages** |
 | State DOT Bid Prices | Gov Free | Unit bid prices | State | Annual | Excel/web | $0 | **Validation benchmark** |
-| ICC BVD | Member Free | $/SF by occupancy | National | Semi-annual | PDF | $0* | Conceptual estimates |
-| RSMeans | Commercial | 92K+ unit costs | 970+ cities | Quarterly | Online/API | $2K-$36K/yr | Comprehensive estimating |
-| Craftsman NCE | Commercial | 6K+ unit costs | National | Annual | Book/API | $59-$118/yr | Affordable estimating |
-| ENR CCI/BCI | Commercial | Cost indexes, 66 materials | 20 cities | Monthly | Web | $100-$2K/yr | Escalation/trending |
-| Dodge/CMD | Commercial | Project leads | US/Canada | Continuous | Web | $5K-$25K/yr | Market intelligence |
-| Marshall and Swift | Commercial | $/SF replacement | US/Canada | Quarterly | Online | $100-$1K+/yr | Building valuation |
-| Richardson (Eos) | Commercial | 190K+ items | 130+ markets | Quarterly | Online | $3K-$5K/yr | Heavy civil/industrial |
+| Building valuation dataset | Member Free | $/SF by occupancy | National | Semi-annual | PDF | Membership* | Conceptual estimates |
+| Commercial unit-cost database | Commercial | Tens of thousands of unit costs | Hundreds of cities | Quarterly | Online/API | Paid | Comprehensive estimating |
+| Commercial estimator handbook | Commercial | Several thousand unit costs | National | Annual | Book/API | Paid | Affordable estimating |
+| Published cost indexes | Commercial | Cost indexes plus materials | ~20 cities | Monthly | Web | Paid | Escalation/trending |
+| Market-intelligence service | Commercial | Project leads | US/Canada | Continuous | Web | Paid | Market intelligence |
+| Replacement-cost valuation | Commercial | $/SF replacement | US/Canada | Quarterly | Online | Paid | Building valuation |
+| Commercial heavy-civil database | Commercial | 100K+ items | 100+ markets | Quarterly | Online | Paid | Heavy civil/industrial |
 
-\* ICC BVD requires membership (around $200/yr)
+\* The building valuation dataset requires membership
 
 ## Appendix B: Region Naming Convention
 
@@ -1173,13 +1167,13 @@ When you create new custom regions:
 
 ### Medium-Term (Paid, High Value)
 
-7. **Craftsman NCE API** for general building costs (around $60 to $300/yr for data access).
-8. **ENR subscription** for cost indexes and material prices for escalation.
+7. **A commercial estimator handbook (API)** for general building costs.
+8. **A published cost-index subscription** for cost indexes and material prices for escalation.
 
 ### Long-Term (Paid, Enterprise)
 
-9. **RSMeans online** for the comprehensive 92K+ item database ($2K+/yr).
-10. **Richardson Engineering** for deep heavy-civil data ($3K+/yr).
+9. **A comprehensive commercial unit-cost database** for the deepest item coverage.
+10. **A commercial heavy-civil database** for deep heavy-civil data.
 
 ## Appendix D: File Structure Reference
 
