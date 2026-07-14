@@ -66,10 +66,10 @@ Extracted from the CWICR Construction Cost Database (55,719 work items, 900K+ re
 | Testing Equipment | 27 |
 | Compressors | 23 |
 
-## Import into OpenEstimator
+## Import into OpenConstructionERP
 
 ```bash
-# From the OpenEstimator backend directory:
+# From the OpenConstructionERP backend directory:
 python -m app.scripts.seed_catalog
 ```
 
@@ -88,4 +88,4 @@ Data Driven Construction (DDC) CWICR Database
 
 ## License
 
-AGPL-3.0 (same as OpenEstimator.io)
+AGPL-3.0 (same as OpenConstructionERP)
