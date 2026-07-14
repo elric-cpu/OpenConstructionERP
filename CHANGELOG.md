@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [11.6.0] - 2026-07-14
+
+A personal backup now carries all of your own data, not just the core. The previous backup covered a fixed handful of tables, projects, estimates and BOQ, schedules, cost data, documents, tenders and change records, and silently left out everything else you had built: your contacts, daily diaries, takeoff measurements, inspections and safety records, labor rates, custom cost catalogs, saved templates, notifications and the rest. The backup is now derived from the whole data model, so every table that belongs to you is included, and the promise from the last release, that fuller coverage was on the way, is delivered here.
+
+The records come out in dependency order, so a restore always writes a parent before the rows that reference it and clears in the reverse order. That keeps a transfer between machines consistent even across the hundreds of tables now covered. Reference and catalog data shared by everyone, the global cost catalogs, exchange rates and language data, stays out of a personal backup exactly as before, because none of it belongs to a single account.
+
+Everything that made the previous restore safe still holds. Merge is the default and only adds what is missing, replace is refused into an account that already has data, ownership on every restored row is pinned to the account doing the restore rather than trusted from the file, embedded drawings, documents and photos are written back to storage, provider keys never travel in a backup, and a single record that cannot come across is skipped with a note instead of failing the whole restore.
+
 ## [11.5.0] - 2026-07-14
 
 Backups now move cleanly between machines. Restoring a backup on a second computer used to fail, because the backup carried the exporter's own account row with its password stripped and an email that was usually already taken on the target install, and re-inserting that row broke a required field and rolled the whole restore back. Restore no longer re-creates accounts. The computer you restore onto already has your account, so the projects, estimates and BOQ, schedules, cost data, documents, tenders and change records in the backup are repointed to the account doing the restore, which is what makes them appear under your login on the new machine. Site records such as daily diaries, takeoff measurements, inspections and safety data are not part of the backup yet, and the backup screen now says so plainly. Fuller coverage is on the way.

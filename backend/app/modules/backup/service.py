@@ -43,6 +43,7 @@ import tempfile
 import uuid
 import zipfile
 from collections.abc import AsyncIterator, Iterator
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -50,6 +51,7 @@ from sqlalchemy import delete, inspect, or_, select
 
 from app.config import get_settings
 from app.database import async_session_factory
+from app.modules.backup.graph_scope import derive_backup_graph
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +181,144 @@ _BACKUP_SCOPE: dict[str, list[tuple[str, ...]]] = {
 }
 
 
-def build_scope_clause(by_key: dict[str, type], backup_key: str, user_id: str) -> Any:
+# --- Schema-driven registry (v11.6.0 full-coverage) --------------------------
+# The curated ``_BACKUP_TABLE_DEFS`` / ``_BACKUP_SCOPE`` above cover the 19
+# historical core tables. The registry below derives the FULL user-owned scope
+# straight from the mapped schema (see ``graph_scope.derive_backup_graph``), so a
+# personal backup no longer silently drops the several hundred other user-owned
+# tables (equipment logs, diaries, HSE records, takeoff, BIM and so on). The
+# curated data stays as the stable friendly-key source and as a safe fallback if
+# derivation ever fails.
+
+
+@dataclass(frozen=True)
+class _BackupRegistry:
+    """Resolved backup scope: which tables, their predicates, their owner columns.
+
+    Attributes:
+        table_defs: ``(backup_key, table_name, ModelClass)`` in restore order
+            (parents before children).
+        scope: ``backup_key -> [predicate]`` consumed by ``build_scope_clause``.
+        by_key: ``backup_key -> ModelClass`` for quick lookups.
+        owner_columns: ``backup_key -> {column}`` (the ``eq`` predicate columns)
+            forced to the restoring user on import.
+    """
+
+    table_defs: list[tuple[str, str, type]]
+    scope: dict[str, list[tuple[str, ...]]]
+    by_key: dict[str, type]
+    owner_columns: dict[str, frozenset[str]]
+
+
+def _import_all_module_models() -> None:
+    """Best-effort import of every module's models so the ORM registry is full.
+
+    In the running app the module loader has already imported these, but a fresh
+    process (a test, a CLI call) may not have, and the derivation can only see
+    tables that are mapped. A module that fails to import is skipped with a debug
+    log; its tables simply stay out of scope, exactly as before.
+    """
+    import importlib
+    import pathlib
+
+    import app.modules as modules_pkg
+
+    modules_root = pathlib.Path(modules_pkg.__file__).parent
+    for path in sorted(modules_root.iterdir()):
+        if path.is_dir() and (path / "models.py").exists():
+            try:
+                importlib.import_module(f"app.modules.{path.name}.models")
+            except Exception:
+                logger.debug("Backup graph: could not import %s models", path.name, exc_info=True)
+
+
+def _derive_registry() -> tuple[list[tuple[str, str, type]], dict[str, list[tuple[str, ...]]], dict[str, type]]:
+    """Derive the full user-owned scope from the mapped schema."""
+    from app.database import Base
+
+    _import_all_module_models()
+    class_for_table = {m.local_table.name: m.class_ for m in Base.registry.mappers}
+    friendly = {table_name: key for key, table_name, _module, _cls in _BACKUP_TABLE_DEFS}
+    graph = derive_backup_graph(Base.metadata, set(class_for_table), friendly_keys=friendly)
+
+    table_defs: list[tuple[str, str, type]] = []
+    by_key: dict[str, type] = {}
+    for key, table_name in graph.table_defs:
+        model_cls = class_for_table.get(table_name)
+        if model_cls is None:
+            continue
+        table_defs.append((key, table_name, model_cls))
+        by_key[key] = model_cls
+    return table_defs, graph.scope, by_key
+
+
+def _curated_registry() -> tuple[list[tuple[str, str, type]], dict[str, list[tuple[str, ...]]], dict[str, type]]:
+    """The historical curated 19-table scope, used as a safe fallback."""
+    table_defs: list[tuple[str, str, type]] = []
+    by_key: dict[str, type] = {}
+    for key, table_name, module_path, class_name in _BACKUP_TABLE_DEFS:
+        try:
+            model_cls = _get_model_class(module_path, class_name)
+        except Exception:
+            logger.warning("Skipping backup table %s: model import failed", key)
+            continue
+        table_defs.append((key, table_name, model_cls))
+        by_key[key] = model_cls
+    return table_defs, {k: list(v) for k, v in _BACKUP_SCOPE.items()}, by_key
+
+
+def _build_registry() -> _BackupRegistry:
+    """Assemble the active registry, preferring schema-driven full coverage.
+
+    If derivation fails, or somehow drops one of the curated keys, fall back to
+    the curated core so a backup is never quietly emptier than it was before the
+    full-coverage rewrite.
+    """
+    try:
+        table_defs, scope, by_key = _derive_registry()
+        derived_keys = {key for key, _table, _cls in table_defs}
+        curated_keys = {key for key, _table, _module, _cls in _BACKUP_TABLE_DEFS}
+        if not curated_keys <= derived_keys:
+            logger.warning(
+                "Backup graph dropped curated keys %s; using curated core",
+                sorted(curated_keys - derived_keys),
+            )
+            table_defs, scope, by_key = _curated_registry()
+        else:
+            logger.info("Backup scope: %d user-owned tables (schema-derived)", len(table_defs))
+    except Exception:
+        logger.warning("Backup graph derivation failed; using curated core", exc_info=True)
+        table_defs, scope, by_key = _curated_registry()
+
+    owner_columns = {
+        key: frozenset(pred[1] for pred in preds if pred and pred[0] == "eq") for key, preds in scope.items()
+    }
+    return _BackupRegistry(table_defs=table_defs, scope=scope, by_key=by_key, owner_columns=owner_columns)
+
+
+_REGISTRY: _BackupRegistry | None = None
+
+
+def get_backup_registry() -> _BackupRegistry:
+    """Return the process-wide backup registry, building it once and caching it."""
+    global _REGISTRY
+    if _REGISTRY is None:
+        _REGISTRY = _build_registry()
+    return _REGISTRY
+
+
+def reset_backup_registry() -> None:
+    """Drop the cached registry so the next call rebuilds it (used by tests)."""
+    global _REGISTRY
+    _REGISTRY = None
+
+
+def build_scope_clause(
+    by_key: dict[str, type],
+    backup_key: str,
+    user_id: str,
+    scope: dict[str, list[tuple[str, ...]]] | None = None,
+) -> Any:
     """Build a WHERE clause selecting only rows owned by ``user_id``.
 
     Children reference their owner through a nested ``IN (SELECT ...)``
@@ -191,7 +330,9 @@ def build_scope_clause(by_key: dict[str, type], backup_key: str, user_id: str) -
     ``None`` as "owns nothing", a safe default that neither leaks another
     user's rows on export nor deletes them on restore.
     """
-    preds = _BACKUP_SCOPE.get(backup_key)
+    if scope is None:
+        scope = get_backup_registry().scope
+    preds = scope.get(backup_key)
     model_cls = by_key.get(backup_key)
     if not preds or model_cls is None:
         return None
@@ -207,7 +348,7 @@ def build_scope_clause(by_key: dict[str, type], backup_key: str, user_id: str) -
         elif kind == "in":
             col = getattr(model_cls, pred[1], None)
             parent_cls = by_key.get(pred[2])
-            parent_clause = build_scope_clause(by_key, pred[2], user_id)
+            parent_clause = build_scope_clause(by_key, pred[2], user_id, scope)
             if col is not None and parent_cls is not None and parent_clause is not None:
                 clauses.append(col.in_(select(parent_cls.id).where(parent_clause)))
     if not clauses:
@@ -218,14 +359,14 @@ def build_scope_clause(by_key: dict[str, type], backup_key: str, user_id: str) -
 def _owner_columns(backup_key: str) -> frozenset[str]:
     """Columns that anchor a table's rows to their owning user.
 
-    These are the direct-ownership predicates from ``_BACKUP_SCOPE`` (``owner_id``
-    on projects and assemblies, ``created_by`` on schedules, ``user_id`` on
-    ai_settings). On restore they are forced to the restoring user so ownership
-    is pinned to the caller rather than trusted from an attacker-supplied
-    archive. Child tables have no direct owner column here; they inherit their
-    owner through the parent whose owner column is forced.
+    These are the direct-ownership (``eq``) predicates in the active backup scope
+    (``owner_id``, ``created_by``, ``user_id`` and the like). On restore they are
+    forced to the restoring user so ownership is pinned to the caller rather than
+    trusted from an attacker-supplied archive. Child tables have no direct owner
+    column here; they inherit their owner through the parent whose owner column
+    is forced.
     """
-    return frozenset(pred[1] for pred in _BACKUP_SCOPE.get(backup_key, []) if pred[0] == "eq")
+    return get_backup_registry().owner_columns.get(backup_key, frozenset())
 
 
 def _get_model_class(module_path: str, class_name: str) -> type:
@@ -239,17 +380,12 @@ def _get_model_class(module_path: str, class_name: str) -> type:
 def get_backup_tables() -> list[tuple[str, str, type]]:
     """Return resolved ``(backup_key, table_name, ModelClass)`` tuples.
 
-    Tables whose model module fails to import are dropped with a warning
-    so a missing optional module does not break the whole export.
+    Sourced from the schema-driven registry (v11.6.0): it covers every user-owned
+    table, not just the curated core, and orders them parents-before-children so a
+    restore inserts a parent before any row that references it. Falls back to the
+    curated core if derivation fails.
     """
-    result: list[tuple[str, str, type]] = []
-    for backup_key, table_name, module_path, class_name in _BACKUP_TABLE_DEFS:
-        try:
-            model_cls = _get_model_class(module_path, class_name)
-            result.append((backup_key, table_name, model_cls))
-        except Exception:
-            logger.warning("Skipping backup table %s: model import failed", backup_key)
-    return result
+    return list(get_backup_registry().table_defs)
 
 
 def serialize_row(row: Any) -> dict[str, Any]:
@@ -989,7 +1125,9 @@ __all__ = [
     "build_scope_clause",
     "cleanup_temp_file",
     "deserialize_row",
+    "get_backup_registry",
     "get_backup_tables",
+    "reset_backup_registry",
     "parse_backup_zip",
     "remap_owner_refs",
     "restore_backup_data",

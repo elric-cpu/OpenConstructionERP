@@ -128,3 +128,16 @@ def test_predicate_parents_are_in_key_space() -> None:
         for predicate in predicates:
             if predicate[0] == "in":
                 assert predicate[2] in valid_keys, (key, predicate)
+
+
+def test_table_defs_order_parents_before_children() -> None:
+    graph = _derive()
+    position = {key: i for i, (key, _name) in enumerate(graph.table_defs)}
+    # the users root leads so its rows exist before any owner reference resolves
+    assert graph.table_defs[0][0] == "users"
+    # a restore inserts in this order, so every "in" parent must come first
+    for key, predicates in graph.scope.items():
+        for predicate in predicates:
+            if predicate[0] == "in":
+                parent = predicate[2]
+                assert position[parent] < position[key], (parent, "must precede", key)

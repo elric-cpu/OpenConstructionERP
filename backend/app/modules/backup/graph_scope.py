@@ -98,6 +98,53 @@ def _fk_edges(table: Table) -> list[tuple[str, str]]:
     return edges
 
 
+def _topological_order(
+    scope: dict[str, list[Predicate]],
+    keys: list[str],
+    users_key: str | None,
+) -> list[str]:
+    """Order ``keys`` so every ``("in", _, parent)`` parent precedes its child.
+
+    Restore inserts tables in this order (a parent row exists before any row that
+    references it) and clears them in reverse (children before parents), so the
+    order must be a topological sort over the parent edges encoded in the scope
+    predicates. Kahn's algorithm by levels: the users root leads, remaining ties
+    break alphabetically so the order is deterministic. A dependency cycle (none
+    exist in today's schema, but a future two-table loop could form one) cannot
+    stall the sort - when no node can be emitted the remainder is appended in
+    alphabetical order, and the resilient multi-pass importer still lands those
+    rows once their parents are in.
+    """
+    keyset = set(keys)
+    parents: dict[str, set[str]] = {}
+    for key in keyset:
+        deps: set[str] = set()
+        for predicate in scope.get(key, []):
+            if predicate[0] == "in":
+                parent = predicate[2]
+                if parent in keyset and parent != key:
+                    deps.add(parent)
+        parents[key] = deps
+
+    ordered: list[str] = []
+    emitted: set[str] = set()
+    if users_key is not None and users_key in keyset:
+        ordered.append(users_key)
+        emitted.add(users_key)
+
+    remaining = sorted(k for k in keyset if k not in emitted)
+    while remaining:
+        ready = [k for k in remaining if parents[k] <= emitted]
+        if not ready:
+            # Cycle: emit the remainder deterministically rather than loop forever.
+            ordered.extend(remaining)
+            break
+        ordered.extend(ready)
+        emitted.update(ready)
+        remaining = [k for k in remaining if k not in emitted]
+    return ordered
+
+
 def derive_backup_graph(
     metadata: MetaData,
     mapped_tables: set[str],
@@ -156,14 +203,15 @@ def derive_backup_graph(
         resolve_key[name] = key_of(name)
 
     scope: dict[str, list[Predicate]] = {}
-    table_defs: list[tuple[str, str]] = []
     key_for_table: dict[str, str] = {}
+    key_to_table: dict[str, str] = {}
 
+    users_key: str | None = None
     if USERS_TABLE in tables and USERS_TABLE in mapped_tables:
         users_key = resolve_key[USERS_TABLE]
         scope[users_key] = [("self",)]
-        table_defs.append((users_key, USERS_TABLE))
         key_for_table[USERS_TABLE] = users_key
+        key_to_table[users_key] = USERS_TABLE
 
     for name in sorted(in_scope):
         if name not in mapped_tables:
@@ -177,7 +225,14 @@ def derive_backup_graph(
             else:
                 translated.append(predicate)
         scope[key] = translated
-        table_defs.append((key, name))
         key_for_table[name] = key
+        key_to_table[key] = name
+
+    # Emit parents before children so a restore is FK-safe (see
+    # ``_topological_order``). The users root leads; the historically hand-ordered
+    # curated tables keep an equivalent relative order because it is the same
+    # dependency chain (projects -> boqs -> positions ...).
+    ordered_keys = _topological_order(scope, list(key_to_table), users_key)
+    table_defs = [(key, key_to_table[key]) for key in ordered_keys]
 
     return BackupGraph(table_defs=table_defs, scope=scope, key_for_table=key_for_table)

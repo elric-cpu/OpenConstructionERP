@@ -21,11 +21,14 @@ import pytest_asyncio
 from sqlalchemy import func, select
 
 from app.modules.backup.service import (
+    _BACKUP_TABLE_DEFS,
     RESTORE_SKIP_KEYS,
     RestoreError,
     _is_sensitive_field,
     build_scope_clause,
+    get_backup_registry,
     get_backup_tables,
+    reset_backup_registry,
     restore_backup_data,
     serialize_row,
 )
@@ -326,3 +329,69 @@ async def test_replace_is_allowed_into_an_empty_account(session):
     assert imported["projects"] == 1
     proj = (await session.execute(select(Project).where(Project.id == PROJECT_ID))).scalar_one()
     assert str(proj.owner_id) == str(MACHINE_B_USER)
+
+
+def test_registry_covers_far_more_than_the_curated_core() -> None:
+    """v11.6.0: the backup scope is derived from the whole schema, not 19 tables.
+
+    The old backup carried a curated 19-table core, so every user-owned table
+    added since (contacts, notifications, HSE records, labor rates and so on) was
+    silently dropped from a personal backup. The schema-driven registry closes
+    that gap. This asserts the breadth, that the curated core is still covered,
+    and that tables come out parents-before-children so a restore is FK-safe.
+    """
+    reset_backup_registry()
+    tables = get_backup_tables()
+    keys = [k for k, _t, _c in tables]
+
+    # Far more than the historical core, and the export surface matches the registry.
+    assert len(tables) > 100, f"expected full coverage, got only {len(tables)} tables"
+    assert tables == get_backup_registry().table_defs
+
+    # The curated core is a subset (nothing that used to be backed up is dropped).
+    curated = {k for k, _t, _m, _c in _BACKUP_TABLE_DEFS}
+    assert curated <= set(keys), f"curated keys missing: {sorted(curated - set(keys))}"
+
+    # Tables that used to be dropped are now in scope.
+    for expected_new in ("oe_contacts_contact", "oe_notifications_notification"):
+        assert expected_new in keys, f"{expected_new} should now be covered"
+
+    # Parents precede children: every "in" predicate's parent comes first, and the
+    # users root leads. This is what makes the ordered insert / reversed clear safe.
+    scope = get_backup_registry().scope
+    position = {k: i for i, k in enumerate(keys)}
+    assert keys[0] == "users"
+    for key, preds in scope.items():
+        for pred in preds:
+            if pred[0] == "in":
+                assert position[pred[2]] < position[key], (pred[2], "must precede", key)
+
+
+@pytest.mark.asyncio
+async def test_full_coverage_backs_up_a_previously_dropped_table(session):
+    """A contact (outside the old 19-table core) now survives export and restore."""
+    from app.modules.contacts.models import Contact
+
+    # Machine A owns a contact. Under the old curated backup this row was dropped.
+    session.add(Contact(contact_type="supplier", company_name="ACME Ltd", created_by=str(MACHINE_A_USER)))
+    await session.flush()
+
+    data = await _export_scope(session, MACHINE_A_USER)
+    assert data.get("oe_contacts_contact"), "the contact must be included in the backup"
+
+    # Second machine: the contact is gone, B restores the archive.
+    session.expunge_all()
+    await session.execute(Contact.__table__.delete())
+    await session.flush()
+
+    imported, _skipped, _warnings = await restore_backup_data(
+        session,
+        user_id=str(MACHINE_B_USER),
+        manifest={"created_by": str(MACHINE_A_USER)},
+        data=data,
+        mode="merge",
+    )
+
+    assert imported.get("oe_contacts_contact") == 1
+    restored = (await session.execute(select(Contact).where(Contact.company_name == "ACME Ltd"))).scalar_one()
+    assert restored.created_by == str(MACHINE_B_USER), "ownership pinned to the restoring user"
