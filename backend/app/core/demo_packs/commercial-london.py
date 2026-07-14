@@ -10,7 +10,7 @@ from app.core.demo_projects import DemoTemplate
 # Elemental cost plan measured per RICS New Rules of Measurement (NRM 2,
 # detailed measurement for building works) and structured to the NRM 1 element
 # groups used by UK quantity surveyors for elemental cost planning. Pricing is
-# at BCIS / London Q1 2026 levels in GBP, VAT exclusive. Building Regulations
+# at UK cost-index / London Q1 2026 levels in GBP, VAT exclusive. Building Regulations
 # (Approved Documents A-S), the Building Safety Act 2022 (higher-risk building
 # regime, golden thread, Gateways 1-3) and CDM 2015 govern the works.
 # Structural design to the Eurocodes (BS EN 1990-1998) and BS 8500 concrete.
@@ -60,14 +60,14 @@ TEMPLATE = DemoTemplate(
     boq_name="Elemental Cost Plan - RICS NRM (Detailed)",
     boq_description=(
         "Detailed elemental cost plan measured to RICS NRM 2 and structured to "
-        "the NRM 1 element groups; BCIS London Q1 2026 base, JCT D&B 2024"
+        "the NRM 1 element groups; UK cost-index London Q1 2026 base, JCT D&B 2024"
     ),
     boq_metadata={
         "standard": "RICS NRM 2 (measurement) / NRM 1 (elemental groups)",
         "phase": "RIBA Stage 4 - Technical Design Cost Plan",
         "base_date": "2026-Q1",
         "price_level": "London 2026 (GBP, VAT excl.)",
-        "tender_price_index": "BCIS TPI 198 (London, 2026 Q1)",
+        "tender_price_index": "UK tender price index 198 (London, 2026 Q1)",
     },
     sections=[
         # -- 0. Facilitating Works -------------------------------------------
@@ -330,7 +330,7 @@ TEMPLATE = DemoTemplate(
         "storeys": 10,
         "basement_levels": 1,
         "measurement_standard": "RICS NRM 2 (detailed) / NRM 1 (elemental groups) / NRM 3 (maintenance)",
-        "cost_data": "BCIS - Building Cost Information Service (London 2026)",
+        "cost_data": "UK construction cost index (London 2026)",
         "structural_standards": "Eurocodes BS EN 1990-1998, BS 8500 (concrete), BS 8102 (tanking)",
         "building_regulations": "Building Regulations Approved Documents A-S",
         "building_safety": "Building Safety Act 2022 - higher-risk building, BSR Gateways 1-3, golden thread",

@@ -8,7 +8,7 @@ import clsx from 'clsx';
 /* ── Published construction cost indices (annual % change) ────────────── */
 
 /** Regional escalation index data (average annual % change by period).
- *  Sources: BKI (DE), BCIS (UK), ENR (US), Eurostat (EU).
+ *  Sources: a German index (DE), a UK index (UK), a US index (US), Eurostat (EU).
  *  These are representative averages — actual project indices may differ. */
 const ESCALATION_INDICES: Record<string, { label: string; rates: Record<string, number> }> = {
   DE: {
@@ -24,7 +24,7 @@ const ESCALATION_INDICES: Record<string, { label: string; rates: Record<string, 
     rates: { '2020': 1.5, '2021': 2.8, '2022': 6.2, '2023': 3.4, '2024': 2.5, '2025': 2.0, '2026': 1.8 },
   },
   UK: {
-    label: 'United Kingdom (BCIS)',
+    label: 'United Kingdom',
     rates: { '2020': 2.0, '2021': 8.5, '2022': 10.2, '2023': 4.8, '2024': 3.5, '2025': 3.0, '2026': 2.8 },
   },
   US: {

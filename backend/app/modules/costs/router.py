@@ -5667,7 +5667,7 @@ async def regional_adjust(
 ) -> RegionalAdjustResponse:
     """Preview the same rate in a different region.
 
-    RSMeans-style city cost index lookup - multiplies ``base_rate`` by
+    Regional city cost index lookup - multiplies ``base_rate`` by
     the most recent ``factor`` on file for ``(region, category)``.
     When no factor exists, returns a 1:1 passthrough so the frontend
     can render the row without branching on null.

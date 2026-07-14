@@ -865,7 +865,7 @@ async def test_costs_reference_data_readable_across_tenants(http_client, rw_proj
     """The shared cost catalog must stay readable by every tenant.
 
     ``CostItem`` has no tenant/owner column by design - it is public
-    reference data (CWICR / RSMeans / BKI). Both the owner and an unrelated
+    reference data (CWICR and regional indices). Both the owner and an unrelated
     tenant must read the same seeded row. This guards the OPPOSITE failure
     mode from the IDOR tests above: a tenant filter mistakenly applied to
     the costs reads would make reference data vanish for everyone but its

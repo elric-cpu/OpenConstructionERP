@@ -161,7 +161,7 @@ Region: {region}
 Consider:
 1. Construction cost index changes - pick the one that fits the region:
    - Statistisches Bundesamt (DACH / Germany / Austria)
-   - BCIS (UK / Ireland / Australia / NZ - RICS heritage)
+   - a UK construction cost index (UK / Ireland / Australia / NZ - RICS heritage)
    - national construction cost indices (US / Canada)
    - SINAPI / FGV / IPCA-construção (Brazil)
    - INDEC ICC (Argentina) / DANE (Colombia) / INEGI (Mexico)

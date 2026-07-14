@@ -3,7 +3,7 @@
 """Cost item ORM models.
 
 Tables:
-    oe_costs_item - cost database entries (CWICR, RSMeans, BKI, custom)
+    oe_costs_item - cost database entries (CWICR, regional indices, custom)
     oe_costs_catalog - user-owned named cost catalogs (manual or imported)
     oe_regional_indices - region × category cost-factor matrix (v3.12.0)
     oe_cost_item_usage - append-only usage ledger backing the certainty
@@ -158,7 +158,7 @@ class RegionalIndex(Base):
 
     Backs ``GET /v1/costs/regional-adjust`` - given a base rate, the
     service multiplies by ``factor`` to estimate the same line item's
-    cost in a different region (RSMeans-style city cost index).
+    cost in a different region (a regional city cost index).
 
     Multiple rows per (region_code, category) are allowed when
     ``effective_date`` differs so escalation feeds (v3.13.0) can append

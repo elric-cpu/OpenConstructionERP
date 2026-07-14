@@ -301,7 +301,7 @@ class PositionCreate(BaseModel):
     wbs_id: str | None = Field(default=None, description="Linked WBS node ID")
     cost_code_id: str | None = Field(default=None, description="Linked cost code ID")
     # Issue #79: link a BOQ position to a CostItem in the cost database
-    # (CWICR / RSMeans / etc.).  Persisted in ``metadata.cost_item_id`` so
+    # (CWICR / regional index / etc.).  Persisted in ``metadata.cost_item_id`` so
     # no schema migration is required; the service validates that the
     # supplied UUID resolves to an active CostItem before persisting.
     cost_item_id: UUID | None = Field(
@@ -2035,8 +2035,8 @@ class EscalateRateRequest(BaseModel):
     Currency / region default to empty so the AI prompt pipes blank
     strings into the LLM template - interpreted as "no constraint
     specified". Hardcoding EUR + DACH steered every escalation toward
-    BKI (the German construction cost index), even on US/UK projects
-    where ENR / BCIS would be the right index.
+    a German construction cost index, even on US/UK projects
+    where a US or UK construction cost index would be the right index.
     """
 
     description: str = Field(..., min_length=2, max_length=500)

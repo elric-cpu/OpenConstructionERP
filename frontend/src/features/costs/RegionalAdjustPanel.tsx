@@ -1,7 +1,7 @@
 // DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 // Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 //
-// Preview-only RSMeans-style regional adjustment panel.  Lets the
+// Preview-only regional cost-index adjustment panel.  Lets the
 // estimator see what a base rate would cost in another region/city
 // without applying anything — feeds into the wider "Cost Intelligence"
 // surface launched in v3.12.0.

@@ -2292,12 +2292,12 @@ export function CatalogPage() {
 
 /* ── Price Adjust Modal ──────────────────────────────────────────────── */
 
-// Published construction cost indices (BKI, BCIS, ENR, Eurostat) — stable data, kept outside component
+// Published construction cost indices (German, UK, US national indices plus Eurostat) - stable data, kept outside component
 const PRICE_INDICES: Record<string, { label: string; rates: Record<string, number> }> = {
   DE: { label: 'Germany', rates: { '2020': 3.2, '2021': 5.1, '2022': 14.6, '2023': 7.8, '2024': 4.2, '2025': 3.5, '2026': 3.0 } },
   AT: { label: 'Austria', rates: { '2020': 2.8, '2021': 4.9, '2022': 12.3, '2023': 6.5, '2024': 3.8, '2025': 3.2, '2026': 2.8 } },
   CH: { label: 'Switzerland', rates: { '2020': 1.5, '2021': 2.8, '2022': 6.2, '2023': 3.4, '2024': 2.5, '2025': 2.0, '2026': 1.8 } },
-  UK: { label: 'UK (BCIS)', rates: { '2020': 2.0, '2021': 8.5, '2022': 10.2, '2023': 4.8, '2024': 3.5, '2025': 3.0, '2026': 2.8 } },
+  UK: { label: 'UK', rates: { '2020': 2.0, '2021': 8.5, '2022': 10.2, '2023': 4.8, '2024': 3.5, '2025': 3.0, '2026': 2.8 } },
   US: { label: 'USA', rates: { '2020': 1.2, '2021': 6.3, '2022': 11.5, '2023': 3.2, '2024': 2.8, '2025': 2.5, '2026': 2.3 } },
   FR: { label: 'France', rates: { '2020': 2.3, '2021': 5.5, '2022': 9.8, '2023': 5.6, '2024': 3.6, '2025': 2.8, '2026': 2.5 } },
   EU: { label: 'EU Average', rates: { '2020': 2.5, '2021': 5.8, '2022': 11.0, '2023': 6.0, '2024': 3.5, '2025': 3.0, '2026': 2.5 } },
@@ -2498,7 +2498,7 @@ function PriceAdjustModal({
                 </div>
               )}
               <p className="text-2xs text-content-quaternary">
-                {t('catalog.index_sources', { defaultValue: 'Sources: BCIS (UK), Eurostat (EU) and national construction cost indices. Representative averages.' })}
+                {t('catalog.index_sources', { defaultValue: 'Sources: a UK construction cost index, Eurostat (EU) and national construction cost indices. Representative averages.' })}
               </p>
             </div>
           )}

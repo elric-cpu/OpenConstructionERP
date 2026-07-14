@@ -7,7 +7,7 @@
  * - German building-cost benchmark 2024 (Germany)
  * - Statistik Austria Baukostenindex 2024 (Austria)
  * - SIA / BFS Schweiz 2024 (Switzerland)
- * - BCIS Building Cost Information Service 2024 (United Kingdom)
+ * - UK construction cost index 2024 (United Kingdom)
  * - US construction cost index 2024 (United States)
  * - French unit-price reference 2024 (France)
  * - Bouwkosten Kompas 2024 (Netherlands)
@@ -456,7 +456,7 @@ const PROVENANCE: Record<BenchmarkRegion, { source: string; sourceYear: number; 
   DE: { source: 'German building-cost benchmark (2024)', sourceYear: 2024, currency: 'EUR' },
   AT: { source: 'Statistik Austria Baukostenindex 2024', sourceYear: 2024, currency: 'EUR' },
   CH: { source: 'SIA / BFS Schweiz 2024', sourceYear: 2024, currency: 'CHF' },
-  UK: { source: 'BCIS Building Cost Information Service 2024', sourceYear: 2024, currency: 'GBP' },
+  UK: { source: 'UK construction cost index 2024', sourceYear: 2024, currency: 'GBP' },
   US: { source: 'US construction cost index (2024)', sourceYear: 2024, currency: 'USD' },
   FR: { source: 'French unit-price reference (2024)', sourceYear: 2024, currency: 'EUR' },
   NL: { source: 'Bouwkosten Kompas 2024', sourceYear: 2024, currency: 'EUR' },

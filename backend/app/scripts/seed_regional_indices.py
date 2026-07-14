@@ -4,8 +4,8 @@
 
 Inserts ~50 sample rows into ``oe_regional_indices`` - 8 cities × 6
 trade categories. Factors are 1.0-baselined on Berlin, with values
-calibrated against open published city cost indices (BCIS for the UK,
-ENR for US, Eurostat construction price index for EU). They are
+calibrated against open published city cost indices (a UK cost index,
+a US cost index, Eurostat construction price index for EU). They are
 representative averages - production deployments should overwrite the
 ``OE_v3.12_seed_2026Q2`` rows with audited indices.
 
@@ -40,12 +40,12 @@ _SEED_DATE = date(2026, 4, 1)
 #
 # Categories: concrete · steel · labor · mep · finishes · sitework
 # Calibration anchors:
-#   * Munich is ~12 % above Berlin on average (BKI 2026Q1).
-#   * London is ~18 % above Berlin (BCIS general).
-#   * Manchester is ~95 % of London (BCIS regional).
-#   * NYC is the canonical RSMeans 100 baseline → ~45 % above Berlin
-#     in EUR-equivalent terms (RSMeans 2026 + FX 1.08 USD/EUR).
-#   * LA tracks NYC at ~88 % (RSMeans CCI).
+#   * Munich is ~12 % above Berlin on average (German cost index 2026Q1).
+#   * London is ~18 % above Berlin (UK cost index, general).
+#   * Manchester is ~95 % of London (UK cost index, regional).
+#   * NYC is the canonical US cost-index 100 baseline → ~45 % above Berlin
+#     in EUR-equivalent terms (US cost index 2026 + FX 1.08 USD/EUR).
+#   * LA tracks NYC at ~88 % (US city cost index).
 #   * Paris is ~8 % above Berlin (FFB 2026).
 #   * Madrid is ~85 % of Berlin (Eurostat 2026).
 _FACTORS: dict[str, dict[str, float]] = {

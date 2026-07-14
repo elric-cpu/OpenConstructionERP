@@ -4,7 +4,7 @@ The ``/api/v1/costs/`` router exposes endpoints keyed off
 ``cost_item_id`` (a.k.a. ``item_id`` in the URL). Unlike most other
 modules in the platform, ``CostItem`` is a **shared catalog** — it has
 no ``tenant_id`` / ``owner_id`` / ``user_id`` column. The catalog hosts
-public reference data (CWICR, RSMeans, BKI) that every tenant on the
+public reference data (CWICR and regional cost indices) that every tenant on the
 deployment is expected to read, and write access is gated by RBAC
 permissions (``costs.create`` / ``costs.update`` / ``costs.delete``) +
 the admin role for destructive operations like
@@ -267,7 +267,7 @@ async def test_viewer_b_cannot_delete_cost_item(http_client, two_costs_tenants):
 async def test_viewer_b_can_read_cost_item(http_client, two_costs_tenants):
     """Reads are intentionally public — pin the contract.
 
-    ``CostItem`` is a shared reference catalog (CWICR / RSMeans / BKI).
+    ``CostItem`` is a shared reference catalog (CWICR and regional indices).
     Every authenticated user can read every entry. This test exists so
     that if someone later adds a per-tenant filter to ``GET /costs/{id}``
     without updating the architecture decision, the test fails loudly

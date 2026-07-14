@@ -266,7 +266,7 @@ async def _sql_lexical_search(
 
 
 class CostItemVectorAdapter:
-    """Embed CWICR / RSMeans / custom cost items into the unified store.
+    """Embed CWICR / regional-index / custom cost items into the unified store.
 
     Implements :class:`~app.core.vector_index.EmbeddingAdapter` so the
     generic helpers can use this adapter for cross-collection unified

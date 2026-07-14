@@ -12,7 +12,7 @@ from app.core.demo_projects import DemoTemplate
 # Cast-in-place concrete podium + structural steel frame above, composite
 # metal deck floors, unitised aluminium curtain wall. Core-and-shell base
 # building with one floor of speculative tenant fit-out (warm shell elsewhere).
-# Priced to CSI MasterFormat 2020 (5-digit), RSMeans City Cost Index Denver
+# Priced to CSI MasterFormat 2020 (5-digit), a US city cost index for Denver
 # (~0.98 of US national average), base date 2026-Q1. IBC 2021 / ACI 318-19 /
 # AISC 360-16 / ASCE 7-22 (Seismic Design Category B, Risk Cat II), NEC 2023,
 # OSHA 29 CFR 1926. Headline base construction cost ~ USD 36.5M.

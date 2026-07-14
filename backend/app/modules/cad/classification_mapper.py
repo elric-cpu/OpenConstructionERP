@@ -383,7 +383,7 @@ MATERIAL_AWARE_DIN276: dict[tuple[str, str], str] = {
 # Format: (category, material_canonical_key) -> deeper_code.
 # ---------------------------------------------------------------------------
 MATERIAL_AWARE_NRM: dict[tuple[str, str], str] = {
-    # NRM 2.5 = External walls; sub-element splits used in BCIS.
+    # NRM 2.5 = External walls; sub-element splits used in a UK construction cost index.
     ("Walls", "concrete"): "2.5.1",
     ("Walls", "masonry"): "2.5.2",
     ("Walls", "timber"): "2.5.3",

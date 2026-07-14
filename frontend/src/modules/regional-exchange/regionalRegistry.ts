@@ -586,7 +586,7 @@ export const COUNTRY_TEMPLATES: RegionalTemplate[] = [
     countryCode: 'GB',
     flag: '🇬🇧',
     label: 'United Kingdom NRM 1/2',
-    formatHint: 'NRM 1/2 Excel template (BCIS-compatible)',
+    formatHint: 'NRM 1/2 Excel template (UK cost-index compatible)',
     importEndpoint: REGIONAL_IMPORT_ENDPOINT,
     validatorPacks: ['boq_quality', 'nrm'],
     excelTemplate: makeTemplate(

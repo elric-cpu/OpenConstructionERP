@@ -23,7 +23,7 @@ export const benchmarksGuide: ModuleGuideContent = {
       titleDefault: 'What a cost benchmark is',
       bodyKey: 'guide.benchmarks.concept.body',
       bodyDefault:
-        'A benchmark is the typical cost to build one square metre of a given building type, drawn from public datasets like BCIS. It covers DIN 276 KG300 construction works plus KG400 technical systems. It is a planning reference, not a live price feed.',
+        'A benchmark is the typical cost to build one square metre of a given building type, drawn from public construction cost datasets. It covers DIN 276 KG300 construction works plus KG400 technical systems. It is a planning reference, not a live price feed.',
       spotlightSelector: '[data-guide="benchmarks-source"]',
     },
     {

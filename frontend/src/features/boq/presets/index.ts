@@ -329,7 +329,7 @@ const REGIONAL_PRESETS: ColumnPreset[] = [
     region: 'uk',
     name: 'UK - NRM2',
     description:
-      'NRM2 code, element group / sub-element and BCIS reference - RICS New Rules of Measurement',
+      'NRM2 code, element group / sub-element and cost-index reference - RICS New Rules of Measurement',
     icon: Building2,
     iconClass: 'text-purple-600 bg-purple-500/10',
     columns: [
@@ -337,7 +337,7 @@ const REGIONAL_PRESETS: ColumnPreset[] = [
       { name: 'element_group', display_name: 'Element Group', column_type: 'text' },
       { name: 'sub_element', display_name: 'Sub-Element', column_type: 'text' },
       { name: 'measurement_unit', display_name: 'Measurement Unit', column_type: 'text' },
-      { name: 'bcis_reference', display_name: 'BCIS Reference', column_type: 'text' },
+      { name: 'bcis_reference', display_name: 'Cost Index Reference', column_type: 'text' },
     ],
   },
   {

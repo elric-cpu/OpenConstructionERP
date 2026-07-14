@@ -324,7 +324,7 @@ logger = logging.getLogger(__name__)
 #
 # Based on industry standards for medium commercial building projects.
 # Percentages applied to direct cost unless noted; tax items are cumulative.
-# Sources: VOB/HOAI, NRM1/RICS, RSMeans/AIA, BATIPRIX, FIDIC, CPWD, AIQS,
+# Sources: VOB/HOAI, NRM1/RICS, US cost index/AIA, BATIPRIX, FIDIC, CPWD, AIQS,
 # MLIT, TCU/SINAPI, Byggakademin, ГЭСН/МДС, 建标[2013]44号, 조달청.
 
 DEFAULT_MARKUP_TEMPLATES: dict[str, list[dict[str, object]]] = {
@@ -368,7 +368,7 @@ DEFAULT_MARKUP_TEMPLATES: dict[str, list[dict[str, object]]] = {
         },
     ],
     # ── United Kingdom ──────────────────────────────────────────────────
-    # RICS NRM1/NRM2, BCIS Elemental Standard Form
+    # RICS NRM1/NRM2, UK cost index Elemental Standard Form
     "UK": [
         {
             "name": "Main Contractor's Preliminaries",
@@ -414,7 +414,7 @@ DEFAULT_MARKUP_TEMPLATES: dict[str, list[dict[str, object]]] = {
         },
     ],
     # ── United States ───────────────────────────────────────────────────
-    # RSMeans / AIA / CSI MasterFormat Division 01
+    # US cost index / AIA / CSI MasterFormat Division 01
     "US": [
         {
             "name": "General Conditions (Div. 01)",
