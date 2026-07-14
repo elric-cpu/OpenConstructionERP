@@ -38,6 +38,13 @@ interface ChangelogEntry {
 // date, title and meaning intact; trim the prose, not the facts.
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '11.6.1',
+    date: '2026-07-14',
+    tag: 'NEW',
+    summary:
+      'The in-app How it works manual reads top to bottom in the order a project runs, with each section card numbered, and a Sort control lets you switch between the lifecycle order, alphabetical, or a custom order you arrange yourself and that is remembered. Worked cases can carry a longer description shown under the title on the case page, and case cards no longer cut the summary as short.',
+  },
+  {
     version: '11.6.0',
     date: '2026-07-14',
     tag: 'NEW',

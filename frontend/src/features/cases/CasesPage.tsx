@@ -1149,7 +1149,7 @@ function CaseCard({
         <h3 className="text-sm font-semibold leading-snug text-content-primary">
           {t(pb.titleKey, { defaultValue: pb.titleDefault })}
         </h3>
-        <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-content-secondary">
+        <p className="mt-1.5 line-clamp-3 text-xs leading-relaxed text-content-secondary">
           {t(pb.descKey, { defaultValue: pb.descDefault })}
         </p>
 

@@ -89,6 +89,11 @@ export interface ModuleExplanation {
   category: CategoryId;
   /** Marks pre-1.0 / preview modules with a small badge. */
   beta?: boolean;
+  /** Optional explicit order within this module's category section (ascending).
+   *  Modules that set it sort first, in ascending order; modules without it keep
+   *  their original catalog order after them. Lets an author make the reading
+   *  order inside a section intentional without numbering every entry. */
+  order?: number;
   /** Extra search terms (English, space-separated). Not shown to users. */
   keywords?: string;
 

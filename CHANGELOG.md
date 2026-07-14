@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [11.6.1] - 2026-07-14
+
+The in-app How it works manual now reads in a sensible order and lets you set your own. The section cards used to fill one column top to bottom and then the next, so they did not read one, two, three down the page. They now lay out row by row in the order a project runs, and each card is numbered so the sequence is clear. A Sort control at the top switches between the project Lifecycle order, which is the default, plain Alphabetical, or a Custom order you arrange yourself with an up and down arrow on each section, and your choice is remembered between visits. Worked cases can also carry a longer description that shows on the case page under the title, and the case cards no longer cut the summary as short.
+
 ## [11.6.0] - 2026-07-14
 
 A personal backup now carries all of your own data, not just the core. The previous backup covered a fixed handful of tables, projects, estimates and BOQ, schedules, cost data, documents, tenders and change records, and silently left out everything else you had built: your contacts, daily diaries, takeoff measurements, inspections and safety records, labor rates, custom cost catalogs, saved templates, notifications and the rest. The backup is now derived from the whole data model, so every table that belongs to you is included, and the promise from the last release, that fuller coverage was on the way, is delivered here.

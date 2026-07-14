@@ -204,6 +204,13 @@ export interface Playbook {
   descKey: string;
   /** Inline English default for the case description. */
   descDefault: string;
+  /** Optional i18n key for a richer, multi-sentence description shown in the
+   *  stepper hero under the one-line `desc`. */
+  longDescKey?: string;
+  /** Inline English default for the richer description. When omitted (with
+   *  `longDescKey`) the hero shows only the one-line `desc`. Same key + inline
+   *  default pattern as `descKey`/`descDefault`; keep it ASCII-clean. */
+  longDescDefault?: string;
   /** Rough time-to-complete in minutes, shown on the card. */
   estMinutes: number;
   /** Optional lucide-react icon name for the case card (resolved by the page). */

@@ -20,6 +20,9 @@ const playbook: Playbook = {
   descKey: "cases.procure_from_boq.desc",
   descDefault:
     "Buy the quantities you already priced: raise a requisition off the bill, place the order with a supplier and book the goods in on site.",
+  longDescKey: "cases.procure_from_boq.longdesc",
+  longDescDefault:
+    "This case joins your estimate to real spend without re-keying a single quantity. You start from the priced bill, tick the material lines you are ready to buy, and their quantities flow straight into a purchase requisition for approval. The approved requisition becomes a purchase order to a chosen supplier at an agreed price, and when the delivery lands you book the goods in against that order. Because every step carries the same lines and figures, procurement stays pinned to the budget from the first click to the goods received note, and any drift between what was priced and what was bought shows up straight away rather than months later at the final account.",
   estMinutes: 10,
   steps: [
     {

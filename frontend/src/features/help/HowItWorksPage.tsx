@@ -20,7 +20,9 @@ import {
   GraduationCap,
   Search,
   ChevronDown,
+  ChevronUp,
   ArrowRight,
+  ArrowUpDown,
   Compass,
   Lightbulb,
   // module icons (curated set; unknown names fall back to Boxes)
@@ -85,6 +87,7 @@ import {
   groupByCategory,
   type ModuleExplanation,
 } from './moduleExplanations';
+import { useHelpOrderStore, type HelpSortMode } from './useHelpOrderStore';
 
 /* ── Icon resolution ────────────────────────────────────────────────────── */
 
@@ -150,13 +153,16 @@ function iconFor(name: string): LucideIcon {
 
 interface CardProps {
   module: ModuleExplanation;
+  /** 1-based position within its section, shown as a sequence badge so the
+   *  intended reading order is obvious at a glance. */
+  index: number;
   expanded: boolean;
   onToggle: () => void;
   onLocate: () => void;
   onOpen: () => void;
 }
 
-function ModuleCard({ module, expanded, onToggle, onLocate, onOpen }: CardProps) {
+function ModuleCard({ module, index, expanded, onToggle, onLocate, onOpen }: CardProps) {
   const { t } = useTranslation();
   const Icon = iconFor(module.icon);
 
@@ -174,7 +180,7 @@ function ModuleCard({ module, expanded, onToggle, onLocate, onOpen }: CardProps)
     <div
       data-testid={`howto-card-${module.id}`}
       className={clsx(
-        'mb-4 break-inside-avoid rounded-2xl border bg-surface-elevated transition-colors',
+        'rounded-2xl border bg-surface-elevated transition-colors',
         expanded
           ? 'border-oe-blue/40 shadow-md'
           : 'border-border-light hover:border-oe-blue/30 hover:shadow-sm',
@@ -190,9 +196,13 @@ function ModuleCard({ module, expanded, onToggle, onLocate, onOpen }: CardProps)
       >
         <span
           aria-hidden="true"
-          className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-oe-blue/15 to-oe-blue/5 text-oe-blue ring-1 ring-inset ring-oe-blue/15"
+          className="relative mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-oe-blue/15 to-oe-blue/5 text-oe-blue ring-1 ring-inset ring-oe-blue/15"
         >
           <Icon size={19} strokeWidth={2} />
+          {/* Sequence badge - makes the intended reading order obvious. */}
+          <span className="absolute -left-1.5 -top-1.5 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border border-surface-elevated bg-slate-900/85 px-1 text-2xs font-bold tabular-nums text-white shadow-sm dark:bg-slate-700">
+            {index}
+          </span>
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
@@ -305,6 +315,14 @@ function ModuleCard({ module, expanded, onToggle, onLocate, onOpen }: CardProps)
   );
 }
 
+/* ── Sort control ───────────────────────────────────────────────────────── */
+
+const SORT_OPTIONS: { mode: HelpSortMode; labelKey: string; labelDefault: string }[] = [
+  { mode: 'lifecycle', labelKey: 'howto.sort.lifecycle', labelDefault: 'Lifecycle' },
+  { mode: 'alphabetical', labelKey: 'howto.sort.alphabetical', labelDefault: 'Alphabetical' },
+  { mode: 'custom', labelKey: 'howto.sort.custom', labelDefault: 'Custom' },
+];
+
 /* ── Page ───────────────────────────────────────────────────────────────── */
 
 export function HowItWorksPage() {
@@ -314,6 +332,8 @@ export function HowItWorksPage() {
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [locate, setLocate] = useState<ModuleExplanation | null>(null);
+
+  const { mode, customOrder, setMode, moveCategory } = useHelpOrderStore();
 
   // Resolve searchable text per module in the active locale, so search works
   // in whatever language the user reads.
@@ -334,7 +354,27 @@ export function HowItWorksPage() {
     });
   }, [query, t]);
 
+  // `groups` comes back in the canonical lifecycle order. Re-order the sections
+  // per the user's chosen sort mode: keep lifecycle as-is, sort alphabetically
+  // by the localized section label, or follow the saved custom order.
   const groups = useMemo(() => groupByCategory(filtered), [filtered]);
+  const orderedGroups = useMemo(() => {
+    if (mode === 'alphabetical') {
+      return [...groups].sort((a, b) =>
+        t(a.category.labelKey, { defaultValue: a.category.labelDefault }).localeCompare(
+          t(b.category.labelKey, { defaultValue: b.category.labelDefault }),
+        ),
+      );
+    }
+    if (mode === 'custom') {
+      // `customOrder` holds every category (reconciled on load), so indexOf
+      // always resolves. (`Map` is a lucide icon in this file, so avoid it.)
+      return [...groups].sort(
+        (a, b) => customOrder.indexOf(a.category.id) - customOrder.indexOf(b.category.id),
+      );
+    }
+    return groups;
+  }, [groups, mode, customOrder, t]);
 
   const toggle = (id: string) =>
     setExpanded((prev) => {
@@ -390,26 +430,60 @@ export function HowItWorksPage() {
         </p>
       </div>
 
-      {/* Search. */}
+      {/* Search + section order control. */}
       <div className="sticky top-0 z-10 -mx-4 mb-6 bg-surface/80 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6">
-        <div className="relative">
-          <Search
-            size={16}
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-content-tertiary"
-            aria-hidden="true"
-          />
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            data-testid="howto-search"
-            placeholder={t('howto.search_placeholder', {
-              defaultValue: 'Search modules - e.g. "cost", "schedule", "clash"...',
-            })}
-            aria-label={t('howto.search_placeholder', { defaultValue: 'Search modules' })}
-            className="w-full rounded-xl border border-border-light bg-surface-elevated py-2.5 pl-9 pr-3 text-sm text-content-primary placeholder:text-content-tertiary focus:border-oe-blue/40 focus:outline-none focus:ring-2 focus:ring-oe-blue/20"
-          />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative flex-1">
+            <Search
+              size={16}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-content-tertiary"
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              data-testid="howto-search"
+              placeholder={t('howto.search_placeholder', {
+                defaultValue: 'Search modules - e.g. "cost", "schedule", "clash"...',
+              })}
+              aria-label={t('howto.search_placeholder', { defaultValue: 'Search modules' })}
+              className="w-full rounded-xl border border-border-light bg-surface-elevated py-2.5 pl-9 pr-3 text-sm text-content-primary placeholder:text-content-tertiary focus:border-oe-blue/40 focus:outline-none focus:ring-2 focus:ring-oe-blue/20"
+            />
+          </div>
+
+          {/* Sort: how the sections read top to bottom. */}
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="inline-flex items-center gap-1 text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
+              <ArrowUpDown size={12} aria-hidden="true" />
+              {t('howto.sort.label', { defaultValue: 'Sort' })}
+            </span>
+            <div
+              role="group"
+              aria-label={t('howto.sort.aria', { defaultValue: 'Order the sections' })}
+              className="inline-flex rounded-lg border border-border-light bg-surface-elevated p-0.5"
+            >
+              {SORT_OPTIONS.map((opt) => (
+                <button
+                  key={opt.mode}
+                  type="button"
+                  onClick={() => setMode(opt.mode)}
+                  aria-pressed={mode === opt.mode}
+                  data-testid={`howto-sort-${opt.mode}`}
+                  className={clsx(
+                    'rounded-md px-2.5 py-1 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40',
+                    mode === opt.mode
+                      ? 'bg-oe-blue text-white shadow-sm'
+                      : 'text-content-secondary hover:text-content-primary',
+                  )}
+                >
+                  {t(opt.labelKey, { defaultValue: opt.labelDefault })}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
+
         <p className="mt-1.5 text-2xs text-content-tertiary">
           {query.trim()
             ? t('howto.result_count', {
@@ -417,15 +491,20 @@ export function HowItWorksPage() {
                 count: filtered.length,
                 total: totalCount,
               })
-            : t('howto.total_count', {
-                defaultValue: '{{total}} modules explained',
-                total: totalCount,
-              })}
+            : mode === 'custom'
+              ? t('howto.sort.custom_hint', {
+                  defaultValue:
+                    'Custom order - use the up and down arrows on each section to arrange them.',
+                })
+              : t('howto.total_count', {
+                  defaultValue: '{{total}} modules explained',
+                  total: totalCount,
+                })}
         </p>
       </div>
 
       {/* Grouped sections. */}
-      {groups.length === 0 ? (
+      {orderedGroups.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border py-16 text-center">
           <p className="text-sm text-content-secondary">
             {t('howto.no_results', { defaultValue: 'No modules match your search.' })}
@@ -433,33 +512,74 @@ export function HowItWorksPage() {
         </div>
       ) : (
         <div className="space-y-10">
-          {groups.map(({ category, modules }) => (
-            <section key={category.id} data-testid={`howto-section-${category.id}`}>
-              <div className="mb-3 border-b border-border-light pb-2">
-                <h2 className="text-base font-semibold text-content-primary">
-                  {t(category.labelKey, { defaultValue: category.labelDefault })}
-                  <span className="ml-2 text-xs font-normal text-content-tertiary">
-                    {modules.length}
-                  </span>
-                </h2>
-                <p className="mt-0.5 text-xs text-content-tertiary">
-                  {t(category.descKey, { defaultValue: category.descDefault })}
-                </p>
-              </div>
-              <div className="lg:columns-2 lg:gap-4">
-                {modules.map((m) => (
-                  <ModuleCard
-                    key={m.id}
-                    module={m}
-                    expanded={expanded.has(m.id)}
-                    onToggle={() => toggle(m.id)}
-                    onLocate={() => setLocate(m)}
-                    onOpen={() => navigate(m.route)}
-                  />
-                ))}
-              </div>
-            </section>
-          ))}
+          {orderedGroups.map(({ category, modules }) => {
+            const rank = customOrder.indexOf(category.id);
+            const canMoveUp = mode === 'custom' && rank > 0;
+            const canMoveDown = mode === 'custom' && rank >= 0 && rank < customOrder.length - 1;
+            return (
+              <section key={category.id} data-testid={`howto-section-${category.id}`}>
+                <div className="mb-3 flex items-start justify-between gap-3 border-b border-border-light pb-2">
+                  <div className="min-w-0">
+                    <h2 className="text-base font-semibold text-content-primary">
+                      {t(category.labelKey, { defaultValue: category.labelDefault })}
+                      <span className="ml-2 text-xs font-normal text-content-tertiary">
+                        {modules.length}
+                      </span>
+                    </h2>
+                    <p className="mt-0.5 text-xs text-content-tertiary">
+                      {t(category.descKey, { defaultValue: category.descDefault })}
+                    </p>
+                  </div>
+                  {/* Custom order: nudge this section up or down. */}
+                  {mode === 'custom' && (
+                    <div className="flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => moveCategory(category.id, -1)}
+                        disabled={!canMoveUp}
+                        data-testid={`howto-move-up-${category.id}`}
+                        aria-label={t('howto.sort.move_up', {
+                          defaultValue: 'Move section up',
+                        })}
+                        className="flex h-7 w-7 items-center justify-center rounded-lg border border-border-light text-content-secondary transition-colors hover:border-oe-blue/30 hover:text-content-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border-light disabled:hover:text-content-secondary"
+                      >
+                        <ChevronUp size={15} aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveCategory(category.id, 1)}
+                        disabled={!canMoveDown}
+                        data-testid={`howto-move-down-${category.id}`}
+                        aria-label={t('howto.sort.move_down', {
+                          defaultValue: 'Move section down',
+                        })}
+                        className="flex h-7 w-7 items-center justify-center rounded-lg border border-border-light text-content-secondary transition-colors hover:border-oe-blue/30 hover:text-content-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border-light disabled:hover:text-content-secondary"
+                      >
+                        <ChevronDown size={15} aria-hidden="true" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {/* Row-major grid so cards read left-to-right, top-to-bottom in
+                    order (CSS columns filled one column fully first, which read
+                    out of sequence). `items-start` keeps an expanded card from
+                    stretching its row neighbour. */}
+                <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2">
+                  {modules.map((m, i) => (
+                    <ModuleCard
+                      key={m.id}
+                      module={m}
+                      index={i + 1}
+                      expanded={expanded.has(m.id)}
+                      onToggle={() => toggle(m.id)}
+                      onLocate={() => setLocate(m)}
+                      onOpen={() => navigate(m.route)}
+                    />
+                  ))}
+                </div>
+              </section>
+            );
+          })}
         </div>
       )}
 

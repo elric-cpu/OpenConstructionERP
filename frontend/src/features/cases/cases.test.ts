@@ -304,6 +304,7 @@ describe('shipped cases integrity', () => {
     const badChar = /[\u2010-\u2015\u2018\u2019\u201C\u201D\u2026]/;
     for (const pb of PLAYBOOKS) {
       const strings = [pb.titleDefault, pb.descDefault];
+      if (pb.longDescDefault) strings.push(pb.longDescDefault);
       for (const step of pb.steps) {
         strings.push(step.titleDefault, step.whatDefault, step.whyDefault, step.moduleLabel);
       }

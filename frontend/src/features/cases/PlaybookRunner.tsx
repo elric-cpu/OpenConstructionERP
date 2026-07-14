@@ -352,6 +352,10 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
 
   const title = t(playbook.titleKey, { defaultValue: playbook.titleDefault });
   const desc = t(playbook.descKey, { defaultValue: playbook.descDefault });
+  const longDesc =
+    playbook.longDescKey && playbook.longDescDefault
+      ? t(playbook.longDescKey, { defaultValue: playbook.longDescDefault })
+      : null;
   const selectId = `cases-run-on-${playbook.id}`;
   const progressLabel = t("cases.steps_progress", {
     defaultValue: "{{done}} of {{total}} steps",
@@ -497,6 +501,11 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
             <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-content-secondary">
               {desc}
             </p>
+            {longDesc && (
+              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-content-tertiary">
+                {longDesc}
+              </p>
+            )}
 
             {/* Primary action + sample-project context + reset, one command row */}
             <div className="mt-4 flex flex-wrap items-center gap-2.5">

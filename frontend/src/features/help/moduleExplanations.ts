@@ -80,13 +80,21 @@ export interface CategoryGroup {
 
 /**
  * Group the given modules by category, preserving the canonical category
- * order and dropping empty categories.
+ * order and dropping empty categories. Within each section modules sort by
+ * their optional `order` (ascending) and then by their original catalog index,
+ * so an author can make the reading order intentional without numbering every
+ * entry. The `|| ai - bi` fallback also covers two unordered modules (whose
+ * `Infinity - Infinity` is NaN), keeping the sort stable.
  */
 export function groupByCategory(
   mods: ModuleExplanation[] = MODULE_EXPLANATIONS,
 ): CategoryGroup[] {
   return HOW_IT_WORKS_CATEGORIES.map((category) => ({
     category,
-    modules: mods.filter((m) => m.category === category.id),
+    modules: mods
+      .map((m, i) => [m, i] as const)
+      .filter(([m]) => m.category === category.id)
+      .sort(([a, ai], [b, bi]) => (a.order ?? Infinity) - (b.order ?? Infinity) || ai - bi)
+      .map(([m]) => m),
   })).filter((g) => g.modules.length > 0);
 }
