@@ -294,10 +294,10 @@ export function AboutPage() {
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2.5">
             {[
               { value: '55K+', label: t('about.stat_costs', { defaultValue: 'Cost Items (CWICR)' }) },
-              { value: '24', label: t('about.stat_langs', { defaultValue: 'Languages' }) },
+              { value: '27', label: t('about.stat_langs', { defaultValue: 'Languages' }) },
               { value: '48', label: t('about.stat_regions', { defaultValue: 'Regional Databases' }) },
               { value: '6', label: t('about.stat_cad_formats', { defaultValue: 'CAD/BIM formats supported' }) },
-              { value: '100+', label: t('about.stat_modules', { defaultValue: 'Backend modules' }) },
+              { value: '161', label: t('about.stat_modules', { defaultValue: 'Backend modules' }) },
               { value: '12', label: t('about.stat_sections', { defaultValue: 'Menu sections' }) },
             ].map((s, i) => (
               <div key={i} className="text-center rounded-xl bg-surface-secondary/50 px-2 py-3">
@@ -617,7 +617,7 @@ export function AboutPage() {
             <ul className="mb-6 space-y-2.5">
               {[
                 { href: 'https://github.com/datadrivenconstruction/cad2data-Revit-IFC-DWG-DGN-pipeline-with-conversion-validation-qto', label: 'cad2data Pipeline', desc: t('about.ddc_gh_cad2data', { defaultValue: 'Revit · IFC · DWG · DGN → structured quantities' }) },
-                { href: 'https://github.com/datadrivenconstruction/OpenConstructionEstimate-DDC-CWICR', label: 'OpenConstructionEstimate', desc: t('about.ddc_gh_cwicr', { defaultValue: '55,000+ cost items · 24 languages · 48 regions' }) },
+                { href: 'https://github.com/datadrivenconstruction/OpenConstructionEstimate-DDC-CWICR', label: 'OpenConstructionEstimate', desc: t('about.ddc_gh_cwicr', { defaultValue: '55,000+ cost items · 27 languages · 48 regions' }) },
                 { href: 'https://github.com/datadrivenconstruction', label: 'DDC Skills for AI Agents', desc: t('about.ddc_gh_skills', { defaultValue: 'Tool definitions & prompts for LLM agents' }) },
               ].map(item => (
                 <li key={item.href}>
@@ -951,9 +951,9 @@ export function AboutPage() {
               </p>
               <div className="grid grid-cols-2 gap-2.5 mb-4">
                 {[
-                  { value: '24', label: t('about.support_kpi_langs', { defaultValue: 'Languages translated' }) },
+                  { value: '27', label: t('about.support_kpi_langs', { defaultValue: 'Languages translated' }) },
                   { value: '48', label: t('about.support_kpi_regions', { defaultValue: 'Regional cost packs' }) },
-                  { value: '100+', label: t('about.support_kpi_modules', { defaultValue: 'Backend modules' }) },
+                  { value: '161', label: t('about.support_kpi_modules', { defaultValue: 'Backend modules' }) },
                   { value: '55K+', label: t('about.support_kpi_cwicr', { defaultValue: 'CWICR positions' }) },
                 ].map((kpi, i) => (
                   <div key={i} className="rounded-lg bg-surface-primary/60 backdrop-blur-sm border border-border-light px-3 py-2.5">

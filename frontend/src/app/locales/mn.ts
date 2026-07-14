@@ -8974,7 +8974,7 @@ const resource = {
     "login.benefit.open_source": "100% нээх эх сурвалж",
     "login.benefit.open_source_desc": "Transparent код. Үгүй нийлүүлэгч түгжих--д. Экспортлох бүх зүйл, anytime.",
     "login.benefit.standards": "Олон улсын стандартууд",
-    "login.benefit.standards_desc": "55,000+ өртөг зүйлс хооронд 30 бүс нутгийн өгөгдлийн сан worldwide.",
+    "login.benefit.standards_desc": "55,000+ өртөг зүйлс хооронд 48 бүс нутгийн өгөгдлийн сан worldwide.",
     "login.hero_desc": "Мэргэжлийн BOQ, 4D хуваарь гаргах, 5D өртөг загвар, ба тендер - бүх -д one нээх-эх сурвалж платформ.",
     "login.hero_highlight": "шинэчилсэн",
     "login.hero_title": "Барилгын өртөг тооцоолол,",
