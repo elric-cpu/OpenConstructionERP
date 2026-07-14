@@ -111,6 +111,32 @@ export async function loadLocaleResource(code: string): Promise<void> {
   }
 }
 
+/**
+ * Switch the active UI language, guaranteeing its strings are registered
+ * *before* the switch is announced. Use this from every language switcher.
+ *
+ * A bare ``i18n.changeLanguage(code)`` flips i18next to the new language
+ * synchronously, but the per-locale chunk is lazy-loaded — so at that instant
+ * the store holds no strings for ``code`` and every ``t()`` resolves through
+ * the English ``fallbackLng``. The UI then depends on the async chunk landing
+ * and firing a *second* re-render to recover, which flashes English and, under
+ * StrictMode's mount churn, can be missed entirely (the "lazy-locale Header
+ * race") — leaving the interface in English until a manual reload.
+ *
+ * Loading the chunk first means ``changeLanguage`` emits ``languageChanged``
+ * with the resources already in the store, so every ``useTranslation``
+ * subscriber re-renders straight into the target language. This mirrors the
+ * load-then-switch order already used by ``usePartnerPackLocale``.
+ *
+ * ``loadLocaleResource`` is idempotent, so re-selecting a loaded language just
+ * runs the cheap ``changeLanguage`` call. Failures inside ``loadLocaleResource``
+ * are swallowed there (English fallback), so the switch still proceeds.
+ */
+export async function changeLanguage(code: string): Promise<void> {
+  await loadLocaleResource(code);
+  await i18n.changeLanguage(code);
+}
+
 export function applyModuleTranslations(
   moduleId: string,
   translations: Record<string, Record<string, string>>,
@@ -207,6 +233,13 @@ i18n
     },
     react: {
       useSuspense: false,
+      // Re-render useTranslation subscribers on a language switch AND when a
+      // lazily loaded bundle finishes loading. ``languageChanged`` is the
+      // react-i18next default; ``loaded`` additionally covers a locale chunk
+      // that resolves right after the switch. Together with
+      // ``bindI18nStore: 'added'`` below (fired by ``addResourceBundle``) this
+      // guarantees a re-render however the strings arrive.
+      bindI18n: 'languageChanged loaded',
       // Re-render useTranslation subscribers when a resource bundle is
       // added (e.g. when a non-EN locale chunk lazy-loads via
       // ``loadLocaleResource``). Without this, components rendered
