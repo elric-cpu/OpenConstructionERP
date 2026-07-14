@@ -2326,8 +2326,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "openestimate-desktop"
-version = "7.1.0"
+name = "openconstructionerp-desktop"
+version = "11.7.1"
 dependencies = [
  "portpicker",
  "reqwest 0.12.28",

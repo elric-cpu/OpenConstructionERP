@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for OpenEstimate backend sidecar.
+"""PyInstaller spec for the OpenConstructionERP backend sidecar.
 
 Builds the FastAPI backend into a single executable that Tauri
 launches as a sidecar process.
@@ -170,7 +170,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="openestimate-server",
+    name="openconstructionerp-server",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

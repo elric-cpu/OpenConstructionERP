@@ -133,7 +133,7 @@ These two edits are the entire activation. The macOS runner already builds the d
 
 ## The sidecar and nested binaries
 
-This is the part that is easy to miss. A Developer ID signature with hardened runtime is only valid if every executable inside the app bundle is also signed the same way, with hardened runtime enabled and a secure timestamp. Our app is not a single binary. It ships the backend as a sidecar (the `externalBin` entry `binaries/openestimate-server` in `tauri.conf.json`), and that sidecar in turn carries nested Mach-O binaries, including the embedded PostgreSQL executables and the bundled converters. Apple's notary service will reject the submission if any nested binary lacks hardened runtime or a timestamp.
+This is the part that is easy to miss. A Developer ID signature with hardened runtime is only valid if every executable inside the app bundle is also signed the same way, with hardened runtime enabled and a secure timestamp. Our app is not a single binary. It ships the backend as a sidecar (the `externalBin` entry `binaries/openconstructionerp-server` in `tauri.conf.json`), and that sidecar in turn carries nested Mach-O binaries, including the embedded PostgreSQL executables and the bundled converters. Apple's notary service will reject the submission if any nested binary lacks hardened runtime or a timestamp.
 
 The good news is that Tauri signs the bundle and the binaries it knows about during `tauri build` when a signing identity is set, applying the hardened runtime options and a secure timestamp as it goes. So for the binaries Tauri places in the bundle, the existing build does the right thing once the identity is real.
 

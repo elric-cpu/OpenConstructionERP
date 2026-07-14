@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [11.7.1] - 2026-07-14
+
+The Windows desktop app now stops its background service before it installs or uninstalls, so reinstalling no longer fails with a file-in-use error. The backend runs as a separate process that could keep running after the app was closed or uninstalled, and because Windows locks a running program on disk, the next install could not replace it until you ended the process by hand in Task Manager. The installer and the uninstaller now end that process for you first, so a reinstall just works.
+
+The backend service is also renamed from openestimate-server to openconstructionerp-server, so the whole app carries one name. An upgrade from an older version still stops the old process by its former name, so nothing is left running behind. Your data folder and settings are untouched.
+
 ## [11.7.0] - 2026-07-14
 
 The national cost bases now open up the same way the global base does. China, Turkey, Brazil, Spain, Italy, Greece and Indonesia each show all of their market and language variants as cards, and picking a market loads the base and reprices it into that market at its own price level and currency. The global CWICR base keeps its thirty market variants, so every base is now browsable market by market from one place, and the browser shows the running total across all nine bases, which now comes to more than 120,000 priced positions.

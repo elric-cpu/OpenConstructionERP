@@ -89,8 +89,8 @@ jobs:
           mkdir -p desktop/src-tauri/binaries
           # onefile build: PyInstaller writes a single executable directly into
           # distpath, not a onedir subfolder.
-          cp "desktop/dist/openestimate-server${{ matrix.ext }}" \
-             "desktop/src-tauri/binaries/openestimate-server-${{ matrix.target }}${{ matrix.ext }}"
+          cp "desktop/dist/openconstructionerp-server${{ matrix.ext }}" \
+             "desktop/src-tauri/binaries/openconstructionerp-server-${{ matrix.target }}${{ matrix.ext }}"
 
       - name: Upload sidecar artifact
         uses: actions/upload-artifact@v4

@@ -733,7 +733,7 @@ fn main() {
             // (~/.openestimate), which stays writable even for a per-machine
             // install under Program Files.
             let shell = handle.shell();
-            let sidecar_cmd = match shell.sidecar("openestimate-server") {
+            let sidecar_cmd = match shell.sidecar("openconstructionerp-server") {
                 Ok(cmd) => {
                     // OE_DESKTOP=1 marks this backend as one we spawned from the
                     // desktop shell (so the backend can run desktop-only

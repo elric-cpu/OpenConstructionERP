@@ -4,7 +4,7 @@
 # Usage: ./desktop/build-sidecar.sh [target-triple]
 #
 # The output binary is placed in desktop/src-tauri/binaries/
-# with the Tauri-required naming: openestimate-server-{target-triple}
+# with the Tauri-required naming: openconstructionerp-server-{target-triple}
 #
 # Target triples:
 #   x86_64-pc-windows-msvc    (Windows)
@@ -43,7 +43,7 @@ detect_target() {
 }
 
 TARGET="${1:-$(detect_target)}"
-echo "=== Building OpenEstimate sidecar for $TARGET ==="
+echo "=== Building OpenConstructionERP sidecar for $TARGET ==="
 
 # Step 1: Build frontend
 echo "[1/3] Building frontend..."
@@ -70,8 +70,8 @@ fi
 
 # onefile build: PyInstaller writes a single executable directly into distpath,
 # not a onedir subfolder.
-SRC="$SCRIPT_DIR/dist/openestimate-server${EXT}"
-DST="$BINARIES_DIR/openestimate-server-${TARGET}${EXT}"
+SRC="$SCRIPT_DIR/dist/openconstructionerp-server${EXT}"
+DST="$BINARIES_DIR/openconstructionerp-server-${TARGET}${EXT}"
 
 if [ -f "$SRC" ]; then
     cp "$SRC" "$DST"

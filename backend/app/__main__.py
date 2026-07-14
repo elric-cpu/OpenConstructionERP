@@ -4,7 +4,7 @@
 
 Usage:
     python -m app                    # Dev mode
-    openestimate-server.exe          # Production (PyInstaller bundle)
+    openconstructionerp-server.exe   # Production (PyInstaller bundle)
 """
 
 import multiprocessing

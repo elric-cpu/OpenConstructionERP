@@ -38,6 +38,13 @@ interface ChangelogEntry {
 // date, title and meaning intact; trim the prose, not the facts.
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '11.7.1',
+    date: '2026-07-14',
+    tag: 'FIX',
+    summary:
+      'The Windows desktop app now stops its background service before installing or uninstalling, so a reinstall no longer fails because the old backend process was still running and locking the file. That service is also renamed to openconstructionerp-server so the app carries one name, and your data and settings are untouched.',
+  },
+  {
     version: '11.7.0',
     date: '2026-07-14',
     summary:
