@@ -118,27 +118,25 @@ async def export_backup(
 async def restore_backup(
     user_id: CurrentUserId,
     file: UploadFile = File(...),
-    mode: str = Form("replace"),
+    mode: str = Form("merge"),
 ) -> RestoreResponse:
     """Upload and restore from a backup ZIP.
 
     Args:
         file: ZIP backup file (multipart/form-data).
-        mode: ``replace`` (default) deletes the requesting user's own data
-            first, then inserts. ``merge`` skips records whose UUID already
-            exists, inserts new ones.
+        mode: ``merge`` (default) adds records whose id does not already exist
+            and deletes nothing, which is the safe way to bring a backup onto
+            another machine or into an existing account. ``replace`` clears the
+            caller's own data first and is only allowed into an empty account:
+            clearing a populated one would cascade-delete project data the backup
+            does not carry, so it returns 409 when the account already has data.
 
-    A backup belongs to the user who created it (export is scoped to the
-    user's own project graph), so ``replace`` only ever clears that same
-    scope. It never touches another user's rows - the earlier behaviour
-    deleted every row of every table globally, which let one user wipe the
-    whole instance on restore.
-
-    The restore is machine-portable: the exporter's ``users`` row is never
-    re-created (that account already exists here, with a different id, email
-    and password) and every imported row's ownership is repointed to the
-    restoring user, so a backup taken on one PC lands cleanly under the
-    restoring account on another.
+    A backup belongs to the user who created it (export is scoped to the user's
+    own project graph). Restore is machine-portable: the exporter's ``users`` row
+    is never re-created (that account already exists here, with its own id, email
+    and password) and every imported row's ownership is forced to the restoring
+    user, so a backup taken on one PC lands cleanly under the restoring account on
+    another and can never be stamped with another account's id.
     """
     if mode not in ("replace", "merge"):
         raise HTTPException(status_code=400, detail="mode must be 'replace' or 'merge'")
@@ -172,6 +170,11 @@ async def restore_backup(
             await session.commit()
         except RestoreError as exc:
             await session.rollback()
+            if exc.stage == "guard":
+                # A deliberate refusal, not a failure: e.g. replace into an
+                # account that already holds data. 409 Conflict so the client can
+                # show the reason and offer merge instead.
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
             logger.exception("Backup restore failed %s %s: %s", exc.stage, exc.table, exc)
             verb = "clearing existing" if exc.stage == "clear" else "importing"
             raise HTTPException(

@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 
 from app.modules.backup.service import (
     RESTORE_SKIP_KEYS,
+    RestoreError,
     _is_sensitive_field,
     build_scope_clause,
     get_backup_tables,
@@ -265,3 +266,63 @@ async def test_restore_pins_ownership_to_the_caller_not_the_archive(session):
     proj = (await session.execute(select(Project).where(Project.id == PROJECT_ID))).scalar_one()
     assert str(proj.owner_id) == str(MACHINE_A_USER), "ownership is pinned to the caller"
     assert str(proj.owner_id) != str(MACHINE_B_USER), "the archive's owner_id is not trusted"
+
+
+@pytest.mark.asyncio
+async def test_replace_refuses_to_clear_a_populated_account(session):
+    """Replace into an account that already holds data is refused, not destructive.
+
+    A project delete cascades in the database across dozens of project-scoped
+    modules the backup does not carry (photos, BIM, takeoff, point clouds, diaries,
+    schedule baselines). Clearing a populated account before import would destroy
+    all of that with nothing to rebuild it. The guard turns that into a refusal
+    (``RestoreError`` with ``stage == "guard"``) and changes nothing; merge is the
+    non-destructive way in.
+    """
+    from app.modules.projects.models import Project
+
+    # B already owns a project on this machine.
+    existing_id = uuid.uuid4()
+    session.add(Project(id=existing_id, name="B's existing work", owner_id=MACHINE_B_USER, currency="EUR"))
+    await session.flush()
+
+    # A's backup carries its own project.
+    data = {"projects": [{"id": str(PROJECT_ID), "name": "Tower", "owner_id": str(MACHINE_A_USER), "currency": "EUR"}]}
+
+    with pytest.raises(RestoreError) as excinfo:
+        await restore_backup_data(
+            session,
+            user_id=str(MACHINE_B_USER),
+            manifest={"created_by": str(MACHINE_A_USER)},
+            data=data,
+            mode="replace",
+        )
+    assert excinfo.value.stage == "guard", "a populated-account replace is a guard refusal, not a failure"
+
+    # The guard fired before any write: B's own project is untouched and the
+    # archive's project was never inserted.
+    mine = (await session.execute(select(Project).where(Project.owner_id == MACHINE_B_USER))).scalars().all()
+    assert len(mine) == 1
+    assert mine[0].id == existing_id
+    assert (await session.execute(select(Project).where(Project.id == PROJECT_ID))).scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_replace_is_allowed_into_an_empty_account(session):
+    """The guard only blocks populated accounts; an empty one still accepts replace."""
+    from app.modules.projects.models import Project
+
+    data = {"projects": [{"id": str(PROJECT_ID), "name": "Tower", "owner_id": str(MACHINE_A_USER), "currency": "EUR"}]}
+
+    # B owns nothing, so replace proceeds and imports normally.
+    imported, _skipped, _warnings = await restore_backup_data(
+        session,
+        user_id=str(MACHINE_B_USER),
+        manifest={"created_by": str(MACHINE_A_USER)},
+        data=data,
+        mode="replace",
+    )
+
+    assert imported["projects"] == 1
+    proj = (await session.execute(select(Project).where(Project.id == PROJECT_ID))).scalar_one()
+    assert str(proj.owner_id) == str(MACHINE_B_USER)

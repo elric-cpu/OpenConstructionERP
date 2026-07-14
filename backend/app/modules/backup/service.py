@@ -730,29 +730,72 @@ async def _import_table_rows(
         # the objects it added, so the retries below start from a clean slate.
         pass
 
+    # Per-row fallback. Each row inserts in its own SAVEPOINT so one bad row is
+    # skipped instead of sinking the table. Rows are retried in passes: a row
+    # whose parent is a self-referential row listed later (Position.parent_id,
+    # BOQ.parent_estimate_id, Project.parent_project_id, Document.parent_document_id)
+    # fails on the first pass but lands on a later one once its parent is in. Each
+    # pass that inserts at least one row may unblock others; we stop when a pass
+    # makes no progress. A record is rebuilt fresh per attempt so a rolled-back
+    # object is never re-added to the session.
     imported = 0
     skipped = 0
-    for record in records:
-        try:
-            obj = deserialize_row(model_cls, record)
-        except Exception as exc:
-            skipped += 1
-            logger.warning("Skipped record in %s: %s", backup_key, str(exc)[:100])
-            continue
-        try:
-            async with session.begin_nested():
-                session.add(obj)
-                await session.flush()
-            imported += 1
-            if file_key_sink is not None:
-                key = _row_file_key(obj)
-                if key:
-                    file_key_sink.add(key)
-        except Exception as exc:
-            skipped += 1
-            warnings.append(f"{backup_key}: skipped a row ({str(exc)[:150]})")
-            logger.warning("Restore skipped a row in %s: %s", backup_key, str(exc)[:200])
+    pending: list[dict[str, Any]] = list(records)
+
+    while pending:
+        still_failing: list[tuple[dict[str, Any], Exception]] = []
+        progressed = False
+        for record in pending:
+            try:
+                obj = deserialize_row(model_cls, record)
+            except Exception as exc:
+                skipped += 1
+                logger.warning("Skipped record in %s: %s", backup_key, str(exc)[:100])
+                continue
+            try:
+                async with session.begin_nested():
+                    session.add(obj)
+                    await session.flush()
+                imported += 1
+                progressed = True
+                if file_key_sink is not None:
+                    key = _row_file_key(obj)
+                    if key:
+                        file_key_sink.add(key)
+            except Exception as exc:
+                still_failing.append((record, exc))
+        if not progressed:
+            for _record, exc in still_failing:
+                skipped += 1
+                warnings.append(f"{backup_key}: skipped a row ({str(exc)[:150]})")
+                logger.warning("Restore skipped a row in %s: %s", backup_key, str(exc)[:200])
+            break
+        pending = [record for record, _exc in still_failing]
     return imported, skipped
+
+
+async def _account_has_restorable_data(session: Any, user_id: str, by_key: dict[str, type]) -> bool:
+    """True if the caller already owns data a replace-mode restore would clear.
+
+    Replace deletes the caller's own anchor rows (projects, schedules,
+    assemblies) before importing. In the database a project delete cascades
+    across roughly ninety project-scoped modules that a backup does not carry
+    (photos, BIM, takeoff, point clouds, diaries, schedule baselines and so on),
+    and restore only rebuilds the backed-up tables, so replacing into a populated
+    account would silently destroy all of that. Replace is therefore only allowed
+    into an empty account; this check is how the guard detects a populated one.
+    """
+    for key in ("projects", "schedules", "assemblies"):
+        cls = by_key.get(key)
+        if cls is None:
+            continue
+        clause = build_scope_clause(by_key, key, str(user_id))
+        if clause is None:
+            continue
+        row = (await session.execute(select(cls.id).where(clause).limit(1))).first()
+        if row is not None:
+            return True
+    return False
 
 
 async def restore_backup_data(
@@ -767,16 +810,20 @@ async def restore_backup_data(
     """Restore parsed backup ``data`` into the DB as ``user_id``.
 
     Runs inside the caller's transaction: the caller commits on success and
-    rolls back on any exception, so a restore is always all-or-nothing.
-    ``replace`` mode first clears the restoring user's own rows through the
-    same ownership scope the export used, then imports; ``merge`` skips rows
-    whose id already exists. The ``users`` table is never touched (see
-    ``RESTORE_SKIP_KEYS``) and every imported row's ownership is repointed to
-    ``user_id`` (see ``remap_owner_refs``) so a backup transfers cleanly onto
-    another machine under the restoring account. Individual rows that violate a
-    constraint on import are skipped with a warning rather than sinking the
-    whole transfer; only a fatal failure while clearing existing data raises
-    :class:`RestoreError`, so the caller rolls back before anything is imported.
+    rolls back on a raised :class:`RestoreError`. ``merge`` (the safe default)
+    adds rows whose id does not already exist and deletes nothing. ``replace``
+    first clears the caller's own rows, and is refused with a ``RestoreError``
+    whose ``stage`` is ``"guard"`` unless the account is empty, because a project
+    delete cascades in the database far beyond the backed-up tables and would
+    destroy data a backup cannot rebuild (see ``_account_has_restorable_data``).
+
+    Import is best-effort per row: a row that violates a constraint is skipped
+    with a warning rather than aborting, so the import side is not strictly
+    all-or-nothing, though the replace clear and the final commit are. The
+    ``users`` and ``ai_settings`` tables are never touched (see
+    ``RESTORE_SKIP_KEYS``) and every imported row's ownership is forced to
+    ``user_id`` (see ``remap_owner_refs``) so a backup lands cleanly under the
+    restoring account and never under the id an archive claims.
 
     When ``file_key_sink`` is given, the storage keys referenced by successfully
     imported rows are collected into it, so the caller can restrict file restore
@@ -792,6 +839,19 @@ async def restore_backup_data(
     warnings: list[str] = []
 
     if mode == "replace":
+        # A project delete cascades across roughly ninety project-scoped modules
+        # the backup does not carry, so replacing a populated account would
+        # silently destroy data restore cannot rebuild. Refuse replace unless the
+        # account is empty; merge is the non-destructive way to add a backup to
+        # existing data.
+        if await _account_has_restorable_data(session, new_owner, by_key):
+            raise RestoreError(
+                "Replace mode needs an empty account. Your account already has data, and "
+                "replacing it would remove project information this backup does not carry. "
+                "Use merge to add the backup to your existing data.",
+                stage="guard",
+                table="account",
+            )
         # FK-safe: children before parents. Scoped to the restoring user's own
         # rows so another user's data is never cleared, and ``users`` is
         # skipped so the restoring account is never deleted from under itself.
