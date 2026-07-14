@@ -23,7 +23,7 @@ signed release artefacts on the GitHub releases page.
 
 Primary third-party components (non-exhaustive):
 
-Backend (base install — `pip install openconstructionerp`):
+Backend (base install via `pip install openconstructionerp`):
   * FastAPI ............................. MIT
   * SQLAlchemy .......................... MIT
   * Pydantic ............................ MIT
