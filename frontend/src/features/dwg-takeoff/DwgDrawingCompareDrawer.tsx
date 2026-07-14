@@ -37,6 +37,7 @@ import {
   BarChart3,
   Eye,
   FilePlus2,
+  FileStack,
   Upload,
 } from 'lucide-react';
 
@@ -46,6 +47,7 @@ import {
   fetchDrawingVersions,
   fetchDrawings,
   uploadDrawing,
+  uploadDrawingRevision,
   compareDrawings,
   compareDrawingPair,
   createVariationFromDiff,
@@ -126,6 +128,7 @@ export function DwgDrawingCompareDrawer({
   const navigate = useNavigate();
   const addToast = useToastStore((s) => s.addToast);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const revisionInputRef = useRef<HTMLInputElement | null>(null);
 
   const [tab, setTab] = useState<CompareTab>('summary');
   const [fromId, setFromId] = useState<string>('');
@@ -133,6 +136,11 @@ export function DwgDrawingCompareDrawer({
   // Empty string = version-vs-version mode (revisions of THIS drawing); a
   // drawing id = drawing-vs-drawing mode (compare against another drawing).
   const [targetDrawingId, setTargetDrawingId] = useState<string>('');
+  // After an "Upload new revision", the id of the freshly appended version.
+  // We hold it until it shows up (parsed) in the refetched versions list, then
+  // auto-select it as the "after" side so the diff runs against the previous
+  // revision. Cleared once selected.
+  const [pendingRevisionVersionId, setPendingRevisionVersionId] = useState<string | null>(null);
   const [hideUnchanged, setHideUnchanged] = useState(true);
   const [overlay, setOverlay] = useState(false);
   const [opacity, setOpacity] = useState(0.5);
@@ -143,6 +151,16 @@ export function DwgDrawingCompareDrawer({
     queryKey: ['dwg-versions', drawingId],
     queryFn: () => fetchDrawingVersions(drawingId),
     enabled: open && !!drawingId,
+    // While a just-uploaded revision is still parsing, poll so it flips to
+    // "ready" and the version diff runs automatically (mirrors the pair-mode
+    // upload poll below).
+    refetchInterval: (q) => {
+      if (!pendingRevisionVersionId) return false;
+      const list = (q.state.data as DwgDrawingVersion[] | undefined) ?? [];
+      const v = list.find((x) => x.id === pendingRevisionVersionId);
+      if (v && (!v.status || v.status === 'ready')) return false;
+      return 3000;
+    },
   });
 
   const versions = useMemo(() => versionsQuery.data ?? [], [versionsQuery.data]);
@@ -189,6 +207,22 @@ export function DwgDrawingCompareDrawer({
     setFromId((cur) => cur || previous.id);
   }, [versions]);
 
+  // Once a freshly uploaded revision has been parsed and shows up in the list,
+  // force-select it as the "after" side (and the version just before it as the
+  // baseline) so the version diff runs against the previous revision.
+  useEffect(() => {
+    if (!pendingRevisionVersionId) return;
+    const idx = versions.findIndex((v) => v.id === pendingRevisionVersionId);
+    if (idx === -1) return; // not in the refetched list yet
+    const target = versions[idx];
+    if (!target) return;
+    if (target.status && target.status !== 'ready') return; // still parsing
+    const previous = versions[idx + 1] ?? target;
+    setToId(target.id);
+    setFromId(previous.id);
+    setPendingRevisionVersionId(null);
+  }, [pendingRevisionVersionId, versions]);
+
   // Reset the comparison target when the drawer is pointed at another drawing
   // so a stale target from a previous drawing never leaks in.
   useEffect(() => {
@@ -231,6 +265,36 @@ export function DwgDrawingCompareDrawer({
         type: 'error',
         title: t('dwg_compare.upload_error', {
           defaultValue: 'Could not upload the drawing. Please try again.',
+        }),
+      });
+    },
+  });
+
+  // "Upload new revision": appends a version to THIS drawing (not a separate
+  // drawing). Switch back to version-vs-version mode, refresh the version list
+  // and, once the new revision parses, auto-select it against the previous one.
+  const revisionUploadMutation = useMutation({
+    mutationFn: (file: File) => uploadDrawingRevision(drawingId, file),
+    onSuccess: (updated) => {
+      setTargetDrawingId(''); // force version-vs-version mode
+      setPendingRevisionVersionId(updated.latest_version?.id ?? null);
+      queryClient.invalidateQueries({ queryKey: ['dwg-versions', drawingId] });
+      queryClient.invalidateQueries({ queryKey: ['dwg-drawings', projectId] });
+      addToast({
+        type: 'success',
+        title: t('dwg_compare.revision_uploaded', {
+          defaultValue: 'New revision added',
+        }),
+        message: t('dwg_compare.revision_uploaded_hint', {
+          defaultValue: 'The diff runs automatically against the previous revision once it is ready.',
+        }),
+      });
+    },
+    onError: () => {
+      addToast({
+        type: 'error',
+        title: t('dwg_compare.revision_error', {
+          defaultValue: 'Could not add the revision. Please try again.',
         }),
       });
     },
@@ -391,37 +455,83 @@ export function DwgDrawingCompareDrawer({
               )}
             </select>
           </label>
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploadMutation.isPending || !projectId}
-            data-testid="dwg-compare-upload"
-            className="mb-0.5 inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border-light px-2.5 py-1.5 text-xs font-medium text-content-secondary transition hover:bg-surface-secondary disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {uploadMutation.isPending ? (
-              <Loader2 size={13} className="animate-spin" />
-            ) : (
-              <Upload size={13} />
-            )}
-            <span className="truncate">
-              {t('dwg_compare.upload_revision', {
-                defaultValue: 'Upload a revision to compare',
-              })}
-            </span>
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".dwg,.dxf"
-            className="hidden"
-            data-testid="dwg-compare-upload-input"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) uploadMutation.mutate(file);
-              e.target.value = '';
-            }}
-          />
         </div>
+
+        {/* Two upload paths, kept visually distinct. "Upload new revision"
+            appends a version to THIS drawing (revision-compare); "Compare a
+            different file" uploads a SEPARATE drawing and diffs against it
+            (drawing-vs-drawing). */}
+        <div className="flex flex-col gap-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => revisionInputRef.current?.click()}
+              disabled={revisionUploadMutation.isPending || !drawingId}
+              data-testid="dwg-compare-upload-revision"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-oe-blue/40 bg-oe-blue/5 px-2.5 py-1.5 text-xs font-semibold text-oe-blue transition hover:bg-oe-blue/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {revisionUploadMutation.isPending ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <FileStack size={13} />
+              )}
+              <span className="truncate">
+                {t('dwg_compare.upload_new_revision', {
+                  defaultValue: 'Upload new revision',
+                })}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadMutation.isPending || !projectId}
+              data-testid="dwg-compare-upload"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border-light px-2.5 py-1.5 text-xs font-medium text-content-secondary transition hover:bg-surface-secondary disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {uploadMutation.isPending ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <Upload size={13} />
+              )}
+              <span className="truncate">
+                {t('dwg_compare.upload_other_drawing', {
+                  defaultValue: 'Compare a different file',
+                })}
+              </span>
+            </button>
+          </div>
+          <p className="text-[11px] leading-snug text-content-tertiary">
+            {t('dwg_compare.upload_actions_hint', {
+              defaultValue:
+                'A new revision adds a version to this drawing. Comparing a different file diffs this drawing against a separate upload.',
+            })}
+          </p>
+        </div>
+
+        <input
+          ref={revisionInputRef}
+          type="file"
+          accept=".dwg,.dxf"
+          className="hidden"
+          data-testid="dwg-compare-upload-revision-input"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) revisionUploadMutation.mutate(file);
+            e.target.value = '';
+          }}
+        />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".dwg,.dxf"
+          className="hidden"
+          data-testid="dwg-compare-upload-input"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) uploadMutation.mutate(file);
+            e.target.value = '';
+          }}
+        />
 
         {/* Version-vs-version pickers (revisions of the same drawing). */}
         {mode === 'version' && (

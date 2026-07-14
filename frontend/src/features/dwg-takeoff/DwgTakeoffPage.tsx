@@ -65,6 +65,7 @@ import {
   FileDown,
   RotateCcw,
   GitCompare,
+  FileStack,
   Hash,
 } from 'lucide-react';
 import { Badge, ConfirmDialog, DismissibleInfo, ElementInfoPopover, ModuleGuideButton, type DWGElementPayload } from '@/shared/ui';
@@ -94,6 +95,7 @@ import {
   fetchOfflineReadiness,
   updateDrawingScale,
   importDrawingFromDocument,
+  uploadDrawingRevision,
   USER_MARKUP_LAYER,
 } from './api';
 import { Undo2, Redo2, Target, Search, ChevronUp, ChevronDown } from 'lucide-react';
@@ -895,6 +897,9 @@ export function DwgTakeoffPage() {
   const [uploadDiscipline, setUploadDiscipline] = useState('architectural');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Separate picker for the toolbar "Upload new revision" action so it never
+  // collides with the main new-drawing upload flow above.
+  const revisionInputRef = useRef<HTMLInputElement>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   /** Visual drop-zone hover state - flips on `dragenter`/`dragover` and
    *  back on `dragleave`/`drop`. The hero card and modal both bind to it
@@ -1171,6 +1176,36 @@ export function DwgTakeoffPage() {
       if (deepLinkDocName) setUploadName(decodeURIComponent(deepLinkDocName).replace(/\.[^.]+$/, ''));
       setShowUpload(true);
       clearDeepLinkParams();
+    },
+  });
+
+  // Toolbar "Upload new revision": append a new parsed version to the CURRENT
+  // drawing (distinct from the new-drawing upload, which creates a fresh
+  // drawing). Refresh the version list so the revision-compare drawer sees it,
+  // and the drawings list so the existing status poll refreshes the viewer once
+  // the new revision finishes parsing.
+  const revisionUploadMutation = useMutation({
+    mutationFn: ({ drawingId, file }: { drawingId: string; file: File }) =>
+      uploadDrawingRevision(drawingId, file),
+    onSuccess: (drawing) => {
+      queryClient.invalidateQueries({ queryKey: ['dwg-versions', drawing.id] });
+      queryClient.invalidateQueries({ queryKey: ['dwg-drawings', projectId] });
+      addToast({
+        type: 'success',
+        title: t('dwg_takeoff.revision_uploaded', { defaultValue: 'New revision uploaded' }),
+        message: t('dwg_takeoff.revision_uploaded_hint', {
+          defaultValue: 'It is being processed. Open Compare to diff it against the previous revision.',
+        }),
+      });
+    },
+    onError: (err: Error) => {
+      addToast({
+        type: 'error',
+        title: t('dwg_takeoff.revision_upload_failed', {
+          defaultValue: 'Could not upload the revision',
+        }),
+        message: err.message || undefined,
+      });
     },
   });
 
@@ -3565,6 +3600,46 @@ export function DwgTakeoffPage() {
                   <GitCompare size={14} />
                   <span>{t('dwg_compare.compare_short', { defaultValue: 'Compare' })}</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => revisionInputRef.current?.click()}
+                  disabled={!selectedDrawingId || revisionUploadMutation.isPending}
+                  className={clsx(
+                    'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold',
+                    'border border-white/60 bg-white/85 dark:bg-white/90 backdrop-blur-md',
+                    'shadow-xl shadow-black/30 ring-1 ring-black/5 transition-colors',
+                    selectedDrawingId
+                      ? 'text-slate-800 hover:bg-white'
+                      : 'text-slate-400 cursor-not-allowed',
+                  )}
+                  title={t('dwg_takeoff.upload_revision_title', {
+                    defaultValue: 'Upload a new revision of this drawing (adds a version)',
+                  })}
+                  data-testid="dwg-upload-revision"
+                >
+                  {revisionUploadMutation.isPending ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <FileStack size={14} />
+                  )}
+                  <span>
+                    {t('dwg_takeoff.upload_revision_short', { defaultValue: 'New revision' })}
+                  </span>
+                </button>
+                <input
+                  ref={revisionInputRef}
+                  type="file"
+                  accept=".dwg,.dxf"
+                  className="hidden"
+                  data-testid="dwg-upload-revision-input"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file && selectedDrawingId) {
+                      revisionUploadMutation.mutate({ drawingId: selectedDrawingId, file });
+                    }
+                    e.target.value = '';
+                  }}
+                />
                 <button
                   type="button"
                   onClick={handleDownloadCanvasPdf}

@@ -376,6 +376,46 @@ export function renderHatch(
   ctx.restore();
 }
 
+const SANS_STACK = 'Arial, Helvetica, sans-serif';
+
+/**
+ * Map a DXF text entity's SHX font / style name to a CSS font family.
+ *
+ * CAD annotation text is authored in single-stroke SHX fonts (romans, simplex,
+ * isocp, txt, …) that have no direct web equivalent. The renderer used to draw
+ * every string in `monospace`, which makes annotations look nothing like the
+ * source sheet - the vast majority of CAD text is a proportional SANS face.
+ * So we map the common technical fonts to a sans stack, keep a monospace
+ * fallback only for the genuinely fixed-width / GD&T / symbol fonts, and treat
+ * the script families as cursive. Anything empty or unrecognised falls back to
+ * SANS on purpose: defaulting to sans (not monospace) is what fixes the common
+ * "wrong font" complaint on its own.
+ *
+ * The name is lower-cased and any trailing `.shx` is stripped before matching,
+ * and `entity.font` (the resolved file) is preferred over `entity.style` (the
+ * style-table name). Fully defensive: `undefined` -> sans.
+ */
+export function resolveFontFamily(entity: DxfEntity): string {
+  const raw = (entity.font || entity.style || '')
+    .toLowerCase()
+    .replace(/\.shx$/, '')
+    .trim();
+  if (!raw) return SANS_STACK;
+  // Symbol / GD&T fonts: no sane proportional fallback, keep monospace so the
+  // glyph cells stay aligned.
+  if (raw.includes('gdt') || raw.includes('symap') || raw.includes('symbol')) {
+    return 'monospace';
+  }
+  // Script / handwriting / slanted styles.
+  if (raw.includes('script') || raw.includes('italic')) return 'cursive';
+  // Fixed-width CAD faces (monotxt and any explicitly "mono" family). Checked
+  // before the sans default so "monotxt" is not mistaken for the "txt" sans.
+  if (raw.includes('mono')) return 'monospace';
+  // Everything else - romans, simplex, romant, romand, isocp, iso, txt, … -
+  // is a proportional sans face.
+  return SANS_STACK;
+}
+
 export function renderText(
   ctx: CanvasRenderingContext2D,
   entity: DxfEntity,
@@ -390,7 +430,7 @@ export function renderText(
   const lineH = fontSize * 1.25;
 
   ctx.save();
-  ctx.font = `${fontSize}px monospace`;
+  ctx.font = `${fontSize}px ${resolveFontFamily(entity)}`;
   ctx.textBaseline = 'bottom';
   if (entity.rotation) {
     ctx.translate(pos.x, pos.y);

@@ -100,6 +100,13 @@ export interface DxfEntity {
   text?: string;
   /** Text height */
   height?: number;
+  /** DXF text style name (the STYLE table entry the TEXT/MTEXT references). */
+  style?: string;
+  /** Resolved SHX font file for the text style (e.g. "romans.shx"); may be
+   *  empty when the backend could not resolve it. The renderer maps it to a
+   *  CSS font family so annotation text looks like the source drawing instead
+   *  of always rendering in monospace. */
+  font?: string;
   /** Block name for INSERT entities */
   block_name?: string;
   /** Whether the polyline/hatch is closed */
@@ -250,6 +257,39 @@ export async function uploadDrawing(
   });
 
   const res = await fetch(`/api/v1/dwg_takeoff/drawings/upload/?${params.toString()}`, {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      'X-DDC-Client': 'OE/1.0',
+    },
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err || res.statusText);
+  }
+  return res.json();
+}
+
+/**
+ * Upload a NEW REVISION of an existing drawing.
+ *
+ * Unlike {@link uploadDrawing}, which creates a SEPARATE drawing, this appends
+ * a new parsed version (v N+1) to the SAME drawing, so the revision history and
+ * the revision-compare flow both work off one drawing id. The multipart field
+ * name is `file`, matching the backend ``POST /drawings/{drawing_id}/revisions/``
+ * handler; it returns the same drawing with ``latest_version`` bumped to the
+ * new revision.
+ */
+export async function uploadDrawingRevision(
+  drawingId: string,
+  file: File,
+): Promise<DwgDrawing> {
+  const token = useAuthStore.getState().accessToken;
+  const form = new FormData();
+  form.append('file', file);
+
+  const res = await fetch(`/api/v1/dwg_takeoff/drawings/${drawingId}/revisions/`, {
     method: 'POST',
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
