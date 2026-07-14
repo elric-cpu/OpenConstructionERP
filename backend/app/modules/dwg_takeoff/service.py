@@ -326,6 +326,10 @@ def _normalize_entity(raw: dict[str, Any], index: int) -> dict[str, Any]:
         result["text"] = gd.get("text", "")
         result["height"] = gd.get("height", 2.5)
         result["rotation"] = gd.get("rotation", 0)
+        # Carry the text style + resolved font through to the viewer so it
+        # renders the drawing's real font instead of a generic fallback.
+        result["style"] = gd.get("style", "")
+        result["font"] = gd.get("font", "")
     elif entity_type == "INSERT":
         result["start"] = gd.get("insert") or gd.get("insertion_point")
         result["block_name"] = gd.get("block_name") or gd.get("name", "")
@@ -924,6 +928,129 @@ class DwgTakeoffService:
             # Retain a strong reference so the detached task isn't GC'd
             # mid-conversion (see _spawn_dwg_conversion).
             _spawn_dwg_conversion(drawing_id, file_path)
+
+        await self.session.refresh(drawing)
+        return drawing
+
+    async def upload_revision(
+        self,
+        drawing_id: uuid.UUID,
+        file: UploadFile,
+        user_id: str,
+    ) -> DwgDrawing:
+        """Upload a new revision onto an EXISTING drawing.
+
+        Unlike :meth:`upload_drawing`, this reuses the drawing row and
+        appends the new parse as version N+1 instead of creating a second
+        drawing. Mirrors the upload path for the extension check, magic-byte
+        validation and on-disk storage (to a fresh path so the previous
+        revision's blob is left intact), then repoints the existing row at
+        the new file and re-runs the SAME processing dispatch. Both
+        ``_process_drawing`` (DXF) and ``_handle_dwg`` (DWG) resolve the next
+        version number via ``get_next_version_number``, so the revision
+        history accrues on one drawing and the revision-compare flow works
+        off a single drawing id.
+
+        Raises 404 if the drawing does not exist, 400 on a bad extension or
+        content that fails magic-byte validation.
+        """
+        drawing = await self.get_drawing(drawing_id)  # 404 if missing
+        # Capture the project id NOW, before ``update_fields`` runs
+        # ``session.expire_all()``. Reading ``drawing.project_id`` after that
+        # would trigger a lazy reload on the async path and raise
+        # MissingGreenlet (BUG-D-TKC-002d). The cross-link bump below uses
+        # this captured value instead of a live attribute access.
+        project_id = drawing.project_id
+
+        filename = file.filename or "drawing.dxf"
+        ext = os.path.splitext(filename)[1].lower()
+        if ext not in (".dwg", ".dxf"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only .dwg and .dxf files are supported",
+            )
+
+        file_format = ext.lstrip(".")
+        content = await file.read()
+        size_bytes = len(content)
+
+        # Same magic-byte gate as the direct upload path - reject a renamed
+        # PDF/ZIP/image before it reaches disk or the DDC subprocess.
+        ok, reason = _validate_cad_magic_bytes(content, file_format)
+        if not ok:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=reason,
+            )
+
+        # Write the revision to a NEW path so the previous version's blob is
+        # left untouched. Any write failure leaves the existing row (and its
+        # current file) intact - we never delete the drawing here.
+        upload_dir = _get_upload_dir()
+        file_id = str(uuid.uuid4())
+        new_path = os.path.join(upload_dir, f"{file_id}{ext}")
+        with open(new_path, "wb") as f:
+            f.write(content)
+
+        # Repoint the existing drawing row at the new revision. status resets
+        # to "uploaded" so the viewer shows the in-flight state until the new
+        # parse completes; error_message is cleared from any prior failure.
+        await self.drawing_repo.update_fields(
+            drawing_id,
+            file_path=new_path,
+            filename=filename,
+            file_format=file_format,
+            size_bytes=size_bytes,
+            status="uploaded",
+            error_message=None,
+        )
+
+        logger.info(
+            "Drawing revision uploaded: %s (%s, %d bytes) drawing=%s",
+            filename,
+            file_format,
+            size_bytes,
+            drawing_id,
+        )
+
+        # Best-effort: bump the cross-linked Document (created by the original
+        # upload) so the Documents hub reflects the new revision and points at
+        # the current blob. Never break the revision upload on failure.
+        try:
+            from sqlalchemy import select as _sa_select
+
+            from app.modules.documents.models import Document
+
+            stmt = _sa_select(Document).where(Document.project_id == project_id).limit(500)
+            docs = (await self.session.execute(stmt)).scalars().all()
+            target = str(drawing_id)
+            for doc in docs:
+                meta = doc.metadata_ or {}
+                if str(meta.get("source_id") or "") == target:
+                    doc.version = int(doc.version or 1) + 1
+                    doc.file_path = new_path
+                    doc.file_size = size_bytes
+                    self.session.add(doc)
+                    await self.session.flush()
+                    break
+        except Exception as exc:  # noqa: BLE001 - cross-link bump is best-effort
+            logger.warning(
+                "Failed to bump cross-linked document for drawing %s: %s",
+                drawing_id,
+                exc,
+            )
+
+        # Same dispatch policy as upload_drawing: DXF parses inline so the
+        # response already carries the new version; DWG is committed first and
+        # converted in a detached task while the client polls /drawings/{id}.
+        # Both paths store the parse as version N+1 via get_next_version_number.
+        if file_format == "dxf":
+            await self._process_drawing(drawing_id, new_path)
+        elif file_format == "dwg":
+            await self.session.commit()
+            # Retain a strong reference so the detached task isn't GC'd
+            # mid-conversion (see _spawn_dwg_conversion).
+            _spawn_dwg_conversion(drawing_id, new_path)
 
         await self.session.refresh(drawing)
         return drawing

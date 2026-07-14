@@ -51,8 +51,21 @@ def _aci_to_hex(aci: int) -> str:
     return aci_map.get(aci, "#ffffff")
 
 
-def _serialize_entity(entity: Any, layer_colors: dict[str, str] | None = None) -> dict[str, Any]:
-    """Convert an ezdxf entity to a JSON-serializable dict."""
+def _serialize_entity(
+    entity: Any,
+    layer_colors: dict[str, str] | None = None,
+    styles: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Convert an ezdxf entity to a JSON-serializable dict.
+
+    ``styles`` maps a text-style name to the font file it references (built
+    once from the STYLE table in :func:`parse_dxf`). TEXT/MTEXT entities
+    carry both their style name and resolved font so the viewer can render
+    the drawing's real font instead of a generic fallback. A missing style
+    resolves to an empty font string, never a crash.
+    """
+    if styles is None:
+        styles = {}
     dxf = entity.dxf
     aci = dxf.get("color", 256)  # 256 = ByLayer (default)
     layer_name = dxf.get("layer", "0")
@@ -105,18 +118,24 @@ def _serialize_entity(entity: Any, layer_colors: dict[str, str] | None = None) -
             result["geometry_data"] = {"points": [], "closed": False}
     elif entity_type == "TEXT":
         insert = dxf.get("insert", None)
+        style_name = dxf.get("style", "Standard")
         result["geometry_data"] = {
             "insert": {"x": insert.x, "y": insert.y} if insert else {"x": 0, "y": 0},
             "text": dxf.get("text", ""),
             "height": dxf.get("height", 1.0),
             "rotation": dxf.get("rotation", 0.0),
+            "style": style_name,
+            "font": styles.get(style_name, ""),
         }
     elif entity_type == "MTEXT":
         insert = dxf.get("insert", None)
+        style_name = dxf.get("style", "Standard")
         result["geometry_data"] = {
             "insert": {"x": insert.x, "y": insert.y} if insert else {"x": 0, "y": 0},
             "text": entity.plain_text() if hasattr(entity, "plain_text") else str(entity.text),
             "height": dxf.get("char_height", 1.0),
+            "style": style_name,
+            "font": styles.get(style_name, ""),
         }
     elif entity_type == "INSERT":
         insert = dxf.get("insert", None)
@@ -208,6 +227,21 @@ def parse_dxf(file_path: str) -> dict[str, Any]:
     # Build layer color map for ByLayer color resolution
     layer_color_map: dict[str, str] = {layer["name"]: layer["color"] for layer in layers}
 
+    # Read the STYLE table once: map each text-style name to the font it
+    # references so TEXT/MTEXT entities can carry the drawing's real font
+    # for the viewer. Defensive on every axis - ``doc.styles`` may be empty
+    # or raise on a malformed record; a missing font degrades to "" rather
+    # than crashing the whole parse.
+    styles: dict[str, str] = {}
+    try:
+        for style in doc.styles:
+            try:
+                styles[style.dxf.name] = style.dxf.get("font", "") or style.dxf.get("bigfont", "") or ""
+            except Exception:  # noqa: BLE001 - skip a single malformed style record
+                continue
+    except Exception:  # noqa: BLE001 - no/unreadable STYLE table
+        styles = {}
+
     # Build layer name set for counting
     layer_counts: dict[str, int] = {}
 
@@ -222,7 +256,7 @@ def parse_dxf(file_path: str) -> dict[str, Any]:
         for entity in layout:
             total_count += 1
             try:
-                serialized = _serialize_entity(entity, layer_color_map)
+                serialized = _serialize_entity(entity, layer_color_map, styles)
                 serialized["layout"] = layout_name
                 entities.append(serialized)
                 layer_name = serialized.get("layer", "0")

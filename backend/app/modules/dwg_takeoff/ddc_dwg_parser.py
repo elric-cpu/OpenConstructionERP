@@ -373,9 +373,14 @@ def parse_ddc_dwg_excel(excel_path: str | Path) -> dict[str, Any]:
             return None
         return row[i]
 
-    # ── Pass 1: collect layers ─────────────────────────────────────────
+    # ── Pass 1: collect layers + text styles ───────────────────────────
     layers_map: dict[str, dict] = {}
     layer_colors: dict[str, str] = {}
+    # Map each text-style name to the font/typeface it references so
+    # AcDbText/AcDbMText entities below can carry the drawing's real font
+    # for the viewer. The exact font column depends on the DwgExporter
+    # build, so accept whichever font-bearing column exists.
+    text_style_fonts: dict[str, str] = {}
 
     for row in all_rows[1:]:
         desc = str(get(row, "Description") or "")
@@ -392,6 +397,19 @@ def parse_ddc_dwg_excel(excel_path: str | Path) -> dict[str, Any]:
                 "entity_count": 0,
             }
             layer_colors[name] = color
+        elif desc == "<AcDbTextStyleTableRecord>":
+            style_name = str(get(row, "Name") or "").strip()
+            if style_name:
+                font = (
+                    get(row, "Font")
+                    or get(row, "TypeFace")
+                    or get(row, "Typeface")
+                    or get(row, "FileName")
+                    or get(row, "File Name")
+                    or get(row, "FontFile")
+                    or ""
+                )
+                text_style_fonts[style_name] = str(font or "").strip()
 
     # ── Pass 2: collect polyline parents ───────────────────────────────
     polyline_meta: dict[str, dict] = {}  # ID → {layer, color, closed, ...}
@@ -732,6 +750,14 @@ def parse_ddc_dwg_excel(excel_path: str | Path) -> dict[str, Any]:
             text = str(get(row, "Text String") or get(row, "TextString") or "")
             height = _safe_float(get(row, "Height") or get(row, "TextHeight")) or 2.5
             rotation = _safe_float(get(row, "Rotation")) or 0.0
+            style_name = str(
+                get(row, "Style Name")
+                or get(row, "StyleName")
+                or get(row, "Text Style")
+                or get(row, "TextStyle")
+                or get(row, "Style")
+                or ""
+            ).strip()
             if pos and text:
                 entities.append(
                     {
@@ -743,6 +769,8 @@ def parse_ddc_dwg_excel(excel_path: str | Path) -> dict[str, Any]:
                             "text": text,
                             "height": height,
                             "rotation": rotation,
+                            "style": style_name,
+                            "font": text_style_fonts.get(style_name, ""),
                         },
                     }
                 )
@@ -758,6 +786,14 @@ def parse_ddc_dwg_excel(excel_path: str | Path) -> dict[str, Any]:
             text = re.sub(r"[{}]", "", text).strip()
             height = _safe_float(get(row, "TextHeight") or get(row, "ActualHeight") or get(row, "Actual Height")) or 2.5
             rotation = _safe_float(get(row, "Rotation")) or 0.0
+            style_name = str(
+                get(row, "Style Name")
+                or get(row, "StyleName")
+                or get(row, "Text Style")
+                or get(row, "TextStyle")
+                or get(row, "Style")
+                or ""
+            ).strip()
             if loc and text:
                 entities.append(
                     {
@@ -769,6 +805,8 @@ def parse_ddc_dwg_excel(excel_path: str | Path) -> dict[str, Any]:
                             "text": text,
                             "height": height,
                             "rotation": rotation,
+                            "style": style_name,
+                            "font": text_style_fonts.get(style_name, ""),
                         },
                     }
                 )

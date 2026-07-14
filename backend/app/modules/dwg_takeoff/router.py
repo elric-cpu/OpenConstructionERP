@@ -324,6 +324,60 @@ async def import_drawing_from_document(
         )
 
 
+@router.post(
+    "/drawings/{drawing_id}/revisions/",
+    response_model=DwgDrawingResponse,
+    status_code=201,
+)
+async def upload_drawing_revision(
+    drawing_id: uuid.UUID,
+    file: UploadFile,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    session: SessionDep = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("dwg_takeoff.create")),
+    service: DwgTakeoffService = Depends(_get_service),
+) -> DwgDrawingResponse:
+    """Upload a new revision of an existing drawing.
+
+    Appends a new parsed version (v N+1) to the SAME drawing instead of
+    creating a second drawing, so the revision history and the
+    revision-compare flow work off one drawing id. Gated on the drawing's
+    owning project (a missing or foreign-tenant drawing both 404, never
+    403) and requires ``dwg_takeoff.create``.
+    """
+    await _gate_by_drawing(drawing_id, user_id, service, session)
+
+    # Same limiter as the initial upload (30/min).
+    allowed, _ = upload_limiter.is_allowed(str(user_id))
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded. Try again later.",
+            headers={"Retry-After": "60"},
+        )
+
+    filename = file.filename or ""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in ("dwg", "dxf"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file type. Only .dwg and .dxf files are accepted.",
+        )
+
+    try:
+        drawing = await service.upload_revision(drawing_id, file, user_id)
+        version = await service.get_latest_version(drawing.id)
+        return _drawing_to_response(drawing, version)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Unable to upload drawing revision")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to upload revision - please try again",
+        )
+
+
 # ── Drawing CRUD ────────────────────────────────────────────────────────────
 
 
