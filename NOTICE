@@ -168,10 +168,12 @@ Cryptographic Notice
 
 This software contains only standard, published cryptography used for
 authentication (bcrypt password hashing and signed JSON Web Tokens) and
-no bulk data encryption. Cryptography of this kind, published as open
-source, needs no special export licence: it is not subject to US EAR
-control as encryption (15 CFR 742.15(b)) and is excluded under the EU
-dual-use Cryptography Note. The software may not be exported to or used
+no bulk data encryption. Cryptography whose function is limited to
+authentication and digital signature falls outside the encryption
+controls in Category 5, Part 2 of the US Export Administration
+Regulations and the equivalent EU dual-use list, so it needs no special
+export licence; the same is true of standard cryptography published as
+open source. The software still may not be exported to or used
 in comprehensively sanctioned destinations (currently Cuba, Iran, North
 Korea, and the Crimea, Donetsk and Luhansk regions of Ukraine) or by
 sanctioned or denied parties. As with any software, you remain
