@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [11.5.0] - 2026-07-14
+
+Backups now move cleanly between machines. Restoring a backup on a second computer used to fail, because the backup carried the exporter's own account row with its password stripped and an email that was usually already taken on the target install, and re-inserting that row broke a required field and rolled the whole restore back. Restore no longer re-creates accounts. The computer you restore onto already has your account, so the projects, estimates and BOQ, schedules, cost data, documents, tenders and change records in the backup are repointed to the account doing the restore, which is what makes them appear under your login on the new machine. Site records such as daily diaries, takeoff measurements, inspections and safety data are not part of the backup yet, and the backup screen now says so plainly. Fuller coverage is on the way.
+
+Restore now adds to what you already have instead of wiping it. Merge is the default: it brings in the records a backup holds that are not already present and removes nothing, which is the safe way to carry a backup onto another machine or into an account that already has data. Replace, which clears your own data first, is only allowed into an empty account, because clearing a populated one would remove far more than a backup can bring back, so it is refused with a clear message that points you to merge.
+
+Files travel with the data now too. Drawings, documents and photos embedded in a backup are written back to storage on restore, instead of leaving the records that reference them without a file. Backup files no longer carry AI provider keys, so a backup copied between machines never holds a secret in plain text, and a restore never overwrites the account you restore into or its AI settings.
+
+The restore is steadier and safer as well. A single record that cannot come across, for example a cost recipe whose code already exists on the target, is now skipped with a note instead of failing the whole restore, so one odd row no longer sinks the entire transfer. A restore only ever writes into the account doing it and only fills in files that are missing, never overwriting a file already in storage, and an oversized or malformed archive is rejected before it can strain the machine.
+
 ## [11.4.0] - 2026-07-13
 
 Scheduling gains work calendars. You can define named work weeks for a project (a standard five-day week, a six-day trade week, or any custom set of working days), each with its own hours per day and its own list of public holidays, and assign one to any activity from the schedule table. Rescheduling then measures each activity's duration on its own calendar, so a six-day trade finishes sooner than a five-day one over the same work, and a crew that keeps its own holidays finishes later, while the dates, float and critical path stay consistent. Activities left on the project default reschedule exactly as before, so existing schedules do not move.
