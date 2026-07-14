@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [11.6.2] - 2026-07-14
+
+Switching the interface language now takes effect at once. The language menu used to load the chosen locale in the background and switch before it was ready, so the interface dropped back to English until you reloaded the page. It now loads the locale first and then switches, and it re-renders the moment a language finishes loading, so the whole interface changes on the spot.
+
+The cost base browser now labels the flagship global base as Russia and gives it the Russian flag, since it is built from the GESN, FER and TER norm structure. The worked-case pages read more cleanly too: the step rail on the left packs tighter, a finished step is marked with a green check so your progress is clear at a glance, and the in, action and out arrows on the right are larger and softer without the heavy circular badge.
+
+Third-party cost-index product names were removed from the application. They appeared only in code comments and a few catalog, benchmark and marketplace labels, and are replaced with plain functional descriptions while the underlying identifiers stay the same, so nothing you have loaded changes.
+
 ## [11.6.1] - 2026-07-14
 
 The in-app How it works manual now reads in a sensible order and lets you set your own. The section cards used to fill one column top to bottom and then the next, so they did not read one, two, three down the page. They now lay out row by row in the order a project runs, and each card is numbered so the sequence is clear. A Sort control at the top switches between the project Lifecycle order, which is the default, plain Alphabetical, or a Custom order you arrange yourself with an up and down arrow on each section, and your choice is remembered between visits. Worked cases can also carry a longer description that shows on the case page under the title, and the case cards no longer cut the summary as short.

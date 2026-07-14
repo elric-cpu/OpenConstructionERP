@@ -38,6 +38,13 @@ interface ChangelogEntry {
 // date, title and meaning intact; trim the prose, not the facts.
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '11.6.2',
+    date: '2026-07-14',
+    tag: 'FIX',
+    summary:
+      'Switching the interface language now applies at once, without a page reload. The cost base browser labels the global base as Russia with its own flag, the worked-case pages get a tighter step rail with clear done marks and larger, softer flow arrows, and third-party cost-index product names were removed from the app.',
+  },
+  {
     version: '11.6.1',
     date: '2026-07-14',
     tag: 'NEW',
