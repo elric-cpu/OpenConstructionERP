@@ -140,6 +140,30 @@ function setActiveDatabase(dbId: string): void {
   }
 }
 
+// Which market each national base is currently repriced into. Keyed by
+// base_region -> market_catalog token (e.g. { ZH_CHINA: 'GB_LONDON_en' }). MVP
+// client-side tracking; a server table is a later hardening.
+const ACTIVE_MARKETS_KEY = 'oe_active_markets';
+
+function getActiveMarkets(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(ACTIVE_MARKETS_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function setActiveMarketFor(baseRegion: string, token: string): void {
+  try {
+    const current = getActiveMarkets();
+    current[baseRegion] = token;
+    localStorage.setItem(ACTIVE_MARKETS_KEY, JSON.stringify(current));
+  } catch {
+    // Storage unavailable -- ignore.
+  }
+}
+
 // ── API helper for file upload ───────────────────────────────────────────────
 
 function authHeaders(): Record<string, string> {
@@ -372,6 +396,9 @@ function CWICRDatabaseGrid(_props: { onLoadDatabase: (file: File) => void }) {
   const [lastLoadedDb, setLastLoadedDb] = useState<BaseVariant | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [activeDb, setActiveDb] = useState<string | null>(() => getActiveDatabase());
+  // base_region -> active market token, so national market cards show the
+  // "Active market" badge vs a "Switch to" action.
+  const [activeMarkets, setActiveMarkets] = useState<Record<string, string>>(() => getActiveMarkets());
   const addToast = useToastStore((s) => s.addToast);
 
   // The whole loadable catalog (9 base families, 38 cost bases) with real
@@ -434,6 +461,73 @@ function CWICRDatabaseGrid(_props: { onLoadDatabase: (file: File) => void }) {
 
   const handleLoad = useCallback(
     async (variant: BaseVariant) => {
+      // National market card: load the base (idempotent) and reprice it into the
+      // chosen market/language. Distinct path from the home/global load below.
+      if (variant.market_catalog) {
+        const baseRegion = variant.base_region;
+        setLoading(variant.variant_id);
+        setResult(null);
+        setLastLoadedDb(variant);
+        try {
+          const data = await apiPost<Record<string, unknown>>(
+            `/v1/costs/base-market/${baseRegion}/${variant.market_catalog}`,
+            undefined,
+            { longRunning: true },
+          );
+          setLoaded((prev) => new Set(prev).add(baseRegion));
+          addLoadedDatabase(baseRegion);
+          setActiveMarketFor(baseRegion, variant.market_catalog);
+          setActiveMarkets((prev) => ({ ...prev, [baseRegion]: variant.market_catalog }));
+          // Make this base the working database if none is set yet (mirrors the
+          // home-load behaviour - never steal an already-chosen active db).
+          if (getLoadedDatabases().length === 1 || !getActiveDatabase()) {
+            setActiveDatabase(baseRegion);
+            setActiveDb(baseRegion);
+          }
+          const repriced = (data.items_repriced as number) ?? (data.items_total as number) ?? 0;
+          setResult({ id: variant.variant_id, imported: repriced, skipped: 0, file: '' });
+          addToast({
+            type: 'success',
+            title: t('costs.market_priced_title', {
+              defaultValue: 'Priced into {{market}}',
+              market: variant.market,
+            }),
+            message: t('costs.market_priced_msg', {
+              defaultValue: '{{items}} items repriced into {{market}} ({{currency}})',
+              items: repriced.toLocaleString(),
+              market: variant.market,
+              currency: variant.currency,
+            }),
+          });
+          queryClient.invalidateQueries({ queryKey: ['costs'] });
+        } catch (err: unknown) {
+          if (!mountedRef.current) return;
+          const backendDetail = err instanceof Error ? err.message : '';
+          addToast({
+            type: 'error',
+            title: t('costs.market_failed_title', {
+              defaultValue: 'Could not price into {{market}}',
+              market: variant.market,
+            }),
+            message:
+              backendDetail ||
+              t('costs.load_failed_unreachable', {
+                defaultValue:
+                  'Could not reach the data host to download this market. This is often a blocked network or a GitHub connection issue. Check your connection and that github.com is reachable, then try again.',
+              }),
+            action: {
+              label: t('costs.load_failed_retry', { defaultValue: 'Retry' }),
+              onClick: () => {
+                void handleLoad(variant);
+              },
+            },
+          });
+        } finally {
+          if (mountedRef.current) setLoading(null);
+        }
+        return;
+      }
+
       // Local alias so the load / progress / toast body below reads naturally.
       const db = { id: variant.region, name: variant.market };
       setLoading(db.id);
@@ -577,7 +671,9 @@ function CWICRDatabaseGrid(_props: { onLoadDatabase: (file: File) => void }) {
           loadedRegions={loaded}
           loadingRegion={loading}
           activeRegion={activeDb}
+          activeMarkets={activeMarkets}
           onLoad={handleLoad}
+          onReprice={handleLoad}
           onSetActive={handleSetActive}
           elapsedSeconds={elapsed}
         />
@@ -591,7 +687,7 @@ function CWICRDatabaseGrid(_props: { onLoadDatabase: (file: File) => void }) {
       {/* ── Import Progress Panel ─────────────────────────────────────── */}
       {(loading || result) && (() => {
         const loadingDb =
-          (loading ? flattenVariants(baseCatalog).find((v) => v.region === loading) : null) ?? lastLoadedDb;
+          (loading ? flattenVariants(baseCatalog).find((v) => v.variant_id === loading) : null) ?? lastLoadedDb;
         // Simulate phased progress: 0-15s = reading file, 15-30s = parsing, 30+ = writing
         const phase = elapsed < 15 ? 0 : elapsed < 30 ? 1 : elapsed < 120 ? 2 : 3;
         const phaseLabels = [

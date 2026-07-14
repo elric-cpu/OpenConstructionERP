@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [11.7.0] - 2026-07-14
+
+The national cost bases now open up the same way the global base does. China, Turkey, Brazil, Spain, Italy, Greece and Indonesia each show all of their market and language variants as cards, and picking a market loads the base and reprices it into that market at its own price level and currency. The global CWICR base keeps its thirty market variants, so every base is now browsable market by market from one place, and the browser shows the running total across all nine bases, which now comes to more than 120,000 priced positions.
+
+We finished taking third-party cost-index product names out of the product. The last references were in the German, Chinese and two dozen other translations along with a few marketing pages, and they now read as plain descriptions such as a UK construction cost index. The open standards like NRM, DIN, RICS and GAEB and the CWICR name stay as they are.
+
+The interface translations caught up with the last few releases. Strings added recently for work calendars, bill-of-quantities paste and the model viewer were still showing in English for people using other languages, and they are now translated across all 27 languages. The headline cost figure in the app, the readme and the marketing site now shows the 120,000 plus total across the nine bases, while any text that names the CWICR base on its own keeps its 55,000 figure.
+
 ## [11.6.2] - 2026-07-14
 
 Switching the interface language now takes effect at once. The language menu used to load the chosen locale in the background and switch before it was ready, so the interface dropped back to English until you reloaded the page. It now loads the locale first and then switches, and it re-renders the moment a language finishes loading, so the whole interface changes on the spot.

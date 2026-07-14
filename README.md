@@ -51,7 +51,7 @@ Professional BOQ, CAD and BIM takeoff, 4D scheduling, 5D cost model, and tenderi
 
 <table>
 <tr>
-<td align="center" width="16.66%"><b>55K+</b><br/><sub>cost&nbsp;items</sub></td>
+<td align="center" width="16.66%"><b>120K+</b><br/><sub>cost&nbsp;items</sub></td>
 <td align="center" width="16.66%"><b>27</b><br/><sub>languages</sub></td>
 <td align="center" width="16.66%"><b>48</b><br/><sub>regions</sub></td>
 <td align="center" width="16.66%"><b>6</b><br/><sub>CAD&nbsp;formats</sub></td>
@@ -181,7 +181,7 @@ Construction cost estimation software is expensive, closed-source, and locked to
 | **27 languages** | Full UI translation: English, German, French, Spanish, Portuguese, Russian, Chinese, Arabic, Hindi, Japanese, Korean, and 16 more. |
 | **30+ regional standards** | DIN 276, NRM 1/2, CSI MasterFormat, GAEB, ГЭСН, DPGF, GB/T 50500, CPWD, ÖNORM, Birim Fiyat, Sekisan, SINAPI, and more. |
 | **AI-powered** | Connect any LLM provider (Anthropic, OpenAI, Gemini, Mistral, Groq, DeepSeek) for smart estimation. |
-| **55,000+ cost items** | CWICR database with 11 regional pricing databases (DACH, UK, US, France, Spain, Brazil, Russia, UAE, China, India, Canada). |
+| **120,000+ cost items** | Nine cost bases - global CWICR (repriced across 30 markets) plus eight national bases (China, Turkey, Brazil, Spain, Italy, Greece, Vietnam, Indonesia). |
 
 ### How It Compares
 
@@ -214,7 +214,7 @@ Construction cost estimation software is expensive, closed-source, and locked to
 <tr><td><b>BOQ editor</b></td><td align="center">&#10004;</td><td align="center">&#10004;</td><td align="center">&#10004;</td><td align="center">&#10004;</td><td align="center">&#10006;</td></tr>
 <tr><td><b>CAD/BIM takeoff</b></td><td align="center">&#10004; RVT IFC DWG DGN</td><td align="center">&#10004;</td><td align="center">&#10004;</td><td align="center">&#10006;</td><td align="center">PDF only</td></tr>
 <tr><td><b>4D/5D planning</b></td><td align="center">&#10004;</td><td align="center">&#10004;</td><td align="center">&#10006;</td><td align="center">&#10006;</td><td align="center">&#10006;</td></tr>
-<tr><td><b>Cost database included</b></td><td align="center">&#10004; 55K+ rates</td><td align="center">&#10006; extra</td><td align="center">&#10006; extra</td><td align="center">&#10006; extra</td><td align="center">&#10006;</td></tr>
+<tr><td><b>Cost database included</b></td><td align="center">&#10004; 120K+ rates</td><td align="center">&#10006; extra</td><td align="center">&#10006; extra</td><td align="center">&#10006; extra</td><td align="center">&#10006;</td></tr>
 <tr><td><b>Resource catalog</b></td><td align="center">&#10004; 7K+ priced</td><td align="center">&#10006; extra</td><td align="center">&#10006;</td><td align="center">&#10006;</td><td align="center">&#10006;</td></tr>
 <tr><td><b>Validation engine</b></td><td align="center">&#10004; 42 rules</td><td align="center">&#9888; limited</td><td align="center">&#10006;</td><td align="center">&#10006;</td><td align="center">&#10006;</td></tr>
 <tr><td><b>REST API</b></td><td align="center">&#10004; full</td><td align="center">&#9888; limited</td><td align="center">&#10006;</td><td align="center">&#10006;</td><td align="center">&#10006;</td></tr>
@@ -250,7 +250,7 @@ Each block below is a short GIF cut from the full walkthrough above - same order
 <tr>
 <td align="center">
 <strong><picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme-icons/zap-dark.svg"><img src="docs/readme-icons/zap-light.svg" width="14" align="center" alt=""></picture> 3 · Build the Bill of Quantities</strong><br/>
-<em>Keyboard-first editor, 55K+ priced items, AI cost finder & Smart AI - quality score updates live</em><br/><br/>
+<em>Keyboard-first editor, 120K+ priced items, AI cost finder & Smart AI - quality score updates live</em><br/><br/>
 <img src="docs/gifs/15_BoQ_Editor.gif" alt="BoQ Editor" width="400" />
 </td>
 <td align="center">
@@ -303,7 +303,7 @@ Each block below is a short GIF cut from the full walkthrough above - same order
 </td>
 <td align="center">
 <strong><picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme-icons/search-dark.svg"><img src="docs/readme-icons/search-light.svg" width="14" align="center" alt=""></picture> Bonus · Instant Search</strong><br/>
-<em>Find any of 55K+ cost items across 11 regional databases by keyword, unit or classification</em><br/><br/>
+<em>Find any of 120K+ cost items across 9 cost bases by keyword, unit or classification</em><br/><br/>
 <img src="docs/gifs/05_Instant_Search.gif" alt="Instant Search" width="400" />
 </td>
 </tr>
@@ -336,7 +336,7 @@ A quick tour of the main workspaces. Every screen is the real application runnin
 </td>
 <td align="center">
 <strong>Cost Database</strong><br/>
-<em>55,000+ priced items across 11 regional databases, bilingual, searchable by code, unit or class.</em><br/><br/>
+<em>120,000+ priced items across 9 cost bases, bilingual, searchable by code, unit or class.</em><br/><br/>
 <img src="docs/screenshots/gallery/cost-database.jpg" alt="Regional cost databases" width="420" />
 </td>
 </tr>
@@ -421,11 +421,11 @@ Build professional cost estimates with a powerful BOQ editor. The full lifecycle
 
 ### <picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme-icons/database-dark.svg"><img src="docs/readme-icons/database-light.svg" width="14" align="center" alt=""></picture> Cost Databases & Resource Catalog
 
-<img src="docs/screenshots/feature-databases.jpg" alt="Cost Database - 55,000+ items across 30 markets plus 8 national bases" width="800" />
+<img src="docs/screenshots/feature-databases.jpg" alt="Cost Database - 120,000+ items across 9 cost bases" width="800" />
 
 Access the world's construction pricing data:
 
-- **CWICR database** - 55,000+ cost items covering all major construction trades, repriced across 30 regional markets. Plus 8 national bases built on each country's own norm system (China, Turkey, Brazil, Spain, Italy, Greece, Vietnam, Indonesia)
+- **Cost bases** - 120,000+ cost items across 9 bases: the global CWICR database (55,000+ items covering all major construction trades, repriced across 30 regional markets) plus 8 national bases built on each country's own norm system (China, Turkey, Brazil, Spain, Italy, Greece, Vietnam, Indonesia)
 - **Smart search** - Find items by description, code, or classification. AI-powered semantic search matches meaning, not just keywords ("concrete wall" finds "reinforced partition C30/37")
 - **Resource catalog** - 7,000+ materials, equipment, labor rates, and operators. Build custom assemblies from catalog items
 - **Regional pricing** - Automatic price adjustment based on project location. Compare rates across regions

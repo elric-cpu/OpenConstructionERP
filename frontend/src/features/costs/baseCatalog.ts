@@ -14,6 +14,20 @@ import { apiGet } from '@/shared/lib/api';
 export interface BaseVariant {
   /** Platform region id, e.g. "USA_USD" - the load-cwicr path segment. */
   region: string;
+  /** Unique UI id. Global + national HOME variants use `region`; a national
+   *  MARKET variant uses `${base_region}:${market_catalog}` so many cards can
+   *  share one base_region yet stay individually addressable. */
+  variant_id: string;
+  /** The oe_costs_item.region a load + reprice targets. Global + home variants
+   *  use `region`; a market variant uses its base's home region. All of a
+   *  base's cards share it. */
+  base_region: string;
+  /** The markets/ catalog file token this card reprices into (e.g.
+   *  "GB_LONDON_en"); empty for global + home variants. */
+  market_catalog: string;
+  /** Whether this market is the one the base is currently repriced into
+   *  (registry default false; live value tracked client-side). */
+  active: boolean;
   /** Human market / country label (English). */
   market: string;
   /** Representative city, or "National" for country-wide bases. */

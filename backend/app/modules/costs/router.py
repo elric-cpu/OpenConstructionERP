@@ -1228,6 +1228,59 @@ async def reprice_region_endpoint(
     return RepriceResponse(**result.as_dict())
 
 
+@router.post(
+    "/base-market/{base_region}/{market_token}",
+    # Loading public reference data is a viewer-level action, same as
+    # ``/load-cwicr/{db_id}`` and the reprice endpoints above.
+    dependencies=[Depends(RequirePermission("costs.read"))],
+)
+async def load_base_market(
+    base_region: str,
+    market_token: str,
+    session: SessionDep,
+    _user_id: CurrentUserId,
+    service: ResourcePriceService = Depends(_get_resource_price_service),
+) -> dict:
+    """Load a national base and reprice it into one of its market/language variants.
+
+    A national base ships one home market but can be repriced into any of the 48
+    market/language price levels (the base's own resources relabeled and
+    repriced). This endpoint is idempotent on the base load and switches the
+    active market in place:
+
+    1. Validate ``base_region`` is a known base and ``market_token`` a known market.
+    2. ``load_cwicr_region`` ensures the base parquet is loaded (early-returns if
+       it already is).
+    3. Download + parse that market's catalog CSV from the base's ``markets/`` folder.
+    4. Overlay the market prices onto the base's resource price sheet, re-price
+       every work item, and stamp the market currency onto the region's cost items.
+
+    Returns the reprice summary plus the now-active market token. 404 on an
+    unknown base/market; 502 when the market CSV cannot be downloaded.
+    """
+    if base_registry.variant_by_region(base_region) is None:
+        raise HTTPException(status_code=404, detail=f"Unknown base region '{base_region}'.")
+    if not base_registry.is_known_market(market_token):
+        raise HTTPException(status_code=404, detail=f"Unknown market '{market_token}'.")
+
+    # Ensure the base parquet is loaded before repricing it (idempotent).
+    await load_cwicr_region(base_region, session)
+
+    from app.modules.catalog.router import fetch_market_catalog_rows
+
+    try:
+        rows = await fetch_market_catalog_rows(base_region, market_token)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    result = await service.apply_market_catalog(base_region, market_token, rows)
+    _invalidate_cost_cache()
+
+    payload = result.as_dict()
+    payload["active_market"] = market_token
+    return payload
+
+
 # ── Vector database (LanceDB embedded / Qdrant server) ──────────────────────
 
 

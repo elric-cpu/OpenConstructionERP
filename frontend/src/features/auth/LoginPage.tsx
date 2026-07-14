@@ -308,7 +308,7 @@ export function LoginPage() {
   const benefits = [
     { icon: HardDrive, color: 'text-emerald-500 bg-emerald-500/10', title: t('login.benefit.local', 'Your data stays on your computer'), desc: t('login.benefit.local_desc', 'No cloud. No third-party servers. Full control.') },
     { icon: ShieldCheck, color: 'text-blue-500 bg-blue-500/10', title: t('login.benefit.open_source', '100% open source'), desc: t('login.benefit.open_source_desc', 'Transparent code. No vendor lock-in.') },
-    { icon: Globe2, color: 'text-violet-500 bg-violet-500/10', title: t('login.benefit.standards', 'International standards'), desc: t('login.benefit.standards_desc', '55,000+ cost items across 48 regional databases worldwide.') },
+    { icon: Globe2, color: 'text-violet-500 bg-violet-500/10', title: t('login.benefit.standards', 'International standards'), desc: t('login.benefit.standards_desc', '120,000+ cost items across 9 cost bases worldwide.') },
     { icon: Brain, color: 'text-amber-500 bg-amber-500/10', title: t('login.benefit.ai', 'AI-assisted estimation'), desc: t('login.benefit.ai_desc', 'Smart suggestions. You decide, AI assists.') },
     { icon: Zap, color: 'text-rose-500 bg-rose-500/10', title: t('login.benefit.allinone', 'BOQ + 4D + 5D + Tendering'), desc: t('login.benefit.allinone_desc', 'Full workflow in one tool.') },
     { icon: Users, color: 'text-cyan-500 bg-cyan-500/10', title: t('login.benefit.free', 'Free for everyone'), desc: t('login.benefit.free_desc', 'No fees. No limits. By estimators.') },
@@ -537,7 +537,7 @@ export function LoginPage() {
         {/* Stats row */}
         <div className="mt-5 flex items-center gap-5 animate-stagger-in" style={{ animationDelay: '180ms' }}>
           {[
-            { value: '55K+', label: t('login.stat_costs', { defaultValue: 'cost items' }) },
+            { value: '120K+', label: t('login.stat_costs', { defaultValue: 'cost items' }) },
             { value: '27', label: t('login.stat_langs', { defaultValue: 'languages' }) },
             { value: '48', label: t('login.stat_regions', { defaultValue: 'regions' }) },
             { value: '6', label: t('login.stat_cad', { defaultValue: 'CAD formats' }) },
@@ -1110,7 +1110,7 @@ export function LoginPage() {
               </h3>
               <div className="grid grid-cols-4 gap-3 text-center">
                 {[
-                  { value: '55,719', label: t('about.stat.costs', 'Cost items') },
+                  { value: '120,441', label: t('about.stat.costs', 'Cost items') },
                   { value: '48', label: t('about.stat.regions', 'Regional databases') },
                   { value: '27', label: t('about.stat.languages', 'Languages') },
                   { value: '100%', label: t('about.stat.free', 'Free & open source') },

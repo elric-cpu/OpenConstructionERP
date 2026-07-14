@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
@@ -574,4 +574,114 @@ class ResourcePriceService:
             result.items_unpriced,
             " [dry-run]" if dry_run else "",
         )
+        return result
+
+    # ── market repricing ──────────────────────────────────────────────────────
+
+    async def apply_market_catalog(
+        self,
+        base_region: str,
+        market_token: str,
+        rows: list[dict[str, Any]],
+    ) -> RepriceResult:
+        """Reprice a base into one market by overlaying that market's prices.
+
+        Each parsed market-CSV row carries a language-independent ``resource_code``
+        (identical to the base parquet's component codes) plus that market's
+        ``price_avg`` and ``currency``. We upsert one price-sheet row per resource
+        for ``base_region`` from the CSV, OVERWRITING whatever was there before -
+        including ``source == 'user'`` edits: switching the pricing basis to a new
+        market is an explicit, intended reset, unlike :meth:`seed_region` which
+        preserves user edits. We then re-price every work item from the refreshed
+        sheet.
+
+        CRITICAL: :meth:`reprice_region` rewrites rates but never touches
+        ``CostItem.currency``. Without also stamping the market currency onto the
+        region's cost items, the freshly repriced (e.g. GBP) rates would still
+        render under the base's home-currency label (e.g. CNY). So this method
+        finishes by updating ``oe_costs_item.currency`` for the region.
+
+        Returns the :class:`RepriceResult` from the reprice pass.
+        """
+        # The market currency is uniform across the CSV; take the first non-empty.
+        market_currency = ""
+        for row in rows:
+            candidate = str(row.get("currency") or "").strip().upper()
+            if candidate:
+                market_currency = candidate
+                break
+
+        # Load the region's existing sheet rows once for an in-memory upsert.
+        existing_rows = (
+            (await self.session.execute(select(ResourcePrice).where(ResourcePrice.region == base_region)))
+            .scalars()
+            .all()
+        )
+        existing = {row.resource_key: row for row in existing_rows}
+
+        written = 0
+        for row in rows:
+            code = str(row.get("resource_code") or "").strip()
+            name = str(row.get("name") or "").strip()
+            key = resource_key_for(code, name)
+            if key == "name:":
+                # No code and no name - nothing to key on; skip.
+                continue
+            price = _to_decimal(row.get("price_avg"))
+            rtype = (str(row.get("type") or "material").strip().lower() or "material")[:30]
+            unit = str(row.get("unit") or "").strip()[:30]
+
+            sheet_row = existing.get(key)
+            if sheet_row is None:
+                sheet_row = ResourcePrice(
+                    region=base_region,
+                    resource_key=key,
+                    resource_code=code[:100],
+                    resource_name=(name or key)[:300],
+                    resource_type=rtype,
+                    unit=unit,
+                    unit_price=str(_q2(price)),
+                    currency=market_currency,
+                    source="regional",
+                    is_active=True,
+                )
+                self.session.add(sheet_row)
+                existing[key] = sheet_row
+            else:
+                # Overwrite unconditionally - the market basis wins over any prior
+                # seeded OR user-edited price (differs from seed_region on purpose).
+                sheet_row.unit_price = str(_q2(price))
+                sheet_row.currency = market_currency or sheet_row.currency
+                sheet_row.resource_type = rtype
+                if unit:
+                    sheet_row.unit = unit
+                if code and not sheet_row.resource_code:
+                    sheet_row.resource_code = code[:100]
+                if name:
+                    sheet_row.resource_name = name[:300]
+                sheet_row.source = "regional"
+                sheet_row.is_active = True
+            written += 1
+
+        # Make the overlaid sheet visible to reprice_region's price-map read.
+        await self.session.flush()
+        logger.info(
+            "Applied market %s to %s: %d resource prices overlaid (%s)",
+            market_token,
+            base_region,
+            written,
+            market_currency or "currency unset",
+        )
+
+        # Re-price every work item from the refreshed sheet (commits the upserts).
+        result = await self.reprice_region(base_region)
+
+        # Stamp the market currency onto the region's cost items so the repriced
+        # rates render under the right currency label (reprice_region does not).
+        if market_currency:
+            await self.session.execute(
+                update(CostItem).where(CostItem.region == base_region).values(currency=market_currency)
+            )
+            await self.session.commit()
+
         return result

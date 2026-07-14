@@ -148,6 +148,12 @@ _LOCAL_CATALOG_FILE_ALIASES: dict[str, tuple[str, ...]] = {
     "ZH_CHINA": ("ZH_SHANGHAI",),
 }
 
+# Downloaded market-catalog CSVs (one national base repriced into a market).
+# Cached per base under ``markets/<base_region>/`` because the SAME market token
+# holds different prices for each base (China's London file is Chinese resources
+# at London prices; Greece's London file is Greek resources at London prices).
+_MARKET_CATALOG_CACHE_DIR = _CATALOG_CACHE_DIR / "markets"
+
 
 def _read_region_catalog_csv(region: str, folder: str) -> tuple[bytes, str]:
     """Resolve the catalog CSV bytes for one region.
@@ -246,6 +252,95 @@ def _read_region_catalog_csv(region: str, folder: str) -> tuple[bytes, str]:
         f"can reach raw.githubusercontent.com, or place the CSV at {_CATALOG_CACHE_DIR / csv_name} "
         f"and retry."
     ) from last_error
+
+
+# ── Market catalog reader (base repriced into a market) ──────────────────
+
+
+def _read_market_catalog_csv(base_region: str, market_token: str) -> tuple[bytes, str]:
+    """Resolve the bytes of one market catalog CSV for a national base.
+
+    A market catalog lives under the base's own folder,
+    ``<base_folder>/markets/DDC_CWICR_<market_token>_Catalog.csv``, where
+    ``base_folder`` is resolved from the single-source base registry. Reuses the
+    same cache-then-GitHub mechanism as :func:`_read_region_catalog_csv`, but the
+    cache is scoped per base (the same market token carries different prices for
+    each base). Runs in a worker thread (blocking I/O). Returns
+    ``(raw_bytes, source)`` with ``source`` in ``cache`` / ``github``. Raises
+    ``RuntimeError`` on an unknown base or a failed download.
+    """
+    base_folder = base_registry.github_catalog_folder(base_region)
+    if not base_folder:
+        raise RuntimeError(f"Unknown base region '{base_region}'; no catalog folder is registered for it.")
+
+    csv_name = f"DDC_CWICR_{market_token}_Catalog.csv"
+    cached = _MARKET_CATALOG_CACHE_DIR / base_region / csv_name
+
+    # 1. Per-base local cache from a previous download (1 KB floor skips a stuck
+    #    0-byte file left by an interrupted write).
+    try:
+        if cached.is_file() and cached.stat().st_size > 1000:
+            return cached.read_bytes(), "cache"
+    except OSError:
+        logger.warning("Unreadable cached market CSV at %s, ignoring", cached)
+
+    # 2. GitHub download (cached on success for the next offline run). ``folder``
+    #    and ``market_token`` are validated by the caller, but URL-quote them and
+    #    re-pin the host anyway so the SSRF trust boundary stays explicit.
+    import urllib.request
+    from urllib.parse import quote, urlparse
+
+    url = f"{_GITHUB_BASE}/{quote(base_folder, safe='/')}/markets/{quote(csv_name, safe='')}"
+    if urlparse(url).netloc != "raw.githubusercontent.com":
+        raise RuntimeError("Catalog source host is not allowed.")
+    logger.info("Downloading market catalog CSV: %s", url)
+
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": ("OpenConstructionERP (+https://datadrivenconstruction.io; DDC-CWICR-OE-2026)")},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310 - host pinned above
+            raw_bytes = resp.read()
+    except Exception as exc:
+        logger.error("Failed to download market catalog CSV from %s: %s", url, exc)
+        raise RuntimeError(
+            f"Could not download the '{market_token}' market catalog for base '{base_region}' "
+            f"({exc.__class__.__name__}: {exc}). URL: {url}. Check that this server can reach "
+            f"raw.githubusercontent.com and retry."
+        ) from exc
+
+    try:
+        (_MARKET_CATALOG_CACHE_DIR / base_region).mkdir(parents=True, exist_ok=True)
+        cached.write_bytes(raw_bytes)
+    except OSError:
+        logger.warning("Could not cache market CSV at %s", cached)
+    return raw_bytes, "github"
+
+
+async def fetch_market_catalog_rows(base_region: str, market_token: str) -> list[dict[str, Any]]:
+    """Download + parse one market catalog CSV into a list of row dicts.
+
+    Reuses the region-catalog CSV parse (``csv.DictReader``) but reads from the
+    base's ``markets/`` subfolder and returns the parsed rows WITHOUT inserting
+    any ``CatalogResource`` - the caller (the base-market reprice endpoint) folds
+    the rows straight into the resource price sheet. Each market CSV downloads
+    once and is cached per base. Raises ``RuntimeError`` on download failure.
+    """
+    import csv
+    import io
+
+    raw_bytes, source = await asyncio.to_thread(_read_market_catalog_csv, base_region, market_token)
+    logger.info(
+        "Market catalog for %s/%s resolved from %s (%d bytes)",
+        base_region,
+        market_token,
+        source,
+        len(raw_bytes),
+    )
+    text = raw_bytes.decode("utf-8-sig")
+    reader = csv.DictReader(io.StringIO(text))
+    return [dict(row) for row in reader]
 
 
 # ── Import from bundled data / cache / GitHub ────────────────────────────

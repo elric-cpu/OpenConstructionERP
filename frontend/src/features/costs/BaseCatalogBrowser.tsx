@@ -54,8 +54,16 @@ interface BaseCatalogBrowserProps {
   onLoad?: (variant: BaseVariant) => void;
   /** Pick a base (mode='select'). */
   onSelect?: (variant: BaseVariant) => void;
-  /** Make a loaded base the active one. */
+  /** Make a loaded base the active one (global family's set-active-database). */
   onSetActive?: (region: string) => void;
+  /** National market card selected: load the base + reprice into that market,
+   *  or switch the active market when already loaded. Wire this on the import
+   *  page to enable the market cards; without it, market variants behave like a
+   *  plain "load this base" card. */
+  onReprice?: (variant: BaseVariant) => void;
+  /** Active market token per base_region (e.g. { ZH_CHINA: 'GB_LONDON_en' }),
+   *  used to show the "Active market" badge vs a "Switch to" action. */
+  activeMarkets?: Record<string, string>;
   /** Seconds elapsed on the in-flight import, for the spinner label. */
   elapsedSeconds?: number;
   className?: string;
@@ -79,6 +87,10 @@ interface CardProps {
   onLoad?: (variant: BaseVariant) => void;
   onSelect?: (variant: BaseVariant) => void;
   onSetActive?: (region: string) => void;
+  /** National market variant: load the base + reprice into this market (or,
+   *  when already loaded, switch the active market). Distinct from onSetActive,
+   *  which stays for the global family's set-active-database. */
+  onReprice?: (variant: BaseVariant) => void;
   elapsedSeconds?: number;
 }
 
@@ -95,10 +107,15 @@ function BaseVariantCard({
   onLoad,
   onSelect,
   onSetActive,
+  onReprice,
   elapsedSeconds,
 }: CardProps) {
   const { t } = useTranslation();
   const shownPositions = loaded && variant.loaded_positions > 0 ? variant.loaded_positions : variant.positions;
+  // A national market card (reprice target). Only treat it as one when a
+  // reprice handler is wired (the import page); on surfaces without it, market
+  // variants fall back to the standard "load this base" action below.
+  const isMarket = variant.market_catalog !== '' && !!onReprice;
 
   const border = selected
     ? 'border-oe-blue/60 bg-oe-blue-subtle/25 ring-1 ring-oe-blue/30'
@@ -174,7 +191,41 @@ function BaseVariantCard({
       {/* Action */}
       {mode === 'load' && (
         <div className="mt-3">
-          {loaded ? (
+          {isMarket ? (
+            // National market card: not loaded -> load + price into; loaded but
+            // not the active market -> switch; loaded + active -> a badge.
+            loading ? (
+              <div className="flex w-full items-center justify-center gap-2 rounded-lg bg-oe-blue/10 px-2.5 py-1.5 text-xs font-medium text-oe-blue">
+                <Loader2 size={13} className="animate-spin" />
+                {t('costs.base_loading', { defaultValue: 'Loading' })}
+                {typeof elapsedSeconds === 'number' && elapsedSeconds > 0 ? ` ${elapsedSeconds}s` : ''}
+              </div>
+            ) : loaded && active ? (
+              <div className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-oe-blue/10 px-2.5 py-1.5 text-xs font-semibold text-oe-blue">
+                <Check size={13} />
+                {t('costs.base_market_active', { defaultValue: 'Active market' })}
+              </div>
+            ) : loaded ? (
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => onReprice?.(variant)}
+                className="w-full rounded-lg border border-border-light px-2.5 py-1.5 text-xs font-medium text-content-secondary transition-colors hover:bg-surface-secondary disabled:opacity-50"
+              >
+                {t('costs.base_market_switch', { defaultValue: 'Switch to {{market}}', market: variant.market })}
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => onReprice?.(variant)}
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-oe-blue px-2.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-oe-blue/90 disabled:opacity-50"
+              >
+                <Download size={13} />
+                {t('costs.base_market_load', { defaultValue: 'Price into {{market}}', market: variant.market })}
+              </button>
+            )
+          ) : loaded ? (
             <button
               type="button"
               disabled={active}
@@ -227,14 +278,27 @@ export function BaseCatalogBrowser({
   onLoad,
   onSelect,
   onSetActive,
+  onReprice,
+  activeMarkets,
   elapsedSeconds,
   className = '',
 }: BaseCatalogBrowserProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
 
-  const isLoaded = (v: BaseVariant) => (loadedRegions ? loadedRegions.has(v.region) : v.loaded);
+  // Loaded is a property of the BASE, not the card: every card of a base shares
+  // its base_region, so once the base is loaded all its market cards read as
+  // loaded (the active one is distinguished separately).
+  const isLoaded = (v: BaseVariant) => (loadedRegions ? loadedRegions.has(v.base_region) : v.loaded);
   const anyLoading = loadingRegion !== null;
+
+  // Whether a card is the active choice. A national market card is active when
+  // its base is loaded and its market_catalog is the active market for that
+  // base; a home/global card is active via the set-active-database mechanism.
+  const isActive = (v: BaseVariant) =>
+    v.market_catalog !== ''
+      ? isLoaded(v) && (activeMarkets?.[v.base_region] ?? '') === v.market_catalog
+      : activeRegion === v.variant_id;
 
   // China first, the Global CWICR (GESN / FER / TER) base second, then the rest.
   const orderedFamilies = useMemo(() => orderFamilies(catalog.families), [catalog.families]);
@@ -267,27 +331,33 @@ export function BaseCatalogBrowser({
     [orderedFamilies, query],
   );
 
-  const loadedTotal = catalog.families.reduce(
-    (acc, f) => acc + f.variants.filter((v) => isLoaded(v)).length,
-    0,
-  );
+  // Count DISTINCT loaded bases: every card of a base shares its base_region, so
+  // a naive per-card count would report a loaded base as its full market count.
+  const loadedTotal = new Set(
+    catalog.families.flatMap((f) => f.variants.filter((v) => isLoaded(v)).map((v) => v.base_region)),
+  ).size;
+  // Total work-item positions across every base family (#20). Each family's
+  // representative count summed, floored to thousands and shown as "120,000+".
+  const totalPositions = catalog.families.reduce((acc, f) => acc + f.positions, 0);
+  const positionsRounded = Math.floor(totalPositions / 1000) * 1000;
   const noResults = familyRows.length === 0;
 
   const renderCard = (variant: BaseVariant, title: string, chip: string) => (
     <BaseVariantCard
-      key={variant.region}
+      key={variant.variant_id}
       variant={variant}
       title={title}
       chip={chip}
       loaded={isLoaded(variant)}
-      loading={loadingRegion === variant.region}
-      active={activeRegion === variant.region}
-      selected={selectedRegion === variant.region}
-      disabled={anyLoading && loadingRegion !== variant.region}
+      loading={loadingRegion === variant.variant_id}
+      active={isActive(variant)}
+      selected={selectedRegion === variant.variant_id}
+      disabled={anyLoading && loadingRegion !== variant.variant_id}
       mode={mode}
       onLoad={onLoad}
       onSelect={onSelect}
       onSetActive={onSetActive}
+      onReprice={onReprice}
       elapsedSeconds={elapsedSeconds}
     />
   );
@@ -315,6 +385,11 @@ export function BaseCatalogBrowser({
             bases: catalog.total_bases,
             loaded: loadedTotal,
           })}
+          {' · '}
+          {t('costs.base_summary_positions', {
+            defaultValue: '{{positions}}+ positions',
+            positions: positionsRounded.toLocaleString('en-US'),
+          })}
         </span>
       </div>
 
@@ -336,19 +411,16 @@ export function BaseCatalogBrowser({
           // (GESN / FER / TER norm lineage) carries the Russian flag from its
           // backend origin_flag.
           const flagCode = family.origin_flag;
-          const loadedInFamily = variants.filter((v) => isLoaded(v)).length;
+          const loadedInFamily = new Set(
+            variants.filter((v) => isLoaded(v)).map((v) => v.base_region),
+          ).size;
           const multiMarket = family.market_count > 1;
           // Keep a family open while searching, when the user opened it, or when
-          // it holds the loading / active / selected base (so state stays shown).
+          // it holds the loading / active / selected card (so state stays shown).
           const open =
             searching ||
             openFamilies.has(family.key) ||
-            variants.some(
-              (v) =>
-                v.region === loadingRegion ||
-                v.region === activeRegion ||
-                v.region === selectedRegion,
-            );
+            variants.some((v) => v.variant_id === loadingRegion || v.variant_id === selectedRegion || isActive(v));
           return (
             <section key={family.key}>
               <button

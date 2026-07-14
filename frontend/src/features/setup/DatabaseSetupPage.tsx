@@ -468,7 +468,14 @@ export function DatabaseSetupPage() {
     setLoadAllActive(true);
     loadAllAbortRef.current = false;
 
-    const pending = variants.filter((v) => !loaded.has(v.region));
+    // Dedupe by region: the catalog now carries many market cards per base that
+    // all share one region, so load each unique base only once.
+    const seenRegions = new Set<string>();
+    const pending = variants.filter((v) => {
+      if (loaded.has(v.region) || seenRegions.has(v.region)) return false;
+      seenRegions.add(v.region);
+      return true;
+    });
     let processed = 0;
 
     for (const v of pending) {

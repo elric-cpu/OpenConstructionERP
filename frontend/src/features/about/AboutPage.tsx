@@ -293,7 +293,7 @@ export function AboutPage() {
               shorter tile readable at narrower widths. */}
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2.5">
             {[
-              { value: '55K+', label: t('about.stat_costs', { defaultValue: 'Cost Items (CWICR)' }) },
+              { value: '120K+', label: t('about.stat_costs', { defaultValue: 'Cost Items' }) },
               { value: '27', label: t('about.stat_langs', { defaultValue: 'Languages' }) },
               { value: '48', label: t('about.stat_regions', { defaultValue: 'Regional Databases' }) },
               { value: '6', label: t('about.stat_cad_formats', { defaultValue: 'CAD/BIM formats supported' }) },

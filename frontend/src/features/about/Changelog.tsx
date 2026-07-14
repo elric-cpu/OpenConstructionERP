@@ -38,6 +38,13 @@ interface ChangelogEntry {
 // date, title and meaning intact; trim the prose, not the facts.
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '11.7.0',
+    date: '2026-07-14',
+    summary:
+      'Each national cost base now opens market by market like the global base, and picking a market reprices the base into that market at its own price level and currency. This release also finishes removing third-party cost-index product names and refreshes the interface translations across all 27 languages.',
+    tag: 'NEW',
+  },
+  {
     version: '11.6.2',
     date: '2026-07-14',
     tag: 'FIX',
