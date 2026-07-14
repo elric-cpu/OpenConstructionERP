@@ -12102,7 +12102,7 @@
         "applicationSubCategory": "Construction Estimating Software",
         "operatingSystem": "Linux, macOS, Windows, Docker, Kubernetes",
         "url": "https://openconstructionerp.com/",
-        "description": "Open-source construction ERP with AI-powered BOQ, multi-CAD ingest (DWG, RVT, IFC), 55,000+ cost items, real-time collaboration and 20-language i18n. Self-host under AGPL-3.0.",
+        "description": "Open-source construction ERP with AI-powered BOQ, multi-CAD ingest (DWG, RVT, IFC), 55,000+ cost items, real-time collaboration and 27-language i18n. Self-host under AGPL-3.0.",
         "softwareVersion": "7.10.0",
         "releaseNotes": "Own cost catalogues from Excel and CSV, offline regional cost data and earned value recording on the 5D cost model.",
         "license": "https://www.gnu.org/licenses/agpl-3.0.html",
@@ -12127,11 +12127,11 @@
         ],
         "featureList": [
           "AI quantity takeoff from PDF and CAD",
-          "Multi-CAD ingest (DWG, RVT, IFC, DGN)",
+          "Multi-CAD ingest (DWG, RVT, IFC, DGN, DXF, GLB)",
           "55,000+ ready-to-use cost items",
           "Configurable validation rule sets",
           "Real-time multiplayer via Yjs CRDT",
-          "20 languages in core i18n",
+          "27 languages in core i18n",
           "Modular plugin architecture",
           "GAEB XML 3.3 import/export"
         ]
@@ -12232,7 +12232,7 @@
             "name": "Which languages and regions are supported?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "20 languages ship in the core i18n. Cost database labels, validation rule sets and classification trees are per-region modules - pick the ones you need, add your own. No hard-coded currency, no hard-coded date format."
+              "text": "27 languages ship in the core i18n. Cost database labels, validation rule sets and classification trees are per-region modules - pick the ones you need, add your own. No hard-coded currency, no hard-coded date format."
             }
           }
         ]
@@ -13276,7 +13276,7 @@
 
     <!-- MOBILE-ONLY module grid - replaces the decorative hex ring below 960px -->
     <div class="modules-mobile" aria-label="Platform modules">
-      <h2 class="modules-mobile-title" data-i18n="hero.mobile_modules_title">110+ built-in modules</h2>
+      <h2 class="modules-mobile-title" data-i18n="hero.mobile_modules_title">161 built-in modules</h2>
       <div class="modules-mobile-grid">
         <a class="mm-cell" href="#tour" style="--tint: var(--accent);">
           <span class="mm-ico" aria-hidden="true">◫</span>
@@ -13893,7 +13893,7 @@
             <span class="tn-num">02</span>
             <span class="tn-body">
               <span class="tn-title" data-i18n="demo.tab2_title">Cost database</span>
-              <span class="tn-hint" data-i18n="demo.tab2_hint">55,000 priced positions &middot; 110+ modules.</span>
+              <span class="tn-hint" data-i18n="demo.tab2_hint">55,000 priced positions &middot; 161 modules.</span>
             </span>
           </button>
         </li>
@@ -16347,8 +16347,8 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
         </span>
         <span class="seal-body">
-          <span class="seal-name" data-i18n="assurance.langs_name">20 languages built in</span>
-          <span class="seal-desc" data-i18n="assurance.langs_desc">The interface and the cost data ship in 20 languages. Adding another is a single JSON file, no rebuild.</span>
+          <span class="seal-name" data-i18n="assurance.langs_name">27 languages built in</span>
+          <span class="seal-desc" data-i18n="assurance.langs_desc">The interface and the cost data ship in 27 languages. Adding another is a single JSON file, no rebuild.</span>
         </span>
       </div>
 
@@ -16425,13 +16425,13 @@
       </div>
       <div class="number-card reveal delay-2" style="--tint: var(--accent-2)">
         <div class="number-eyebrow" data-i18n="numbers.card2_eyebrow">CAD formats</div>
-        <div class="number-value" data-count="4">0</div>
-        <p class="number-label" data-i18n="numbers.card2_label">native CAD ingest, DWG, RVT, IFC and DGN into one canonical format.</p>
-        <div class="number-foot">DWG &middot; RVT &middot; IFC &middot; DGN</div>
+        <div class="number-value" data-count="6">0</div>
+        <p class="number-label" data-i18n="numbers.card2_label">native CAD ingest, DWG, RVT, IFC, DGN, DXF and GLB into one canonical format.</p>
+        <div class="number-foot">DWG &middot; RVT &middot; IFC &middot; DGN &middot; DXF &middot; GLB</div>
       </div>
       <div class="number-card reveal delay-3" style="--tint: var(--accent-3)">
         <div class="number-eyebrow" data-i18n="numbers.card3_eyebrow">modules</div>
-        <div class="number-value" data-count="110" data-suffix="+">0<span class="suffix">+</span></div>
+        <div class="number-value" data-count="161">0</div>
         <p class="number-label" data-i18n="numbers.card3_label">plug-in modules covering the full site workflow, projects, BOQ, takeoff, tenders and more.</p>
         <div class="number-foot" data-i18n="numbers.card3_foot">add &amp; remove like packages</div>
       </div>
@@ -16520,7 +16520,7 @@
             <td><span class="compare-cross">✕</span></td>
           </tr>
           <tr>
-            <td class="feature-col" data-i18n="compare.row_20lang">20 languages in core i18n</td>
+            <td class="feature-col" data-i18n="compare.row_20lang">27 languages in core i18n</td>
             <td class="us-cell"><span class="compare-check">&#10003;</span></td>
             <td><span class="compare-partial">~</span></td>
             <td><span class="compare-cross">✕</span></td>
@@ -17331,7 +17331,7 @@ manifest = <span class="tok-fn">ModuleManifest</span>(
           <li data-i18n="pricing.tier1_feature1">All 55,000+ cost items</li>
           <li data-i18n="pricing.tier1_feature2">Multi-CAD ingest (DWG / RVT / IFC / DGN)</li>
           <li data-i18n="pricing.tier1_feature3">BOQ editor + validation pipeline</li>
-          <li data-i18n="pricing.tier1_feature4">All 110+ modules out of the box</li>
+          <li data-i18n="pricing.tier1_feature4">All 161 modules out of the box</li>
           <li data-i18n="pricing.tier1_feature5">Community support on GitHub</li>
           <li data-i18n="pricing.tier1_feature6">AGPL-3.0 license</li>
         </ul>
@@ -18067,7 +18067,7 @@ manifest = <span class="tok-fn">ModuleManifest</span>(
           </span>
         </summary>
         <div class="faq-a" data-i18n-html="faq.a12">
-          20 languages ship in the core i18n. Cost database labels, validation rule sets and
+          27 languages ship in the core i18n. Cost database labels, validation rule sets and
           classification trees are per-region modules, pick the ones you need, add your own.
           No hard-coded currency, no hard-coded date format.
         </div>
@@ -19051,7 +19051,7 @@ manifest = <span class="tok-fn">ModuleManifest</span>(
           </a>
         </div>
         <div class="partners-teaser-proof">
-          55k+ cost items · 110+ modules · Open-source ERP for construction
+          55k+ cost items · 161 modules · Open-source ERP for construction
         </div>
       </div>
     </div>
@@ -19670,7 +19670,7 @@ manifest = <span class="tok-fn">ModuleManifest</span>(
               <h4 class="pa-side-title"><em>Practice</em> areas</h4>
               <p class="pa-side-desc">5 disciplines with <b>platform vs partner</b> column per practice. What ships in v8.6.0, what's still partner work.</p>
               <div class="pa-side-tags">
-                <span class="pa-side-tag is-accent">110+ modules</span>
+                <span class="pa-side-tag is-accent">161 modules</span>
                 <span class="pa-side-tag">BIM · Cost · Takeoff</span>
                 <span class="pa-side-tag">Validate · Tender</span>
               </div>
@@ -20496,7 +20496,7 @@ manifest = <span class="tok-fn">ModuleManifest</span>(
       ];
       const nowData = [
         { n: '01', name: 'BOQ editor',       desc: 'Build bills of quantities, priced rows' },
-        { n: '02', name: 'Cost database',    desc: '55,000 priced positions \u00B7 110+ modules' },
+        { n: '02', name: 'Cost database',    desc: '55,000 priced positions \u00B7 161 modules' },
         { n: '03', name: 'BIM \u2192 BOQ',     desc: 'Link IFC and RVT models to estimates' },
         { n: '04', name: 'DWG \u2192 BOQ', desc: 'DWG and DGN pushed into BOQ' },
         { n: '05', name: 'PDF \u2192 BOQ',     desc: 'Click-to-measure on PDF drawings' },
