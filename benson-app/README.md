@@ -7,7 +7,7 @@ Benson Home Solutions' focused construction operating system. This application i
 - English, USD, imperial units, United States, Oregon, Harney County
 - Current release: durable website CRM intake, private customer uploads, staff lead queue, Google Workspace roles, immutable audit events, and confirmation-gated AI drafts
 - Planned modules: estimating, jobs, schedules, field records, documents, procurement, equipment, quality, safety, service, invoicing, and customer/subcontractor portals
-- QuickBooks Online remains the planned accounting system of record; this release defines ownership policy but does not yet sync accounting data
+- The accounting provider remains the planned financial system of record; this release defines ownership policy but does not yet sync accounting data
 - AI drafts route through the configured Free Claude Code gateway; this release does not execute mutations or external sends
 
 ## Development

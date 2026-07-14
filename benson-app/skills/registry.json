@@ -53,7 +53,7 @@
       "id": "budget-variance-analyzer",
       "label": "Analyze budget variance",
       "category": "project_controls",
-      "description": "Compare approved budget, commitments, and QuickBooks actuals.",
+      "description": "Compare approved budget, commitments, and accounting actuals.",
       "allowed_roles": ["owner", "admin", "estimator_pm", "accounting"],
       "source_path": "1_DDC_Toolkit/Cost-Management/budget-variance-analyzer/SKILL.md"
     },
@@ -61,7 +61,7 @@
       "id": "cash-flow-forecaster",
       "label": "Forecast project cash flow",
       "category": "project_controls",
-      "description": "Draft a cash-flow forecast from approved schedule and QuickBooks facts.",
+      "description": "Draft a cash-flow forecast from approved schedule and accounting facts.",
       "risk": "financial",
       "allowed_roles": ["owner", "admin", "accounting"],
       "source_path": "1_DDC_Toolkit/Cost-Management/cash-flow-forecaster/SKILL.md"

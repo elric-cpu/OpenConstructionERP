@@ -75,7 +75,7 @@ BENSON_MODULES = [
         id="finance", label="Job Cost & Billing", group="finance", roles=FINANCE_STAFF
     ),
     ModuleDefinition(
-        id="quickbooks", label="QuickBooks Sync", group="finance", roles=FINANCE_STAFF
+        id="accounting", label="Accounting Sync", group="finance", roles=FINANCE_STAFF
     ),
     ModuleDefinition(
         id="portal", label="Customer Portal", group="portal", roles=STAFF | {Role.CUSTOMER}

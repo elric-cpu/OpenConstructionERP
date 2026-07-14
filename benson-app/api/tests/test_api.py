@@ -15,7 +15,7 @@ from app.domain import Role
 from app.main import app
 from app.object_storage import delete_upload, detect_upload_type, store_upload
 from app.policy import ActionRisk, evaluate_agent_action
-from app.quickbooks import SYNC_OWNERSHIP, SyncDirection, SyncEnvelope
+from app.accounting_provider import SYNC_OWNERSHIP, SyncDirection, SyncEnvelope
 from app.signing import signature_for
 from app.skill_registry import load_registry
 from app.storage import operations_store
@@ -352,16 +352,16 @@ def test_ai_skill_rejects_unknown_skill_and_gateway_failure_has_no_mutation(
     assert failed.json()["proposal_id"] is None
 
 
-def test_quickbooks_contract_encodes_sync_ownership() -> None:
+def test_accounting_provider_contract_encodes_sync_ownership() -> None:
     envelope = SyncEnvelope(
         entity_type="invoice",
         entity_id="invoice-1",
-        direction=SyncDirection.TO_QUICKBOOKS,
+        direction=SyncDirection.TO_PROVIDER,
         idempotency_key="invoice-1-version-1",
         payload={"amount": "100.00"},
     )
-    assert envelope.direction is SyncDirection.TO_QUICKBOOKS
-    assert SYNC_OWNERSHIP["payment"] == "quickbooks_then_erp"
+    assert envelope.direction is SyncDirection.TO_PROVIDER
+    assert SYNC_OWNERSHIP["payment"] == "provider_then_erp"
 
 
 def test_agent_policy_requires_confirmation_for_external_and_money_actions() -> None:

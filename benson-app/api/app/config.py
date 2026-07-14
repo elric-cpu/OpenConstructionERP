@@ -34,9 +34,9 @@ class Settings(BaseSettings):
     ai_max_steps: int = Field(default=12, ge=1, le=30)
     ai_timeout_seconds: int = Field(default=90, ge=5, le=300)
 
-    quickbooks_client_id: str = ""
-    quickbooks_client_secret: str = ""
-    quickbooks_environment: Literal["sandbox", "production"] = "sandbox"
+    accounting_provider_client_id: str = ""
+    accounting_provider_client_secret: str = ""
+    accounting_provider_environment: Literal["sandbox", "production"] = "sandbox"
     upload_base_url: AnyHttpUrl = AnyHttpUrl("https://erp.bensonhomesolutions.com")
     upload_max_bytes: int = Field(default=15_000_000, ge=1_000_000, le=25_000_000)
     upload_session_hours: int = Field(default=72, ge=1, le=168)
