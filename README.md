@@ -238,7 +238,7 @@ Each block below is a short GIF cut from the full walkthrough above - same order
 <tr>
 <td align="center" width="50%">
 <strong><picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme-icons/person-dark.svg"><img src="docs/readme-icons/person-light.svg" width="14" align="center" alt=""></picture> 1 · Role-Based Onboarding</strong><br/>
-<em>Sign in as Admin / Estimator / Manager - the wizard pre-selects the right 17 of 46 modules for your role</em><br/><br/>
+<em>Sign in as Admin / Estimator / Manager - the wizard pre-selects the right 17 of 161 modules for your role</em><br/><br/>
 <img src="docs/gifs/07_Role_Based_Onboarding.gif" alt="Role-Based Onboarding" width="400" />
 </td>
 <td align="center" width="50%">
@@ -421,11 +421,11 @@ Build professional cost estimates with a powerful BOQ editor. The full lifecycle
 
 ### <picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme-icons/database-dark.svg"><img src="docs/readme-icons/database-light.svg" width="14" align="center" alt=""></picture> Cost Databases & Resource Catalog
 
-<img src="docs/screenshots/feature-databases.jpg" alt="Cost Database - 55,000+ items across 11 regions" width="800" />
+<img src="docs/screenshots/feature-databases.jpg" alt="Cost Database - 55,000+ items across 30 markets plus 8 national bases" width="800" />
 
 Access the world's construction pricing data:
 
-- **CWICR database** - 55,000+ cost items covering all major construction trades. Available in 9 languages with 11 regional price sets
+- **CWICR database** - 55,000+ cost items covering all major construction trades, repriced across 30 regional markets. Plus 8 national bases built on each country's own norm system (China, Turkey, Brazil, Spain, Italy, Greece, Vietnam, Indonesia)
 - **Smart search** - Find items by description, code, or classification. AI-powered semantic search matches meaning, not just keywords ("concrete wall" finds "reinforced partition C30/37")
 - **Resource catalog** - 7,000+ materials, equipment, labor rates, and operators. Build custom assemblies from catalog items
 - **Regional pricing** - Automatic price adjustment based on project location. Compare rates across regions
