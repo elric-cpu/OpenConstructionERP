@@ -4,12 +4,12 @@
  * Construction cost benchmark data.
  *
  * Sources (typical planning benchmarks compiled from public datasets, not a live feed):
- * - BKI Baukosten Gebaeude 2024 (Germany)
+ * - German building-cost benchmark 2024 (Germany)
  * - Statistik Austria Baukostenindex 2024 (Austria)
  * - SIA / BFS Schweiz 2024 (Switzerland)
  * - BCIS Building Cost Information Service 2024 (United Kingdom)
- * - ENR Construction Cost Index 2024 (United States)
- * - Batiprix / UNTEC 2024 (France)
+ * - US construction cost index 2024 (United States)
+ * - French unit-price reference 2024 (France)
  * - Bouwkosten Kompas 2024 (Netherlands)
  * - ITeC BEDEC 2024 (Spain)
  * - DEI Tipologie Edilizie 2024 (Italy)
@@ -87,7 +87,7 @@ export interface BenchmarkRange {
   /** confidence label derived from sampleSize + range spread + recency. */
   confidence: 'high' | 'medium' | 'low';
 
-  /** provenance, e.g. 'BKI Baukosten Gebaeude 2024' */
+  /** provenance, e.g. 'German building-cost benchmark (2024)' */
   source: string;
   /** survey or publication year */
   sourceYear: number;
@@ -453,12 +453,12 @@ const AREA_PER_UNIT: Partial<Record<BuildingType, { unitId: string; label: strin
 
 /** Provenance per region (source string, year, currency). */
 const PROVENANCE: Record<BenchmarkRegion, { source: string; sourceYear: number; currency: CurrencyCode }> = {
-  DE: { source: 'German building cost benchmarks 2024', sourceYear: 2024, currency: 'EUR' },
+  DE: { source: 'German building-cost benchmark (2024)', sourceYear: 2024, currency: 'EUR' },
   AT: { source: 'Statistik Austria Baukostenindex 2024', sourceYear: 2024, currency: 'EUR' },
   CH: { source: 'SIA / BFS Schweiz 2024', sourceYear: 2024, currency: 'CHF' },
   UK: { source: 'BCIS Building Cost Information Service 2024', sourceYear: 2024, currency: 'GBP' },
-  US: { source: 'US construction cost index 2024', sourceYear: 2024, currency: 'USD' },
-  FR: { source: 'Batiprix / UNTEC 2024', sourceYear: 2024, currency: 'EUR' },
+  US: { source: 'US construction cost index (2024)', sourceYear: 2024, currency: 'USD' },
+  FR: { source: 'French unit-price reference (2024)', sourceYear: 2024, currency: 'EUR' },
   NL: { source: 'Bouwkosten Kompas 2024', sourceYear: 2024, currency: 'EUR' },
   ES: { source: 'ITeC BEDEC 2024', sourceYear: 2024, currency: 'EUR' },
   IT: { source: 'DEI Tipologie Edilizie 2024', sourceYear: 2024, currency: 'EUR' },

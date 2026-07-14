@@ -368,7 +368,7 @@ export function RequestCustomModuleDialog({ open, onClose }: Props) {
               {
                 icon: Plug,
                 key: 'modules.request_chip_integration',
-                fallback: 'SAP / construction management / MS Project integrations',
+                fallback: 'ERP, construction management and scheduling integrations',
               },
               {
                 icon: BarChart3,
