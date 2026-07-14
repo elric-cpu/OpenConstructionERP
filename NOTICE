@@ -166,15 +166,18 @@ into the database without permission.
 Cryptographic Notice
 ------------------------------------------------------------------------
 
-This software contains cryptographic functionality for authentication
-(password hashing with bcrypt, JSON Web Token signing). Export is
-classified under US EAR 740.17 (TSU mass-market exemption) and EU
-Regulation 2021/821 (dual-use item classification). The software is not
-authorised for distribution to, or use by, persons or entities located
-in jurisdictions subject to comprehensive US sanctions administered by
-the Office of Foreign Assets Control (OFAC), including but not limited
-to Cuba, Iran, North Korea, Syria, and the Crimea/Donetsk/Luhansk
-regions of Ukraine.
+This software contains only standard, published cryptography used for
+authentication (bcrypt password hashing and signed JSON Web Tokens) and
+no bulk data encryption. Cryptography of this kind, published as open
+source, needs no special export licence: it is not subject to US EAR
+control as encryption (15 CFR 742.15(b)) and is excluded under the EU
+dual-use Cryptography Note. The software may not be exported to or used
+in comprehensively sanctioned destinations (currently Cuba, Iran, North
+Korea, and the Crimea, Donetsk and Luhansk regions of Ukraine) or by
+sanctioned or denied parties. As with any software, you remain
+responsible for complying with the export, re-export, import, use and
+sanctions laws that apply to you. This notice is information, not legal
+advice.
 
 ------------------------------------------------------------------------
 AI / Machine Learning Notice

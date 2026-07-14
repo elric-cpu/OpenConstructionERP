@@ -1089,12 +1089,14 @@ by any third-party trademark owners. Full attributions in [NOTICE](NOTICE).
 
 ## Export control
 
-This software contains cryptographic functionality (bcrypt password
-hashing, JWT signing). Export is classified under **US EAR 740.17** (TSU
-mass-market exemption) and **EU Regulation 2021/821** (dual-use). The
-Software is **not authorised** for download, use, or re-export to
-jurisdictions subject to comprehensive OFAC sanctions. See [NOTICE](NOTICE)
-for the full notice.
+OpenConstructionERP is open-source software, available worldwide. It uses
+only standard cryptography for sign-in (bcrypt password hashing and signed
+JSON Web Tokens), which as published open source needs no special export
+licence. It may not be used in or exported to comprehensively sanctioned
+places (currently Cuba, Iran, North Korea, and the Crimea, Donetsk and
+Luhansk regions of Ukraine) or by sanctioned parties, and you remain
+responsible for the export and sanctions laws that apply to you. See
+[NOTICE](NOTICE) for details.
 
 ## License
 
