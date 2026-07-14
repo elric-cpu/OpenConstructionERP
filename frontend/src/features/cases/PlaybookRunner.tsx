@@ -136,32 +136,27 @@ function FlowConnector({ vertical = false }: { vertical?: boolean }): ReactEleme
         className="flex shrink-0 flex-col items-center justify-center"
         aria-hidden="true"
       >
-        <span className="h-3 w-px bg-oe-blue/30" />
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-oe-blue/10 text-oe-blue-text ring-1 ring-inset ring-oe-blue/25">
-          <ArrowDown size={13} strokeWidth={2.4} />
-        </span>
-        <span className="h-3 w-px bg-oe-blue/30" />
+        <span className="h-3 w-px bg-oe-blue/20" />
+        <ArrowDown size={26} strokeWidth={1.75} className="text-oe-blue/40" />
+        <span className="h-3 w-px bg-oe-blue/20" />
       </div>
     );
   }
   return (
     <div className="flex shrink-0 items-center justify-center" aria-hidden="true">
-      {/* Desktop: a short gradient rail into a soft circular arrow node, so the
-          hand-off between blocks reads as a deliberate step, not a bare arrow. */}
+      {/* Desktop: a large, quiet arrow between a pair of soft rails, so the
+          hand-off between blocks reads as a deliberate step without a heavy
+          badge crowding the two data columns. */}
       <div className="hidden items-center lg:flex">
-        <span className="h-px w-2.5 bg-gradient-to-r from-transparent to-oe-blue/40" />
-        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-oe-blue/10 text-oe-blue-text shadow-sm ring-1 ring-inset ring-oe-blue/25">
-          <ArrowRight size={14} strokeWidth={2.4} />
-        </span>
-        <span className="h-px w-2.5 bg-gradient-to-r from-oe-blue/40 to-transparent" />
+        <span className="h-px w-3 bg-gradient-to-r from-transparent to-oe-blue/25" />
+        <ArrowRight size={28} strokeWidth={1.75} className="text-oe-blue/40" />
+        <span className="h-px w-3 bg-gradient-to-r from-oe-blue/25 to-transparent" />
       </div>
-      {/* Mobile: the same node, stacked between rows. */}
+      {/* Mobile: the same quiet arrow, stacked between rows. */}
       <div className="flex flex-col items-center lg:hidden">
-        <span className="h-3 w-px bg-oe-blue/30" />
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-oe-blue/10 text-oe-blue-text ring-1 ring-inset ring-oe-blue/25">
-          <ArrowDown size={13} strokeWidth={2.4} />
-        </span>
-        <span className="h-3 w-px bg-oe-blue/30" />
+        <span className="h-3 w-px bg-oe-blue/20" />
+        <ArrowDown size={26} strokeWidth={1.75} className="text-oe-blue/40" />
+        <span className="h-3 w-px bg-oe-blue/20" />
       </div>
     </div>
   );
@@ -625,7 +620,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
             </p>
           </div>
           <ol
-            className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:flex xl:max-h-[calc(100vh-3rem)] xl:flex-col xl:overflow-y-auto xl:pr-1"
+            className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3 xl:flex xl:max-h-[calc(100vh-3rem)] xl:flex-col xl:overflow-y-auto xl:pr-1"
             aria-label={title}
           >
             {playbook.steps.map((step, i) => {
@@ -655,15 +650,19 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                       "focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40",
                       isCurrent
                         ? "border-oe-blue bg-oe-blue-subtle shadow-sm ring-1 ring-inset ring-oe-blue/30"
-                        : "border-border-light bg-surface-primary hover:border-oe-blue/40 hover:bg-surface-secondary/40",
+                        : done
+                          ? "border-semantic-success/30 bg-semantic-success/10 hover:border-semantic-success/50"
+                          : "border-border-light bg-surface-primary hover:border-oe-blue/40 hover:bg-surface-secondary/40",
                     )}
                   >
                     <span
                       className={clsx(
                         "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold",
-                        done || isCurrent
-                          ? "bg-oe-blue text-white"
-                          : "bg-surface-secondary text-content-secondary ring-1 ring-inset ring-border-light",
+                        done
+                          ? "bg-semantic-success text-white"
+                          : isCurrent
+                            ? "bg-oe-blue text-white"
+                            : "bg-surface-secondary text-content-secondary ring-1 ring-inset ring-border-light",
                       )}
                       aria-hidden="true"
                     >
@@ -699,9 +698,9 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                   {i < playbook.steps.length - 1 && (
                     <span
                       aria-hidden="true"
-                      className="my-1 flex justify-center text-oe-blue sm:hidden xl:flex"
+                      className="my-0.5 flex justify-center text-oe-blue/40 sm:hidden xl:flex"
                     >
-                      <ArrowDown size={22} strokeWidth={2.75} />
+                      <ArrowDown size={15} strokeWidth={2.25} />
                     </span>
                   )}
                 </li>
