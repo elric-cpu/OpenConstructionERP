@@ -5,8 +5,8 @@ from pydantic import BaseModel, Field
 
 
 class SyncDirection(StrEnum):
-    TO_QUICKBOOKS = "to_quickbooks"
-    FROM_QUICKBOOKS = "from_quickbooks"
+    TO_PROVIDER = "to_provider"
+    FROM_PROVIDER = "from_provider"
 
 
 class SyncEnvelope(BaseModel):
@@ -18,10 +18,10 @@ class SyncEnvelope(BaseModel):
 
 
 SYNC_OWNERSHIP = {
-    "customer": "erp_approved_then_quickbooks",
-    "invoice": "erp_approved_then_quickbooks",
-    "payment": "quickbooks_then_erp",
-    "expense": "quickbooks_then_erp",
+    "customer": "erp_approved_then_provider",
+    "invoice": "erp_approved_then_provider",
+    "payment": "provider_then_erp",
+    "expense": "provider_then_erp",
     "estimate": "erp_only",
     "job_cost": "erp_operational_rollup",
 }

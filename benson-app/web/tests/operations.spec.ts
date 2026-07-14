@@ -28,3 +28,39 @@ test("empty states never fabricate operational records", async ({ page }) => {
   await expect(page.getByText("No active jobs yet")).toBeVisible();
   await expect(page.getByText("No visits scheduled")).toBeVisible();
 });
+
+test("authenticated staff see persisted website leads", async ({ page }) => {
+  await page.addInitScript(() => sessionStorage.setItem("benson-google-credential", "test-token"));
+  await page.route("**/api/v1/dashboard", async (route) => {
+    expect(route.request().headers().authorization).toBe("Bearer test-token");
+    await route.fulfill({
+      json: {
+        metrics: { new_leads: 1, active_jobs: 0, open_tasks: 0, unbilled_work: 0 },
+        attention: [],
+        schedule: [],
+        jobs: [],
+      },
+    });
+  });
+  await page.route("**/api/benson/v1/leads?limit=6", async (route) => {
+    await route.fulfill({
+      json: {
+        leads: [
+          {
+            id: "lead-1",
+            priority: "urgent",
+            name: "Harney County homeowner",
+            service_type: "Window replacement",
+            city: "Burns",
+            created_at: "2026-07-14T12:00:00Z",
+          },
+        ],
+      },
+    });
+  });
+  await page.goto("/");
+  await expect(page.getByText("Harney County homeowner")).toBeVisible();
+  await expect(page.getByText("Window replacement · Burns")).toBeVisible();
+  await expect(page.getByText("urgent", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+});
