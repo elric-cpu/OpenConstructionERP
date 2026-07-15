@@ -14,7 +14,7 @@ Last updated: 2026-07-15 UTC. This record covers the isolated production candida
 
 The live candidate returned HTTP 200 from `/api/health`, reported `environment=production` and `storage=postgresql`, rejected unauthenticated staff lead access with HTTP 401, and rejected unauthenticated notification-worker access with HTTP 401.
 
-The exact pinned Operations image is also staged on the existing production-domain Cloud Run service as revision `openconstructionerp-00012-kiz`, tagged `operations-candidate`, at zero percent traffic. Its tagged `/api/health` endpoint returned HTTP 200 with production PostgreSQL storage. Public traffic remains 100% on legacy revision `openconstructionerp-00011-hzr`; no domain mapping or public traffic was changed. This permits the approved-window cutover and rollback to use Cloud Run traffic updates without deleting and recreating the `erp.bensonhomesolutions.com` mapping.
+The exact pinned Operations image is also staged on the existing production-domain Cloud Run service as revision `openconstructionerp-00012-kiz`, tagged `operations-candidate`, at zero percent traffic. Its tagged `/api/health` endpoint returned HTTP 200 with production PostgreSQL storage. The previously rehearsed Operations image is staged as secure rollback revision `openconstructionerp-ops-rollback`, tagged `operations-rollback`, also at zero percent traffic; its tagged health endpoint returned HTTP 200 with production PostgreSQL. Public traffic remains 100% on legacy revision `openconstructionerp-00011-hzr`; no domain mapping or public traffic was changed. This permits the approved-window cutover and rollback to use Cloud Run traffic updates without deleting and recreating the `erp.bensonhomesolutions.com` mapping.
 
 ## Verification gates
 
@@ -27,6 +27,7 @@ The exact pinned Operations image is also staged on the existing production-doma
 - Upload probe: controlled PDF accepted; unauthenticated application download returned HTTP 401; direct public object request returned HTTP 403.
 - Synthetic intake, upload, outbox, audit, and object artifacts were removed after the probe. The target returned to exactly 9 leads and zero outbox jobs.
 - Rollback rehearsal: traffic moved 100% from revision `00003-xt7` to `00002-sk9`, health returned HTTP 200, traffic restored 100% to `00003-xt7`, and health again returned HTTP 200. The notification scheduler was paused during the older revision and resumed after restoration.
+- Production-domain rollback staging: prior Operations image `sha256:53714d811635b8abc6036b51bc96503365562a84b062a0b1c312db87d26ec57e` is available as zero-traffic revision `openconstructionerp-ops-rollback`. Rollback pauses the scheduler, shifts to this signed-intake Operations revision, and never returns public traffic to the legacy unsigned intake.
 
 ## Monitoring
 
