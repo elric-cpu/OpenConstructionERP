@@ -48,6 +48,14 @@ async def test_production_agent_gateway_uses_cloud_run_identity(
         database_url="postgresql://user:pass@db/operations",
         upload_bucket="private-uploads",
         fcc_base_url="https://fcc.example.com",
+        notification_worker_audience="https://operations.example.com",
+        notification_worker_email="worker@example.iam.gserviceaccount.com",
+        resend_api_key="resend-key",
+        twilio_account_sid="AC123",
+        twilio_api_key_sid="SK123",
+        twilio_api_key_secret="twilio-secret",
+        twilio_from_number="+15415550100",
+        sms_to="+15415550101",
     )
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         result = await run_agent_prompt(

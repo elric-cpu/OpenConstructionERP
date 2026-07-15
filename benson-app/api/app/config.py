@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AnyHttpUrl, Field, model_validator
+from pydantic import AnyHttpUrl, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -34,6 +34,19 @@ class Settings(BaseSettings):
     ai_max_steps: int = Field(default=12, ge=1, le=30)
     ai_timeout_seconds: int = Field(default=90, ge=5, le=300)
 
+    notification_worker_audience: AnyHttpUrl | None = None
+    notification_worker_email: str = ""
+    notification_email_to: str = "office@bensonhomesolutions.com"
+    notification_max_attempts: int = Field(default=10, ge=2, le=25)
+    notification_batch_size: int = Field(default=25, ge=1, le=100)
+    resend_api_key: SecretStr = SecretStr("")
+    resend_from_email: str = "Benson Home Solutions <leads@bensonhomesolutions.com>"
+    twilio_account_sid: str = ""
+    twilio_api_key_sid: str = ""
+    twilio_api_key_secret: SecretStr = SecretStr("")
+    twilio_from_number: str = ""
+    sms_to: str = ""
+
     accounting_provider_client_id: str = ""
     accounting_provider_client_secret: str = ""
     accounting_provider_environment: Literal["sandbox", "production"] = "sandbox"
@@ -64,6 +77,24 @@ class Settings(BaseSettings):
             missing.append("BENSON_UPLOAD_BUCKET")
         if self.fcc_base_url.host in {"127.0.0.1", "localhost"}:
             missing.append("BENSON_FCC_BASE_URL (reachable gateway)")
+        if not self.notification_worker_audience:
+            missing.append("BENSON_NOTIFICATION_WORKER_AUDIENCE")
+        if not self.notification_worker_email:
+            missing.append("BENSON_NOTIFICATION_WORKER_EMAIL")
+        if not self.resend_api_key.get_secret_value():
+            missing.append("BENSON_RESEND_API_KEY")
+        if not self.notification_email_to:
+            missing.append("BENSON_NOTIFICATION_EMAIL_TO")
+        if not all(
+            (
+                self.twilio_account_sid,
+                self.twilio_api_key_sid,
+                self.twilio_api_key_secret.get_secret_value(),
+                self.twilio_from_number,
+                self.sms_to,
+            )
+        ):
+            missing.append("BENSON_TWILIO_* and BENSON_SMS_TO")
         if missing:
             raise ValueError(f"Production configuration is incomplete: {', '.join(missing)}")
         return self

@@ -90,3 +90,39 @@ def require_operations_staff(principal: Principal = Depends(require_staff)) -> P
             detail="Lead workspace access required",
         )
     return principal
+
+
+def require_notification_worker(
+    authorization: Annotated[str | None, Header()] = None,
+    settings: Settings = Depends(get_settings),
+) -> str:
+    if settings.environment != "production":
+        return "development-notification-worker"
+    if not settings.notification_worker_audience or not settings.notification_worker_email:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Notification worker identity is not configured",
+        )
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Notification worker identity is required",
+        )
+    try:
+        claims: dict[str, Any] = id_token.verify_oauth2_token(  # type: ignore[no-untyped-call]
+            authorization.removeprefix("Bearer ").strip(),
+            google_requests.Request(),
+            str(settings.notification_worker_audience),
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid notification worker identity",
+        ) from error
+    email = str(claims.get("email", "")).lower()
+    if not claims.get("email_verified") or email != settings.notification_worker_email.lower():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Notification worker is not authorized",
+        )
+    return email

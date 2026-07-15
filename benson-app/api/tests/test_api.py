@@ -9,10 +9,17 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from httpx2 import Response
 
-from app.auth import Principal, require_operations_staff, require_owner, require_staff
+from app.auth import (
+    Principal,
+    require_notification_worker,
+    require_operations_staff,
+    require_owner,
+    require_staff,
+)
 from app.config import Settings, get_settings
 from app.domain import Role
 from app.main import app
+from app.notifications import DeliveryResult, NotificationDeliveryError, deliver_notification
 from app.object_storage import delete_upload, detect_upload_type, read_upload, store_upload
 from app.policy import ActionRisk, evaluate_agent_action
 from app.accounting_provider import SYNC_OWNERSHIP, SyncDirection, SyncEnvelope
@@ -70,6 +77,27 @@ def signed_headers(settings: Settings, body: bytes, key: str = "lead-test-1") ->
     }
 
 
+def production_settings(**overrides: object) -> Settings:
+    values: dict[str, object] = {
+        "environment": "production",
+        "website_signing_secret": "x" * 32,
+        "staff_google_audience": "client.apps.googleusercontent.com",
+        "database_url": "postgresql://user:pass@db/operations",
+        "upload_bucket": "private-uploads",
+        "fcc_base_url": "https://fcc.example.com",
+        "notification_worker_audience": "https://operations.example.com",
+        "notification_worker_email": "worker@example.iam.gserviceaccount.com",
+        "resend_api_key": "resend-key",
+        "twilio_account_sid": "AC123",
+        "twilio_api_key_sid": "SK123",
+        "twilio_api_key_secret": "twilio-secret",
+        "twilio_from_number": "+15415550100",
+        "sms_to": "+15415550101",
+    }
+    values.update(overrides)
+    return Settings(**values)  # type: ignore[arg-type]
+
+
 def post_signed_lead(
     settings: Settings, payload: dict[str, object], key: str = "lead-test-1"
 ) -> Response:
@@ -105,6 +133,124 @@ def test_signed_website_lead_is_durable_and_idempotent(isolated_settings: Settin
     assert (
         client.get("/api/v1/dashboard", headers=STAFF_HEADERS).json()["metrics"]["new_leads"] == 1
     )
+    assert operations_store(isolated_settings.resolved_database_url()).notification_counts() == {
+        "pending": 1
+    }
+
+
+def test_intake_enqueues_email_and_emergency_sms_exactly_once(
+    isolated_settings: Settings,
+) -> None:
+    first = post_signed_lead(
+        isolated_settings,
+        canonical_lead(urgency="emergency"),
+        key="emergency-notifications",
+    )
+    duplicate = post_signed_lead(
+        isolated_settings,
+        canonical_lead(urgency="emergency"),
+        key="emergency-notifications",
+    )
+
+    assert first.status_code == 201
+    assert duplicate.status_code == 200
+    assert operations_store(isolated_settings.resolved_database_url()).notification_counts() == {
+        "pending": 2
+    }
+
+
+def test_notification_worker_delivers_claimed_outbox(
+    isolated_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    post_signed_lead(isolated_settings, canonical_lead(), key="notification-delivery")
+    delivery = MagicMock(return_value=DeliveryResult(provider_message_id="provider-123"))
+    monkeypatch.setattr("app.main.deliver_notification", delivery)
+
+    response = client.post("/api/internal/v1/notifications/drain")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "claimed": 1,
+        "sent": 1,
+        "failed": 0,
+        "outbox": {"sent": 1},
+    }
+    delivery.assert_called_once()
+
+
+def test_notification_worker_persists_retry_after_provider_failure(
+    isolated_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    post_signed_lead(isolated_settings, canonical_lead(), key="notification-retry")
+    monkeypatch.setattr(
+        "app.main.deliver_notification",
+        MagicMock(side_effect=NotificationDeliveryError("provider unavailable")),
+    )
+
+    response = client.post("/api/internal/v1/notifications/drain")
+
+    assert response.status_code == 200
+    assert response.json()["failed"] == 1
+    assert response.json()["outbox"] == {"pending": 1}
+
+
+def test_production_notification_worker_requires_exact_service_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = production_settings()
+    monkeypatch.setattr(
+        "app.auth.id_token.verify_oauth2_token",
+        MagicMock(
+            return_value={
+                "email": "worker@example.iam.gserviceaccount.com",
+                "email_verified": True,
+            }
+        ),
+    )
+    assert require_notification_worker(authorization="Bearer valid", settings=settings) == (
+        "worker@example.iam.gserviceaccount.com"
+    )
+    monkeypatch.setattr(
+        "app.auth.id_token.verify_oauth2_token",
+        MagicMock(return_value={"email": "attacker@example.com", "email_verified": True}),
+    )
+    with pytest.raises(HTTPException, match="Notification worker is not authorized"):
+        require_notification_worker(authorization="Bearer valid", settings=settings)
+
+
+@pytest.mark.parametrize(
+    ("channel", "provider_body", "expected_url"),
+    [
+        ("email", {"id": "email-123"}, "https://api.resend.com/emails"),
+        (
+            "sms",
+            {"sid": "sms-123"},
+            "https://api.twilio.com/2010-04-01/Accounts/AC123/Messages.json",
+        ),
+    ],
+)
+def test_notification_provider_contracts(
+    channel: str,
+    provider_body: dict[str, str],
+    expected_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = MagicMock()
+    response.json.return_value = provider_body
+    post = MagicMock(return_value=response)
+    monkeypatch.setattr("app.notifications.httpx.post", post)
+    item = {
+        "id": "outbox-123",
+        "channel": channel,
+        "destination": "office@example.com" if channel == "email" else "+15415550101",
+        "payload": canonical_lead(urgency="emergency"),
+    }
+
+    result = deliver_notification(item, production_settings())
+
+    assert result.provider_message_id == next(iter(provider_body.values()))
+    assert post.call_args.args[0] == expected_url
+    response.raise_for_status.assert_called_once()
 
 
 def test_signed_intake_rejects_missing_bad_and_expired_signatures(
@@ -171,13 +317,7 @@ def test_staff_endpoints_require_auth_and_scope_modules() -> None:
 
 
 def test_production_google_auth_and_owner_scope(monkeypatch: pytest.MonkeyPatch) -> None:
-    settings = Settings(
-        environment="production",
-        website_signing_secret="x" * 32,
-        staff_google_audience="client.apps.googleusercontent.com",
-        database_url="postgresql://user:pass@db/operations",
-        upload_bucket="private-uploads",
-        fcc_base_url="https://fcc.example.com",
+    settings = production_settings(
         owner_emails="owner@bensonhomesolutions.com",
     )
     monkeypatch.setattr(
@@ -212,14 +352,7 @@ def test_production_google_auth_and_owner_scope(monkeypatch: pytest.MonkeyPatch)
 def test_production_google_auth_rejects_untrusted_claims(
     claims: dict[str, object], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    settings = Settings(
-        environment="production",
-        website_signing_secret="x" * 32,
-        staff_google_audience="client.apps.googleusercontent.com",
-        database_url="postgresql://user:pass@db/operations",
-        upload_bucket="private-uploads",
-        fcc_base_url="https://fcc.example.com",
-    )
+    settings = production_settings()
     monkeypatch.setattr("app.auth.id_token.verify_oauth2_token", MagicMock(return_value=claims))
     with pytest.raises(HTTPException, match="Benson Workspace account required"):
         require_staff(authorization="Bearer invalid", settings=settings)
@@ -228,13 +361,7 @@ def test_production_google_auth_rejects_untrusted_claims(
 def test_production_google_auth_rejects_unlisted_workspace_user(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    settings = Settings(
-        environment="production",
-        website_signing_secret="x" * 32,
-        staff_google_audience="client.apps.googleusercontent.com",
-        database_url="postgresql://user:pass@db/operations",
-        upload_bucket="private-uploads",
-        fcc_base_url="https://fcc.example.com",
+    settings = production_settings(
         owner_emails="owner@bensonhomesolutions.com",
     )
     monkeypatch.setattr(

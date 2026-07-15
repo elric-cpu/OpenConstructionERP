@@ -25,7 +25,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from .ai_gateway import AiGatewayUnavailable, run_agent_prompt
-from .auth import Principal, require_operations_staff, require_owner, require_staff
+from .auth import (
+    Principal,
+    require_notification_worker,
+    require_operations_staff,
+    require_owner,
+    require_staff,
+)
 from .config import Settings, get_settings
 from .domain import (
     AgentRunRequest,
@@ -36,6 +42,7 @@ from .domain import (
     ProposalDecision,
 )
 from .object_storage import delete_upload, detect_upload_type, read_upload, store_upload
+from .notifications import NotificationDeliveryError, deliver_notification
 from .policy import ActionRisk
 from .signing import verify_website_signature
 from .skill_registry import SkillDefinition, load_registry
@@ -70,6 +77,9 @@ def create_lead_receipt(lead: LeadCreate, idempotency_key: str, settings: Settin
         lead=lead,
         upload_base_url=str(settings.upload_base_url),
         upload_session_hours=settings.upload_session_hours,
+        notification_email_to=settings.notification_email_to,
+        emergency_sms_to=settings.sms_to,
+        notification_max_attempts=settings.notification_max_attempts,
     )
 
 
@@ -85,6 +95,42 @@ async def health(settings: Settings = Depends(get_settings)) -> dict[str, Any]:
         if settings.resolved_database_url().startswith("postgresql")
         else "sqlite",
     }
+
+
+@app.post("/api/internal/v1/notifications/drain")
+def drain_notifications(
+    _worker: str = Depends(require_notification_worker),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    notification_store = store(settings)
+    claimed = notification_store.claim_notifications(limit=settings.notification_batch_size)
+    sent = 0
+    failed = 0
+    for item in claimed:
+        try:
+            result = deliver_notification(item, settings)
+        except NotificationDeliveryError:
+            failed += 1
+            notification_store.mark_notification_failed(item["id"], "provider delivery failed")
+            logger.exception(
+                "notification_delivery_failed notification_id=%s channel=%s attempt=%s",
+                item["id"],
+                item["channel"],
+                int(item["attempts"]) + 1,
+            )
+        else:
+            sent += 1
+            notification_store.mark_notification_sent(item["id"], result.provider_message_id)
+    counts = notification_store.notification_counts()
+    logger.info(
+        "notification_drain_complete claimed=%s sent=%s failed=%s pending=%s exhausted=%s",
+        len(claimed),
+        sent,
+        failed,
+        counts.get("pending", 0),
+        counts.get("failed", 0),
+    )
+    return {"claimed": len(claimed), "sent": sent, "failed": failed, "outbox": counts}
 
 
 @app.get("/api/benson/v1/auth/config")

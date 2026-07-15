@@ -14,6 +14,7 @@ from sqlalchemy import (
     Column,
     create_engine,
     func,
+    or_,
     select,
     update,
 )
@@ -130,6 +131,26 @@ ai_proposals = Table(
     Column("decided_at", DateTime(timezone=True)),
 )
 
+notification_outbox = Table(
+    "notification_outbox",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("lead_id", String(36), nullable=False, index=True),
+    Column("channel", String(20), nullable=False),
+    Column("destination", String(320), nullable=False),
+    Column("payload", Text, nullable=False),
+    Column("status", String(20), nullable=False, index=True),
+    Column("attempts", Integer, nullable=False),
+    Column("max_attempts", Integer, nullable=False),
+    Column("available_at", DateTime(timezone=True), nullable=False, index=True),
+    Column("locked_at", DateTime(timezone=True)),
+    Column("last_error", Text),
+    Column("provider_message_id", String(200)),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Column("sent_at", DateTime(timezone=True)),
+)
+
 
 class OperationsStore:
     def __init__(self, database_url: str):
@@ -170,6 +191,9 @@ class OperationsStore:
         lead: LeadCreate,
         upload_base_url: str,
         upload_session_hours: int,
+        notification_email_to: str,
+        emergency_sms_to: str,
+        notification_max_attempts: int,
     ) -> LeadReceipt:
         now = datetime.now(UTC)
         lead_id = str(uuid4())
@@ -201,6 +225,37 @@ class OperationsStore:
                         created_at=now,
                     )
                 )
+                notification_payload = json.dumps(
+                    {
+                        "name": lead.name,
+                        "phone": lead.phone,
+                        "email": str(lead.email) if lead.email else None,
+                        "service_type": lead.service_type,
+                        "urgency": lead.urgency,
+                        "city": lead.city,
+                        "message": lead.message,
+                    },
+                    sort_keys=True,
+                )
+                destinations = [("email", notification_email_to)]
+                if lead.urgency == "emergency":
+                    destinations.append(("sms", emergency_sms_to))
+                for channel, destination in destinations:
+                    db.execute(
+                        notification_outbox.insert().values(
+                            id=str(uuid4()),
+                            lead_id=lead_id,
+                            channel=channel,
+                            destination=destination,
+                            payload=notification_payload,
+                            status="pending",
+                            attempts=0,
+                            max_attempts=notification_max_attempts,
+                            available_at=now,
+                            created_at=now,
+                            updated_at=now,
+                        )
+                    )
                 self._audit(
                     db,
                     event="lead.accepted",
@@ -231,6 +286,112 @@ class OperationsStore:
             accepted_at=now,
             duplicate=False,
         )
+
+    def claim_notifications(
+        self, *, limit: int, lock_timeout_minutes: int = 10
+    ) -> list[dict[str, Any]]:
+        now = datetime.now(UTC)
+        stale_before = now - timedelta(minutes=lock_timeout_minutes)
+        with self.engine.begin() as db:
+            rows = (
+                db.execute(
+                    select(notification_outbox)
+                    .where(
+                        notification_outbox.c.attempts < notification_outbox.c.max_attempts,
+                        notification_outbox.c.available_at <= now,
+                        or_(
+                            notification_outbox.c.status == "pending",
+                            (
+                                (notification_outbox.c.status == "processing")
+                                & (notification_outbox.c.locked_at <= stale_before)
+                            ),
+                        ),
+                    )
+                    .order_by(notification_outbox.c.available_at, notification_outbox.c.created_at)
+                    .limit(limit)
+                    .with_for_update(skip_locked=True)
+                )
+                .mappings()
+                .all()
+            )
+            claimed: list[dict[str, Any]] = []
+            for row in rows:
+                result = db.execute(
+                    update(notification_outbox)
+                    .where(
+                        notification_outbox.c.id == row["id"],
+                        or_(
+                            notification_outbox.c.status == "pending",
+                            notification_outbox.c.locked_at <= stale_before,
+                        ),
+                    )
+                    .values(status="processing", locked_at=now, updated_at=now)
+                )
+                if result.rowcount == 1:
+                    item = dict(row)
+                    item["payload"] = json.loads(item["payload"])
+                    claimed.append(item)
+        return claimed
+
+    def mark_notification_sent(self, notification_id: str, provider_message_id: str) -> None:
+        now = datetime.now(UTC)
+        with self.engine.begin() as db:
+            db.execute(
+                update(notification_outbox)
+                .where(
+                    notification_outbox.c.id == notification_id,
+                    notification_outbox.c.status == "processing",
+                )
+                .values(
+                    status="sent",
+                    attempts=notification_outbox.c.attempts + 1,
+                    provider_message_id=provider_message_id,
+                    last_error=None,
+                    locked_at=None,
+                    sent_at=now,
+                    updated_at=now,
+                )
+            )
+
+    def mark_notification_failed(self, notification_id: str, error: str) -> None:
+        now = datetime.now(UTC)
+        with self.engine.begin() as db:
+            row = (
+                db.execute(
+                    select(notification_outbox).where(
+                        notification_outbox.c.id == notification_id,
+                        notification_outbox.c.status == "processing",
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if not row:
+                return
+            attempts = int(row["attempts"]) + 1
+            exhausted = attempts >= int(row["max_attempts"])
+            retry_minutes = min(60, 2 ** min(attempts - 1, 6))
+            db.execute(
+                update(notification_outbox)
+                .where(notification_outbox.c.id == notification_id)
+                .values(
+                    status="failed" if exhausted else "pending",
+                    attempts=attempts,
+                    available_at=now + timedelta(minutes=retry_minutes),
+                    locked_at=None,
+                    last_error=error[:1_000],
+                    updated_at=now,
+                )
+            )
+
+    def notification_counts(self) -> dict[str, int]:
+        with self.engine.connect() as db:
+            rows = db.execute(
+                select(notification_outbox.c.status, func.count()).group_by(
+                    notification_outbox.c.status
+                )
+            ).all()
+        return {str(status): int(count) for status, count in rows}
 
     @staticmethod
     def _receipt(
