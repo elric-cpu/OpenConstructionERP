@@ -13,12 +13,13 @@ from fastapi import (
     File,
     Header,
     HTTPException,
+    Query,
     Request,
     Response,
     UploadFile,
     status,
 )
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response as BinaryResponse
 from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
@@ -31,9 +32,10 @@ from .domain import (
     BENSON_MODULES,
     LeadCreate,
     LeadReceipt,
+    LeadUpdate,
     ProposalDecision,
 )
-from .object_storage import delete_upload, detect_upload_type, store_upload
+from .object_storage import delete_upload, detect_upload_type, read_upload, store_upload
 from .policy import ActionRisk
 from .signing import verify_website_signature
 from .skill_registry import SkillDefinition, load_registry
@@ -153,11 +155,68 @@ async def benson_website_lead(
 @app.get("/api/benson/v1/leads")
 def list_leads(
     limit: int = 100,
+    status_filter: Annotated[str | None, Query(alias="status")] = None,
+    priority: str | None = None,
+    assigned_to: str | None = None,
+    query: str | None = None,
     _principal: Principal = Depends(require_staff),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     safe_limit = max(1, min(limit, 250))
-    return {"leads": store(settings).list_leads(safe_limit)}
+    return {
+        "leads": store(settings).list_leads(
+            safe_limit,
+            status=status_filter,
+            priority=priority,
+            assigned_to=assigned_to,
+            query=query,
+        )
+    }
+
+
+@app.get("/api/benson/v1/leads/{lead_id}")
+def lead_detail(
+    lead_id: str,
+    _principal: Principal = Depends(require_staff),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    lead = store(settings).get_lead(lead_id)
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return lead
+
+
+@app.patch("/api/benson/v1/leads/{lead_id}")
+def update_lead(
+    lead_id: str,
+    change: LeadUpdate,
+    principal: Principal = Depends(require_staff),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    if change.status is None and change.assigned_to is None and change.note is None:
+        raise HTTPException(status_code=400, detail="At least one lead change is required")
+    lead = store(settings).update_lead(lead_id, change, actor=principal.email)
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return lead
+
+
+@app.get("/api/benson/v1/attachments/{attachment_id}")
+async def download_attachment(
+    attachment_id: str,
+    _principal: Principal = Depends(require_staff),
+    settings: Settings = Depends(get_settings),
+) -> BinaryResponse:
+    attachment = store(settings).get_attachment(attachment_id)
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    content = await run_in_threadpool(read_upload, settings, attachment["storage_key"])
+    safe_name = Path(str(attachment["original_name"])).name.replace('"', "")
+    return BinaryResponse(
+        content,
+        media_type=str(attachment["content_type"]),
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
+    )
 
 
 @app.get("/uploads/{session_id}", response_class=HTMLResponse)

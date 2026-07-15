@@ -13,7 +13,7 @@ from app.auth import Principal, require_owner, require_staff
 from app.config import Settings, get_settings
 from app.domain import Role
 from app.main import app
-from app.object_storage import delete_upload, detect_upload_type, store_upload
+from app.object_storage import delete_upload, detect_upload_type, read_upload, store_upload
 from app.policy import ActionRisk, evaluate_agent_action
 from app.accounting_provider import SYNC_OWNERSHIP, SyncDirection, SyncEnvelope
 from app.signing import signature_for
@@ -230,6 +230,65 @@ def test_staff_can_list_persisted_leads(isolated_settings: Settings) -> None:
     response = client.get("/api/benson/v1/leads?limit=500", headers=STAFF_HEADERS)
     assert response.status_code == 200
     assert response.json()["leads"][0]["priority"] == "urgent"
+
+
+def test_staff_can_filter_open_update_and_audit_lead(isolated_settings: Settings) -> None:
+    created = post_signed_lead(
+        isolated_settings, canonical_lead(name="Filter Homeowner", urgency="emergency"), key="ops-1"
+    ).json()
+    lead_id = created["lead_id"]
+    filtered = client.get(
+        "/api/benson/v1/leads?priority=urgent&query=Filter", headers=STAFF_HEADERS
+    )
+    assert [lead["id"] for lead in filtered.json()["leads"]] == [lead_id]
+
+    updated = client.patch(
+        f"/api/benson/v1/leads/{lead_id}",
+        headers=STAFF_HEADERS,
+        json={
+            "status": "contacted",
+            "assigned_to": "Estimator@BensonHomeSolutions.com",
+            "note": "Left voicemail and requested measurements.",
+        },
+    )
+    assert updated.status_code == 200
+    detail = updated.json()
+    assert detail["status"] == "contacted"
+    assert detail["assigned_to"] == "estimator@bensonhomesolutions.com"
+    assert detail["notes"][0]["body"] == "Left voicemail and requested measurements."
+    assert {event["event"] for event in detail["audit_events"]} >= {
+        "lead.accepted",
+        "lead.updated",
+        "lead.note_added",
+    }
+    assert client.get(f"/api/benson/v1/leads/{lead_id}").status_code == 503
+    assert (
+        client.patch(f"/api/benson/v1/leads/{lead_id}", headers=STAFF_HEADERS, json={}).status_code
+        == 400
+    )
+
+
+def test_staff_attachment_download_is_authenticated(isolated_settings: Settings) -> None:
+    created = post_signed_lead(isolated_settings, canonical_lead(), key="secure-file").json()
+    client.post(
+        f"/uploads/{created['upload_session_id']}",
+        files=[("files", ("window.jpg", b"\xff\xd8\xffjpeg-data", "image/jpeg"))],
+    )
+    detail = client.get(f"/api/benson/v1/leads/{created['lead_id']}", headers=STAFF_HEADERS).json()
+    attachment_id = detail["attachments"][0]["id"]
+    assert "storage_key" not in detail["attachments"][0]
+    assert client.get(f"/api/benson/v1/attachments/{attachment_id}").status_code == 503
+    downloaded = client.get(f"/api/benson/v1/attachments/{attachment_id}", headers=STAFF_HEADERS)
+    assert downloaded.content == b"\xff\xd8\xffjpeg-data"
+    assert downloaded.headers["content-type"] == "image/jpeg"
+
+
+def test_read_gcs_upload_uses_private_configured_bucket(monkeypatch: pytest.MonkeyPatch) -> None:
+    client_mock = MagicMock()
+    client_mock.bucket.return_value.blob.return_value.download_as_bytes.return_value = b"private"
+    monkeypatch.setattr("app.object_storage.gcs.Client", MagicMock(return_value=client_mock))
+    settings = Settings(upload_bucket="private-uploads")
+    assert read_upload(settings, "gs://private-uploads/leads/1/file.pdf") == b"private"
 
 
 def test_upload_validation_rejects_missing_session_and_spoofed_type(

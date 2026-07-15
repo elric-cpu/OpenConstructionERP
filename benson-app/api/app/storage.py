@@ -20,7 +20,7 @@ from sqlalchemy import (
 from sqlalchemy.engine import Engine, RowMapping
 from sqlalchemy.exc import IntegrityError
 
-from .domain import LeadCreate, LeadReceipt, LeadSummary
+from .domain import LeadCreate, LeadReceipt, LeadSummary, LeadUpdate
 
 metadata = MetaData()
 
@@ -63,6 +63,16 @@ attachments = Table(
     Column("content_type", String(120), nullable=False),
     Column("size_bytes", Integer, nullable=False),
     Column("sha256", String(64), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+lead_notes = Table(
+    "lead_notes",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("lead_id", String(36), nullable=False, index=True),
+    Column("author", String(320), nullable=False),
+    Column("body", Text, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
 )
 
@@ -326,10 +336,34 @@ class OperationsStore:
         with self.engine.connect() as db:
             return int(db.execute(select(func.count()).select_from(leads)).scalar_one())
 
-    def list_leads(self, limit: int = 100) -> list[LeadSummary]:
+    def list_leads(
+        self,
+        limit: int = 100,
+        *,
+        status: str | None = None,
+        priority: str | None = None,
+        assigned_to: str | None = None,
+        query: str | None = None,
+    ) -> list[LeadSummary]:
+        statement = select(leads)
+        if status:
+            statement = statement.where(leads.c.status == status)
+        if priority:
+            statement = statement.where(leads.c.priority == priority)
+        if assigned_to:
+            statement = statement.where(leads.c.assigned_to == assigned_to)
+        if query:
+            pattern = f"%{query.strip()}%"
+            statement = statement.where(
+                leads.c.name.ilike(pattern)
+                | leads.c.email.ilike(pattern)
+                | leads.c.phone.ilike(pattern)
+                | leads.c.city.ilike(pattern)
+                | leads.c.service_type.ilike(pattern)
+            )
         with self.engine.connect() as db:
             rows = (
-                db.execute(select(leads).order_by(leads.c.created_at.desc()).limit(limit))
+                db.execute(statement.order_by(leads.c.created_at.desc()).limit(limit))
                 .mappings()
                 .all()
             )
@@ -348,6 +382,107 @@ class OperationsStore:
             )
             for row in rows
         ]
+
+    def get_lead(self, lead_id: str) -> dict[str, Any] | None:
+        with self.engine.connect() as db:
+            lead = db.execute(select(leads).where(leads.c.id == lead_id)).mappings().first()
+            if not lead:
+                return None
+            lead_attachments = (
+                db.execute(
+                    select(attachments)
+                    .where(attachments.c.lead_id == lead_id)
+                    .order_by(attachments.c.created_at)
+                )
+                .mappings()
+                .all()
+            )
+            notes = (
+                db.execute(
+                    select(lead_notes)
+                    .where(lead_notes.c.lead_id == lead_id)
+                    .order_by(lead_notes.c.created_at.desc())
+                )
+                .mappings()
+                .all()
+            )
+            events = (
+                db.execute(
+                    select(audit_events)
+                    .where(
+                        audit_events.c.subject_type == "lead",
+                        audit_events.c.subject_id == lead_id,
+                    )
+                    .order_by(audit_events.c.occurred_at.desc())
+                )
+                .mappings()
+                .all()
+            )
+        result = dict(lead)
+        result["payload"] = json.loads(result["payload"])
+        result["attachments"] = [
+            {key: value for key, value in dict(item).items() if key != "storage_key"}
+            for item in lead_attachments
+        ]
+        result["notes"] = [dict(item) for item in notes]
+        result["audit_events"] = [
+            {**dict(item), "payload": json.loads(item["payload"])} for item in events
+        ]
+        return result
+
+    def get_attachment(self, attachment_id: str) -> dict[str, Any] | None:
+        with self.engine.connect() as db:
+            row = (
+                db.execute(select(attachments).where(attachments.c.id == attachment_id))
+                .mappings()
+                .first()
+            )
+        return dict(row) if row else None
+
+    def update_lead(self, lead_id: str, change: LeadUpdate, *, actor: str) -> dict[str, Any] | None:
+        values = change.model_dump(exclude_none=True, exclude={"note"})
+        if "assigned_to" in values:
+            values["assigned_to"] = str(values["assigned_to"]).lower()
+        now = datetime.now(UTC)
+        with self.engine.begin() as db:
+            existing = db.execute(select(leads).where(leads.c.id == lead_id)).mappings().first()
+            if not existing:
+                return None
+            if values:
+                values["updated_at"] = now
+                db.execute(update(leads).where(leads.c.id == lead_id).values(**values))
+                self._audit(
+                    db,
+                    event="lead.updated",
+                    actor=actor,
+                    subject_type="lead",
+                    subject_id=lead_id,
+                    payload={
+                        key: {"from": existing[key], "to": value}
+                        for key, value in values.items()
+                        if key != "updated_at" and existing[key] != value
+                    },
+                )
+            if change.note:
+                note_id = str(uuid4())
+                db.execute(
+                    lead_notes.insert().values(
+                        id=note_id,
+                        lead_id=lead_id,
+                        author=actor,
+                        body=change.note,
+                        created_at=now,
+                    )
+                )
+                self._audit(
+                    db,
+                    event="lead.note_added",
+                    actor=actor,
+                    subject_type="lead",
+                    subject_id=lead_id,
+                    payload={"note_id": note_id},
+                )
+        return self.get_lead(lead_id)
 
     def create_ai_run(
         self,

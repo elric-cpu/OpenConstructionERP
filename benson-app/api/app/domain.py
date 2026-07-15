@@ -173,6 +173,12 @@ class LeadSummary(BaseModel):
     assigned_to: str | None = None
 
 
+class LeadUpdate(BaseModel):
+    status: Literal["new", "contacted", "qualified", "scheduled", "closed"] | None = None
+    assigned_to: EmailStr | None = None
+    note: str | None = Field(default=None, min_length=1, max_length=5_000)
+
+
 class AgentRunRequest(BaseModel):
     skill_id: str = Field(min_length=1, max_length=120)
     prompt: str = Field(min_length=1, max_length=20_000)

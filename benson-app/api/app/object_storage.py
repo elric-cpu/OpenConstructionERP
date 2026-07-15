@@ -52,3 +52,21 @@ def delete_upload(settings: Settings, storage_key: str) -> None:
     if not destination.is_relative_to(root):
         raise ValueError("Unsafe upload path")
     destination.unlink(missing_ok=True)
+
+
+def read_upload(settings: Settings, storage_key: str) -> bytes:
+    if storage_key.startswith("gs://"):
+        prefix = f"gs://{settings.upload_bucket}/"
+        if not settings.upload_bucket or not storage_key.startswith(prefix):
+            raise ValueError("Upload object does not belong to the configured bucket")
+        return bytes(
+            gcs.Client()
+            .bucket(settings.upload_bucket)
+            .blob(storage_key.removeprefix(prefix))
+            .download_as_bytes()
+        )
+    root = settings.upload_storage_path.resolve()
+    source = Path(storage_key).resolve()
+    if not source.is_relative_to(root):
+        raise ValueError("Unsafe upload path")
+    return source.read_bytes()
