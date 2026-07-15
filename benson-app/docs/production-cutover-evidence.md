@@ -14,13 +14,15 @@ Last updated: 2026-07-15 UTC. This record covers the isolated production candida
 
 The live candidate returned HTTP 200 from `/api/health`, reported `environment=production` and `storage=postgresql`, rejected unauthenticated staff lead access with HTTP 401, and rejected unauthenticated notification-worker access with HTTP 401.
 
+The exact pinned Operations image is also staged on the existing production-domain Cloud Run service as revision `openconstructionerp-00012-kiz`, tagged `operations-candidate`, at zero percent traffic. Its tagged `/api/health` endpoint returned HTTP 200 with production PostgreSQL storage. Public traffic remains 100% on legacy revision `openconstructionerp-00011-hzr`; no domain mapping or public traffic was changed. This permits the approved-window cutover and rollback to use Cloud Run traffic updates without deleting and recreating the `erp.bensonhomesolutions.com` mapping.
+
 ## Verification gates
 
 - `npm run verify`: 35 API tests passed at 92.41% coverage; Ruff, strict mypy, Prettier, ESLint, TypeScript, and the production build passed; Playwright passed 9 tests with 1 intentional skip.
 - Scheduler identity probe: `benson-notifications-drain` called the private worker contract with its exact OIDC service identity and received HTTP 200 after audience normalization.
 - Durable delivery: lead acceptance and email/emergency-SMS outbox rows share one transaction; idempotent intake does not duplicate jobs; provider failures remain retryable with bounded exponential backoff and stale-lock recovery.
 - Resend provider probe: controlled message accepted with a provider message ID.
-- Twilio provider probe: credentials authenticate, but the account is `Trial`; delivery is not production-ready because Twilio rejects arbitrary SMS with error `572006` and requires predefined trial templates.
+- Twilio provider probe: credentials authenticate, but the account is `Trial`; delivery is not production-ready because Twilio rejects arbitrary SMS with error `572006` and requires predefined trial templates. A Content API template creation probe returned HTTP 401 / `20003 Policy evaluation failed`; the provisioned API key cannot create a trial template, and no account Auth Token or suitably permitted key is present in Secret Manager.
 - Signed intake probe: first request HTTP 201, exact replay HTTP 200 with `duplicate=true` and the same lead ID.
 - Upload probe: controlled PDF accepted; unauthenticated application download returned HTTP 401; direct public object request returned HTTP 403.
 - Synthetic intake, upload, outbox, audit, and object artifacts were removed after the probe. The target returned to exactly 9 leads and zero outbox jobs.
@@ -58,7 +60,7 @@ The guarded migration tool refuses any accepted source count other than 9 and an
 
 ## Open cutover gates
 
-1. Upgrade/configure the Twilio account so a controlled SMS receives a provider message ID; then re-run the emergency delivery probe.
+1. Upgrade/configure the Twilio account, or provision a Twilio credential permitted to create and send an approved trial Content template, so a controlled SMS receives a provider message ID; then re-run the emergency delivery probe.
 2. Complete authenticated Google Workspace staff UAT against the live nine-lead queue. The configured inference browser was unavailable (`App not found`), so automated database reconciliation is not being mislabeled as human UAT.
 3. During an approved 8–10 PM Pacific window: freeze legacy writes, run the final guarded reconciliation, switch every website form directly with no dual-write, switch domain/traffic, and run post-cutover smoke/rollback verification.
 4. Put the legacy service into no-write rollback/archive mode for 30 days after cutover; the 90-day baseline exports are already retained, and a final post-freeze export remains required.
