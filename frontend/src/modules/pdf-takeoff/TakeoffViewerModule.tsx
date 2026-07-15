@@ -409,6 +409,11 @@ interface TakeoffViewerModuleProps {
   onOpenRecentDocument?: (docId: string) => void;
 }
 
+/** localStorage key for the dragged legend position (#358). A workspace
+ *  preference, like a panel size - kept out of the document so it never follows
+ *  the file to another user. */
+const LEGEND_POS_KEY = 'oe.takeoff.legend-pos';
+
 export default function TakeoffViewerModule({
   initialPdfUrl,
   initialPdfName,
@@ -814,6 +819,27 @@ export default function TakeoffViewerModule({
 
   // Legend overlay visibility (bottom-left of canvas).
   const [showLegend, setShowLegend] = useState(true);
+  // Dragged legend position (#358), in px from the pinned wrapper's top-left;
+  // null keeps the default bottom-2 left-2 corner. Seeded from localStorage.
+  const [legendPos, setLegendPos] = useState<{ x: number; y: number } | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const raw = window.localStorage.getItem(LEGEND_POS_KEY);
+      if (raw) {
+        const p = JSON.parse(raw) as { x?: unknown; y?: unknown };
+        if (typeof p.x === 'number' && typeof p.y === 'number') return { x: p.x, y: p.y };
+      }
+    } catch {
+      /* ignore malformed / unavailable storage */
+    }
+    return null;
+  });
+  /** The pinned, non-scrolling wrapper the legend is positioned against (#358):
+   *  every drag coordinate and clamp bound is measured relative to it. */
+  const legendViewportRef = useRef<HTMLDivElement | null>(null);
+  const legendElRef = useRef<HTMLDivElement | null>(null);
+  const legendResizeObsRef = useRef<ResizeObserver | null>(null);
+  const legendDragRef = useRef<{ onMove: (e: MouseEvent) => void; onUp: () => void } | null>(null);
 
   // Export to BOQ state
   const [showExportDialog, setShowExportDialog] = useState(false);
@@ -3798,6 +3824,110 @@ export default function TakeoffViewerModule({
     ),
     [pageMeasurements, hiddenGroups, hiddenMeasurements, groupColorMap],
   );
+
+  /* ── Draggable legend (#358) ─────────────────────────────────────── */
+
+  // Persist the position as a workspace preference; clear it on reset.
+  useEffect(() => {
+    try {
+      if (legendPos) window.localStorage.setItem(LEGEND_POS_KEY, JSON.stringify(legendPos));
+      else window.localStorage.removeItem(LEGEND_POS_KEY);
+    } catch {
+      /* ignore unavailable storage */
+    }
+  }, [legendPos]);
+
+  /** Clamp a position so the legend stays fully inside the wrapper on BOTH
+   *  bounds (a stored value can be negative; the wrapper resizes with the
+   *  sidebar / thumbnail-strip toggles, which never resize the window). */
+  const clampLegend = useCallback((pos: { x: number; y: number }) => {
+    const vp = legendViewportRef.current;
+    const el = legendElRef.current;
+    if (!vp || !el) return pos;
+    const vpRect = vp.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const maxX = Math.max(0, vpRect.width - elRect.width);
+    const maxY = Math.max(0, vpRect.height - elRect.height);
+    return {
+      x: Math.min(Math.max(0, pos.x), maxX),
+      y: Math.min(Math.max(0, pos.y), maxY),
+    };
+  }, []);
+
+  /** Re-clamp the current position, bailing out when it does not move so a
+   *  resize does not spin re-renders. */
+  const reclampLegend = useCallback(() => {
+    setLegendPos((cur) => {
+      if (!cur) return cur;
+      const c = clampLegend(cur);
+      return c.x === cur.x && c.y === cur.y ? cur : c;
+    });
+  }, [clampLegend]);
+
+  /** Tear down an in-flight legend drag - shared by mouseup, window blur, and
+   *  the legend unmounting mid-drag. */
+  const endLegendDrag = useCallback(() => {
+    const d = legendDragRef.current;
+    if (!d) return;
+    window.removeEventListener('mousemove', d.onMove);
+    window.removeEventListener('mouseup', d.onUp);
+    window.removeEventListener('blur', d.onUp);
+    legendDragRef.current = null;
+  }, []);
+
+  /** Stable ref callback for the legend box. Clamps the stored position as the
+   *  element attaches (it only mounts once there is something to list, so a
+   *  clamp keyed on the position alone would run while the legend is still
+   *  absent), and observes both the viewport and the legend so a resize
+   *  re-clamps it. It MUST be a stable useCallback, not an inline arrow: React
+   *  calls an inline ref with null on every re-render, and the legend re-renders
+   *  on every drag mousemove, so an inline ref would fire the unmount teardown
+   *  on the first pixel of movement and the legend would be undraggable. */
+  const attachLegend = useCallback((el: HTMLDivElement | null) => {
+    if (legendResizeObsRef.current) {
+      legendResizeObsRef.current.disconnect();
+      legendResizeObsRef.current = null;
+    }
+    legendElRef.current = el;
+    if (!el) {
+      // Unmount mid-drag (toolbar toggle, page change, last measurement gone):
+      // the window listeners would otherwise position a detached element.
+      endLegendDrag();
+      return;
+    }
+    const ro = new ResizeObserver(() => reclampLegend());
+    ro.observe(el);
+    const vp = legendViewportRef.current;
+    if (vp) ro.observe(vp);
+    legendResizeObsRef.current = ro;
+    reclampLegend();
+  }, [endLegendDrag, reclampLegend]);
+
+  /** Begin dragging the legend by its header. Listeners live on the window so
+   *  the drag survives the cursor leaving the small legend rectangle. */
+  const startLegendDrag = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    const el = legendElRef.current;
+    if (!legendViewportRef.current || !el) return;
+    e.preventDefault();
+    const elRect = el.getBoundingClientRect();
+    const grabX = e.clientX - elRect.left;
+    const grabY = e.clientY - elRect.top;
+    endLegendDrag(); // drop any stale gesture first
+    const onMove = (ev: MouseEvent) => {
+      const rect = legendViewportRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setLegendPos(clampLegend({ x: ev.clientX - rect.left - grabX, y: ev.clientY - rect.top - grabY }));
+    };
+    const onUp = () => endLegendDrag();
+    legendDragRef.current = { onMove, onUp };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('blur', onUp);
+  }, [clampLegend, endLegendDrag]);
+
+  /** Double-click the header to send the legend back to the default corner. */
+  const resetLegendPos = useCallback(() => setLegendPos(null), []);
 
   /** Currently-selected measurement object (null if nothing selected / target deleted). */
   const selectedMeasurement = useMemo(() => {
@@ -6876,7 +7006,10 @@ export default function TakeoffViewerModule({
                 chain fit-to-page depends on (#306/#341) is intact. The hover
                 card and the text-annotation input stay INSIDE the container:
                 both are placed in canvas coordinates and must track the drawing. */}
-            <div className="relative flex flex-1 min-w-0 min-h-[320px] flex-col">
+            <div
+              ref={legendViewportRef}
+              className="relative flex flex-1 min-w-0 min-h-[320px] flex-col"
+            >
             {/* Canvas — the PDF render surface is a genuinely-needed internal
                 scroll region (drawings are far larger than any viewport).
                 `flex-1` makes it claim the height left over in the canvas
@@ -7135,21 +7268,36 @@ export default function TakeoffViewerModule({
                   reconstructs a row for every group on the page regardless. */}
               {showLegend && pageMeasurements.length > 0 && (
                 <div
+                  ref={attachLegend}
                   className={clsx(
-                    'absolute bottom-2 left-2 max-w-[240px] rounded-lg border border-border bg-surface-primary/95 dark:bg-gray-800/95 backdrop-blur-sm shadow-lg overflow-hidden',
+                    // Height cap (#358): flex column so the header stays pinned and
+                    // the rows scroll inside it, and the box can never grow its
+                    // header (the drag handle + close button) off the top.
+                    'absolute max-w-[240px] rounded-lg border border-border bg-surface-primary/95 dark:bg-gray-800/95 backdrop-blur-sm shadow-lg overflow-hidden flex flex-col max-h-[calc(50%-1rem)]',
+                    // Default corner when there is no dragged position (#358).
+                    legendPos === null && 'bottom-2 left-2',
                     // When a measurement/annotation tool is armed, let clicks pass through to the
                     // overlay canvas beneath — otherwise the legend swallows canvas clicks, the user
                     // sees no mark appear, and group-visibility toggles silently hide their work.
+                    // The draggable header re-enables pointer events below so it stays grabbable.
                     activeTool !== 'select' && 'pointer-events-none',
                   )}
+                  style={legendPos ? { left: `${legendPos.x}px`, top: `${legendPos.y}px` } : undefined}
                   data-testid="legend-overlay"
                 >
-                  <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-border-light bg-surface-secondary/40">
+                  <div
+                    className="flex items-center justify-between px-2.5 py-1.5 border-b border-border-light bg-surface-secondary/40 shrink-0 cursor-move select-none pointer-events-auto"
+                    onMouseDown={startLegendDrag}
+                    onDoubleClick={resetLegendPos}
+                    data-testid="legend-drag-handle"
+                    title={t('takeoff_viewer.legend_drag_hint', { defaultValue: 'Drag to move, double-click to reset' })}
+                  >
                     <span className="text-[10px] font-bold uppercase tracking-widest text-content-tertiary">
                       {t('takeoff_viewer.legend', { defaultValue: 'Legend' })}
                     </span>
                     <button
                       type="button"
+                      onMouseDown={(e) => e.stopPropagation()}
                       onClick={() => setShowLegend(false)}
                       className="text-content-tertiary hover:text-content-primary transition-colors p-0.5"
                       aria-label={t('takeoff_viewer.hide_legend', { defaultValue: 'Hide legend' })}
@@ -7157,7 +7305,7 @@ export default function TakeoffViewerModule({
                       <X size={10} />
                     </button>
                   </div>
-                  <div className="py-1">
+                  <div className="py-1 min-h-0 overflow-y-auto">
                     {/* Always show every group on the page, hidden or not, so a
                         hidden group (or a group whose measurements are all
                         individually hidden) can still be restored (#359). */}
