@@ -8,6 +8,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from httpx2 import Response
+from pydantic import SecretStr
 
 from app.auth import (
     Principal,
@@ -121,6 +122,24 @@ def test_production_configuration_fails_closed() -> None:
     with pytest.raises(ValueError, match="Production configuration is incomplete"):
         Settings(environment="production")
 
+    sms_disabled = production_settings(
+        twilio_account_sid="",
+        twilio_api_key_sid="",
+        twilio_api_key_secret="",
+        twilio_from_number="",
+        sms_to="",
+    )
+    assert sms_disabled.sms_enabled_default is False
+    with pytest.raises(ValueError, match="BENSON_TWILIO"):
+        production_settings(
+            sms_enabled_default=True,
+            twilio_account_sid="",
+            twilio_api_key_sid="",
+            twilio_api_key_secret="",
+            twilio_from_number="",
+            sms_to="",
+        )
+
 
 def test_signed_website_lead_is_durable_and_idempotent(isolated_settings: Settings) -> None:
     first = post_signed_lead(isolated_settings, canonical_lead())
@@ -138,7 +157,7 @@ def test_signed_website_lead_is_durable_and_idempotent(isolated_settings: Settin
     }
 
 
-def test_intake_enqueues_email_and_emergency_sms_exactly_once(
+def test_intake_enqueues_email_only_when_emergency_sms_is_disabled(
     isolated_settings: Settings,
 ) -> None:
     first = post_signed_lead(
@@ -155,8 +174,65 @@ def test_intake_enqueues_email_and_emergency_sms_exactly_once(
     assert first.status_code == 201
     assert duplicate.status_code == 200
     assert operations_store(isolated_settings.resolved_database_url()).notification_counts() == {
+        "pending": 1
+    }
+
+
+def test_owner_can_enable_and_disable_emergency_sms(isolated_settings: Settings) -> None:
+    initial = client.get("/api/benson/v1/settings/notifications", headers=STAFF_HEADERS)
+    assert initial.status_code == 200
+    assert initial.json() == {
+        "email_enabled": True,
+        "sms_enabled": False,
+        "sms_configured": False,
+    }
+    assert (
+        client.patch(
+            "/api/benson/v1/settings/notifications",
+            headers=STAFF_HEADERS,
+            json={"sms_enabled": True},
+        ).status_code
+        == 409
+    )
+
+    isolated_settings.twilio_account_sid = "AC123"
+    isolated_settings.twilio_api_key_sid = "SK123"
+    isolated_settings.twilio_api_key_secret = SecretStr("twilio-secret")
+    isolated_settings.twilio_from_number = "+15415550100"
+    isolated_settings.sms_to = "+15415550101"
+    enabled = client.patch(
+        "/api/benson/v1/settings/notifications",
+        headers=STAFF_HEADERS,
+        json={"sms_enabled": True},
+    )
+    assert enabled.status_code == 200
+    assert enabled.json()["sms_enabled"] is True
+
+    post_signed_lead(isolated_settings, canonical_lead(urgency="emergency"), key="sms-on")
+    assert operations_store(isolated_settings.resolved_database_url()).notification_counts() == {
         "pending": 2
     }
+
+    disabled = client.patch(
+        "/api/benson/v1/settings/notifications",
+        headers=STAFF_HEADERS,
+        json={"sms_enabled": False},
+    )
+    assert disabled.status_code == 200
+    assert disabled.json()["sms_enabled"] is False
+    assert operations_store(isolated_settings.resolved_database_url()).notification_counts() == {
+        "disabled": 1,
+        "pending": 1,
+    }
+
+
+def test_notification_settings_require_owner(isolated_settings: Settings) -> None:
+    isolated_settings.field_emails = "field@bensonhomesolutions.com"
+    response = client.get(
+        "/api/benson/v1/settings/notifications",
+        headers={"X-Dev-Staff-Email": "field@bensonhomesolutions.com"},
+    )
+    assert response.status_code == 403
 
 
 def test_notification_worker_delivers_claimed_outbox(

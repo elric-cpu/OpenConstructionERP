@@ -179,6 +179,16 @@ class LeadUpdate(BaseModel):
     note: str | None = Field(default=None, min_length=1, max_length=5_000)
 
 
+class NotificationSettingsUpdate(BaseModel):
+    sms_enabled: bool
+
+
+class NotificationSettings(BaseModel):
+    email_enabled: Literal[True] = True
+    sms_enabled: bool
+    sms_configured: bool
+
+
 class AgentRunRequest(BaseModel):
     skill_id: str = Field(min_length=1, max_length=120)
     prompt: str = Field(min_length=1, max_length=20_000)

@@ -151,6 +151,15 @@ notification_outbox = Table(
     Column("sent_at", DateTime(timezone=True)),
 )
 
+operations_settings = Table(
+    "operations_settings",
+    metadata,
+    Column("key", String(120), primary_key=True),
+    Column("value", Text, nullable=False),
+    Column("updated_by", String(320), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
 
 class OperationsStore:
     def __init__(self, database_url: str):
@@ -238,7 +247,7 @@ class OperationsStore:
                     sort_keys=True,
                 )
                 destinations = [("email", notification_email_to)]
-                if lead.urgency == "emergency":
+                if lead.urgency == "emergency" and emergency_sms_to:
                     destinations.append(("sms", emergency_sms_to))
                 for channel, destination in destinations:
                     db.execute(
@@ -383,6 +392,75 @@ class OperationsStore:
                     updated_at=now,
                 )
             )
+
+    def mark_notification_disabled(self, notification_id: str) -> None:
+        now = datetime.now(UTC)
+        with self.engine.begin() as db:
+            db.execute(
+                update(notification_outbox)
+                .where(
+                    notification_outbox.c.id == notification_id,
+                    notification_outbox.c.status == "processing",
+                )
+                .values(
+                    status="disabled",
+                    locked_at=None,
+                    last_error="SMS delivery disabled in Operations settings",
+                    updated_at=now,
+                )
+            )
+
+    def notification_settings(self, *, sms_enabled_default: bool = False) -> dict[str, bool]:
+        with self.engine.connect() as db:
+            value = db.execute(
+                select(operations_settings.c.value).where(
+                    operations_settings.c.key == "sms_enabled"
+                )
+            ).scalar_one_or_none()
+        return {"sms_enabled": sms_enabled_default if value is None else value == "true"}
+
+    def update_notification_settings(self, *, sms_enabled: bool, actor: str) -> dict[str, bool]:
+        now = datetime.now(UTC)
+        value = "true" if sms_enabled else "false"
+        with self.engine.begin() as db:
+            existing = db.execute(
+                select(operations_settings.c.key).where(operations_settings.c.key == "sms_enabled")
+            ).scalar_one_or_none()
+            if existing is None:
+                db.execute(
+                    operations_settings.insert().values(
+                        key="sms_enabled", value=value, updated_by=actor, updated_at=now
+                    )
+                )
+            else:
+                db.execute(
+                    update(operations_settings)
+                    .where(operations_settings.c.key == "sms_enabled")
+                    .values(value=value, updated_by=actor, updated_at=now)
+                )
+            if not sms_enabled:
+                db.execute(
+                    update(notification_outbox)
+                    .where(
+                        notification_outbox.c.channel == "sms",
+                        notification_outbox.c.status.in_(("pending", "processing")),
+                    )
+                    .values(
+                        status="disabled",
+                        locked_at=None,
+                        last_error="SMS delivery disabled in Operations settings",
+                        updated_at=now,
+                    )
+                )
+            self._audit(
+                db,
+                event="settings.notifications_updated",
+                actor=actor,
+                subject_type="settings",
+                subject_id="notifications",
+                payload={"sms_enabled": sms_enabled},
+            )
+        return {"sms_enabled": sms_enabled}
 
     def notification_counts(self) -> dict[str, int]:
         with self.engine.connect() as db:

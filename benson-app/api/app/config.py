@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     twilio_api_key_secret: SecretStr = SecretStr("")
     twilio_from_number: str = ""
     sms_to: str = ""
+    sms_enabled_default: bool = False
 
     accounting_provider_client_id: str = ""
     accounting_provider_client_secret: str = ""
@@ -85,15 +86,7 @@ class Settings(BaseSettings):
             missing.append("BENSON_RESEND_API_KEY")
         if not self.notification_email_to:
             missing.append("BENSON_NOTIFICATION_EMAIL_TO")
-        if not all(
-            (
-                self.twilio_account_sid,
-                self.twilio_api_key_sid,
-                self.twilio_api_key_secret.get_secret_value(),
-                self.twilio_from_number,
-                self.sms_to,
-            )
-        ):
+        if self.sms_enabled_default and not self.twilio_is_configured():
             missing.append("BENSON_TWILIO_* and BENSON_SMS_TO")
         if missing:
             raise ValueError(f"Production configuration is incomplete: {', '.join(missing)}")
@@ -109,6 +102,17 @@ class Settings(BaseSettings):
     def role_emails(self, role: str) -> set[str]:
         raw = getattr(self, f"{role}_emails", "")
         return {email.strip().lower() for email in raw.split(",") if email.strip()}
+
+    def twilio_is_configured(self) -> bool:
+        return all(
+            (
+                self.twilio_account_sid,
+                self.twilio_api_key_sid,
+                self.twilio_api_key_secret.get_secret_value(),
+                self.twilio_from_number,
+                self.sms_to,
+            )
+        )
 
     def resolved_ddc_registry_path(self) -> Path:
         if self.ddc_registry_path.is_absolute():

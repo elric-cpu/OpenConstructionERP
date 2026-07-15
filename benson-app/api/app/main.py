@@ -39,6 +39,8 @@ from .domain import (
     LeadCreate,
     LeadReceipt,
     LeadUpdate,
+    NotificationSettings,
+    NotificationSettingsUpdate,
     ProposalDecision,
 )
 from .object_storage import delete_upload, detect_upload_type, read_upload, store_upload
@@ -72,13 +74,17 @@ def store(settings: Settings) -> OperationsStore:
 
 
 def create_lead_receipt(lead: LeadCreate, idempotency_key: str, settings: Settings) -> LeadReceipt:
-    return store(settings).create_or_get_lead(
+    operations = store(settings)
+    sms_enabled = operations.notification_settings(
+        sms_enabled_default=settings.sms_enabled_default
+    )["sms_enabled"]
+    return operations.create_or_get_lead(
         idempotency_key=idempotency_key,
         lead=lead,
         upload_base_url=str(settings.upload_base_url),
         upload_session_hours=settings.upload_session_hours,
         notification_email_to=settings.notification_email_to,
-        emergency_sms_to=settings.sms_to,
+        emergency_sms_to=settings.sms_to if sms_enabled else "",
         notification_max_attempts=settings.notification_max_attempts,
     )
 
@@ -106,7 +112,13 @@ def drain_notifications(
     claimed = notification_store.claim_notifications(limit=settings.notification_batch_size)
     sent = 0
     failed = 0
+    sms_enabled = notification_store.notification_settings(
+        sms_enabled_default=settings.sms_enabled_default
+    )["sms_enabled"]
     for item in claimed:
+        if item["channel"] == "sms" and not sms_enabled:
+            notification_store.mark_notification_disabled(item["id"])
+            continue
         try:
             result = deliver_notification(item, settings)
         except NotificationDeliveryError:
@@ -131,6 +143,32 @@ def drain_notifications(
         counts.get("failed", 0),
     )
     return {"claimed": len(claimed), "sent": sent, "failed": failed, "outbox": counts}
+
+
+@app.get("/api/benson/v1/settings/notifications", response_model=NotificationSettings)
+def get_notification_settings(
+    _principal: Principal = Depends(require_owner), settings: Settings = Depends(get_settings)
+) -> NotificationSettings:
+    saved = store(settings).notification_settings(sms_enabled_default=settings.sms_enabled_default)
+    return NotificationSettings(
+        sms_enabled=saved["sms_enabled"], sms_configured=settings.twilio_is_configured()
+    )
+
+
+@app.patch("/api/benson/v1/settings/notifications", response_model=NotificationSettings)
+def update_notification_settings(
+    change: NotificationSettingsUpdate,
+    principal: Principal = Depends(require_owner),
+    settings: Settings = Depends(get_settings),
+) -> NotificationSettings:
+    if change.sms_enabled and not settings.twilio_is_configured():
+        raise HTTPException(status_code=409, detail="Twilio is not configured")
+    saved = store(settings).update_notification_settings(
+        sms_enabled=change.sms_enabled, actor=principal.email
+    )
+    return NotificationSettings(
+        sms_enabled=saved["sms_enabled"], sms_configured=settings.twilio_is_configured()
+    )
 
 
 @app.get("/api/benson/v1/auth/config")

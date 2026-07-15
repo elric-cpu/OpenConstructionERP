@@ -59,11 +59,46 @@ test("authenticated staff see persisted website leads", async ({ page }) => {
       },
     });
   });
+  await page.route("**/api/benson/v1/settings/notifications", (route) =>
+    route.fulfill({ json: { email_enabled: true, sms_enabled: false, sms_configured: true } }),
+  );
   await page.goto("/");
   await expect(page.getByText("Harney County homeowner")).toBeVisible();
   await expect(page.getByText("Window replacement · Burns")).toBeVisible();
   await expect(page.getByText("urgent", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+});
+
+test("owners can opt in to emergency SMS from settings", async ({ page }) => {
+  await page.addInitScript(() => sessionStorage.setItem("benson-google-credential", "owner-token"));
+  await page.route("**/api/v1/dashboard", (route) =>
+    route.fulfill({
+      json: {
+        metrics: { new_leads: 0, active_jobs: 0, open_tasks: 0, unbilled_work: 0 },
+        attention: [],
+        schedule: [],
+        jobs: [],
+      },
+    }),
+  );
+  await page.route("**/api/benson/v1/leads?limit=100*", (route) => route.fulfill({ json: { leads: [] } }));
+  let smsEnabled = false;
+  await page.route("**/api/benson/v1/settings/notifications", async (route) => {
+    expect(route.request().headers().authorization).toBe("Bearer owner-token");
+    if (route.request().method() === "PATCH") {
+      smsEnabled = (route.request().postDataJSON() as { sms_enabled: boolean }).sms_enabled;
+    }
+    await route.fulfill({
+      json: { email_enabled: true, sms_enabled: smsEnabled, sms_configured: true },
+    });
+  });
+
+  await page.goto("/");
+  const toggle = page.getByRole("checkbox", { name: "Emergency SMS alerts" });
+  await expect(toggle).not.toBeChecked();
+  await toggle.check();
+  await expect(toggle).toBeChecked();
+  await expect(page.getByText("Saved", { exact: true })).toBeVisible();
 });
 
 test("staff can operate a lead and create a fact-scoped AI draft", async ({ page }) => {
@@ -116,6 +151,7 @@ test("staff can operate a lead and create a fact-scoped AI draft", async ({ page
     }),
   );
   await page.route("**/api/benson/v1/leads?limit=100*", (route) => route.fulfill({ json: { leads: [detail] } }));
+  await page.route("**/api/benson/v1/settings/notifications", (route) => route.fulfill({ status: 403 }));
   await page.route("**/api/benson/v1/leads/lead-1", async (route) => {
     expect(route.request().headers().authorization).toBe("Bearer test-token");
     if (route.request().method() === "PATCH") {

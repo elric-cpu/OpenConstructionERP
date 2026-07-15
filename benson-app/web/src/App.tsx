@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
+  BellRing,
   BriefcaseBusiness,
   CalendarDays,
   ClipboardCheck,
@@ -18,6 +19,7 @@ import { LeadWorkspace } from "./LeadWorkspace";
 import type { Lead } from "./LeadWorkspace";
 
 type Dashboard = { metrics: Record<string, number>; attention: unknown[]; schedule: unknown[]; jobs: unknown[] };
+type NotificationSettings = { email_enabled: true; sms_enabled: boolean; sms_configured: boolean };
 type GoogleIdentity = {
   accounts: {
     id: {
@@ -61,6 +63,8 @@ export function App() {
   const [selectedLead, setSelectedLead] = useState("");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings | null>(null);
+  const [settingsStatus, setSettingsStatus] = useState<"" | "saving" | "saved" | "error">("");
   const googleButton = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -70,8 +74,9 @@ export function App() {
         `/api/benson/v1/leads?limit=100${statusFilter ? `&status=${statusFilter}` : ""}${query ? `&query=${encodeURIComponent(query)}` : ""}`,
         { headers: requestHeaders(credential) },
       ),
+      fetch("/api/benson/v1/settings/notifications", { headers: requestHeaders(credential) }),
     ])
-      .then(async ([dashboardResponse, leadsResponse]) => {
+      .then(async ([dashboardResponse, leadsResponse, settingsResponse]) => {
         if ([401, 403, 503].includes(dashboardResponse.status)) {
           setRequestStatus("auth-required");
           return;
@@ -79,6 +84,7 @@ export function App() {
         if (!dashboardResponse.ok || !leadsResponse.ok) throw Error("Operations API unavailable");
         setData(await dashboardResponse.json());
         setLeads((await leadsResponse.json()).leads);
+        setNotificationSettings(settingsResponse.ok ? await settingsResponse.json() : null);
         setRequestStatus("ready");
       })
       .catch(() => setRequestStatus("offline"));
@@ -121,6 +127,7 @@ export function App() {
     setData(empty);
     setLeads([]);
     setSelectedLead("");
+    setNotificationSettings(null);
     setRequestStatus("auth-required");
   };
   const metrics: [string, string | number][] = [
@@ -134,6 +141,23 @@ export function App() {
     month: "long",
     day: "numeric",
   }).format(new Date());
+
+  const setSmsEnabled = async (smsEnabled: boolean) => {
+    if (!notificationSettings) return;
+    setSettingsStatus("saving");
+    try {
+      const response = await fetch("/api/benson/v1/settings/notifications", {
+        method: "PATCH",
+        headers: { ...requestHeaders(credential), "content-type": "application/json" },
+        body: JSON.stringify({ sms_enabled: smsEnabled }),
+      });
+      if (!response.ok) throw new Error("Settings update failed");
+      setNotificationSettings(await response.json());
+      setSettingsStatus("saved");
+    } catch {
+      setSettingsStatus("error");
+    }
+  };
 
   return (
     <div className="shell">
@@ -230,6 +254,44 @@ export function App() {
                   </article>
                 ))}
               </section>
+              {notificationSettings && (
+                <section
+                  className="notification-settings"
+                  id="notification-settings"
+                  aria-label="Notifications settings"
+                >
+                  <div className="settings-icon">
+                    <BellRing />
+                  </div>
+                  <div>
+                    <small>OWNER SETTINGS</small>
+                    <h2>Lead notifications</h2>
+                    <p>
+                      Email alerts stay on. SMS alerts are optional and are currently{" "}
+                      {notificationSettings.sms_enabled ? "on" : "off"}.
+                    </p>
+                  </div>
+                  <label className="toggle-setting">
+                    <input
+                      type="checkbox"
+                      checked={notificationSettings.sms_enabled}
+                      disabled={!notificationSettings.sms_configured || settingsStatus === "saving"}
+                      onChange={(event) => void setSmsEnabled(event.target.checked)}
+                    />
+                    <span>Emergency SMS alerts</span>
+                    <small>
+                      {notificationSettings.sms_configured
+                        ? settingsStatus === "saving"
+                          ? "Saving…"
+                          : settingsStatus === "saved"
+                            ? "Saved"
+                            : "Twilio configured"
+                        : "Configure Twilio before enabling"}
+                    </small>
+                  </label>
+                  {settingsStatus === "error" && <p className="form-error">Notification settings were not saved.</p>}
+                </section>
+              )}
               <div className="grid">
                 <Panel title="Lead queue" subtitle="Website requests and staff follow-up." link="Live">
                   <div className="queue-tools">

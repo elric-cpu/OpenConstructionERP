@@ -20,9 +20,9 @@ The exact pinned Operations image is also staged on the existing production-doma
 
 - `npm run verify`: 35 API tests passed at 92.41% coverage; Ruff, strict mypy, Prettier, ESLint, TypeScript, and the production build passed; Playwright passed 9 tests with 1 intentional skip.
 - Scheduler identity probe: `benson-notifications-drain` called the private worker contract with its exact OIDC service identity and received HTTP 200 after audience normalization.
-- Durable delivery: lead acceptance and email/emergency-SMS outbox rows share one transaction; idempotent intake does not duplicate jobs; provider failures remain retryable with bounded exponential backoff and stale-lock recovery.
+- Durable delivery: lead acceptance and email outbox rows share one transaction; idempotent intake does not duplicate jobs; provider failures remain retryable with bounded exponential backoff and stale-lock recovery. Emergency SMS is an owner-controlled opt-in setting that defaults off; disabling it prevents new SMS work and retires unsent SMS jobs.
 - Resend provider probe: controlled message accepted with a provider message ID.
-- Twilio provider probe: credentials authenticate, but the account is `Trial`; delivery is not production-ready because Twilio rejects arbitrary SMS with error `572006` and requires predefined trial templates. A Content API template creation probe returned HTTP 401 / `20003 Policy evaluation failed`; the provisioned API key cannot create a trial template, and no account Auth Token or suitably permitted key is present in Secret Manager.
+- Optional Twilio probe: credentials authenticate, but the account is `Trial`; arbitrary SMS was rejected with error `572006`, and a Content API template creation probe returned HTTP 401 / `20003 Policy evaluation failed`. SMS therefore remains disabled for launch and can be enabled later only by an authenticated owner after provider configuration succeeds.
 - Signed intake probe: first request HTTP 201, exact replay HTTP 200 with `duplicate=true` and the same lead ID.
 - Upload probe: controlled PDF accepted; unauthenticated application download returned HTTP 401; direct public object request returned HTTP 403.
 - Synthetic intake, upload, outbox, audit, and object artifacts were removed after the probe. The target returned to exactly 9 leads and zero outbox jobs.
@@ -61,9 +61,8 @@ The guarded migration tool refuses any accepted source count other than 9 and an
 
 ## Open cutover gates
 
-1. Upgrade/configure the Twilio account, or provision a Twilio credential permitted to create and send an approved trial Content template, so a controlled SMS receives a provider message ID; then re-run the emergency delivery probe.
-2. Complete authenticated Google Workspace staff UAT against the live nine-lead queue. The configured inference browser was unavailable (`App not found`), so automated database reconciliation is not being mislabeled as human UAT.
-3. During an approved 8–10 PM Pacific window: freeze legacy writes, run the final guarded reconciliation, switch every website form directly with no dual-write, switch domain/traffic, and run post-cutover smoke/rollback verification.
-4. Put the legacy service into no-write rollback/archive mode for 30 days after cutover; the 90-day baseline exports are already retained, and a final post-freeze export remains required.
+1. Complete authenticated Google Workspace staff UAT against the live nine-lead queue. The configured inference browser was unavailable (`App not found`), so automated database reconciliation is not being mislabeled as human UAT.
+2. During the approved 8–10 PM Pacific window: freeze legacy writes, run the final guarded reconciliation, switch every website form directly with no dual-write, switch domain/traffic, and run post-cutover smoke/rollback verification.
+3. Put the legacy service into no-write rollback/archive mode for 30 days after cutover; the 90-day baseline exports are already retained, and a final post-freeze export remains required.
 
 Accounting, jobs, estimating, portals, and the rest of full lead-to-cash remain outside this launch scope.
