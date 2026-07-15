@@ -225,6 +225,38 @@ def test_production_google_auth_rejects_untrusted_claims(
         require_staff(authorization="Bearer invalid", settings=settings)
 
 
+def test_production_google_auth_rejects_unlisted_workspace_user(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        environment="production",
+        website_signing_secret="x" * 32,
+        staff_google_audience="client.apps.googleusercontent.com",
+        database_url="postgresql://user:pass@db/operations",
+        upload_bucket="private-uploads",
+        fcc_base_url="https://fcc.example.com",
+        owner_emails="owner@bensonhomesolutions.com",
+    )
+    monkeypatch.setattr(
+        "app.auth.id_token.verify_oauth2_token",
+        MagicMock(
+            return_value={
+                "email": "unlisted@bensonhomesolutions.com",
+                "email_verified": True,
+                "hd": "bensonhomesolutions.com",
+                "sub": "unlisted-subject",
+            }
+        ),
+    )
+    with pytest.raises(HTTPException, match="Staff account is not authorized"):
+        require_staff(authorization="Bearer valid", settings=settings)
+    with pytest.raises(HTTPException, match="Staff account is not authorized"):
+        require_staff(
+            x_dev_staff_email="unlisted@bensonhomesolutions.com",
+            settings=Settings(),
+        )
+
+
 def test_staff_can_list_persisted_leads(isolated_settings: Settings) -> None:
     post_signed_lead(isolated_settings, canonical_lead(urgency="emergency"), key="urgent-1")
     response = client.get("/api/benson/v1/leads?limit=500", headers=STAFF_HEADERS)

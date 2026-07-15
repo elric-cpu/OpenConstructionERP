@@ -16,7 +16,7 @@ class Principal:
     subject: str
 
 
-def _role_for_email(email: str, settings: Settings) -> Role:
+def _role_for_email(email: str, settings: Settings) -> Role | None:
     for role in (
         Role.OWNER,
         Role.ADMIN,
@@ -27,7 +27,7 @@ def _role_for_email(email: str, settings: Settings) -> Role:
     ):
         if email in settings.role_emails(role.value):
             return role
-    return Role.OFFICE
+    return None
 
 
 def require_staff(
@@ -37,7 +37,13 @@ def require_staff(
 ) -> Principal:
     if settings.environment != "production" and x_dev_staff_email:
         email = x_dev_staff_email.strip().lower()
-        return Principal(email=email, role=_role_for_email(email, settings), subject=f"dev:{email}")
+        role = _role_for_email(email, settings)
+        if role is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Staff account is not authorized",
+            )
+        return Principal(email=email, role=role, subject=f"dev:{email}")
     if not settings.staff_google_audience:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Staff SSO is not configured"
@@ -62,9 +68,13 @@ def require_staff(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Benson Workspace account required"
         )
-    return Principal(
-        email=email, role=_role_for_email(email, settings), subject=str(claims.get("sub", email))
-    )
+    role = _role_for_email(email, settings)
+    if role is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Staff account is not authorized",
+        )
+    return Principal(email=email, role=role, subject=str(claims.get("sub", email)))
 
 
 def require_owner(principal: Principal = Depends(require_staff)) -> Principal:
