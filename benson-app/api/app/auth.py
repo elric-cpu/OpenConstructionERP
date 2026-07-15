@@ -112,7 +112,7 @@ def require_notification_worker(
         claims: dict[str, Any] = id_token.verify_oauth2_token(  # type: ignore[no-untyped-call]
             authorization.removeprefix("Bearer ").strip(),
             google_requests.Request(),
-            str(settings.notification_worker_audience),
+            str(settings.notification_worker_audience).rstrip("/"),
         )
     except ValueError as error:
         raise HTTPException(

@@ -198,18 +198,17 @@ def test_production_notification_worker_requires_exact_service_identity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     settings = production_settings()
-    monkeypatch.setattr(
-        "app.auth.id_token.verify_oauth2_token",
-        MagicMock(
-            return_value={
-                "email": "worker@example.iam.gserviceaccount.com",
-                "email_verified": True,
-            }
-        ),
+    verify = MagicMock(
+        return_value={
+            "email": "worker@example.iam.gserviceaccount.com",
+            "email_verified": True,
+        }
     )
+    monkeypatch.setattr("app.auth.id_token.verify_oauth2_token", verify)
     assert require_notification_worker(authorization="Bearer valid", settings=settings) == (
         "worker@example.iam.gserviceaccount.com"
     )
+    assert verify.call_args.args[2] == "https://operations.example.com"
     monkeypatch.setattr(
         "app.auth.id_token.verify_oauth2_token",
         MagicMock(return_value={"email": "attacker@example.com", "email_verified": True}),
