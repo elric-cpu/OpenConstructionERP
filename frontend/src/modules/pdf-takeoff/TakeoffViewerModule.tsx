@@ -794,7 +794,18 @@ export default function TakeoffViewerModule({
     lastPoints: Point[];
   } | null>(null);
   const [dragPreview, setDragPreview] = useState<
-    { measurementId: string; points: Point[]; label: string; selfIntersecting: boolean } | null
+    {
+      measurementId: string;
+      points: Point[];
+      label: string;
+      selfIntersecting: boolean;
+      // The live recompute result (value / unit / area / width / height), so the
+      // completed-measurements pass can repoint the dragged band to the cursor
+      // and its value label stays in sync (#357). selfIntersecting also lives on
+      // this object (above), where the bowtie warning already reads it, so the
+      // patch is projected field-by-field into the render, never spread whole.
+      patch: ReturnType<typeof recomputeMeasurement>;
+    } | null
   >(null);
   /** The vertex most recently grabbed / hovered on the selected
    *  measurement, so Delete can remove a vertex (when valid) instead of
@@ -1507,8 +1518,34 @@ export default function TakeoffViewerModule({
       };
     };
 
+    // The measurement being dragged, repointed to the live preview geometry so
+    // its band, fills, value label, per-segment labels, vertex dots and
+    // annotation all follow the cursor and there is only ever one band on screen
+    // (#357). Project the recompute patch field-by-field exactly like
+    // commitGeometryEdit does on release - never spread it, since it also carries
+    // selfIntersecting, which is not a Measurement field.
+    const previewMeasurement: Measurement | null = (() => {
+      if (!dragPreview) return null;
+      const base = measurements.find((mm) => mm.id === dragPreview.measurementId);
+      if (!base || base.page !== currentPage) return null;
+      const patch = dragPreview.patch;
+      return {
+        ...base,
+        points: dragPreview.points,
+        value: patch.value,
+        label: patch.label,
+        unit: patch.unit ?? base.unit,
+        ...(patch.area !== undefined ? { area: patch.area } : {}),
+        ...(patch.width !== undefined ? { width: patch.width } : {}),
+        ...(patch.height !== undefined ? { height: patch.height } : {}),
+      };
+    })();
+
     // Draw completed measurements on current page (respecting group visibility)
-    for (const m of measurements.filter((m) => m.page === currentPage && !hiddenGroups.has(m.group) && !hiddenMeasurements.has(m.id) && !(isAnnotationType(m.type) && hiddenGroups.has('__annotations__')))) {
+    for (const rawM of measurements.filter((m) => m.page === currentPage && !hiddenGroups.has(m.group) && !hiddenMeasurements.has(m.id) && !(isAnnotationType(m.type) && hiddenGroups.has('__annotations__')))) {
+      // Repoint the dragged measurement to its live geometry (#357); the rest of
+      // the loop then draws the band / labels / dots from the cursor position.
+      const m = previewMeasurement && previewMeasurement.id === rawM.id ? previewMeasurement : rawM;
       // A per-measurement colour (set via the properties swatch) wins over the
       // group default so a recoloured measurement paints in its chosen colour
       // (issue #299); annotation markups already resolve `m.color` below.
@@ -2108,7 +2145,12 @@ export default function TakeoffViewerModule({
           const ly = last.y * dpr * zoom - 10 * dpr;
           if (preview.label) {
             ctx.font = `bold ${12 * dpr}px sans-serif`;
-            const txt = preview.label;
+            // Route through measurementLabel so the readout reads in the user's
+            // unit system, matching the committed label. preview.label is the raw
+            // metric string, which would show an imperial user metres (#357).
+            const txt = previewMeasurement
+              ? measurementLabel(previewMeasurement, scale, measurementSystem)
+              : preview.label;
             const w = ctx.measureText(txt).width + 8 * dpr;
             ctx.fillStyle = isDark ? '#1e293b' : '#ffffff';
             ctx.globalAlpha = 0.9;
@@ -3111,6 +3153,9 @@ export default function TakeoffViewerModule({
         points: next,
         label: patch.label,
         selfIntersecting: Boolean(patch.selfIntersecting),
+        // Carry the recompute result so the render can repoint the band and its
+        // value label to the live geometry (#357), instead of discarding it.
+        patch,
       });
     },
     [pointerToPdf, orthoLock],
