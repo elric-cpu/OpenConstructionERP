@@ -35,6 +35,15 @@ The live candidate returned HTTP 200 from `/api/health`, reported `environment=p
 - Email channel: `Benson Operations alerts` (`12660752846837039647`)
 - Durable worker: `benson-notifications-drain`, every minute, dedicated identity `benson-notification-scheduler@civic-wall-494004-b3.iam.gserviceaccount.com`
 
+## Retained exports
+
+Private archive bucket `benson-operations-cutover-archive-1048944000089` is regional in `US-WEST1`, uses uniform bucket access, enforces public access prevention, has versioning enabled, and has a 90-day retention policy.
+
+- Legacy baseline: `legacy/precutover-20260715T0509Z.sql.gz`, 218,866 bytes, retained until 2026-10-13T05:09:23Z
+- Operations post-migration: `operations/postmigration-20260715T0510Z.sql.gz`, 5,986 bytes, retained until 2026-10-13T05:09:53Z
+
+The final write-freeze delta requires a new timestamped export; these are the pre-cutover baseline and post-migration recovery artifacts.
+
 ## Nine-lead reconciliation
 
 The guarded migration tool refuses any accepted source count other than 9 and any target that is neither empty nor the already reconciled set. It preserves source timestamps and payloads, records `lead.migrated` audit events, and intentionally sends no historical notifications.
@@ -52,6 +61,6 @@ The guarded migration tool refuses any accepted source count other than 9 and an
 1. Upgrade/configure the Twilio account so a controlled SMS receives a provider message ID; then re-run the emergency delivery probe.
 2. Complete authenticated Google Workspace staff UAT against the live nine-lead queue. The configured inference browser was unavailable (`App not found`), so automated database reconciliation is not being mislabeled as human UAT.
 3. During an approved 8–10 PM Pacific window: freeze legacy writes, run the final guarded reconciliation, switch every website form directly with no dual-write, switch domain/traffic, and run post-cutover smoke/rollback verification.
-4. Preserve the legacy system as a no-write rollback/archive surface for 30 days and retain backups/export for 90 days.
+4. Put the legacy service into no-write rollback/archive mode for 30 days after cutover; the 90-day baseline exports are already retained, and a final post-freeze export remains required.
 
 Accounting, jobs, estimating, portals, and the rest of full lead-to-cash remain outside this launch scope.
