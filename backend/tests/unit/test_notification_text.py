@@ -10,7 +10,7 @@ the body equal to the title.
 
 from __future__ import annotations
 
-from app.modules.notifications.templates import combine_title_body
+from app.modules.notifications.templates import combine_title_body, render
 
 
 def test_combine_distinct_title_and_body():
@@ -35,3 +35,27 @@ def test_combine_handles_empty_title():
 def test_combine_strips_surrounding_whitespace():
     assert combine_title_body("  New  ", "  New  ") == "New"
     assert combine_title_body("  A  ", "  B  ") == "A - B"
+
+
+def test_portal_notification_templates_render_real_text():
+    # Regression for issue #361: the portal notification keys had no
+    # server-side template, so channels without frontend i18n (the Telegram
+    # bridge) rendered the raw key string as the title and body. render()
+    # must interpolate them, never fall back to the key.
+    invited = render(
+        "notifications.portal.user_invited.body",
+        {"portal_user_email": "sam@example.com", "portal_role": "viewer"},
+    )
+    assert invited == "sam@example.com invited as viewer."
+
+    message = render(
+        "notifications.portal.message_received.body",
+        {"buyer_name": "A buyer"},
+    )
+    assert message == "A buyer sent a message."
+
+    for key in (
+        "notifications.portal.user_invited.title",
+        "notifications.portal.message_received.title",
+    ):
+        assert render(key) != key
