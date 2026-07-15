@@ -636,6 +636,16 @@ export default function TakeoffViewerModule({
    *  only flips the cursor + suppresses click-to-place. */
   const panRef = useRef<{ startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
   const [panning, setPanning] = useState(false);
+  /** Primary-button canvas press in flight (down, not yet released). Scoped to
+   *  button 0: a non-primary press fires auxclick, never click, so keying this
+   *  on any button would let a middle-click disarm a guard a tool switch armed
+   *  (#356). */
+  const pressActiveRef = useRef(false);
+  /** The trailing click of the current press must not be treated as a
+   *  placement - armed when the tool changes mid-press, consumed by the next
+   *  handleCanvasClick (#356). Keyed on the press, not on dragRef, since Escape
+   *  can null dragRef mid-press while the click is still coming. */
+  const suppressNextClickRef = useRef(false);
   /** True while the Space bar is held - arms pan on the next mousedown and
    *  shows the grab cursor. Cleared on keyup / blur. */
   const [spaceHeld, setSpaceHeld] = useState(false);
@@ -2230,6 +2240,11 @@ export default function TakeoffViewerModule({
 
   const handleTouchStart = useCallback(
     (e: React.TouchEvent<HTMLCanvasElement>) => {
+      // A mouse press that ended off-canvas can leave suppressNextClick set, and
+      // handleTouchEnd calls the placement handler directly (not via a browser
+      // click), so clear it here too or the next tap's placement is swallowed
+      // (#356).
+      suppressNextClickRef.current = false;
       if (e.touches.length === 2) {
         // Pinch start
         const t0 = e.touches[0]!;
@@ -2327,6 +2342,13 @@ export default function TakeoffViewerModule({
 
   const handleCanvasClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
+      // A press that began before the tool changed (a mid-press shortcut switch)
+      // must not place a point in the tool that replaced it (#356). Consume its
+      // trailing click, in the same shape as the pan guard below.
+      if (suppressNextClickRef.current) {
+        suppressNextClickRef.current = false;
+        return;
+      }
       // A pan gesture that ended on this element must not also place a point,
       // and in sticky pan mode (#316) a click never places one either.
       if (panRef.current || spaceHeldRef.current || panLockRef.current) return;
@@ -2919,6 +2941,13 @@ export default function TakeoffViewerModule({
    *  design. */
   const handleCanvasMouseDown = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
+      // Track the primary press for the duration it is held (#356). A fresh
+      // press also clears any suppression left set by a previous press that
+      // ended off-canvas, so it cannot swallow this press's own click.
+      if (e.button === 0) {
+        pressActiveRef.current = true;
+        suppressNextClickRef.current = false;
+      }
       // Pan gesture: middle mouse (button 1) anywhere, or left-drag while the
       // Space bar is held. Works in any tool and is captured before tool logic
       // so it never places a measurement. The actual move + release are driven
@@ -3197,7 +3226,10 @@ export default function TakeoffViewerModule({
     setSnapPoint((cur) => (cur ? null : cur));
   }, [liveCursor, hoverInfo]);
 
-  const handleCanvasMouseUp = useCallback(() => {
+  const handleCanvasMouseUp = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    // The primary press ended (#356). A release outside the canvas is caught by
+    // the window mouseup listener below instead.
+    if (e.button === 0) pressActiveRef.current = false;
     if (dragRef.current) finishDrag(true);
   }, [finishDrag]);
 
@@ -3219,7 +3251,10 @@ export default function TakeoffViewerModule({
       }
       if (dragRef.current) handleEditDragMove(e);
     };
-    const onUp = () => {
+    const onUp = (e: MouseEvent) => {
+      // Catches a primary release outside the canvas, where no React mouseup or
+      // click fires (#356).
+      if (e.button === 0) pressActiveRef.current = false;
       if (panRef.current) {
         panRef.current = null;
         setPanning(false);
@@ -5530,6 +5565,19 @@ export default function TakeoffViewerModule({
 
   /** Unified tool-switch logic (shared between toolbar buttons + shortcuts). */
   const selectTool = useCallback((tool: MeasureTool) => {
+    // Only react to an ACTUAL tool change (#356). V maps to select, so pressing
+    // it during a select-tool drag must not cancel the edit; and it is the
+    // change of tool that makes a trailing click land in a different tool.
+    if (tool !== activeTool) {
+      // Abandon an in-flight vertex/shape edit rather than committing it at a
+      // position the canvas stopped showing the instant the tool changed. Same
+      // no-undo-frame abandon path Escape uses.
+      if (dragRef.current) finishDrag(false);
+      // Suppress the click this held press will still emit on release, so it is
+      // not consumed as a placement by the tool just selected. Keyed on the
+      // live press, not on dragRef (Escape can null dragRef mid-press).
+      if (pressActiveRef.current) suppressNextClickRef.current = true;
+    }
     setActiveTool(tool);
     setActivePoints([]);
     setRectStartPoint(null);
@@ -5544,7 +5592,7 @@ export default function TakeoffViewerModule({
     if (isAnnotationTool(tool)) {
       setAnnotationColor(DEFAULT_ANNOTATION_COLORS[tool]);
     }
-  }, []);
+  }, [activeTool, finishDrag]);
 
   /** Keyboard shortcuts: per-tool letters, Ctrl+Z/Y redo/undo, Esc cancel,
    *  Space (pan), Shift (ortho lock), Shift+1/2/3 (fit width / page /
@@ -5756,6 +5804,17 @@ export default function TakeoffViewerModule({
       shiftHeldRef.current = false;
       spaceHeldRef.current = false;
       setSpaceHeld(false);
+      // A button released in another application delivers no mouseup to this
+      // window, so tear down every in-flight gesture keyed on a held button
+      // (#356). Each is independent and any of them can be armed at once, so do
+      // not return early between them.
+      if (dragRef.current) finishDrag(false); // abandon, no undo frame (like Escape)
+      if (panRef.current) {
+        panRef.current = null;
+        setPanning(false); // leave panLock alone: it is a mode, not a gesture
+      }
+      pressActiveRef.current = false;
+      suppressNextClickRef.current = false;
     };
     window.addEventListener('keydown', handler);
     window.addEventListener('keyup', upHandler);
