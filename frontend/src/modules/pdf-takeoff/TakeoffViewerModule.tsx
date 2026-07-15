@@ -2835,6 +2835,15 @@ export default function TakeoffViewerModule({
 
         if (m.id !== selId) setSelectedMeasurementId(m.id);
 
+        // A reshape is about to be armed below. Drop the hover card now, or it
+        // stays frozen on top of the vertex being dragged: handleCanvasMouseMove
+        // returns early while dragRef is set, so it never refreshes the card's
+        // position during the drag (issue #353). Clearing it here rather than in
+        // that move branch is deliberate: dragRef is armed on this mousedown, so
+        // a press held (or pressed and released) without moving never reaches the
+        // move handler and would otherwise leave the card stranded.
+        setHoverInfo(null);
+
         if (hit.kind === 'vertex') {
           activeVertexRef.current = { measurementId: m.id, index: hit.index };
           dragRef.current = {
