@@ -54,3 +54,27 @@ async def test_production_agent_gateway_uses_cloud_run_identity(
             settings, "Summarize", "Use supplied records", client=client
         )
     assert result["output_text"] == "Private gateway ready"
+
+
+@pytest.mark.asyncio
+async def test_agent_gateway_parses_fcc_streaming_response() -> None:
+    body = "\n".join(
+        [
+            "event: response.created",
+            'data: {"type":"response.created","response":{"status":"in_progress"}}',
+            "",
+            "event: response.completed",
+            'data: {"type":"response.completed","response":{"id":"resp-1","status":"completed","output":[{"type":"reasoning","content":[]},{"type":"message","content":[{"type":"output_text","text":"Fact-scoped draft"}]}]}}',
+            "",
+        ]
+    )
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, text=body)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await run_agent_prompt(
+            Settings(), "Summarize", "Use supplied records", client=client
+        )
+    assert result["status"] == "completed"
+    assert result["output_text"] == "Fact-scoped draft"

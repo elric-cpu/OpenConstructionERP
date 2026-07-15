@@ -1,4 +1,5 @@
 import asyncio
+import json
 from typing import Any, cast
 
 import httpx
@@ -10,6 +11,31 @@ from .config import Settings
 
 class AiGatewayUnavailable(RuntimeError):
     pass
+
+
+def _parse_gateway_response(response: httpx.Response) -> dict[str, Any]:
+    if "text/event-stream" not in response.headers.get("content-type", ""):
+        return cast(dict[str, Any], response.json())
+    completed: dict[str, Any] | None = None
+    for line in response.text.splitlines():
+        if not line.startswith("data: "):
+            continue
+        event = json.loads(line.removeprefix("data: "))
+        if event.get("type") == "response.failed":
+            raise ValueError("FCC response failed")
+        if event.get("type") == "response.completed":
+            completed = cast(dict[str, Any], event.get("response"))
+    if not completed or completed.get("status") != "completed":
+        raise ValueError("FCC response did not complete")
+    output_parts: list[str] = []
+    for item in completed.get("output", []):
+        if item.get("type") != "message":
+            continue
+        for content in item.get("content", []):
+            if content.get("type") == "output_text" and content.get("text"):
+                output_parts.append(str(content["text"]))
+    completed["output_text"] = "\n".join(output_parts).strip()
+    return completed
 
 
 async def run_agent_prompt(
@@ -44,7 +70,7 @@ async def run_agent_prompt(
             },
         )
         response.raise_for_status()
-        return cast(dict[str, Any], response.json())
+        return _parse_gateway_response(response)
     except (httpx.HTTPError, ValueError, TypeError) as error:
         raise AiGatewayUnavailable("Benson AI gateway is temporarily unavailable") from error
     finally:
