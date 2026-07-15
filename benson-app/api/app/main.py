@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from .ai_gateway import AiGatewayUnavailable, run_agent_prompt
-from .auth import Principal, require_owner, require_staff
+from .auth import Principal, require_operations_staff, require_owner, require_staff
 from .config import Settings, get_settings
 from .domain import (
     AgentRunRequest,
@@ -39,7 +39,7 @@ from .object_storage import delete_upload, detect_upload_type, read_upload, stor
 from .policy import ActionRisk
 from .signing import verify_website_signature
 from .skill_registry import SkillDefinition, load_registry
-from .storage import OperationsStore, operations_store
+from .storage import InvalidLeadTransition, OperationsStore, operations_store
 
 
 @asynccontextmanager
@@ -159,7 +159,7 @@ def list_leads(
     priority: str | None = None,
     assigned_to: str | None = None,
     query: str | None = None,
-    _principal: Principal = Depends(require_staff),
+    _principal: Principal = Depends(require_operations_staff),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     safe_limit = max(1, min(limit, 250))
@@ -177,7 +177,7 @@ def list_leads(
 @app.get("/api/benson/v1/leads/{lead_id}")
 def lead_detail(
     lead_id: str,
-    _principal: Principal = Depends(require_staff),
+    _principal: Principal = Depends(require_operations_staff),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     lead = store(settings).get_lead(lead_id)
@@ -190,12 +190,15 @@ def lead_detail(
 def update_lead(
     lead_id: str,
     change: LeadUpdate,
-    principal: Principal = Depends(require_staff),
+    principal: Principal = Depends(require_operations_staff),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     if change.status is None and change.assigned_to is None and change.note is None:
         raise HTTPException(status_code=400, detail="At least one lead change is required")
-    lead = store(settings).update_lead(lead_id, change, actor=principal.email)
+    try:
+        lead = store(settings).update_lead(lead_id, change, actor=principal.email)
+    except InvalidLeadTransition as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
     return lead
@@ -204,7 +207,7 @@ def update_lead(
 @app.get("/api/benson/v1/attachments/{attachment_id}")
 async def download_attachment(
     attachment_id: str,
-    _principal: Principal = Depends(require_staff),
+    _principal: Principal = Depends(require_operations_staff),
     settings: Settings = Depends(get_settings),
 ) -> BinaryResponse:
     attachment = store(settings).get_attachment(attachment_id)

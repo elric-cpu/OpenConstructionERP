@@ -14,16 +14,10 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { LeadWorkspace } from "./LeadWorkspace";
+import type { Lead } from "./LeadWorkspace";
 
 type Dashboard = { metrics: Record<string, number>; attention: unknown[]; schedule: unknown[]; jobs: unknown[] };
-type Lead = {
-  id: string;
-  priority: string;
-  name: string;
-  service_type: string;
-  city: string;
-  created_at: string;
-};
 type GoogleIdentity = {
   accounts: {
     id: {
@@ -64,12 +58,18 @@ export function App() {
   const [credential, setCredential] = useState(() => sessionStorage.getItem(tokenKey) ?? "");
   const [requestStatus, setRequestStatus] = useState<"loading" | "ready" | "auth-required" | "offline">("loading");
   const [menu, setMenu] = useState(false);
+  const [selectedLead, setSelectedLead] = useState("");
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const googleButton = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     Promise.all([
       fetch("/api/v1/dashboard", { headers: requestHeaders(credential) }),
-      fetch("/api/benson/v1/leads?limit=6", { headers: requestHeaders(credential) }),
+      fetch(
+        `/api/benson/v1/leads?limit=100${statusFilter ? `&status=${statusFilter}` : ""}${query ? `&query=${encodeURIComponent(query)}` : ""}`,
+        { headers: requestHeaders(credential) },
+      ),
     ])
       .then(async ([dashboardResponse, leadsResponse]) => {
         if ([401, 403, 503].includes(dashboardResponse.status)) {
@@ -82,7 +82,7 @@ export function App() {
         setRequestStatus("ready");
       })
       .catch(() => setRequestStatus("offline"));
-  }, [credential]);
+  }, [credential, query, statusFilter]);
 
   useEffect(() => {
     if (requestStatus !== "auth-required" || !googleButton.current) return;
@@ -120,6 +120,7 @@ export function App() {
     setCredential("");
     setData(empty);
     setLeads([]);
+    setSelectedLead("");
     setRequestStatus("auth-required");
   };
   const metrics: [string, string | number][] = [
@@ -170,7 +171,12 @@ export function App() {
           </button>
           <div className="search">
             <Search />
-            <input aria-label="Search" placeholder="Search jobs, customers, addresses…" />
+            <input
+              aria-label="Search leads"
+              placeholder="Search leads, phone, city…"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
           </div>
           <div className="header-actions">
             <span className={requestStatus === "offline" ? "status offline" : "status"}>
@@ -183,7 +189,7 @@ export function App() {
             )}
           </div>
         </header>
-        <div className="content">
+        <div className={selectedLead ? "content lead-content" : "content"}>
           {requestStatus === "auth-required" && (
             <section className="auth-banner" aria-label="Staff sign in">
               <div>
@@ -194,95 +200,130 @@ export function App() {
               <div ref={googleButton} className="google-button" />
             </section>
           )}
-          <div className="headline">
-            <div>
-              <p>{today}</p>
-              <h1>Good morning.</h1>
-              <span>Here’s what needs your attention today.</span>
-            </div>
-            <a className="primary" href="https://bensonhomesolutions.com/contact">
-              + New lead
-            </a>
-          </div>
-          <section className="metrics">
-            {metrics.map(([label, value]) => (
-              <article key={label}>
-                <small>{label}</small>
-                <strong>{value}</strong>
-                <em>Live workspace total</em>
-              </article>
-            ))}
-          </section>
-          <div className="grid">
-            <Panel title="New lead queue" subtitle="Website requests waiting for staff review." link="View all">
-              {leads.length ? (
-                <div className="lead-list">
-                  {leads.map((lead) => (
-                    <article key={lead.id}>
-                      <span className={lead.priority === "urgent" ? "priority urgent" : "priority"}>
-                        {lead.priority}
-                      </span>
-                      <div>
-                        <strong>{lead.name}</strong>
-                        <small>
-                          {lead.service_type} · {lead.city || "Location pending"}
-                        </small>
-                      </div>
-                      <time>
-                        {new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(
-                          new Date(lead.created_at),
-                        )}
-                      </time>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <Empty
-                  icon={<ClipboardCheck />}
-                  title="You’re caught up"
-                  body="New website requests will appear here."
-                />
-              )}
-            </Panel>
-            <section className="panel agent">
-              <div className="agent-head">
-                <Sparkles />
+          {selectedLead ? (
+            <LeadWorkspace
+              leadId={selectedLead}
+              credential={credential}
+              onBack={() => setSelectedLead("")}
+              onChanged={(changed) =>
+                setLeads((current) => current.map((lead) => (lead.id === changed.id ? changed : lead)))
+              }
+            />
+          ) : (
+            <>
+              <div className="headline">
                 <div>
-                  <h2>Benson Assistant</h2>
-                  <p>Free Claude Code gateway · reviewed construction skills</p>
+                  <p>{today}</p>
+                  <h1>Good morning.</h1>
+                  <span>Here’s what needs your attention today.</span>
                 </div>
+                <a className="primary" href="https://bensonhomesolutions.com/contact">
+                  + New lead
+                </a>
               </div>
-              <p>Draft summaries, estimates, and next steps. Every mutation or external send requires confirmation.</p>
-              <div className="prompts">
-                <button disabled title="Assistant workspace is not enabled in this release">
-                  Summarize new leads
-                </button>
-                <button disabled title="Assistant workspace is not enabled in this release">
-                  Review estimate risks
-                </button>
-                <button disabled title="Assistant workspace is not enabled in this release">
-                  Draft daily report
-                </button>
+              <section className="metrics">
+                {metrics.map(([label, value]) => (
+                  <article key={label}>
+                    <small>{label}</small>
+                    <strong>{value}</strong>
+                    <em>Live workspace total</em>
+                  </article>
+                ))}
+              </section>
+              <div className="grid">
+                <Panel title="Lead queue" subtitle="Website requests and staff follow-up." link="Live">
+                  <div className="queue-tools">
+                    <label>
+                      Status
+                      <select
+                        aria-label="Filter leads by status"
+                        value={statusFilter}
+                        onChange={(event) => setStatusFilter(event.target.value)}
+                      >
+                        <option value="">All statuses</option>
+                        {["new", "contacted", "qualified", "scheduled", "closed"].map((status) => (
+                          <option key={status}>{status}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <span>{leads.length} shown</span>
+                  </div>
+                  {leads.length ? (
+                    <div className="lead-list">
+                      {leads.map((lead) => (
+                        <button className="lead-row" key={lead.id} onClick={() => setSelectedLead(lead.id)}>
+                          <span className={lead.priority === "urgent" ? "priority urgent" : "priority"}>
+                            {lead.priority}
+                          </span>
+                          <div>
+                            <strong>{lead.name}</strong>
+                            <small>
+                              {lead.service_type} · {lead.city || "Location pending"}
+                            </small>
+                          </div>
+                          <time>
+                            {new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(
+                              new Date(lead.created_at),
+                            )}
+                          </time>
+                          <span className="lead-status">{lead.status}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <Empty
+                      icon={<ClipboardCheck />}
+                      title="You’re caught up"
+                      body="New website requests will appear here."
+                    />
+                  )}
+                </Panel>
+                <section className="panel agent overview-agent">
+                  <div className="agent-head">
+                    <Sparkles />
+                    <div>
+                      <h2>Benson Assistant</h2>
+                      <p>Free Claude Code gateway · reviewed construction skills</p>
+                    </div>
+                  </div>
+                  <p>Select a lead to draft a fact-scoped summary, next steps, or reviewed construction analysis.</p>
+                  <div className="prompts">
+                    <button disabled title="Select a lead first">
+                      Summarize new leads
+                    </button>
+                    <button disabled title="Select a lead first">
+                      Review estimate risks
+                    </button>
+                    <button disabled title="Select a lead first">
+                      Draft daily report
+                    </button>
+                  </div>
+                  <div className="ask">
+                    <input aria-label="Ask Benson Assistant" placeholder="Ask about your operations…" />
+                    <button disabled title="Select a lead first">
+                      Ask
+                    </button>
+                  </div>
+                </section>
+                <Panel title="Today’s schedule" subtitle="Field visits and committed work." link="Open calendar">
+                  <Empty
+                    icon={<CalendarDays />}
+                    title="No visits scheduled"
+                    body="Add work from a job or estimate."
+                    compact
+                  />
+                </Panel>
+                <Panel title="Active jobs" subtitle="Current residential work." link="View jobs">
+                  <Empty
+                    icon={<Hammer />}
+                    title="No active jobs yet"
+                    body="Accepted estimates will appear here."
+                    compact
+                  />
+                </Panel>
               </div>
-              <div className="ask">
-                <input aria-label="Ask Benson Assistant" placeholder="Ask about your operations…" />
-                <button disabled title="Assistant workspace is not enabled in this release">
-                  Ask
-                </button>
-              </div>
-            </section>
-            <Panel title="Today’s schedule" subtitle="Field visits and committed work." link="Open calendar">
-              <Empty
-                icon={<CalendarDays />}
-                title="No visits scheduled"
-                body="Add work from a job or estimate."
-                compact
-              />
-            </Panel>
-            <Panel title="Active jobs" subtitle="Current residential work." link="View jobs">
-              <Empty icon={<Hammer />} title="No active jobs yet" body="Accepted estimates will appear here." compact />
-            </Panel>
-          </div>
+            </>
+          )}
         </div>
       </main>
     </div>

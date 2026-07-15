@@ -6,7 +6,7 @@ from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 
 from .config import Settings, get_settings
-from .domain import Role
+from .domain import STAFF, Role
 
 
 @dataclass(frozen=True)
@@ -70,4 +70,13 @@ def require_staff(
 def require_owner(principal: Principal = Depends(require_staff)) -> Principal:
     if principal.role not in {Role.OWNER, Role.ADMIN}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Owner approval required")
+    return principal
+
+
+def require_operations_staff(principal: Principal = Depends(require_staff)) -> Principal:
+    if principal.role not in STAFF:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Lead workspace access required",
+        )
     return principal

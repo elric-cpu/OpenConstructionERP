@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from httpx2 import Response
 
-from app.auth import Principal, require_owner, require_staff
+from app.auth import Principal, require_operations_staff, require_owner, require_staff
 from app.config import Settings, get_settings
 from app.domain import Role
 from app.main import app
@@ -266,6 +266,28 @@ def test_staff_can_filter_open_update_and_audit_lead(isolated_settings: Settings
         client.patch(f"/api/benson/v1/leads/{lead_id}", headers=STAFF_HEADERS, json={}).status_code
         == 400
     )
+    invalid = client.patch(
+        f"/api/benson/v1/leads/{lead_id}",
+        headers=STAFF_HEADERS,
+        json={"status": "scheduled"},
+    )
+    assert invalid.status_code == 409
+    assert "contacted to scheduled" in invalid.json()["detail"]
+
+
+def test_lead_workspace_denies_non_operations_roles(isolated_settings: Settings) -> None:
+    lead_id = post_signed_lead(isolated_settings, canonical_lead(), key="role-scope").json()[
+        "lead_id"
+    ]
+    field_principal = Principal(email="field@example.com", role=Role.FIELD, subject="field")
+    app.dependency_overrides[require_operations_staff] = lambda: require_operations_staff(
+        field_principal
+    )
+    try:
+        response = client.get(f"/api/benson/v1/leads/{lead_id}")
+    finally:
+        app.dependency_overrides.pop(require_operations_staff, None)
+    assert response.status_code == 403
 
 
 def test_staff_attachment_download_is_authenticated(isolated_settings: Settings) -> None:

@@ -24,6 +24,19 @@ from .domain import LeadCreate, LeadReceipt, LeadSummary, LeadUpdate
 
 metadata = MetaData()
 
+LEAD_TRANSITIONS = {
+    "new": {"contacted", "closed"},
+    "contacted": {"qualified", "closed"},
+    "qualified": {"scheduled", "closed"},
+    "scheduled": {"closed"},
+    "closed": set(),
+}
+
+
+class InvalidLeadTransition(ValueError):
+    pass
+
+
 leads = Table(
     "leads",
     metadata,
@@ -448,6 +461,16 @@ class OperationsStore:
             existing = db.execute(select(leads).where(leads.c.id == lead_id)).mappings().first()
             if not existing:
                 return None
+            requested_status = values.get("status")
+            current_status = str(existing["status"])
+            if (
+                requested_status
+                and requested_status != current_status
+                and requested_status not in LEAD_TRANSITIONS.get(current_status, set())
+            ):
+                raise InvalidLeadTransition(
+                    f"Lead cannot move from {current_status} to {requested_status}"
+                )
             if values:
                 values["updated_at"] = now
                 db.execute(update(leads).where(leads.c.id == lead_id).values(**values))
