@@ -6865,6 +6865,18 @@ export default function TakeoffViewerModule({
               </div>
             )}
 
+            {/* Non-scrolling positioning context for the canvas chrome (#354).
+                The legend, tool hints, calibration banner, suggestion pill and
+                draw readout are pinned here, to the visible canvas, instead of
+                inside the scroll container where they were children of the
+                scrolled content and rode the drawing off screen. The wrapper
+                takes the container's slot in the canvas column (flex-1 + the
+                fixed min-h-[320px] floor) and passes it straight through, so the
+                container's own classes stay untouched and the definite-height
+                chain fit-to-page depends on (#306/#341) is intact. The hover
+                card and the text-annotation input stay INSIDE the container:
+                both are placed in canvas coordinates and must track the drawing. */}
+            <div className="relative flex flex-1 min-w-0 min-h-[320px] flex-col">
             {/* Canvas — the PDF render surface is a genuinely-needed internal
                 scroll region (drawings are far larger than any viewport).
                 `flex-1` makes it claim the height left over in the canvas
@@ -6909,6 +6921,89 @@ export default function TakeoffViewerModule({
                 onTouchEnd={handleTouchEnd}
               />
 
+              {/* Hover tooltip and the text-annotation input STAY inside the
+                  scroll container: both are positioned in canvas coordinates and
+                  must travel with the drawing, unlike the pinned chrome below
+                  (#354). Hover tooltip on an existing measurement (select mode) -
+                  value, group and linked BOQ position. Offset from the cursor so
+                  it does not sit under the pointer; pointer-events disabled so it
+                  never eats the click. */}
+              {hoverInfo && hoverMeasurement && (
+                <div
+                  className="absolute z-20 max-w-[220px] rounded-md border border-border bg-surface-primary/95 dark:bg-gray-800/95 backdrop-blur-sm shadow-lg px-2.5 py-1.5 text-[11px] pointer-events-none"
+                  style={{ left: `${hoverInfo.x + 14}px`, top: `${hoverInfo.y + 14}px` }}
+                  data-testid="measurement-hover-tooltip"
+                >
+                  <div className="font-semibold text-content-primary truncate">
+                    {hoverMeasurement.annotation
+                      || (hoverMeasurement.label
+                        ? measurementLabel(hoverMeasurement, scale, measurementSystem)
+                        : hoverMeasurement.type)}
+                  </div>
+                  {hoverMeasurement.label && (
+                    <div className="tabular-nums text-content-secondary">
+                      {measurementLabel(hoverMeasurement, scale, measurementSystem)}
+                    </div>
+                  )}
+                  <div className="mt-0.5 flex items-center gap-1 text-content-tertiary">
+                    <span className="uppercase tracking-wide text-[10px]">
+                      {t('takeoff_viewer.tooltip_group', { defaultValue: 'Group' })}
+                    </span>
+                    <span>{hoverMeasurement.group || 'General'}</span>
+                  </div>
+                  <div className="mt-0.5 text-[10px]">
+                    {hoverMeasurement.linkedPositionOrdinal ? (
+                      <span className="text-emerald-600 dark:text-emerald-400 font-mono">
+                        {t('takeoff_viewer.tooltip_linked', {
+                          defaultValue: 'Linked to {{pos}}',
+                          pos: hoverMeasurement.linkedPositionOrdinal,
+                        })}
+                      </span>
+                    ) : (
+                      <span className="text-content-quaternary">
+                        {t('takeoff_viewer.tooltip_unlinked', { defaultValue: 'Not linked to a BOQ position' })}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+              {/* Inline text input overlay for text annotation tool */}
+              {showTextInput && (
+                <div
+                  className="absolute z-10"
+                  style={{
+                    left: `${textInputPos.x * zoom}px`,
+                    top: `${textInputPos.y * zoom}px`,
+                  }}
+                >
+                  <input
+                    type="text"
+                    value={textInputValue}
+                    onChange={(e) => setTextInputValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleTextConfirm();
+                      if (e.key === 'Escape') {
+                        textInputCancellingRef.current = true;
+                        setShowTextInput(false);
+                        setTextInputValue('');
+                      }
+                    }}
+                    onBlur={() => {
+                      if (textInputCancellingRef.current) {
+                        textInputCancellingRef.current = false;
+                        return;
+                      }
+                      handleTextConfirm();
+                    }}
+                    autoFocus
+                    placeholder={t('takeoff_viewer.text_placeholder', { defaultValue: 'Type annotation text...' })}
+                    className="rounded border-2 bg-white/95 dark:bg-gray-800/95 px-2 py-1 text-sm font-medium outline-none shadow-lg min-w-[150px]"
+                    style={{ borderColor: annotationColor, color: annotationColor }}
+                  />
+                </div>
+              )}
+            </div>
+
               {/* Live drawing readout HUD - cursor coordinate + running
                   segment / cumulative length while a measure tool draws.
                   Bottom-right so it never collides with the bottom-left legend
@@ -6950,49 +7045,6 @@ export default function TakeoffViewerModule({
                 </div>
               )}
 
-              {/* Hover tooltip on an existing measurement (select mode) -
-                  value, group and linked BOQ position. Offset from the cursor
-                  so it does not sit under the pointer; pointer-events disabled
-                  so it never eats the click. */}
-              {hoverInfo && hoverMeasurement && (
-                <div
-                  className="absolute z-20 max-w-[220px] rounded-md border border-border bg-surface-primary/95 dark:bg-gray-800/95 backdrop-blur-sm shadow-lg px-2.5 py-1.5 text-[11px] pointer-events-none"
-                  style={{ left: `${hoverInfo.x + 14}px`, top: `${hoverInfo.y + 14}px` }}
-                  data-testid="measurement-hover-tooltip"
-                >
-                  <div className="font-semibold text-content-primary truncate">
-                    {hoverMeasurement.annotation
-                      || (hoverMeasurement.label
-                        ? measurementLabel(hoverMeasurement, scale, measurementSystem)
-                        : hoverMeasurement.type)}
-                  </div>
-                  {hoverMeasurement.label && (
-                    <div className="tabular-nums text-content-secondary">
-                      {measurementLabel(hoverMeasurement, scale, measurementSystem)}
-                    </div>
-                  )}
-                  <div className="mt-0.5 flex items-center gap-1 text-content-tertiary">
-                    <span className="uppercase tracking-wide text-[10px]">
-                      {t('takeoff_viewer.tooltip_group', { defaultValue: 'Group' })}
-                    </span>
-                    <span>{hoverMeasurement.group || 'General'}</span>
-                  </div>
-                  <div className="mt-0.5 text-[10px]">
-                    {hoverMeasurement.linkedPositionOrdinal ? (
-                      <span className="text-emerald-600 dark:text-emerald-400 font-mono">
-                        {t('takeoff_viewer.tooltip_linked', {
-                          defaultValue: 'Linked to {{pos}}',
-                          pos: hoverMeasurement.linkedPositionOrdinal,
-                        })}
-                      </span>
-                    ) : (
-                      <span className="text-content-quaternary">
-                        {t('takeoff_viewer.tooltip_unlinked', { defaultValue: 'Not linked to a BOQ position' })}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
               {settingScale && (
                 <div
                   className="absolute top-2 left-2 bg-purple-500/90 text-white px-3 py-1.5 rounded-lg text-xs font-medium"
@@ -7065,41 +7117,6 @@ export default function TakeoffViewerModule({
                         : t('takeoff_viewer.hint_dblclick_close', { defaultValue: 'Enter or double-click: close shape · Esc: cancel' })}
                     </span>
                   )}
-                </div>
-              )}
-              {/* Inline text input overlay for text annotation tool */}
-              {showTextInput && (
-                <div
-                  className="absolute z-10"
-                  style={{
-                    left: `${textInputPos.x * zoom}px`,
-                    top: `${textInputPos.y * zoom}px`,
-                  }}
-                >
-                  <input
-                    type="text"
-                    value={textInputValue}
-                    onChange={(e) => setTextInputValue(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleTextConfirm();
-                      if (e.key === 'Escape') {
-                        textInputCancellingRef.current = true;
-                        setShowTextInput(false);
-                        setTextInputValue('');
-                      }
-                    }}
-                    onBlur={() => {
-                      if (textInputCancellingRef.current) {
-                        textInputCancellingRef.current = false;
-                        return;
-                      }
-                      handleTextConfirm();
-                    }}
-                    autoFocus
-                    placeholder={t('takeoff_viewer.text_placeholder', { defaultValue: 'Type annotation text...' })}
-                    className="rounded border-2 bg-white/95 dark:bg-gray-800/95 px-2 py-1 text-sm font-medium outline-none shadow-lg min-w-[150px]"
-                    style={{ borderColor: annotationColor, color: annotationColor }}
-                  />
                 </div>
               )}
               {/* Cloud tool hint */}
