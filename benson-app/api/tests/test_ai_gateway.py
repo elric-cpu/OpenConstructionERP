@@ -27,3 +27,30 @@ async def test_agent_gateway_normalizes_transport_failures() -> None:
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         with pytest.raises(AiGatewayUnavailable):
             await run_agent_prompt(Settings(), "Summarize", "Use supplied records", client=client)
+
+
+@pytest.mark.asyncio
+async def test_production_agent_gateway_uses_cloud_run_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.ai_gateway.id_token.fetch_id_token", lambda _request, audience: f"id:{audience}"
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["authorization"] == "Bearer id:https://fcc.example.com"
+        return httpx.Response(200, json={"output_text": "Private gateway ready"})
+
+    settings = Settings(
+        environment="production",
+        website_signing_secret="x" * 32,
+        staff_google_audience="client.apps.googleusercontent.com",
+        database_url="postgresql://user:pass@db/operations",
+        upload_bucket="private-uploads",
+        fcc_base_url="https://fcc.example.com",
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await run_agent_prompt(
+            settings, "Summarize", "Use supplied records", client=client
+        )
+    assert result["output_text"] == "Private gateway ready"
