@@ -38,6 +38,13 @@ interface ChangelogEntry {
 // date, title and meaning intact; trim the prose, not the facts.
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '11.8.0',
+    date: '2026-07-16',
+    tag: 'NEW',
+    summary:
+      'PDF takeoff gets a round of viewer fixes: the cursor readout no longer freezes on a point you are dragging, a measurement value sits just off its line instead of hidden under a wide band, a wide line shows its full width band while you drag or move it, and a tool shortcut pressed mid-drag no longer starts a stray measurement. The legend, hints and readout stay pinned while the drawing pans, the group legend can be dragged aside by its header and remembers its place, each measurement has its own show and hide control that never changes exported quantities, and client-portal notifications now read correctly on Telegram instead of showing an internal label.',
+  },
+  {
     version: '11.7.1',
     date: '2026-07-14',
     tag: 'FIX',

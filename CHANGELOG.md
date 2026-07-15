@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [11.8.0] - 2026-07-16
+
+PDF takeoff gets a round of viewer fixes that make measuring on a busy drawing far less fiddly. The small readout card that follows the cursor no longer freezes on top of a point while you drag it, so you can see what you are reshaping. A measurement's value now sits just off its line instead of on top of it, so a wide line no longer hides its own number. While you drag the points of a wide line, or move it, the full width band follows the cursor rather than a single hairline, so you see the real footprint as you work. Pressing a tool shortcut in the middle of dragging a point no longer leaks that drag into a brand new measurement.
+
+The canvas overlays stay put. The group legend, the tool hints and the on-screen readout used to scroll away with the drawing, and they now stay pinned in view while the drawing pans underneath. The group legend can also be dragged out of the way by its header when it covers something you need to see, and it remembers where you put it. Each measurement now has its own show and hide control in the list, so you can hide a single line rather than a whole group, and hiding is a view setting only, so it never changes the quantities in your exports.
+
+Portal notifications now read correctly on Telegram. A client-portal alert such as a new user invite or a new message carried an internal label that only the in-app bell knew how to translate, so the Telegram bridge showed that raw label instead of a readable line. The server now fills in the real text, so every channel reads the same.
+
 ## [11.7.1] - 2026-07-14
 
 The Windows desktop app now stops its background service before it installs or uninstalls, so reinstalling no longer fails with a file-in-use error. The backend runs as a separate process that could keep running after the app was closed or uninstalled, and because Windows locks a running program on disk, the next install could not replace it until you ended the process by hand in Task Manager. The installer and the uninstaller now end that process for you first, so a reinstall just works.
