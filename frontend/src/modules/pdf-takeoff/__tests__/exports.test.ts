@@ -208,6 +208,19 @@ describe('selectAnnotatedPages + buildTakeoffPdf page count', () => {
     expect(selectAnnotatedPages(SAMPLE_MEASUREMENTS, new Set())).toEqual([1, 2, 3]);
   });
 
+  it('drops a page whose only measurement is hidden by id (#359)', () => {
+    // m3 is the only measurement on page 2, so hiding it by id (no group
+    // hidden) drops page 2 while leaving pages 1 and 3.
+    expect(
+      selectAnnotatedPages(SAMPLE_MEASUREMENTS, new Set(), new Set(['m3'])),
+    ).toEqual([1, 3]);
+    // Per-measurement hiding composes with group hiding: hide General and m3
+    // and nothing visible remains anywhere.
+    expect(
+      selectAnnotatedPages(SAMPLE_MEASUREMENTS, new Set(['General']), new Set(['m3'])),
+    ).toEqual([]);
+  });
+
   it('produces a PDF with one page per visible-annotated page + 1 summary page', async () => {
     // Mock pdfDoc: 3 native pages, each renders a viewport of 100x100 px.
     const fakePage = {

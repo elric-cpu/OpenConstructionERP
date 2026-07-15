@@ -680,6 +680,13 @@ export default function TakeoffViewerModule({
   // Measurement groups
   const [activeGroup, setActiveGroup] = useState('General');
   const [hiddenGroups, setHiddenGroups] = useState<Set<string>>(new Set());
+  // Per-measurement visibility (issue #359), keyed by measurement id. Parallel
+  // to hiddenGroups and honoured at every site group visibility is: a hidden
+  // measurement leaves the canvas, the snap pool, the hit-test, the legend
+  // count and the annotated PDF, but stays listed (dimmed) so it can be
+  // restored. View concern only - it never affects CSV/XLSX/BOQ or totals.
+  // Session-scoped, like hiddenGroups (not persisted).
+  const [hiddenMeasurements, setHiddenMeasurements] = useState<Set<string>>(new Set());
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   // Custom per-group colours (issue #313). Merged over the built-in colours so a
   // user-defined group paints in its chosen colour on the canvas, in the legend
@@ -1491,7 +1498,7 @@ export default function TakeoffViewerModule({
     };
 
     // Draw completed measurements on current page (respecting group visibility)
-    for (const m of measurements.filter((m) => m.page === currentPage && !hiddenGroups.has(m.group) && !(isAnnotationType(m.type) && hiddenGroups.has('__annotations__')))) {
+    for (const m of measurements.filter((m) => m.page === currentPage && !hiddenGroups.has(m.group) && !hiddenMeasurements.has(m.id) && !(isAnnotationType(m.type) && hiddenGroups.has('__annotations__')))) {
       // A per-measurement colour (set via the properties swatch) wins over the
       // group default so a recoloured measurement paints in its chosen colour
       // (issue #299); annotation markups already resolve `m.color` below.
@@ -1995,7 +2002,17 @@ export default function TakeoffViewerModule({
       const selected = measurements.find(
         (m) => m.id === selectedMeasurementId && m.page === currentPage,
       );
-      if (selected) {
+      // Do not draw the edit overlay for a hidden measurement (#359): a hidden
+      // group or an individually hidden measurement should show no outline or
+      // handles. The selection is also cleared on hide, but this guard covers
+      // the case where something already hidden gets selected another way, and
+      // it fixes the pre-existing group-level version of the same bug too.
+      const selectedHidden =
+        !!selected &&
+        (hiddenGroups.has(selected.group) ||
+          hiddenMeasurements.has(selected.id) ||
+          (isAnnotationType(selected.type) && hiddenGroups.has('__annotations__')));
+      if (selected && !selectedHidden) {
         const preview = dragPreview?.measurementId === selected.id ? dragPreview : null;
         const pts = preview ? preview.points : selected.points;
         const accent = '#2563EB';
@@ -2141,7 +2158,7 @@ export default function TakeoffViewerModule({
       ctx.stroke();
       ctx.restore();
     }
-  }, [measurements, activePoints, currentPage, zoom, settingScale, scalePoints, activeTool, hiddenGroups, scale, pageScales, annotationColor, rectStartPoint, isDraggingRect, selectedMeasurementId, dragPreview, liveCursor, panning, searchMatches, activeMatchIdx, measurementSystem, snapPoint, showLabels, showDimensions, renderNonce, groupColorMap]);
+  }, [measurements, activePoints, currentPage, zoom, settingScale, scalePoints, activeTool, hiddenGroups, hiddenMeasurements, scale, pageScales, annotationColor, rectStartPoint, isDraggingRect, selectedMeasurementId, dragPreview, liveCursor, panning, searchMatches, activeMatchIdx, measurementSystem, snapPoint, showLabels, showDimensions, renderNonce, groupColorMap]);
 
   /* ── Canvas click handler ────────────────────────────────────────── */
 
@@ -2292,11 +2309,14 @@ export default function TakeoffViewerModule({
     for (const m of measurements) {
       if (m.page !== currentPage || m.suggested) continue;
       if (hiddenGroups.has(m.group)) continue;
+      // A hidden measurement's corners are not snappable either (#359): you
+      // cannot connect to a corner you cannot see.
+      if (hiddenMeasurements.has(m.id)) continue;
       if (isAnnotationType(m.type) && hiddenGroups.has('__annotations__')) continue;
       for (const p of m.points) out.push(p);
     }
     return out;
-  }, [measurements, currentPage, hiddenGroups]);
+  }, [measurements, currentPage, hiddenGroups, hiddenMeasurements]);
   const snapVerticesRef = useRef(snapVertices);
   snapVerticesRef.current = snapVertices;
   // handleCanvasDblClick is defined below handleCanvasClick, so the click path
@@ -2797,6 +2817,8 @@ export default function TakeoffViewerModule({
   currentPageRef.current = currentPage;
   const hiddenGroupsRef = useRef(hiddenGroups);
   hiddenGroupsRef.current = hiddenGroups;
+  const hiddenMeasurementsRef = useRef(hiddenMeasurements);
+  hiddenMeasurementsRef.current = hiddenMeasurements;
   const selectedMeasurementIdRef = useRef(selectedMeasurementId);
   selectedMeasurementIdRef.current = selectedMeasurementId;
 
@@ -2817,11 +2839,14 @@ export default function TakeoffViewerModule({
   const editableOnPage = useCallback((): Measurement[] => {
     const page = currentPageRef.current;
     const hidden = hiddenGroupsRef.current;
+    const hiddenM = hiddenMeasurementsRef.current;
     return measurementsRef.current.filter(
       (m) =>
         m.page === page &&
         !m.suggested &&
         !hidden.has(m.group) &&
+        // A hidden measurement stops intercepting clicks too (#359).
+        !hiddenM.has(m.id) &&
         !(isAnnotationType(m.type) && hidden.has('__annotations__')),
     );
   }, []);
@@ -3688,10 +3713,10 @@ export default function TakeoffViewerModule({
   /** Summaries for the color-coded legend overlay (bottom-left of canvas). */
   const legendSummaries = useMemo(
     () => computeGroupSummaries(
-      pageMeasurements.filter((m) => !hiddenGroups.has(m.group)),
+      pageMeasurements.filter((m) => !hiddenGroups.has(m.group) && !hiddenMeasurements.has(m.id)),
       groupColorMap,
     ),
-    [pageMeasurements, hiddenGroups, groupColorMap],
+    [pageMeasurements, hiddenGroups, hiddenMeasurements, groupColorMap],
   );
 
   /** Currently-selected measurement object (null if nothing selected / target deleted). */
@@ -3889,6 +3914,26 @@ export default function TakeoffViewerModule({
     });
   }, []);
 
+  /** Toggle visibility of a single measurement (issue #359). View-only, like
+   *  the group eye: it never touches quantities or exports to CSV/XLSX/BOQ. */
+  const toggleMeasurementVisibility = useCallback((id: string) => {
+    // Read the pre-toggle state before flipping it, so we know whether this is
+    // a hide (was visible) or a show (was hidden).
+    const wasHidden = hiddenMeasurementsRef.current.has(id);
+    setHiddenMeasurements((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+    // Hiding the selected measurement clears the selection, so the select-tool
+    // edit overlay stops drawing handles over a now-hidden shape.
+    if (!wasHidden) setSelectedMeasurementId((cur) => (cur === id ? null : cur));
+  }, []);
+
   /** Toggle collapse of a measurement group in sidebar */
   const toggleGroupCollapse = useCallback((groupName: string) => {
     setCollapsedGroups((prev) => {
@@ -4021,6 +4066,7 @@ export default function TakeoffViewerModule({
         pdfDoc,
         measurements,
         hiddenGroups,
+        hiddenMeasurements,
         scale,
         groupColorMap,
         projectName: exportProjectName,
@@ -4046,7 +4092,7 @@ export default function TakeoffViewerModule({
     } finally {
       setIsExportingPdf(false);
     }
-  }, [pdfDoc, measurements, hiddenGroups, scale, exportProjectName, addToast, t, measurementSystem, groupColorMap]);
+  }, [pdfDoc, measurements, hiddenGroups, hiddenMeasurements, scale, exportProjectName, addToast, t, measurementSystem, groupColorMap]);
 
   /** Export measurements + summary to an .xlsx workbook. */
   const handleExportExcel = useCallback(async () => {
@@ -6960,7 +7006,13 @@ export default function TakeoffViewerModule({
               )}
 
               {/* Color-coded group legend — bottom-left, click row to toggle visibility. */}
-              {showLegend && legendSummaries.length > 0 && (
+              {/* Gate on the page having measurements at all, not on
+                  legendSummaries being non-empty (#359): the summaries already
+                  exclude hidden groups and hidden measurements, so hiding the
+                  last visible thing would otherwise unmount the legend and with
+                  it the only rows that can bring anything back. The row builder
+                  reconstructs a row for every group on the page regardless. */}
+              {showLegend && pageMeasurements.length > 0 && (
                 <div
                   className={clsx(
                     'absolute bottom-2 left-2 max-w-[240px] rounded-lg border border-border bg-surface-primary/95 dark:bg-gray-800/95 backdrop-blur-sm shadow-lg overflow-hidden',
@@ -6985,26 +7037,44 @@ export default function TakeoffViewerModule({
                     </button>
                   </div>
                   <div className="py-1">
-                    {/* Always show hidden groups too, so users can restore them */}
+                    {/* Always show every group on the page, hidden or not, so a
+                        hidden group (or a group whose measurements are all
+                        individually hidden) can still be restored (#359). */}
                     {(() => {
-                      // Merge: visible summaries from legendSummaries + placeholder rows for hiddenGroups that have measurements
                       const allGroupsOnPage = new Set<string>();
                       for (const m of pageMeasurements) allGroupsOnPage.add(m.group || 'General');
                       const visible = new Map(legendSummaries.map((s) => [s.name, s]));
                       const rows: Array<{ name: string; color: string; count: number; total: number; unit: string; hidden: boolean }> = [];
                       for (const name of Array.from(allGroupsOnPage).sort()) {
+                        // Derive hidden from hiddenGroups directly, never from a
+                        // group's absence in the summaries: a visible group whose
+                        // measurements are all individually hidden is absent too,
+                        // and treating that as a hidden GROUP would restore its
+                        // hidden count and wire its click to toggle a group that
+                        // was never hidden.
+                        const groupHidden = hiddenGroups.has(name);
                         const summary = visible.get(name);
-                        if (summary) {
+                        if (!groupHidden && summary) {
+                          // Visible group with visible measurements: the summary
+                          // already excludes hidden groups and hidden measurements.
                           rows.push({ ...summary, hidden: false });
                         } else {
-                          const items = pageMeasurements.filter((m) => (m.group || 'General') === name);
+                          // A hidden group shows its full content (dimmed) so it
+                          // can be restored; a visible-but-all-hidden group reads
+                          // as present with nothing visible in it. Filter by
+                          // hiddenMeasurements only when the group is not hidden.
+                          const items = pageMeasurements.filter(
+                            (m) =>
+                              (m.group || 'General') === name &&
+                              (groupHidden || !hiddenMeasurements.has(m.id)),
+                          );
                           rows.push({
                             name,
                             color: groupColorMap[name] || '#3B82F6',
                             count: items.length,
                             total: items.reduce((s, it) => s + it.value, 0),
                             unit: items.find((it) => it.unit)?.unit ?? '',
-                            hidden: true,
+                            hidden: groupHidden,
                           });
                         }
                       }
@@ -8132,9 +8202,13 @@ export default function TakeoffViewerModule({
                                 selectedMeasurementId === m.id
                                   ? 'bg-oe-blue/10 border border-oe-blue/40'
                                   : 'bg-surface-secondary/70 hover:bg-surface-secondary border border-transparent hover:border-border-light',
+                                // Dim a hidden measurement, keeping it listed so it
+                                // can be restored, the way hidden groups behave (#359).
+                                hiddenMeasurements.has(m.id) && 'opacity-50',
                               )}
                               data-testid="measurement-item"
                               data-selected={selectedMeasurementId === m.id}
+                              data-hidden={hiddenMeasurements.has(m.id)}
                             >
                               <div className="flex items-center gap-2 leading-tight">
                                 <span
@@ -8242,6 +8316,24 @@ export default function TakeoffViewerModule({
                                     }
                                   >
                                     <Link2 size={12} />
+                                  </button>
+                                  {/* Per-measurement visibility toggle (#359):
+                                      hide one measurement from the canvas without
+                                      moving it into its own group. View-only. */}
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); toggleMeasurementVisibility(m.id); }}
+                                    className="p-0.5 rounded text-content-tertiary hover:text-content-primary hover:bg-surface-secondary transition-colors shrink-0"
+                                    aria-label={hiddenMeasurements.has(m.id)
+                                      ? t('takeoff_viewer.show_measurement', { defaultValue: 'Show measurement' })
+                                      : t('takeoff_viewer.hide_measurement', { defaultValue: 'Hide measurement' })
+                                    }
+                                    title={hiddenMeasurements.has(m.id)
+                                      ? t('takeoff_viewer.show_measurement', { defaultValue: 'Show measurement' })
+                                      : t('takeoff_viewer.hide_measurement', { defaultValue: 'Hide measurement' })
+                                    }
+                                    data-testid="toggle-measurement-visibility"
+                                  >
+                                    {hiddenMeasurements.has(m.id) ? <EyeOff size={12} /> : <Eye size={12} />}
                                   </button>
                                   <button
                                     onClick={(e) => { e.stopPropagation(); deleteMeasurement(m.id); }}
