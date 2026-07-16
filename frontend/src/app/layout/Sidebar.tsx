@@ -101,7 +101,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { useModuleStore } from '@/stores/useModuleStore';
 import { apiGet } from '@/shared/lib/api';
 import { UpdateNotification } from '@/shared/ui/UpdateChecker';
-import { VideoNewsCard } from '@/shared/ui/VideoNewsCard';
+import { ArticleNewsCard } from '@/shared/ui/ArticleNewsCard';
 import { useViewModeStore } from '@/stores/useViewModeStore';
 import { useNavPendingStore } from '@/shared/lib/navigationProgress';
 import { useRecentStore } from '@/stores/useRecentStore';
@@ -238,10 +238,10 @@ const navGroups: NavGroup[] = [
     defaultLabel: 'Takeoff',
     defaultOpen: true,
     items: [
-      { labelKey: 'nav.quantities', to: '/quantities', icon: Ruler },
       { labelKey: 'nav.pdf_measurements', to: '/takeoff?tab=measurements', icon: Ruler },
       { labelKey: 'nav.dwg_takeoff', to: '/dwg-takeoff', icon: PencilRuler },
       { labelKey: 'nav.bim_viewer', to: '/bim', icon: Box },
+      { labelKey: 'nav.quantities', to: '/quantities', icon: Ruler },
     ],
   },
   // ── 3. ESTIMATING ──────────────────────────────────────────────────
@@ -1947,13 +1947,12 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           </div>
         )}
 
-        {/* Featured video card - links to the YouTube video on the
+        {/* Featured article card - links out to the long-form article on the
             uberization of construction and the idea behind the platform.
-            Hidden in icon-only mode (image + text need width); dismissible
-            and remembered per-video in localStorage. */}
+            Hidden in icon-only mode (the title + subtitle need width). */}
         {!iconified && (
           <div className="mt-2">
-            <VideoNewsCard />
+            <ArticleNewsCard />
           </div>
         )}
 

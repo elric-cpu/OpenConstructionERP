@@ -582,7 +582,7 @@ export function AboutPage() {
             <p className="mb-2 text-2xs font-semibold uppercase tracking-wider text-content-tertiary">
               {t('about.ddc_flagship_label', { defaultValue: 'Flagship products · datadrivenconstruction.io' })}
             </p>
-            <ul className="mb-6 space-y-2.5">
+            <ul className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {[
                 { href: 'https://datadrivenconstruction.io', label: 'DataDrivenConstruction', desc: t('about.ddc_link_lab', { defaultValue: 'Lab homepage - research & consulting' }) },
                 { href: 'https://datadrivenconstruction.io/books/', label: 'DDC Guidebook', desc: t('about.ddc_link_book', { defaultValue: 'Reference reading, free, 16 languages' }) },
@@ -614,7 +614,7 @@ export function AboutPage() {
             <p className="mb-2 text-2xs font-semibold uppercase tracking-wider text-content-tertiary">
               {t('about.ddc_oss_label', { defaultValue: 'Open source on GitHub · @datadrivenconstruction' })}
             </p>
-            <ul className="mb-6 space-y-2.5">
+            <ul className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {[
                 { href: 'https://github.com/datadrivenconstruction/cad2data-Revit-IFC-DWG-DGN-pipeline-with-conversion-validation-qto', label: 'cad2data Pipeline', desc: t('about.ddc_gh_cad2data', { defaultValue: 'Revit · IFC · DWG · DGN → structured quantities' }) },
                 { href: 'https://github.com/datadrivenconstruction/OpenConstructionEstimate-DDC-CWICR', label: 'OpenConstructionEstimate', desc: t('about.ddc_gh_cwicr', { defaultValue: '55,000+ cost items · 27 languages · 48 regions' }) },
