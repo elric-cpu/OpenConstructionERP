@@ -196,6 +196,15 @@ export interface Playbook {
    *  only when the case happens at a different point than its discipline
    *  implies. */
   stage?: LifecycleStage;
+  /** Optional explicit ids of the case(s) to run NEXT after this one - its
+   *  outputs feed their first step. When omitted the successor is derived from
+   *  the in -> out chaining between cases (see `nextCasesFor` in
+   *  `relatedness.ts`), so a case is never a dead end. */
+  next?: string[];
+  /** Optional explicit ids of RELATED cases: siblings that touch the same work
+   *  but are not the linear next step. When omitted they are derived from shared
+   *  discipline, stage, modules and company types (see `relatedCasesFor`). */
+  related?: string[];
   /** i18n key for the case title. */
   titleKey: string;
   /** Inline English default for the case title. */

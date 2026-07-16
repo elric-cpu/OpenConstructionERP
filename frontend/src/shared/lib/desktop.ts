@@ -76,3 +76,29 @@ export async function openAppInBrowser(path?: string): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Open an arbitrary external URL in the user's default browser (desktop only).
+ *
+ * In a web build a plain `<a target="_blank">` already opens a new tab, so
+ * callers should reach for this only inside the Tauri shell, where the webview
+ * swallows a target link and nothing opens. It resolves the shell plugin
+ * dynamically - through a string variable so the web bundle never tries to
+ * resolve the missing dependency - and asks the OS to open the link. Returns
+ * true when an open was attempted, false in a browser build or on error, so a
+ * caller can fall back to default link behaviour.
+ */
+export async function openExternalUrl(url: string): Promise<boolean> {
+  if (!isTauri || !url) return false;
+  try {
+    const tauriPluginShell = '@tauri-apps/plugin-shell';
+    const mod = (await import(/* @vite-ignore */ tauriPluginShell)) as {
+      open: (target: string) => Promise<void>;
+    };
+    await mod.open(url);
+    return true;
+  } catch (err) {
+    console.warn('Tauri shell open failed:', err);
+    return false;
+  }
+}

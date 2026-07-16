@@ -74,14 +74,23 @@
           "German",
           "French",
           "Spanish",
+          "SpanishInternational",
           "Italian",
           "Portuguese",
+          "PortugueseBR",
           "Dutch",
           "Polish",
+          "Norwegian",
+          "Swedish",
+          "Bulgarian",
           "Russian",
           "Turkish",
+          "Arabic",
+          "SimpChinese",
+          "TradChinese",
           "Japanese",
-          "SimpChinese"
+          "Korean",
+          "Vietnamese"
         ]
       }
     },
