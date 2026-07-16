@@ -6,6 +6,7 @@ Endpoints:
     GET    /projects/{project_id}/5d/dashboard          - aggregated KPIs
     GET    /projects/{project_id}/5d/s-curve             - S-curve time series
     GET    /projects/{project_id}/5d/cash-flow           - cash flow data
+    GET    /projects/{project_id}/5d/contract-exposure   - committed vs budget exposure
     GET    /projects/{project_id}/5d/budget              - budget summary by category
     GET    /projects/{project_id}/5d/budget-lines        - detailed budget lines
     POST   /projects/{project_id}/5d/budget-lines        - create budget line
@@ -32,6 +33,7 @@ from app.modules.costmodel.schemas import (
     BudgetSummary,
     CashFlowData,
     CashFlowResponse,
+    ContractExposureResponse,
     ControlAccountCreate,
     ControlAccountResponse,
     ControlAccountUpdate,
@@ -214,6 +216,22 @@ async def get_cash_flow(
     """Get monthly cash flow data for chart display."""
     await verify_project_access(project_id, user_id, session)
     return await service.get_cash_flow(project_id)
+
+
+@router.get(
+    "/projects/{project_id}/5d/contract-exposure/",
+    response_model=ContractExposureResponse,
+    dependencies=[Depends(RequirePermission("costmodel.read"))],
+)
+async def get_contract_exposure(
+    project_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: CostModelService = Depends(_get_service),
+) -> ContractExposureResponse:
+    """Get the project contract-exposure view (committed vs budget by cost group)."""
+    await verify_project_access(project_id, user_id, session)
+    return await service.get_contract_exposure(project_id)
 
 
 # ── Budget ───────────────────────────────────────────────────────────────────

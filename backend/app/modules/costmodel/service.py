@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
 from app.core.json_merge import merge_metadata
+from app.modules.costmodel.contract_exposure import compute_contract_exposure
 from app.modules.costmodel.models import (
     BudgetLine,
     CashFlow,
@@ -45,6 +46,8 @@ from app.modules.costmodel.schemas import (
     CashFlowCreate,
     CashFlowData,
     CashFlowPeriod,
+    ContractExposureGroup,
+    ContractExposureResponse,
     ControlAccountCreate,
     ControlAccountResponse,
     ControlAccountUpdate,
@@ -645,6 +648,58 @@ class CostModelService:
             )
 
         return BudgetSummary(categories=categories)
+
+    async def get_contract_exposure(self, project_id: uuid.UUID) -> ContractExposureResponse:
+        """Build the project's contract-exposure view: committed vs budget by group.
+
+        Groups the project's budget lines by cost category (the same FX-aware
+        aggregator the dashboard and budget summary use), then for each group
+        computes the budgeted and committed amounts, the budget still free to
+        commit, the commitment ratio (guarded) and an overcommit flag, and rolls
+        the whole thing up to the project. All money is Decimal-exact; the
+        commitment ratio is undefined (null) when a budget is zero or absent.
+
+        ``committed`` is the ``committed_amount`` column - the value already
+        committed to contracts (subcontracts, purchase orders, awarded values).
+
+        Args:
+            project_id: Target project.
+
+        Returns:
+            A ContractExposureResponse with per-group rows and the project rollup.
+        """
+        rows = await self.budget_repo.aggregate_by_category(project_id)
+        exposure = compute_contract_exposure((row["category"], row["planned"], row["committed"]) for row in rows)
+
+        # Mirror the sibling money surfaces (dashboard / EVM): carry the project
+        # base currency and flag when budget lines span more than one currency,
+        # since a missing fx rate may then have blended the converted totals.
+        currency = await self._get_project_currency(project_id)
+        mixed_currency = len(await self.budget_repo.distinct_currencies(project_id)) > 1
+
+        return ContractExposureResponse(
+            currency=currency,
+            mixed_currency=mixed_currency,
+            total_budgeted=exposure.total_budgeted,
+            total_committed=exposure.total_committed,
+            total_remaining_to_commit=exposure.total_remaining_to_commit,
+            total_commitment_ratio=(
+                float(exposure.total_commitment_ratio) if exposure.total_commitment_ratio is not None else None
+            ),
+            overcommitted=exposure.overcommitted,
+            overcommitted_group_count=exposure.overcommitted_group_count,
+            groups=[
+                ContractExposureGroup(
+                    group=r.group,
+                    budgeted=r.budgeted,
+                    committed=r.committed,
+                    remaining_to_commit=r.remaining_to_commit,
+                    commitment_ratio=(float(r.commitment_ratio) if r.commitment_ratio is not None else None),
+                    overcommitted=r.overcommitted,
+                )
+                for r in exposure.groups
+            ],
+        )
 
     async def list_budget_lines(
         self,

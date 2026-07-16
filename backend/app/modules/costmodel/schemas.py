@@ -417,6 +417,75 @@ class BudgetSummary(BaseModel):
     categories: list[BudgetCategoryRow] = Field(default_factory=list)
 
 
+# -- Contract exposure (committed vs budget) ---------------------------------
+
+
+class ContractExposureGroup(BaseModel):
+    """Committed-vs-budget contract exposure for a single cost group.
+
+    v3 section 10 - money fields are Decimal-as-string in JSON. The commitment
+    ratio is a unitless committed/budget fraction and follows the module's ratio
+    convention (float), or null when the budget is zero or absent.
+    """
+
+    group: str
+    budgeted: Decimal = Decimal("0")
+    committed: Decimal = Decimal("0")
+    remaining_to_commit: Decimal = Field(
+        default=Decimal("0"),
+        description="budgeted - committed (negative when overcommitted)",
+    )
+    commitment_ratio: float | None = Field(
+        default=None,
+        description="committed / budgeted; null when the budget is zero or absent",
+    )
+    overcommitted: bool = Field(
+        default=False,
+        description="True when committed is strictly above budgeted",
+    )
+
+    @field_serializer("budgeted", "committed", "remaining_to_commit", when_used="json")
+    def _ser_money(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
+
+
+class ContractExposureResponse(BaseModel):
+    """Project-wide contract-exposure view: committed vs budget by cost group.
+
+    Budgeted is the planned budget; committed is the value already committed to
+    contracts (subcontracts, purchase orders, awarded values); remaining to
+    commit is the budget still free to commit. The rollup mirrors the sibling
+    money surfaces (dashboard / EVM) by carrying the project base ``currency``
+    and a ``mixed_currency`` flag (True when the budget lines span more than one
+    currency, so a missing fx rate may have blended the totals).
+
+    v3 section 10 - money fields are Decimal-as-string in JSON.
+    """
+
+    currency: str = ""
+    mixed_currency: bool = False
+    total_budgeted: Decimal = Decimal("0")
+    total_committed: Decimal = Decimal("0")
+    total_remaining_to_commit: Decimal = Decimal("0")
+    total_commitment_ratio: float | None = Field(
+        default=None,
+        description="total committed / total budgeted; null when the total budget is zero",
+    )
+    overcommitted: bool = Field(
+        default=False,
+        description="True when total committed is strictly above total budgeted",
+    )
+    overcommitted_group_count: int = Field(
+        default=0,
+        description="How many groups are individually overcommitted",
+    )
+    groups: list[ContractExposureGroup] = Field(default_factory=list)
+
+    @field_serializer("total_budgeted", "total_committed", "total_remaining_to_commit", when_used="json")
+    def _ser_money(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
+
+
 # ── EVM (Earned Value Management) schemas ────────────────────────────────────
 
 
