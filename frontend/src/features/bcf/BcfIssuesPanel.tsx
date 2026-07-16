@@ -18,12 +18,16 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
+  BarChart3,
   Boxes,
   Calendar,
+  Crosshair,
   Download,
   ImageOff,
   MessageSquare,
   Plus,
+  Presentation,
+  Printer,
   Search,
   Send,
   Tag,
@@ -63,48 +67,20 @@ import {
 } from './api';
 import { BcfIssueModal, type BcfMember } from './BcfIssueModal';
 import type { BcfViewerBridge, RaiseIssueResult } from './useBcfCapture';
+import {
+  COMMON_STATUSES,
+  PRIORITY_CHOICES,
+  isOverdue,
+  primaryViewpoint,
+  priorityVariant,
+  statusVariant,
+} from './issueStatus';
+import { computeIssueStats } from './issueStats';
+import { buildIssueReportHtml, type IssueReportRow } from './issueReport';
+import { ReviewDashboard } from './ReviewDashboard';
+import { CoordinationMode } from './CoordinationMode';
 
 /* ── Small helpers ─────────────────────────────────────────────────────── */
-
-/** Common editable statuses; the current value is merged in so imported
- *  topics with custom statuses never lose their value on edit. */
-const COMMON_STATUSES = ['Open', 'In Progress', 'Resolved', 'Closed', 'Reopened'];
-const PRIORITY_CHOICES = ['', 'Low', 'Normal', 'High', 'Critical'];
-
-type BadgeVariant = 'neutral' | 'blue' | 'success' | 'warning' | 'error';
-
-function statusVariant(status: string): BadgeVariant {
-  const s = status.toLowerCase();
-  if (s.includes('closed')) return 'neutral';
-  if (s.includes('resolved') || s.includes('done') || s.includes('approved')) return 'success';
-  if (s.includes('progress') || s.includes('review')) return 'warning';
-  if (s.includes('open') || s.includes('new') || s.includes('active') || s.includes('reopen'))
-    return 'blue';
-  return 'neutral';
-}
-
-function priorityVariant(priority: string | null): BadgeVariant {
-  const p = (priority ?? '').toLowerCase();
-  if (p.includes('critical') || p.includes('high') || p.includes('major')) return 'error';
-  if (p.includes('normal') || p.includes('medium') || p.includes('minor')) return 'warning';
-  return 'neutral';
-}
-
-/** A topic is "done" once its status reads closed. */
-function isDone(status: string): boolean {
-  return status.toLowerCase().includes('closed');
-}
-
-function isOverdue(topic: Topic): boolean {
-  if (!topic.due_date || isDone(topic.topic_status)) return false;
-  const due = new Date(topic.due_date).getTime();
-  return Number.isFinite(due) && due < Date.now();
-}
-
-/** First viewpoint carrying a snapshot, else the first viewpoint, else null. */
-function primaryViewpoint(topic: Topic): Viewpoint | null {
-  return topic.viewpoints.find((v) => v.has_snapshot) ?? topic.viewpoints[0] ?? null;
-}
 
 /** ISO datetime -> the `YYYY-MM-DD` a `<input type="date">` expects. */
 function toDateInput(value: string | null): string {
@@ -320,6 +296,7 @@ function BcfTopicDetail({
   memberName,
   onClose,
   onChanged,
+  onOpenViewpoint,
 }: {
   projectId: string;
   topicGuid: string;
@@ -328,6 +305,7 @@ function BcfTopicDetail({
   memberName: (id: string | null) => string;
   onClose: () => void;
   onChanged: () => void;
+  onOpenViewpoint?: (topic: Topic, vp: Viewpoint) => void;
 }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -415,16 +393,29 @@ function BcfTopicDetail({
         </span>
       }
       headerActions={
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => deleteMut.mutate()}
-          disabled={deleteMut.isPending}
-          icon={<Trash2 size={14} />}
-          title={t('bcf.delete_issue', { defaultValue: 'Delete issue' })}
-        >
-          {t('common.delete', { defaultValue: 'Delete' })}
-        </Button>
+        <div className="flex items-center gap-1.5">
+          {vp && onOpenViewpoint && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onOpenViewpoint(topic, vp)}
+              icon={<Crosshair size={14} />}
+              title={t('bcf.zoom_to_issue', { defaultValue: 'Zoom to issue' })}
+            >
+              {t('bcf.zoom_to_issue', { defaultValue: 'Zoom to issue' })}
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => deleteMut.mutate()}
+            disabled={deleteMut.isPending}
+            icon={<Trash2 size={14} />}
+            title={t('bcf.delete_issue', { defaultValue: 'Delete issue' })}
+          >
+            {t('common.delete', { defaultValue: 'Delete' })}
+          </Button>
+        </div>
       }
     >
       <div className="space-y-6 p-5">
@@ -604,11 +595,13 @@ function BcfTopicRow({
   topic,
   memberName,
   onOpen,
+  onOpenViewpoint,
 }: {
   projectId: string;
   topic: Topic;
   memberName: (id: string | null) => string;
   onOpen: (topic: Topic) => void;
+  onOpenViewpoint?: (topic: Topic, vp: Viewpoint) => void;
 }) {
   const { t } = useTranslation();
   const vp = primaryViewpoint(topic);
@@ -643,6 +636,20 @@ function BcfTopicRow({
         <div className="flex items-start justify-between gap-2">
           <h4 className="truncate text-sm font-semibold text-content-primary">{topic.title}</h4>
           <div className="flex shrink-0 items-center gap-1.5">
+            {vp && onOpenViewpoint && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenViewpoint(topic, vp);
+                }}
+                className="flex h-6 w-6 items-center justify-center rounded-md text-content-tertiary transition-colors hover:bg-oe-blue-subtle/40 hover:text-oe-blue"
+                title={t('bcf.zoom_to_issue', { defaultValue: 'Zoom to issue' })}
+                aria-label={t('bcf.zoom_to_issue', { defaultValue: 'Zoom to issue' })}
+              >
+                <Crosshair size={13} />
+              </button>
+            )}
             <Badge variant={statusVariant(topic.topic_status)} size="sm">
               {topic.topic_status}
             </Badge>
@@ -715,6 +722,9 @@ export interface BcfIssuesPanelProps {
   bimModelId?: string | null;
   /** Wire the "Raise issue here" capture flow to a live viewer. Optional. */
   bridge?: BcfViewerBridge;
+  /** Fly the viewer to an issue's saved viewpoint. Enables the "Zoom to
+   *  issue" affordances and coordination mode's guided walk-through. */
+  onOpenViewpoint?: (topic: Topic, vp: Viewpoint) => void;
   className?: string;
 }
 
@@ -725,7 +735,13 @@ interface RawUser {
   is_active?: boolean;
 }
 
-export function BcfIssuesPanel({ projectId, bimModelId, bridge, className }: BcfIssuesPanelProps) {
+export function BcfIssuesPanel({
+  projectId,
+  bimModelId,
+  bridge,
+  onOpenViewpoint,
+  className,
+}: BcfIssuesPanelProps) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const addToast = useToastStore((s) => s.addToast);
@@ -733,6 +749,8 @@ export function BcfIssuesPanel({ projectId, bimModelId, bridge, className }: Bcf
 
   const [openTopic, setOpenTopic] = useState<Topic | null>(null);
   const [showCapture, setShowCapture] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(false);
+  const [showCoordination, setShowCoordination] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [exportVersion, setExportVersion] = useState<BcfVersion>('2.1');
@@ -875,6 +893,63 @@ export function BcfIssuesPanel({ projectId, bimModelId, bridge, className }: Bcf
     [topics],
   );
 
+  // Open the current (filtered) issue list as a clean, printable report in a
+  // new tab, mirroring the BIM filter-report print flow.
+  const handlePrintReport = useCallback(() => {
+    const stats = computeIssueStats(topics);
+    const rows: IssueReportRow[] = filtered.map((topic) => ({
+      index: topic.index,
+      title: topic.title,
+      status: topic.topic_status,
+      priority: topic.priority ?? '',
+      assignee: topic.assigned_to ? memberName(topic.assigned_to) : '',
+      due: toDateInput(topic.due_date) || null,
+      comments: topic.comments.length,
+      description: topic.description,
+    }));
+    const html = buildIssueReportHtml({
+      title: t('bcf.report_title', { defaultValue: 'Coordination issue report' }),
+      scopeLabel: t('bcf.report_scope', {
+        defaultValue: '{{count}} issue(s)',
+        count: filtered.length,
+      }),
+      generatedOn: new Date().toLocaleString(),
+      stats,
+      rows,
+      labels: {
+        summary: t('bcf.dashboard_summary', { defaultValue: 'Summary' }),
+        total: t('bcf.report_total', { defaultValue: 'Total issues' }),
+        open: t('bcf.dashboard_open', { defaultValue: 'Open' }),
+        closed: t('bcf.report_closed', { defaultValue: 'Closed' }),
+        overdue: t('bcf.dashboard_overdue', { defaultValue: 'Overdue' }),
+        unassigned: t('bcf.report_unassigned', { defaultValue: 'Unassigned (open)' }),
+        issues: t('bcf.report_issues', { defaultValue: 'Issues' }),
+        colNum: '#',
+        colTitle: t('bcf.report_col_issue', { defaultValue: 'Issue' }),
+        colStatus: t('bcf.field_status', { defaultValue: 'Status' }),
+        colPriority: t('bcf.field_priority', { defaultValue: 'Priority' }),
+        colAssignee: t('bcf.field_assigned_to', { defaultValue: 'Assigned to' }),
+        colDue: t('bcf.field_due_date', { defaultValue: 'Due date' }),
+        colComments: t('bcf.comments', { defaultValue: 'Comments' }),
+        none: '-',
+      },
+    });
+    const w = window.open('', '_blank');
+    if (!w) {
+      addToast({
+        type: 'warning',
+        title: t('bcf.report_popup_blocked', {
+          defaultValue: 'Allow pop-ups to print the report',
+        }),
+      });
+      return;
+    }
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    w.print();
+  }, [topics, filtered, memberName, t, addToast]);
+
   return (
     <div className={clsx('space-y-4', className)}>
       {/* Header */}
@@ -898,6 +973,45 @@ export function BcfIssuesPanel({ projectId, bimModelId, bridge, className }: Bcf
             className="hidden"
             data-testid="bcf-import-input"
           />
+          {topics.length > 0 && (
+            <div className="flex items-center gap-0.5">
+              <button
+                type="button"
+                onClick={() => setShowDashboard((v) => !v)}
+                aria-pressed={showDashboard}
+                title={t('bcf.overview', { defaultValue: 'Overview' })}
+                aria-label={t('bcf.overview', { defaultValue: 'Overview' })}
+                className={clsx(
+                  'flex h-8 w-8 items-center justify-center rounded-lg border transition-colors',
+                  showDashboard
+                    ? 'border-oe-blue/40 bg-oe-blue-subtle/40 text-oe-blue'
+                    : 'border-border-light text-content-secondary hover:bg-surface-hover',
+                )}
+              >
+                <BarChart3 size={15} />
+              </button>
+              {onOpenViewpoint && (
+                <button
+                  type="button"
+                  onClick={() => setShowCoordination(true)}
+                  title={t('bcf.coordination_mode', { defaultValue: 'Coordination mode' })}
+                  aria-label={t('bcf.coordination_mode', { defaultValue: 'Coordination mode' })}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-border-light text-content-secondary transition-colors hover:bg-surface-hover"
+                >
+                  <Presentation size={15} />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handlePrintReport}
+                title={t('bcf.print_report', { defaultValue: 'Print report' })}
+                aria-label={t('bcf.print_report', { defaultValue: 'Print report' })}
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-border-light text-content-secondary transition-colors hover:bg-surface-hover"
+              >
+                <Printer size={15} />
+              </button>
+            </div>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -942,6 +1056,11 @@ export function BcfIssuesPanel({ projectId, bimModelId, bridge, className }: Bcf
           )}
         </div>
       </div>
+
+      {/* Overview dashboard (toggle) */}
+      {showDashboard && topics.length > 0 && (
+        <ReviewDashboard topics={topics} memberName={memberName} />
+      )}
 
       {/* Toolbar */}
       {topics.length > 0 && (
@@ -1026,6 +1145,7 @@ export function BcfIssuesPanel({ projectId, bimModelId, bridge, className }: Bcf
               topic={topic}
               memberName={memberName}
               onOpen={setOpenTopic}
+              onOpenViewpoint={onOpenViewpoint}
             />
           ))}
         </div>
@@ -1041,6 +1161,7 @@ export function BcfIssuesPanel({ projectId, bimModelId, bridge, className }: Bcf
           memberName={memberName}
           onClose={() => setOpenTopic(null)}
           onChanged={invalidateTopics}
+          onOpenViewpoint={onOpenViewpoint}
         />
       )}
 
@@ -1054,6 +1175,17 @@ export function BcfIssuesPanel({ projectId, bimModelId, bridge, className }: Bcf
           bimModelId={bimModelId}
           assignees={members}
           onCreated={handleCreated}
+        />
+      )}
+
+      {/* Coordination meeting mode */}
+      {showCoordination && onOpenViewpoint && (
+        <CoordinationMode
+          projectId={projectId}
+          topics={topics}
+          onOpenViewpoint={onOpenViewpoint}
+          onChanged={invalidateTopics}
+          onClose={() => setShowCoordination(false)}
         />
       )}
     </div>

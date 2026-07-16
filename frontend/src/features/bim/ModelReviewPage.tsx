@@ -18,11 +18,12 @@ import { useTranslation } from 'react-i18next';
 import { Cuboid, PanelRightClose, PanelRightOpen } from 'lucide-react';
 
 import { BcfIssuesPanel } from '@/features/bcf';
+import type { Topic, Viewpoint } from '@/features/bcf/api';
 import { listAnchors } from '@/features/geo-hub/api';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { apiGet } from '@/shared/lib/api';
 import { BIMViewer } from '@/shared/ui/BIMViewer';
-import type { BIMElementData } from '@/shared/ui/BIMViewer';
+import type { BIMElementData, ElementManager, SelectionManager } from '@/shared/ui/BIMViewer';
 import { metresToModelUnits as unitsToModelScale } from '@/shared/ui/BIMViewer/geoLocate';
 import { buildElementQuestion } from '@/shared/ui/BIMViewer/elementQuestion';
 import { OfflineModelButton } from '@/shared/ui/BIMViewer/OfflineModelButton';
@@ -31,6 +32,7 @@ import { useFloatingChatStore } from '@/features/erp-chat/useFloatingChat';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 
 import { makeBcfBridge } from './bcfBridge';
+import { restoreBcfViewpoint } from './restoreViewpoint';
 import { useModelViewerData } from './useModelViewerData';
 
 function ModelReviewInner({ projectId }: { projectId: string }) {
@@ -106,6 +108,44 @@ function ModelReviewInner({ projectId }: { projectId: string }) {
       .map((e) => e.stable_id ?? e.mesh_ref ?? e.id)
       .filter((v): v is string => !!v);
   }, []);
+
+  // Map a viewpoint's stable ids (IFC GlobalId / RVT UniqueId / mesh ref) back
+  // to the internal element id the scene managers key on, so restoring a
+  // viewpoint can select exactly the elements the issue was raised against.
+  const stableIdToElementId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const el of elements) {
+      if (el.id) map.set(el.id, el.id);
+      if (el.stable_id) map.set(el.stable_id, el.id);
+      if (el.mesh_ref) map.set(el.mesh_ref, el.id);
+    }
+    return (stableId: string): string | undefined => map.get(stableId);
+  }, [elements]);
+
+  // "Zoom to issue" / coordination walk-through: fly the scene to a saved BCF
+  // viewpoint and select its elements. The element + selection managers come
+  // from the live window.__oeBim bridge the viewer installs.
+  const handleOpenViewpoint = useCallback(
+    (_topic: Topic, vp: Viewpoint) => {
+      const scene = sceneRef.current;
+      if (!scene) return;
+      const bim = (
+        window as unknown as {
+          __oeBim?: {
+            elementManager: ElementManager | null;
+            selectionManager: SelectionManager | null;
+          };
+        }
+      ).__oeBim;
+      void restoreBcfViewpoint(vp, {
+        scene,
+        elementManager: bim?.elementManager ?? null,
+        selectionManager: bim?.selectionManager ?? null,
+        stableIdToElementId,
+      });
+    },
+    [stableIdToElementId],
+  );
 
   return (
     <div className="flex h-full flex-col">
@@ -186,6 +226,7 @@ function ModelReviewInner({ projectId }: { projectId: string }) {
               projectId={projectId}
               bimModelId={activeModelId}
               bridge={sceneReady ? bridge : undefined}
+              onOpenViewpoint={sceneReady ? handleOpenViewpoint : undefined}
             />
           </div>
         )}
