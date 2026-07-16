@@ -537,7 +537,7 @@ def _make_generic_customer_email(data: dict, ref_id: str, kind: str) -> str:
         "partner_application": (
             "Thanks for applying to the OpenConstructionERP partner program. "
             "We read every application personally; typical response time is "
-            "1–3 business days."
+            "1-3 business days."
         ),
     }.get(kind, "Thanks for your message - we will get back to you shortly.")
 
