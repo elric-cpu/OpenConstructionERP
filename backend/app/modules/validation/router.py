@@ -251,6 +251,104 @@ async def check_bim_model(
     return ValidationReportResponse.model_validate(report)
 
 
+# ── GET /bim-scorecard/{model_id} - Maturity scorecard + version trend ────
+
+
+async def _load_bim_model_for_read(
+    session: AsyncSession,
+    model_id: uuid.UUID,
+    user_id: str | None,
+) -> Any:
+    """Resolve a BIM model to its project and verify read access (IDOR-safe).
+
+    Mirrors the ownership resolution in ``check_bim_model``: load the model,
+    404 when missing, then delegate to ``_require_project_access`` (which raises
+    404 on both missing-and-forbidden so a model UUID the caller cannot see is
+    never confirmed).
+    """
+    from app.modules.bim_hub.repository import BIMModelRepository
+
+    model = await BIMModelRepository(session).get(model_id)
+    if model is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"BIM model {model_id} not found",
+        )
+    await _require_project_access(session, model.project_id, user_id)
+    return model
+
+
+@router.get(
+    "/bim-scorecard/{model_id}",
+    dependencies=[Depends(RequirePermission("validation.read"))],
+)
+async def get_bim_scorecard(
+    model_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    expected_disciplines: list[str] | None = Query(
+        None,
+        description="Override the expected discipline set for the coverage facet.",
+    ),
+    rule_ids: list[str] | None = Query(
+        None,
+        description="Optional subset of universal rule ids for the property completeness facet.",
+    ),
+    include_trend: bool = Query(True, description="Include the version-over-version score trend."),
+) -> dict[str, Any]:
+    """Return the BIM maturity scorecard (facet sub-scores + grade) for a model.
+
+    Read-only: it computes the facets live from the model's current elements and
+    reads the version trend from the validation reports already persisted by
+    prior ``/check-bim-model`` runs. No report is written. Gated on
+    ``validation.read`` plus the standard project-access guard, identical to the
+    other validation read endpoints.
+    """
+    from app.modules.validation.bim_scorecard_service import BIMScorecardService
+
+    await _load_bim_model_for_read(session, model_id, user_id)
+    service = BIMScorecardService(session)
+    try:
+        return await service.get_scorecard(
+            model_id,
+            expected_disciplines=expected_disciplines,
+            rule_ids=rule_ids,
+            include_trend=include_trend,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get(
+    "/bim-scorecard/{model_id}/trend",
+    dependencies=[Depends(RequirePermission("validation.read"))],
+)
+async def get_bim_scorecard_trend(
+    model_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+) -> dict[str, Any]:
+    """Return only the version-over-version validation score trend for a model.
+
+    Same read access-control as ``get_bim_scorecard``; assembles the score
+    series from the persisted ``ValidationReport`` history, no new storage.
+    """
+    from app.modules.validation.bim_scorecard_service import BIMScorecardService
+
+    await _load_bim_model_for_read(session, model_id, user_id)
+    service = BIMScorecardService(session)
+    try:
+        return await service.get_trend(model_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+
 # ── GET /reports - List validation reports ───────────────────────────────
 
 

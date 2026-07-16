@@ -64,6 +64,32 @@ class ValidationReportRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def list_for_target(
+        self,
+        target_type: str,
+        target_id: str,
+        *,
+        limit: int = 200,
+    ) -> list[ValidationReport]:
+        """List every validation report for one target, oldest first.
+
+        Ordered by ``created_at`` ascending so callers get a chronological
+        score series (the version-over-version maturity trend) straight from
+        the already-persisted report history - no extra storage. The
+        ``(target_type, target_id)`` index backs this query.
+        """
+        stmt = (
+            select(ValidationReport)
+            .where(
+                ValidationReport.target_type == target_type,
+                ValidationReport.target_id == target_id,
+            )
+            .order_by(ValidationReport.created_at.asc())
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def create(self, report: ValidationReport) -> ValidationReport:
         """Persist a new validation report."""
         self.session.add(report)
