@@ -24,6 +24,7 @@ from .auth import Principal, require_operations_staff, require_owner, require_st
 from .config import Settings, get_settings
 from .dependencies import store
 from .domain import LeadCreate, LeadReceipt, LeadUpdate
+from .integration_audit import integration_audit_json
 from .object_storage import (
     delete_upload,
     detect_upload_type,
@@ -59,6 +60,7 @@ def create_lead_receipt(
         upload_session_hours=settings.upload_session_hours,
         notification_email_to=settings.notification_email_to,
         emergency_sms_to=settings.sms_to if sms_enabled else "",
+        client_sms_to=(lead.phone if sms_enabled and lead.consent_to_contact else ""),
         notification_max_attempts=settings.notification_max_attempts,
     )
 
@@ -83,6 +85,7 @@ def dashboard(
     }
 
 
+@router.post("/api/v1/intake/leads", response_model=LeadReceipt)
 @router.post("/api/benson/v1/intake/leads", response_model=LeadReceipt)
 async def benson_website_lead(
     request: Request,
@@ -112,6 +115,19 @@ async def benson_website_lead(
         lead = LeadCreate.model_validate_json(body)
     except ValidationError as error:
         raise HTTPException(status_code=422, detail=json.loads(error.json())) from error
+    geo = lead.metadata.get("geo_coordinates", {})
+    latitude_value = geo.get("latitude") if isinstance(geo, dict) else None
+    longitude_value = geo.get("longitude") if isinstance(geo, dict) else None
+    try:
+        latitude = float(latitude_value) if latitude_value is not None else None
+        longitude = float(longitude_value) if longitude_value is not None else None
+        if latitude is not None and longitude is not None:
+            if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+                raise ValueError
+    except (TypeError, ValueError) as error:
+        raise HTTPException(
+            status_code=422, detail="Geo-coordinates are outside valid bounds"
+        ) from error
     try:
         receipt = await run_in_threadpool(
             create_lead_receipt, lead, idempotency_key, settings
@@ -120,6 +136,20 @@ async def benson_website_lead(
         raise HTTPException(status_code=409, detail=str(error)) from error
     response.status_code = (
         status.HTTP_200_OK if receipt.duplicate else status.HTTP_201_CREATED
+    )
+    logger.info(
+        integration_audit_json(
+            event="public_intake.accepted",
+            calling_ip=request.client.host if request.client else "unknown",
+            request_id=request.headers.get("X-Request-ID", ""),
+            latitude=latitude,
+            longitude=longitude,
+            target_delta={
+                "lead_id": str(receipt.lead_id),
+                "status": receipt.status,
+                "duplicate": receipt.duplicate,
+            },
+        )
     )
     return receipt
 

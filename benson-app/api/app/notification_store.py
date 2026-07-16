@@ -46,6 +46,7 @@ class NotificationStoreMixin(StoreBase):
         upload_session_hours: int,
         notification_email_to: str,
         emergency_sms_to: str,
+        client_sms_to: str,
         notification_max_attempts: int,
     ) -> LeadReceipt:
         now = datetime.now(UTC)
@@ -89,23 +90,36 @@ class NotificationStoreMixin(StoreBase):
                         "phone": lead.phone,
                         "email": str(lead.email) if lead.email else None,
                         "service_type": lead.service_type,
+                        "customer_type": lead.customer_type,
                         "urgency": lead.urgency,
                         "city": lead.city,
                         "message": lead.message,
                     },
                     sort_keys=True,
                 )
-                destinations = [] if is_spam else [("email", notification_email_to)]
+                destinations: list[tuple[str, str, str]] = (
+                    []
+                    if is_spam
+                    else [("email", notification_email_to, "internal_lead_alert")]
+                )
                 if not is_spam and lead.urgency == "emergency" and emergency_sms_to:
-                    destinations.append(("sms", emergency_sms_to))
-                for channel, destination in destinations:
+                    destinations.append(
+                        ("sms", emergency_sms_to, "internal_emergency_alert")
+                    )
+                if not is_spam and client_sms_to:
+                    destinations.append(
+                        ("sms", client_sms_to, "client_lead_acknowledgement")
+                    )
+                for channel, destination, kind in destinations:
+                    item_payload = json.loads(notification_payload)
+                    item_payload["kind"] = kind
                     db.execute(
                         notification_outbox.insert().values(
                             id=str(uuid4()),
                             lead_id=lead_id,
                             channel=channel,
                             destination=destination,
-                            payload=notification_payload,
+                            payload=json.dumps(item_payload, sort_keys=True),
                             status="pending",
                             attempts=0,
                             max_attempts=notification_max_attempts,

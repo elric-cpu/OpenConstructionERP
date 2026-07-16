@@ -195,7 +195,7 @@ test("sign out invalidates in-flight authenticated responses", async ({ page }) 
   await expect(page.getByText("System ready")).not.toBeVisible();
 });
 
-test("owners can opt in to emergency SMS from settings", async ({ page }) => {
+test("owners can opt in to client SMS and emergency alerts", async ({ page }) => {
   await page.addInitScript(() => sessionStorage.setItem("benson-google-credential", "owner-token"));
   await page.route("**/api/v1/dashboard", (route) =>
     route.fulfill({
@@ -220,7 +220,9 @@ test("owners can opt in to emergency SMS from settings", async ({ page }) => {
   });
 
   await page.goto("/");
-  const toggle = page.getByRole("checkbox", { name: "Emergency SMS alerts" });
+  const toggle = page.getByRole("checkbox", {
+    name: "Client SMS/MMS and emergency alerts",
+  });
   await expect(toggle).not.toBeChecked();
   await toggle.check();
   await expect(toggle).toBeChecked();

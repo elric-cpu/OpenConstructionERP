@@ -4,6 +4,7 @@ from typing import Any
 import httpx
 
 from .config import Settings
+from .message_templates import client_lead_message
 from .signing import employee_invite_token
 
 
@@ -74,6 +75,15 @@ def deliver_notification(item: dict[str, Any], settings: Settings) -> DeliveryRe
                 timeout=20,
             )
         elif item["channel"] == "sms":
+            sms_body = (
+                client_lead_message(payload).body
+                if payload.get("kind") == "client_lead_acknowledgement"
+                else (
+                    f"EMERGENCY Benson lead: {payload['name']}, {payload['phone']}, "
+                    f"{payload['service_type']}, "
+                    f"{payload.get('city') or 'location not provided'}."
+                )
+            )
             response = httpx.post(
                 "https://api.twilio.com/2010-04-01/Accounts/"
                 f"{settings.twilio_account_sid}/Messages.json",
@@ -84,10 +94,7 @@ def deliver_notification(item: dict[str, Any], settings: Settings) -> DeliveryRe
                 data={
                     "From": settings.twilio_from_number,
                     "To": item["destination"],
-                    "Body": (
-                        f"EMERGENCY Benson lead: {payload['name']}, {payload['phone']}, "
-                        f"{payload['service_type']}, {payload.get('city') or 'location not provided'}."
-                    ),
+                    "Body": sms_body,
                 },
                 timeout=20,
             )

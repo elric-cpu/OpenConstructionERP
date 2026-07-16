@@ -5,6 +5,7 @@ from .employee_document_store import EmployeeDocumentStoreMixin
 from .employee_store import EmployeeStoreMixin
 from .employee_task_store import EmployeeTaskStoreMixin
 from .lead_store import LeadStoreMixin
+from .logistics_store import LogisticsStoreMixin
 from .notification_store import NotificationStoreMixin
 from .storage_schema import (
     IdempotencyConflict,
@@ -20,6 +21,7 @@ class OperationsStore(
     EmployeeDocumentStoreMixin,
     NotificationStoreMixin,
     LeadStoreMixin,
+    LogisticsStoreMixin,
     AiStoreMixin,
 ):
     pass

@@ -129,7 +129,25 @@ def test_intake_enqueues_email_only_when_emergency_sms_is_disabled(
     ).notification_counts() == {"pending": 1}
 
 
-def test_owner_can_enable_and_disable_emergency_sms(
+def test_public_gateway_alias_preserves_signed_intake_contract(
+    isolated_settings: Settings,
+) -> None:
+    payload = canonical_lead(
+        metadata={"geo_coordinates": {"latitude": 43.5862, "longitude": -118.4967}}
+    )
+    body = json.dumps(payload, separators=(",", ":")).encode()
+
+    response = client.post(
+        "/api/v1/intake/leads",
+        content=body,
+        headers=signed_headers(isolated_settings, body, "public-gateway-alias"),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "accepted"
+
+
+def test_owner_can_enable_and_disable_twilio_messaging(
     isolated_settings: Settings,
 ) -> None:
     initial = client.get("/api/benson/v1/settings/notifications", headers=STAFF_HEADERS)
@@ -166,7 +184,7 @@ def test_owner_can_enable_and_disable_emergency_sms(
     )
     assert operations_store(
         isolated_settings.resolved_database_url()
-    ).notification_counts() == {"pending": 2}
+    ).notification_counts() == {"pending": 3}
 
     disabled = client.patch(
         "/api/benson/v1/settings/notifications",
@@ -178,7 +196,7 @@ def test_owner_can_enable_and_disable_emergency_sms(
     assert operations_store(
         isolated_settings.resolved_database_url()
     ).notification_counts() == {
-        "disabled": 1,
+        "disabled": 2,
         "pending": 1,
     }
 

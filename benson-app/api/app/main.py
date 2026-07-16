@@ -6,6 +6,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 
 from .ai_routes import router as ai_router
+from .asset_routes import router as asset_router
 from .config import get_settings
 from .lead_routes import router as lead_router
 from .onboarding_routes import router as onboarding_router
@@ -32,6 +33,7 @@ app.include_router(system_router)
 app.include_router(onboarding_router)
 app.include_router(lead_router)
 app.include_router(ai_router)
+app.include_router(asset_router)
 
 _web_dist_path = get_settings().web_dist_path
 if _web_dist_path is not None and _web_dist_path.is_dir():

@@ -18,7 +18,10 @@ export function NotificationSettingsPanel({
       <div>
         <small>OWNER SETTINGS</small>
         <h2>Lead notifications</h2>
-        <p>Email alerts stay on. SMS alerts are optional and are currently {settings.sms_enabled ? "on" : "off"}.</p>
+        <p>
+          Email alerts stay on. Twilio SMS acknowledgements and emergency alerts are optional and are currently{" "}
+          {settings.sms_enabled ? "on" : "off"}.
+        </p>
       </div>
       <label className="toggle-setting">
         <input
@@ -27,7 +30,7 @@ export function NotificationSettingsPanel({
           disabled={!settings.sms_configured || status === "saving"}
           onChange={(event) => onChange(event.target.checked)}
         />
-        <span>Emergency SMS alerts</span>
+        <span>Client SMS/MMS and emergency alerts</span>
         <small>{settingLabel(settings.sms_configured, status)}</small>
       </label>
       {status === "error" && <p className="form-error">Notification settings were not saved.</p>}
