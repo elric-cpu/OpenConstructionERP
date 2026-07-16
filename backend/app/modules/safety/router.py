@@ -7,6 +7,7 @@ Endpoints:
     GET    /trends                      - Incident/observation counts per period
     GET    /trends/extended             - Rolling LTIFR/TRIR time series + trend
     GET    /threshold-alert             - Current LTIFR/TRIR vs safe-baseline status
+    GET    /indicators                  - Leading vs lagging safety indicators rollup
     GET    /incidents                   - List incidents for a project
     POST   /incidents                   - Create incident
     GET    /incidents/{id}              - Get single incident
@@ -24,6 +25,7 @@ Endpoints:
 import io
 import logging
 import uuid
+from datetime import date
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
@@ -36,6 +38,7 @@ from app.modules.safety.schemas import (
     ObservationCreate,
     ObservationResponse,
     ObservationUpdate,
+    SafetyIndicatorsResponse,
     SafetyStatsResponse,
     SafetyThresholdAlertResponse,
     SafetyTrendsExtendedResponse,
@@ -164,6 +167,32 @@ async def safety_threshold_alert(
         project_id,
         baseline_ltifr=baseline_ltifr,
         baseline_trir=baseline_trir,
+    )
+
+
+@router.get("/indicators/", response_model=SafetyIndicatorsResponse)
+async def safety_indicators(
+    session: SessionDep,
+    project_id: uuid.UUID = Query(...),
+    period_start: date | None = Query(default=None),
+    period_end: date | None = Query(default=None),
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("safety.read")),
+    service: SafetyService = Depends(_get_service),
+) -> SafetyIndicatorsResponse:
+    """Return leading vs lagging safety indicators for a project over a period.
+
+    Leading (near-misses reported, observations opened/closed, corrective-action
+    close rate) is shown side by side with lagging (recordable/lost-time
+    incidents, days lost, TRIR/LTIFR/severity rate). ``period_start`` and
+    ``period_end`` are optional inclusive ISO date bounds; ``period_end`` is the
+    as-of cutoff.
+    """
+    await verify_project_access(project_id, user_id, session)
+    return await service.get_safety_indicators(
+        project_id,
+        period_start=period_start,
+        period_end=period_end,
     )
 
 

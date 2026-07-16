@@ -2,11 +2,12 @@
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 """Safety Pydantic schemas - request/response models."""
 
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 # ── Incident schemas ─────────────────────────────────────────────────────
 
@@ -343,3 +344,81 @@ class SafetyThresholdAlertResponse(BaseModel):
     ltifr_status: str = Field(default="unknown", pattern=r"^(green|yellow|red|unknown)$")
     trir_status: str = Field(default="unknown", pattern=r"^(green|yellow|red|unknown)$")
     message: str = Field(default="")
+
+
+# -- Leading vs lagging safety indicators -----------------------------------
+# Decimal rate fields are stored/computed as Decimal but emitted as plain
+# decimal strings in JSON, mirroring the money serialisation used in
+# app/modules/finance/schemas.py and app/modules/boq/schemas.py so a rate is
+# never a lossy float on the wire.
+def _serialise_rate(v: Decimal | None) -> str | None:
+    """Emit a Decimal rate as a plain string, passing None through unchanged."""
+    return None if v is None else str(v)
+
+
+class LaggingIndicatorsResponse(BaseModel):
+    """Lagging indicators - harm that already happened over the period."""
+
+    total_incidents: int = 0
+    recordable_incidents: int = 0
+    lost_time_incidents: int = 0
+    total_days_lost: int = 0
+    total_hours_worked: Decimal = Field(
+        default=Decimal("0"),
+        description="Sum of incident man_hours_total in period (frequency-rate denominator)",
+    )
+    trir: Decimal | None = Field(
+        default=None,
+        description="Total Recordable Incident Rate per 200k hours, or null when no man-hours",
+    )
+    ltifr: Decimal | None = Field(
+        default=None,
+        description="Lost Time Injury Frequency Rate per 1M hours, or null when no man-hours",
+    )
+    severity_rate: Decimal | None = Field(
+        default=None,
+        description="Lost days per 1M hours, or null when no man-hours",
+    )
+
+    @field_serializer("total_hours_worked", "trir", "ltifr", "severity_rate")
+    def _ser_rate(self, v: Decimal | None) -> str | None:
+        return _serialise_rate(v)
+
+
+class LeadingIndicatorsResponse(BaseModel):
+    """Leading indicators - proactive prevention work done over the period."""
+
+    near_misses_reported: int = Field(
+        default=0,
+        description="Near-miss incidents plus near-miss observations captured in period",
+    )
+    observations_total: int = 0
+    observations_open: int = 0
+    observations_closed: int = 0
+    corrective_actions_total: int = 0
+    corrective_actions_open: int = 0
+    corrective_actions_closed: int = 0
+    corrective_action_close_rate: Decimal | None = Field(
+        default=None,
+        description="Closed / total corrective actions as a 0..1 ratio, or null when there are none",
+    )
+
+    @field_serializer("corrective_action_close_rate")
+    def _ser_rate(self, v: Decimal | None) -> str | None:
+        return _serialise_rate(v)
+
+
+class SafetyIndicatorsResponse(BaseModel):
+    """Leading and lagging safety indicators for a project over a period."""
+
+    project_id: UUID
+    period_start: date | None = Field(
+        default=None,
+        description="Inclusive lower date bound applied, or null for all-time",
+    )
+    period_end: date | None = Field(
+        default=None,
+        description="Inclusive upper date bound (as-of cutoff) applied, or null for all-time",
+    )
+    leading: LeadingIndicatorsResponse = Field(default_factory=LeadingIndicatorsResponse)
+    lagging: LaggingIndicatorsResponse = Field(default_factory=LaggingIndicatorsResponse)

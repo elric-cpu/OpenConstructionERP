@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import date
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -16,11 +18,20 @@ from app.core.json_merge import merge_metadata
 from app.modules.safety._dateutil import canonicalize_incident_date, parse_incident_date
 from app.modules.safety.models import SafetyIncident, SafetyObservation
 from app.modules.safety.repository import IncidentRepository, ObservationRepository
+from app.modules.safety.safety_indicators import (
+    IncidentInput,
+    ObservationInput,
+    SafetyIndicators,
+    compute_safety_indicators,
+)
 from app.modules.safety.schemas import (
     IncidentCreate,
     IncidentUpdate,
+    LaggingIndicatorsResponse,
+    LeadingIndicatorsResponse,
     ObservationCreate,
     ObservationUpdate,
+    SafetyIndicatorsResponse,
     SafetyStatsResponse,
     SafetyThresholdAlertResponse,
     SafetyTrendEntryExtended,
@@ -130,6 +141,93 @@ def _compute_risk_tier(risk_score: int) -> str:
     if risk_score >= 6:
         return "medium"
     return "low"
+
+
+# -- Leading vs lagging indicators row adapters --------------------------------
+# These turn stored ORM rows into the pure, DB-free inputs consumed by
+# app/modules/safety/safety_indicators.py. They keep the man-hours and
+# recordability conventions identical to get_stats so the two never disagree.
+def _incident_man_hours_decimal(inc: object) -> Decimal:
+    """Exposure hours for one incident from ``metadata.man_hours_total`` as Decimal.
+
+    Same convention as :func:`_incident_man_hours`, but exact (Decimal, not
+    float). Non-numeric or non-positive junk is ignored (returns zero) rather
+    than corrupting the frequency-rate denominator.
+    """
+    raw_hours = (getattr(inc, "metadata_", None) or {}).get("man_hours_total")
+    if raw_hours is None:
+        return Decimal("0")
+    try:
+        hours = Decimal(str(raw_hours))
+    except (InvalidOperation, ValueError, TypeError):
+        logger.warning(
+            "Safety incident %s has a non-numeric man_hours_total %r; ignored",
+            getattr(inc, "incident_number", getattr(inc, "id", "?")),
+            raw_hours,
+        )
+        return Decimal("0")
+    return hours if hours > 0 else Decimal("0")
+
+
+def _incident_to_input(inc: object) -> IncidentInput:
+    """Adapt a SafetyIncident row into an :class:`IncidentInput`."""
+    days_lost = getattr(inc, "days_lost", 0) or 0
+    statuses = tuple(
+        str(ca.get("status"))
+        for ca in (getattr(inc, "corrective_actions", None) or [])
+        if isinstance(ca, dict) and ca.get("status")
+    )
+    return IncidentInput(
+        recordable=_is_recordable(inc),
+        lost_time=bool(days_lost and days_lost > 0),
+        days_lost=days_lost,
+        man_hours=_incident_man_hours_decimal(inc),
+        incident_type=getattr(inc, "incident_type", "") or "",
+        on_date=parse_incident_date(getattr(inc, "incident_date", None)),
+        corrective_action_statuses=statuses,
+    )
+
+
+def _observation_to_input(obs: object) -> ObservationInput:
+    """Adapt a SafetyObservation row into an :class:`ObservationInput`."""
+    created_at = getattr(obs, "created_at", None)
+    on_date = created_at.date() if created_at is not None else None
+    return ObservationInput(
+        status=getattr(obs, "status", "") or "",
+        observation_type=getattr(obs, "observation_type", "") or "",
+        on_date=on_date,
+    )
+
+
+def _rollup_to_response(project_id: uuid.UUID, rollup: SafetyIndicators) -> SafetyIndicatorsResponse:
+    """Build the API response from a pure :class:`SafetyIndicators` rollup."""
+    lagging = rollup.lagging
+    leading = rollup.leading
+    return SafetyIndicatorsResponse(
+        project_id=project_id,
+        period_start=rollup.period_start,
+        period_end=rollup.period_end,
+        leading=LeadingIndicatorsResponse(
+            near_misses_reported=leading.near_misses_reported,
+            observations_total=leading.observations_total,
+            observations_open=leading.observations_open,
+            observations_closed=leading.observations_closed,
+            corrective_actions_total=leading.corrective_actions_total,
+            corrective_actions_open=leading.corrective_actions_open,
+            corrective_actions_closed=leading.corrective_actions_closed,
+            corrective_action_close_rate=leading.corrective_action_close_rate,
+        ),
+        lagging=LaggingIndicatorsResponse(
+            total_incidents=lagging.total_incidents,
+            recordable_incidents=lagging.recordable_incidents,
+            lost_time_incidents=lagging.lost_time_incidents,
+            total_days_lost=lagging.total_days_lost,
+            total_hours_worked=lagging.total_hours_worked,
+            trir=lagging.trir,
+            ltifr=lagging.ltifr,
+            severity_rate=lagging.severity_rate,
+        ),
+    )
 
 
 class SafetyService:
@@ -475,7 +573,7 @@ class SafetyService:
         LTIFR, TRIR, and breakdowns by type/status/risk tier.
         """
         from collections import defaultdict
-        from datetime import UTC, date, datetime
+        from datetime import UTC, datetime
 
         from sqlalchemy import select
 
@@ -873,3 +971,45 @@ class SafetyService:
             trir_status=trir_status,
             message=message,
         )
+
+    # -- Leading vs lagging indicators ---------------------------------------
+
+    async def get_safety_indicators(
+        self,
+        project_id: uuid.UUID,
+        *,
+        period_start: date | None = None,
+        period_end: date | None = None,
+    ) -> SafetyIndicatorsResponse:
+        """Roll a project's safety rows into leading and lagging indicators.
+
+        Loads every incident and observation for the project, adapts them into
+        the pure rollup inputs, and returns the leading (near-misses reported,
+        observations opened/closed, corrective-action close rate) and lagging
+        (recordable/lost-time incidents, days lost, TRIR/LTIFR/severity rate)
+        indicators side by side. Rates are guarded: a missing man-hours
+        denominator yields ``None`` rather than a division error or a falsely
+        precise zero.
+
+        Args:
+            project_id: Target project.
+            period_start: Optional inclusive lower date bound.
+            period_end: Optional inclusive upper date bound (the as-of cutoff).
+        """
+        from sqlalchemy import select
+
+        inc_result = await self.session.execute(select(SafetyIncident).where(SafetyIncident.project_id == project_id))
+        incidents = list(inc_result.scalars().all())
+
+        obs_result = await self.session.execute(
+            select(SafetyObservation).where(SafetyObservation.project_id == project_id)
+        )
+        observations = list(obs_result.scalars().all())
+
+        rollup = compute_safety_indicators(
+            [_incident_to_input(inc) for inc in incidents],
+            [_observation_to_input(obs) for obs in observations],
+            period_start=period_start,
+            period_end=period_end,
+        )
+        return _rollup_to_response(project_id, rollup)
