@@ -1,0 +1,846 @@
+# Instincts generated from https://github.com/elric-cpu/OpenConstructionERP
+# Generated: 2026-07-14T13:38:17.733Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: OpenConstructionERP-commit-conventional
+trigger: "when writing a commit message"
+confidence: 0.85
+domain: git
+source: repo-analysis
+source_repo: https://github.com/elric-cpu/OpenConstructionERP
+---
+
+# OpenConstructionERP Commit Conventional
+
+## Action
+
+Use conventional commit format with prefixes: feat, fix, test, docs, chore
+
+## Evidence
+
+- 100 commits analyzed
+- Detected conventional commit pattern
+- Examples: portal: show the full magic-link sign-in URL and fix the invite notification link, notifications: deliver alerts to connected chat integrations and notify on new discussion comments
+
+---
+id: OpenConstructionERP-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/elric-cpu/OpenConstructionERP
+---
+
+# OpenConstructionERP Commit Length
+
+## Action
+
+Write moderate-length commit messages (~69 characters)
+
+## Evidence
+
+- Average commit message length: 69 chars
+- Based on 100 commits
+
+---
+id: OpenConstructionERP-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/elric-cpu/OpenConstructionERP
+---
+
+# OpenConstructionERP Naming Files
+
+## Action
+
+Use snake_case naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: snake_case
+
+---
+id: OpenConstructionERP-import-alias
+trigger: "when importing modules"
+confidence: 0.85
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/elric-cpu/OpenConstructionERP
+---
+
+# OpenConstructionERP Import Alias
+
+## Action
+
+Use path aliases (@/, ~/) instead of relative imports
+
+## Evidence
+
+- Import analysis shows alias pattern
+- Example: import { x } from '@/lib/x'
+
+---
+id: OpenConstructionERP-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/elric-cpu/OpenConstructionERP
+---
+
+# OpenConstructionERP Export Style
+
+## Action
+
+Prefer named exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: named
+
+---
+id: OpenConstructionERP-arch-feature-based
+trigger: "when adding a new feature"
+confidence: 0.85
+domain: architecture
+source: repo-analysis
+source_repo: https://github.com/elric-cpu/OpenConstructionERP
+---
+
+# OpenConstructionERP Arch Feature Based
+
+## Action
+
+Create a new folder in src/features/ with all related code colocated
+
+## Evidence
+
+- Feature-based module organization detected
+- Structure: src/features/[feature-name]/
+
+---
+id: OpenConstructionERP-test-framework
+trigger: "when writing tests"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/elric-cpu/OpenConstructionERP
+---
+
+# OpenConstructionERP Test Framework
+
+## Action
+
+Use vitest as the test framework
+
+## Evidence
+
+- Test framework detected: vitest
+- File pattern: *.test.ts
+
+---
+id: OpenConstructionERP-test-naming
+trigger: "when creating a test file"
+confidence: 0.85
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/elric-cpu/OpenConstructionERP
+---
+
+# OpenConstructionERP Test Naming
+
+## Action
+
+Name test files using the pattern: *.test.ts
+
+## Evidence
+
+- File pattern: *.test.ts
+- Consistent across test files
+
+---
+id: OpenConstructionERP-test-mocking
+trigger: "when mocking dependencies in tests"
+confidence: 0.75
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/elric-cpu/OpenConstructionERP
+---
+
+# OpenConstructionERP Test Mocking
+
+## Action
+
+Use vi.mock for mocking
+
+## Evidence
+
+- Mocking pattern detected: vi.mock
+- Consistent across test files
+
+---
+id: OpenConstructionERP-test-types
+trigger: "when planning tests for a feature"
+confidence: 0.7
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/elric-cpu/OpenConstructionERP
+---
+
+# OpenConstructionERP Test Types
+
+## Action
+
+Write unit, integration tests to match project standards
+
+## Evidence
+
+- Test types detected: unit, integration
+- Coverage config: no
+
+---
+id: OpenConstructionERP-workflow-feature-development
+trigger: "when implementing a new feature"
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/elric-cpu/OpenConstructionERP
+---
+
+# OpenConstructionERP Workflow Feature Development
+
+## Action
+
+Follow the feature-development workflow:
+1. Add feature implementation
+2. Add tests for feature
+3. Update documentation
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~14x per month
+- Files: frontend/src/shared/ui/bimviewer/*, frontend/src/shared/ui/bimviewer/__tests__/*, frontend/src/features/file-manager/*
+
+---
+id: OpenConstructionERP-workflow-release-version-bump
+trigger: "when doing release version bump"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/elric-cpu/OpenConstructionERP
+---
+
+# OpenConstructionERP Workflow Release Version Bump
+
+## Action
+
+Follow the release-version-bump workflow:
+1. Update CHANGELOG.md with release notes
+2. Bump version numbers in backend/pyproject.toml, frontend/package.json, desktop/src-tauri/tauri.conf.json
+3. Update frontend/src/features/about/Changelog.tsx
+4. Optionally update ACKNOWLEDGMENTS.md for credits
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: CHANGELOG.md, backend/pyproject.toml, frontend/package.json
+
+---
+id: OpenConstructionERP-workflow-add-database-table-or-schema-migration
+trigger: "when doing add database table or schema migration"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/elric-cpu/OpenConstructionERP
+---
+
+# OpenConstructionERP Workflow Add Database Table Or Schema Migration
+
+## Action
+
+Follow the add-database-table-or-schema-migration workflow:
+1. Create or update alembic migration script in backend/alembic/versions/
+2. Update backend models (e.g., models.py)
+3. Update backend schemas (schemas.py)
+4. Update backend services (service.py)
+5. Update backend routers (router.py)
+6. Add or update backend validators/permissions/events as needed
+7. Add or update backend unit tests
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: backend/alembic/versions/*.py, backend/app/modules/*/models.py, backend/app/modules/*/schemas.py
+
+---
+id: OpenConstructionERP-workflow-add-api-endpoint
+trigger: "when doing add api endpoint"
+confidence: 0.65
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/elric-cpu/OpenConstructionERP
+---
+
+# OpenConstructionERP Workflow Add Api Endpoint
+
+## Action
+
+Follow the add-api-endpoint workflow:
+1. Update or add backend router (router.py)
+2. Implement logic in backend service (service.py)
+3. Update or add backend schemas (schemas.py)
+4. Add or update backend unit tests
+5. Add or update frontend API module (api.ts)
+6. Add or update frontend feature code and tests
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~3x per month
+- Files: backend/app/modules/*/router.py, backend/app/modules/*/service.py, backend/app/modules/*/schemas.py
+
+---
+id: OpenConstructionERP-workflow-feature-development-end-to-end
+trigger: "when doing feature development end to end"
+confidence: 0.75
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/elric-cpu/OpenConstructionERP
+---
+
+# OpenConstructionERP Workflow Feature Development End To End
+
+## Action
+
+Follow the feature-development-end-to-end workflow:
+1. Implement backend logic (models, service, router, schemas, migrations if needed)
+2. Implement frontend UI and logic (tsx files, stores, hooks)
+3. Add or update frontend and backend unit tests
+4. Update or add i18n/locales files for new UI strings
+5. Update documentation or help/catalog files if needed
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~5x per month
+- Files: backend/app/modules/*/*, backend/alembic/versions/*.py, backend/tests/unit/test_*.py
+
+---
+id: OpenConstructionERP-workflow-add-or-update-i18n-strings
+trigger: "when doing add or update i18n strings"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/elric-cpu/OpenConstructionERP
+---
+
+# OpenConstructionERP Workflow Add Or Update I18n Strings
+
+## Action
+
+Follow the add-or-update-i18n-strings workflow:
+1. Add or update keys in frontend/src/app/locales/en.ts
+2. Propagate new keys to all other locale files (e.g., ar.ts, de.ts, es-MX.ts, etc.)
+3. Preserve interpolation placeholders and terminology
+4. Optionally update i18n fallback or i18n.ts files
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: frontend/src/app/locales/en.ts, frontend/src/app/locales/*.ts, frontend/src/app/i18n.ts
+
+---
+id: OpenConstructionERP-workflow-add-or-update-tests
+trigger: "when doing add or update tests"
+confidence: 0.7
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/elric-cpu/OpenConstructionERP
+---
+
+# OpenConstructionERP Workflow Add Or Update Tests
+
+## Action
+
+Follow the add-or-update-tests workflow:
+1. Add or update backend unit tests (backend/tests/unit/test_*.py)
+2. Add or update frontend unit tests (frontend/src/features/*/__tests__/*.test.tsx or .test.ts)
+3. Add regression or edge-case tests as needed
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~4x per month
+- Files: backend/tests/unit/test_*.py, frontend/src/features/*/__tests__/*.test.tsx, frontend/src/features/*/__tests__/*.test.ts
+
+---
+id: OpenConstructionERP-workflow-fix-bug-or-regression
+trigger: "when doing fix bug or regression"
+confidence: 0.7
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/elric-cpu/OpenConstructionERP
+---
+
+# OpenConstructionERP Workflow Fix Bug Or Regression
+
+## Action
+
+Follow the fix-bug-or-regression workflow:
+1. Identify and fix the bug in the relevant backend or frontend file(s)
+2. Add or update a regression test to cover the issue
+3. Describe the fix and reference the issue or reporter if applicable
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~4x per month
+- Files: backend/app/modules/*/service.py, backend/app/modules/*/*.py, frontend/src/features/*/*.tsx
+
+---
+id: OpenConstructionERP-workflow-add-or-update-demo-or-pack
+trigger: "when doing add or update demo or pack"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/elric-cpu/OpenConstructionERP
+---
+
+# OpenConstructionERP Workflow Add Or Update Demo Or Pack
+
+## Action
+
+Follow the add-or-update-demo-or-pack workflow:
+1. Add or update backend/app/modules/<pack>/* and packs/<country-code>/*
+2. Add demo projects or templates in backend/app/core/demo_packs/ or backend/app/core/demo_projects.py
+3. Update manifest.py and onboarding.yaml as needed
+4. Add or update unit tests for the pack
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: backend/app/modules/*pack*/*, packs/*/src/openconstructionerp_*/manifest.py, packs/*/src/openconstructionerp_*/onboarding.yaml
+
+---
+id: openconstructionerp-naming-files
+trigger: "When creating or renaming a file in the backend or frontend codebase."
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: elric-cpu/OpenConstructionERP
+---
+
+# Openconstructionerp Naming Files
+
+## Action
+
+Use snake_case for file names.
+
+## Evidence
+
+- Pattern in codeStyle.namingConventions.files
+- Consistent usage in backend/app/modules/*/*.py
+
+---
+id: openconstructionerp-naming-functions
+trigger: "When defining a function."
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: elric-cpu/OpenConstructionERP
+---
+
+# Openconstructionerp Naming Functions
+
+## Action
+
+Use camelCase for function names.
+
+## Evidence
+
+- Pattern in codeStyle.namingConventions.functions
+
+---
+id: openconstructionerp-naming-classes
+trigger: "When defining a class."
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: elric-cpu/OpenConstructionERP
+---
+
+# Openconstructionerp Naming Classes
+
+## Action
+
+Use PascalCase for class names.
+
+## Evidence
+
+- Pattern in codeStyle.namingConventions.classes
+
+---
+id: openconstructionerp-naming-constants
+trigger: "When defining a constant."
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: elric-cpu/OpenConstructionERP
+---
+
+# Openconstructionerp Naming Constants
+
+## Action
+
+Use SCREAMING_SNAKE_CASE for constant names.
+
+## Evidence
+
+- Pattern in codeStyle.namingConventions.constants
+
+---
+id: openconstructionerp-import-alias
+trigger: "When importing modules."
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: elric-cpu/OpenConstructionERP
+---
+
+# Openconstructionerp Import Alias
+
+## Action
+
+Use alias import style.
+
+## Evidence
+
+- Pattern in codeStyle.importStyle
+
+---
+id: openconstructionerp-export-named
+trigger: "When exporting modules or functions."
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: elric-cpu/OpenConstructionERP
+---
+
+# Openconstructionerp Export Named
+
+## Action
+
+Use named exports.
+
+## Evidence
+
+- Pattern in codeStyle.exportStyle
+
+---
+id: openconstructionerp-test-file-pattern
+trigger: "When adding a frontend test file."
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: elric-cpu/OpenConstructionERP
+---
+
+# Openconstructionerp Test File Pattern
+
+## Action
+
+Name the file with the pattern *.test.ts or *.test.tsx and place it in __tests__ folders.
+
+## Evidence
+
+- Pattern in testing.filePattern
+- frontend/src/features/*/__tests__/*.test.tsx
+
+---
+id: openconstructionerp-test-framework-vitest
+trigger: "When writing frontend tests."
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: elric-cpu/OpenConstructionERP
+---
+
+# Openconstructionerp Test Framework Vitest
+
+## Action
+
+Use the vitest framework and vi.mock for mocking.
+
+## Evidence
+
+- Pattern in testing.framework
+- Pattern in testing.mockingStyle
+
+---
+id: openconstructionerp-test-types
+trigger: "When planning tests."
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: elric-cpu/OpenConstructionERP
+---
+
+# Openconstructionerp Test Types
+
+## Action
+
+Write both unit and integration tests as appropriate.
+
+## Evidence
+
+- Pattern in testing.testTypes
+
+---
+id: openconstructionerp-test-backend-location
+trigger: "When adding backend tests."
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: elric-cpu/OpenConstructionERP
+---
+
+# Openconstructionerp Test Backend Location
+
+## Action
+
+Place backend unit tests in backend/tests/unit/ with filenames starting with test_.py.
+
+## Evidence
+
+- Pattern in backend/tests/unit/test_*.py
+
+---
+id: openconstructionerp-git-commit-format
+trigger: "When writing a commit message."
+confidence: 0.9
+domain: git
+source: repo-analysis
+source_repo: elric-cpu/OpenConstructionERP
+---
+
+# Openconstructionerp Git Commit Format
+
+## Action
+
+Use conventional commit prefixes: feat, fix, test, docs, chore, i18n.
+
+## Evidence
+
+- Pattern in commits.prefixes
+- Examples: 'feat(bim): ...', 'docs: credit ...'
+
+---
+id: openconstructionerp-git-commit-length
+trigger: "When writing a commit message."
+confidence: 0.7
+domain: git
+source: repo-analysis
+source_repo: elric-cpu/OpenConstructionERP
+---
+
+# Openconstructionerp Git Commit Length
+
+## Action
+
+Keep commit messages concise, around 69 characters on average.
+
+## Evidence
+
+- Pattern in commits.averageLength
+
+---
+id: openconstructionerp-git-credit-contributors
+trigger: "When crediting community contributions."
+confidence: 0.8
+domain: git
+source: repo-analysis
+source_repo: elric-cpu/OpenConstructionERP
+---
+
+# Openconstructionerp Git Credit Contributors
+
+## Action
+
+Use 'docs: credit [username] for [contribution]' in commit messages.
+
+## Evidence
+
+- Examples: 'docs: credit skeltic-wq for a community report'
+
+---
+id: openconstructionerp-release-version-bump
+trigger: "When releasing a new version of the application."
+confidence: 0.99
+domain: workflow
+source: repo-analysis
+source_repo: elric-cpu/OpenConstructionERP
+---
+
+# Openconstructionerp Release Version Bump
+
+## Action
+
+Update CHANGELOG.md, bump version numbers in backend/pyproject.toml, frontend/package.json, desktop/src-tauri/tauri.conf.json, update frontend/src/features/about/Changelog.tsx, and optionally update ACKNOWLEDGMENTS.md.
+
+## Evidence
+
+- Workflow: release-version-bump
+- Files: CHANGELOG.md, backend/pyproject.toml, frontend/package.json, etc.
+
+---
+id: openconstructionerp-add-database-table-or-schema-migration
+trigger: "When adding a new backend feature requiring persistent data."
+confidence: 0.95
+domain: workflow
+source: repo-analysis
+source_repo: elric-cpu/OpenConstructionERP
+---
+
+# Openconstructionerp Add Database Table Or Schema Migration
+
+## Action
+
+Create or update alembic migration script, update backend models, schemas, services, routers, validators/permissions/events, and add/update backend unit tests.
+
+## Evidence
+
+- Workflow: add-database-table-or-schema-migration
+- Files: backend/alembic/versions/*.py, backend/app/modules/*/models.py, etc.
+
+---
+id: openconstructionerp-add-api-endpoint
+trigger: "When exposing new backend functionality to the frontend or external consumers."
+confidence: 0.93
+domain: workflow
+source: repo-analysis
+source_repo: elric-cpu/OpenConstructionERP
+---
+
+# Openconstructionerp Add Api Endpoint
+
+## Action
+
+Update or add backend router, implement service logic, update schemas, add/update backend unit tests, and update frontend API module and tests.
+
+## Evidence
+
+- Workflow: add-api-endpoint
+- Files: backend/app/modules/*/router.py, frontend/src/features/*/api.ts, etc.
+
+---
+id: openconstructionerp-feature-development-end-to-end
+trigger: "When building a new user-facing feature or module."
+confidence: 0.92
+domain: workflow
+source: repo-analysis
+source_repo: elric-cpu/OpenConstructionERP
+---
+
+# Openconstructionerp Feature Development End To End
+
+## Action
+
+Implement backend logic, frontend UI and logic, add/update tests, update i18n/locales, and update documentation or help/catalog files as needed.
+
+## Evidence
+
+- Workflow: feature-development-end-to-end
+- Files: backend/app/modules/*/*, frontend/src/features/*/*.tsx, etc.
+
+---
+id: openconstructionerp-add-or-update-i18n-strings
+trigger: "When introducing new UI strings or features that require localization."
+confidence: 0.98
+domain: workflow
+source: repo-analysis
+source_repo: elric-cpu/OpenConstructionERP
+---
+
+# Openconstructionerp Add Or Update I18n Strings
+
+## Action
+
+Add or update keys in frontend/src/app/locales/en.ts, propagate to all locale files, preserve placeholders, and optionally update i18n fallback files.
+
+## Evidence
+
+- Workflow: add-or-update-i18n-strings
+- Files: frontend/src/app/locales/*.ts
+
+---
+id: openconstructionerp-add-or-update-tests
+trigger: "When implementing new features, fixing bugs, or improving test coverage."
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: elric-cpu/OpenConstructionERP
+---
+
+# Openconstructionerp Add Or Update Tests
+
+## Action
+
+Add or update backend unit tests and frontend unit tests, including regression or edge-case tests as needed.
+
+## Evidence
+
+- Workflow: add-or-update-tests
+- Files: backend/tests/unit/test_*.py, frontend/src/features/*/__tests__/*.test.tsx
+
+---
+id: openconstructionerp-fix-bug-or-regression
+trigger: "When a bug or regression is reported or discovered."
+confidence: 0.92
+domain: workflow
+source: repo-analysis
+source_repo: elric-cpu/OpenConstructionERP
+---
+
+# Openconstructionerp Fix Bug Or Regression
+
+## Action
+
+Identify and fix the bug in relevant files, add or update a regression test, and describe the fix referencing the issue or reporter if applicable.
+
+## Evidence
+
+- Workflow: fix-bug-or-regression
+- Files: backend/app/modules/*/service.py, frontend/src/features/*/*.tsx, etc.
+
+---
+id: openconstructionerp-add-or-update-demo-or-pack
+trigger: "When supporting a new region/market or updating demo content."
+confidence: 0.88
+domain: workflow
+source: repo-analysis
+source_repo: elric-cpu/OpenConstructionERP
+---
+
+# Openconstructionerp Add Or Update Demo Or Pack
+
+## Action
+
+Add or update backend/app/modules/<pack>/* and packs/<country-code>/*, add demo projects/templates, update manifest.py and onboarding.yaml, and add/update unit tests for the pack.
+
+## Evidence
+
+- Workflow: add-or-update-demo-or-pack
+- Files: backend/app/modules/*pack*/*, packs/*/src/openconstructionerp_*/manifest.py
+
