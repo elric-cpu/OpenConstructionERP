@@ -945,3 +945,51 @@ class CashFlowResponse(BaseModel):
     net_change: str
     closing_cash: str
     ties_out: bool
+
+
+# -- Retention / withholding ledger ----------------------------------------
+
+
+class RetentionRollupResponse(BaseModel):
+    """Held / released / outstanding retainage for one scope (group or total).
+
+    Money is Decimal-as-string. The ``*_pct`` ratios are guarded: ``None`` when
+    the denominator (held or scheduled retainage) is zero, so the UI renders
+    "n/a" rather than a bogus 0%.
+
+    Basis of each figure:
+    ``scheduled`` = sum of invoice retention_amount (planned hold-back);
+    ``held_to_date`` = sum of payment withholding_amount;
+    ``released_to_date`` = held retainage whose release date has been reached as
+    of ``as_of``; ``outstanding`` = held minus released (clamped at zero).
+    """
+
+    currency_code: str = ""
+    direction: str = ""
+    contact_id: str | None = None
+    counterparty_name: str | None = None
+    scheduled: str = "0"
+    held_to_date: str = "0"
+    released_to_date: str = "0"
+    outstanding: str = "0"
+    payment_count: int = 0
+    released_pct: str | None = None
+    outstanding_pct: str | None = None
+    held_vs_scheduled_pct: str | None = None
+    earliest_release_date: str | None = None
+    latest_release_date: str | None = None
+
+
+class RetentionLedgerResponse(BaseModel):
+    """Project retention / withholding ledger.
+
+    ``groups`` are per-counterparty lines (each within one currency and
+    direction); ``totals`` roll them up per (currency, direction). ``as_of`` is
+    the release-date cutoff used to classify retainage as released. Nothing is
+    blended across currencies or across payable / receivable.
+    """
+
+    project_id: UUID
+    as_of: str | None = None
+    groups: list[RetentionRollupResponse] = Field(default_factory=list)
+    totals: list[RetentionRollupResponse] = Field(default_factory=list)

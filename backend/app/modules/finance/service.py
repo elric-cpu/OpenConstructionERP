@@ -35,6 +35,12 @@ from app.modules.finance.repository import (
     LedgerRepository,
     PaymentRepository,
 )
+from app.modules.finance.retention_ledger import (
+    InvoiceRetention,
+    PaymentWithholding,
+    RetentionLedger,
+    build_retention_ledger,
+)
 from app.modules.finance.schemas import (
     BudgetCreate,
     BudgetUpdate,
@@ -50,6 +56,11 @@ from app.modules.finance.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Upper bound on invoices scanned for the retention ledger (mirrors the invoice
+# Excel-export cap). A read model, so a hard ceiling keeps a pathological
+# project from loading unbounded rows; realistic projects stay far below it.
+_RETENTION_LEDGER_INVOICE_CAP = 50000
 
 
 def _safe_decimal(value: object, default: Decimal = Decimal("0")) -> Decimal:
@@ -1676,6 +1687,55 @@ class FinanceService:
         return await self.evm.list(project_id=project_id, project_ids=project_ids)
 
     # ── Dashboard ───────────────────────────────────────────────────────────
+
+    async def get_retention_ledger(
+        self,
+        project_id: uuid.UUID,
+        *,
+        as_of: str | None = None,
+    ) -> RetentionLedger:
+        """Build the project's retention / withholding ledger from stored rows.
+
+        Loads every invoice for the project together with its payments (retainage
+        lives on ``Invoice.retention_amount`` and ``Payment.withholding_amount``),
+        then delegates the arithmetic to the pure
+        :func:`app.modules.finance.retention_ledger.build_retention_ledger`.
+
+        ``as_of`` is the release-date cutoff that decides what counts as
+        released; when omitted the current UTC date is used, so "released to
+        date" means "release date reached as of today". No money is blended
+        across currencies or across payable / receivable direction.
+        """
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+
+        cutoff = as_of if as_of is not None else _utcnow_iso()[:10]
+
+        stmt = (
+            select(Invoice)
+            .where(Invoice.project_id == project_id)
+            .options(selectinload(Invoice.payments))
+            .limit(_RETENTION_LEDGER_INVOICE_CAP)
+        )
+        rows = (await self.session.execute(stmt)).scalars().all()
+
+        invoices = [
+            InvoiceRetention(
+                contact_id=inv.contact_id,
+                currency_code=inv.currency_code or "",
+                direction=inv.invoice_direction or "",
+                retention_amount=inv.retention_amount,
+                payments=[
+                    PaymentWithholding(
+                        withholding_amount=pay.withholding_amount,
+                        release_date=pay.withholding_release_date,
+                    )
+                    for pay in inv.payments
+                ],
+            )
+            for inv in rows
+        ]
+        return build_retention_ledger(invoices, as_of=cutoff)
 
     async def get_dashboard(
         self,

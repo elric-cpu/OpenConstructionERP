@@ -31,6 +31,7 @@ import io
 import logging
 import uuid
 from collections.abc import Iterable
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
@@ -52,6 +53,7 @@ from app.dependencies import (
     RequirePermission,
     SessionDep,
     accessible_project_ids,
+    verify_project_access,
 )
 from app.modules.contacts.models import Contact
 from app.modules.finance.connector_schemas import (
@@ -68,6 +70,7 @@ from app.modules.finance.connector_schemas import (
 from app.modules.finance.connector_service import ConnectorService
 from app.modules.finance.connectors.registry import connector_registry
 from app.modules.finance.models import EVMSnapshot, Invoice, Payment, ProjectBudget
+from app.modules.finance.retention_ledger import RetentionRollup
 from app.modules.finance.schemas import (
     BalanceSheetResponse,
     BudgetCreate,
@@ -96,6 +99,8 @@ from app.modules.finance.schemas import (
     PaymentListResponse,
     PaymentResponse,
     RecordClaimPaymentRequest,
+    RetentionLedgerResponse,
+    RetentionRollupResponse,
     StatementLineResponse,
     TrialBalanceResponse,
     TrialBalanceRow,
@@ -937,6 +942,82 @@ async def record_payment_with_withholding(
         actor_id=str(user_id) if user_id else None,
     )
     return PaymentResponse.model_validate(payment)
+
+
+# -- Retention / withholding ledger (MUST be before /{invoice_id}) ------------
+
+
+def _retention_money(value: Decimal) -> str:
+    """Serialise an always-present retention Decimal to a canonical string."""
+    return format(value, "f")
+
+
+def _retention_pct(value: Decimal | None) -> str | None:
+    """Serialise a guarded ratio Decimal to a string, or None when absent."""
+    return None if value is None else format(value, "f")
+
+
+def _retention_rollup_to_response(
+    rollup: RetentionRollup,
+    names: dict[str, str],
+) -> RetentionRollupResponse:
+    """Map a pure RetentionRollup to its API response, adding the contact name."""
+    return RetentionRollupResponse(
+        currency_code=rollup.currency_code,
+        direction=rollup.direction,
+        contact_id=rollup.contact_id,
+        counterparty_name=names.get(rollup.contact_id) if rollup.contact_id else None,
+        scheduled=_retention_money(rollup.scheduled),
+        held_to_date=_retention_money(rollup.held_to_date),
+        released_to_date=_retention_money(rollup.released_to_date),
+        outstanding=_retention_money(rollup.outstanding),
+        payment_count=rollup.payment_count,
+        released_pct=_retention_pct(rollup.released_pct),
+        outstanding_pct=_retention_pct(rollup.outstanding_pct),
+        held_vs_scheduled_pct=_retention_pct(rollup.held_vs_scheduled_pct),
+        earliest_release_date=rollup.earliest_release_date,
+        latest_release_date=rollup.latest_release_date,
+    )
+
+
+@router.get(
+    "/retention-ledger/",
+    response_model=RetentionLedgerResponse,
+    summary="Retention / withholding ledger for a project",
+    description=(
+        "Unified retainage rollup for a project, computed from stored invoice "
+        "retention and payment withholding. Returns per-counterparty lines and "
+        "per-(currency, direction) totals: retention scheduled, held to date, "
+        "released to date and still outstanding. 'Released' means the "
+        "contractual release date has been reached as of ?as_of (default: "
+        "today); the module records no separate cash return, so this is "
+        "release-due, not cash returned. Nothing is blended across currencies "
+        "or payable / receivable."
+    ),
+)
+async def get_retention_ledger(
+    session: SessionDep,
+    user_id: CurrentUserId,
+    project_id: uuid.UUID = Query(...),
+    as_of: str | None = Query(default=None),
+    _perm: None = Depends(RequirePermission("finance.read")),
+    service: FinanceService = Depends(_get_service),
+) -> RetentionLedgerResponse:
+    """Return the project retention / withholding ledger rollup."""
+    await verify_project_access(project_id, user_id, session)
+
+    ledger = await service.get_retention_ledger(project_id, as_of=as_of)
+
+    # Resolve counterparty display names for the per-contact lines in one round
+    # trip (totals carry no contact_id, so they need no name).
+    names = await _fetch_counterparty_names(session, [g.contact_id for g in ledger.groups])
+
+    return RetentionLedgerResponse(
+        project_id=project_id,
+        as_of=ledger.as_of,
+        groups=[_retention_rollup_to_response(g, names) for g in ledger.groups],
+        totals=[_retention_rollup_to_response(t, names) for t in ledger.totals],
+    )
 
 
 # ── Budgets (MUST be before /{invoice_id}) ──────────────────────────────────
