@@ -171,12 +171,22 @@ class LeadSummary(BaseModel):
     city: str
     created_at: datetime
     assigned_to: str | None = None
+    source: str
+    is_spam: bool = False
+    spam_reason: str | None = None
 
 
 class LeadUpdate(BaseModel):
     status: Literal["new", "contacted", "qualified", "scheduled", "closed"] | None = None
     assigned_to: EmailStr | None = None
     note: str | None = Field(default=None, min_length=1, max_length=5_000)
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    phone: str | None = Field(default=None, min_length=7, max_length=40)
+    email: EmailStr | None = None
+    service_type: str | None = Field(default=None, min_length=1, max_length=120)
+    city: str | None = Field(default=None, max_length=120)
+    source: str | None = Field(default=None, min_length=1, max_length=200)
+    is_spam: bool | None = None
 
 
 class NotificationSettingsUpdate(BaseModel):

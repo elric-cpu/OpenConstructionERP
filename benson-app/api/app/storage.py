@@ -14,8 +14,10 @@ from sqlalchemy import (
     Column,
     create_engine,
     func,
+    inspect,
     or_,
     select,
+    text,
     update,
 )
 from sqlalchemy.engine import Engine, RowMapping
@@ -55,6 +57,10 @@ leads = Table(
     Column("service_type", String(120), nullable=False),
     Column("city", String(120), nullable=False),
     Column("assigned_to", String(320)),
+    Column("source", String(200), nullable=False, default="Website"),
+    Column("is_spam", Integer, nullable=False, default=0),
+    Column("spam_reason", String(500)),
+    Column("deleted_at", DateTime(timezone=True)),
     Column("payload", Text, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
@@ -165,6 +171,42 @@ operations_settings = Table(
 )
 
 
+def lead_source(payload: dict[str, Any]) -> str:
+    utm_source = str(payload.get("utm_source", "")).strip()
+    if utm_source:
+        return utm_source[:200]
+    context = str(payload.get("form_context", "")).strip()
+    if context and context not in {"general", "contact"}:
+        return context[:200]
+    source_page = str(payload.get("source_page", "")).strip()
+    return source_page[:200] if source_page else "Website"
+
+
+def classify_spam(payload: dict[str, Any]) -> tuple[bool, str | None]:
+    content = " ".join(
+        str(payload.get(field, "")) for field in ("name", "email", "service_type", "message")
+    ).lower()
+    reasons: list[str] = []
+    spam_phrases = (
+        "backlink",
+        "guest post",
+        "search engine optimization",
+        "seo services",
+        "crypto",
+        "casino",
+        "domain authority",
+        "web traffic",
+    )
+    matched = [phrase for phrase in spam_phrases if phrase in content]
+    if matched:
+        reasons.append(f"spam language: {', '.join(matched[:2])}")
+    link_count = content.count("http://") + content.count("https://") + content.count("www.")
+    if link_count >= 2:
+        reasons.append("multiple external links")
+    is_spam = bool(matched) or link_count >= 3
+    return is_spam, "; ".join(reasons)[:500] if is_spam else None
+
+
 class OperationsStore:
     def __init__(self, database_url: str):
         connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
@@ -174,6 +216,29 @@ class OperationsStore:
 
     def initialize_schema(self) -> None:
         metadata.create_all(self.engine)
+        existing = {column["name"] for column in inspect(self.engine).get_columns("leads")}
+        source_added = "source" not in existing
+        additions = {
+            "source": "VARCHAR(200) NOT NULL DEFAULT 'Website'",
+            "is_spam": "INTEGER NOT NULL DEFAULT 0",
+            "spam_reason": "VARCHAR(500)",
+            "deleted_at": "TIMESTAMP WITH TIME ZONE",
+        }
+        with self.engine.begin() as db:
+            for name, definition in additions.items():
+                if name not in existing:
+                    db.execute(text(f"ALTER TABLE leads ADD COLUMN {name} {definition}"))
+            if source_added:
+                rows = db.execute(select(leads.c.id, leads.c.payload)).mappings()
+                for row in rows:
+                    payload = json.loads(row["payload"])
+                    source = lead_source(payload)
+                    is_spam, reason = classify_spam(payload)
+                    db.execute(
+                        update(leads)
+                        .where(leads.c.id == row["id"])
+                        .values(source=source, is_spam=int(is_spam), spam_reason=reason)
+                    )
 
     def readiness_probe(self) -> None:
         with self.engine.connect() as db:
@@ -215,6 +280,8 @@ class OperationsStore:
         now = datetime.now(UTC)
         lead_id = str(uuid4())
         upload_session_id = str(uuid4())
+        payload = lead.model_dump(mode="json")
+        is_spam, spam_reason = classify_spam(payload)
         values = {
             "id": lead_id,
             "idempotency_key": idempotency_key,
@@ -225,6 +292,9 @@ class OperationsStore:
             "email": str(lead.email) if lead.email else None,
             "service_type": lead.service_type,
             "city": lead.city,
+            "source": lead_source(payload),
+            "is_spam": int(is_spam),
+            "spam_reason": spam_reason,
             "payload": lead.model_dump_json(),
             "created_at": now,
             "updated_at": now,
@@ -254,8 +324,8 @@ class OperationsStore:
                     },
                     sort_keys=True,
                 )
-                destinations = [("email", notification_email_to)]
-                if lead.urgency == "emergency" and emergency_sms_to:
+                destinations = [] if is_spam else [("email", notification_email_to)]
+                if not is_spam and lead.urgency == "emergency" and emergency_sms_to:
                     destinations.append(("sms", emergency_sms_to))
                 for channel, destination in destinations:
                     db.execute(
@@ -279,7 +349,13 @@ class OperationsStore:
                     actor="benson-website",
                     subject_type="lead",
                     subject_id=lead_id,
-                    payload={"idempotency_key": idempotency_key, "priority": values["priority"]},
+                    payload={
+                        "idempotency_key": idempotency_key,
+                        "priority": values["priority"],
+                        "source": values["source"],
+                        "is_spam": is_spam,
+                        "spam_reason": spam_reason,
+                    },
                 )
         except IntegrityError:
             with self.engine.connect() as db:
@@ -598,7 +674,13 @@ class OperationsStore:
 
     def lead_count(self) -> int:
         with self.engine.connect() as db:
-            return int(db.execute(select(func.count()).select_from(leads)).scalar_one())
+            return int(
+                db.execute(
+                    select(func.count())
+                    .select_from(leads)
+                    .where(leads.c.deleted_at.is_(None), leads.c.is_spam == 0)
+                ).scalar_one()
+            )
 
     def list_leads(
         self,
@@ -608,8 +690,16 @@ class OperationsStore:
         priority: str | None = None,
         assigned_to: str | None = None,
         query: str | None = None,
+        source: str | None = None,
+        spam: str = "active",
     ) -> list[LeadSummary]:
-        statement = select(leads)
+        statement = select(leads).where(leads.c.deleted_at.is_(None))
+        if spam == "active":
+            statement = statement.where(leads.c.is_spam == 0)
+        elif spam == "spam":
+            statement = statement.where(leads.c.is_spam == 1)
+        if source:
+            statement = statement.where(leads.c.source == source)
         if status:
             statement = statement.where(leads.c.status == status)
         if priority:
@@ -624,6 +714,7 @@ class OperationsStore:
                 | leads.c.phone.ilike(pattern)
                 | leads.c.city.ilike(pattern)
                 | leads.c.service_type.ilike(pattern)
+                | leads.c.source.ilike(pattern)
             )
         with self.engine.connect() as db:
             rows = (
@@ -643,13 +734,20 @@ class OperationsStore:
                 city=row["city"],
                 created_at=row["created_at"],
                 assigned_to=row["assigned_to"],
+                source=row["source"],
+                is_spam=bool(row["is_spam"]),
+                spam_reason=row["spam_reason"],
             )
             for row in rows
         ]
 
     def get_lead(self, lead_id: str) -> dict[str, Any] | None:
         with self.engine.connect() as db:
-            lead = db.execute(select(leads).where(leads.c.id == lead_id)).mappings().first()
+            lead = (
+                db.execute(select(leads).where(leads.c.id == lead_id, leads.c.deleted_at.is_(None)))
+                .mappings()
+                .first()
+            )
             if not lead:
                 return None
             lead_attachments = (
@@ -707,11 +805,27 @@ class OperationsStore:
         values = change.model_dump(exclude_none=True, exclude={"note"})
         if "assigned_to" in values:
             values["assigned_to"] = str(values["assigned_to"]).lower()
+        if "email" in values:
+            values["email"] = str(values["email"]).lower()
+        if "is_spam" in values:
+            values["is_spam"] = int(values["is_spam"])
+            values["spam_reason"] = None if not values["is_spam"] else "Marked as spam by staff"
         now = datetime.now(UTC)
         with self.engine.begin() as db:
-            existing = db.execute(select(leads).where(leads.c.id == lead_id)).mappings().first()
+            existing = (
+                db.execute(select(leads).where(leads.c.id == lead_id, leads.c.deleted_at.is_(None)))
+                .mappings()
+                .first()
+            )
             if not existing:
                 return None
+            payload_fields = {"name", "phone", "email", "service_type", "city"}
+            payload_changes = payload_fields.intersection(values)
+            if payload_changes:
+                payload = json.loads(existing["payload"])
+                for field in payload_changes:
+                    payload[field] = values[field]
+                values["payload"] = json.dumps(payload, sort_keys=True)
             requested_status = values.get("status")
             current_status = str(existing["status"])
             if (
@@ -734,7 +848,7 @@ class OperationsStore:
                     payload={
                         key: {"from": existing[key], "to": value}
                         for key, value in values.items()
-                        if key != "updated_at" and existing[key] != value
+                        if key not in {"updated_at", "payload"} and existing[key] != value
                     },
                 )
             if change.note:
@@ -757,6 +871,29 @@ class OperationsStore:
                     payload={"note_id": note_id},
                 )
         return self.get_lead(lead_id)
+
+    def delete_lead(self, lead_id: str, *, actor: str) -> bool:
+        now = datetime.now(UTC)
+        with self.engine.begin() as db:
+            existing = (
+                db.execute(select(leads).where(leads.c.id == lead_id, leads.c.deleted_at.is_(None)))
+                .mappings()
+                .first()
+            )
+            if not existing:
+                return False
+            db.execute(
+                update(leads).where(leads.c.id == lead_id).values(deleted_at=now, updated_at=now)
+            )
+            self._audit(
+                db,
+                event="lead.archived",
+                actor=actor,
+                subject_type="lead",
+                subject_id=lead_id,
+                payload={"name": existing["name"]},
+            )
+        return True
 
     def create_ai_run(
         self,

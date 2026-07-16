@@ -51,8 +51,10 @@ test("sidebar navigation switches launch views and does not route to deferred mo
   await page.goto("/#overview");
   const overview = page.getByRole("link", { name: "Overview" });
   const leads = page.getByRole("link", { name: "Leads" });
+  const mobile = (page.viewportSize()?.width ?? 1_000) <= 900;
 
   await expect(overview).toHaveAttribute("aria-current", "page");
+  if (mobile) await page.getByRole("button", { name: "Open menu" }).click();
   await leads.click();
   await expect(page).toHaveURL(/#leads$/);
   await expect(leads).toHaveAttribute("aria-current", "page");
@@ -60,8 +62,10 @@ test("sidebar navigation switches launch views and does not route to deferred mo
   await expect(page.getByRole("heading", { name: "Good morning." })).not.toBeVisible();
 
   const jobs = page.getByText("Jobs", { exact: true });
+  if (mobile) await page.getByRole("button", { name: "Open menu" }).click();
   await expect(jobs).toBeVisible();
-  await jobs.click({ force: true });
+  await expect(jobs.locator("..")).toHaveClass(/nav-disabled/);
+  await expect(page.getByRole("link", { name: "Jobs" })).toHaveCount(0);
   await expect(page).toHaveURL(/#leads$/);
   await expect(leads).toHaveAttribute("aria-current", "page");
 });
@@ -105,6 +109,9 @@ test("authenticated staff see persisted website leads", async ({ page }) => {
             name: "Harney County homeowner",
             service_type: "Window replacement",
             city: "Burns",
+            source: "Website",
+            is_spam: false,
+            spam_reason: null,
             created_at: "2026-07-14T12:00:00Z",
           },
         ],
@@ -118,6 +125,10 @@ test("authenticated staff see persisted website leads", async ({ page }) => {
   await expect(page.getByText("Harney County homeowner")).toBeVisible();
   await expect(page.getByText("Window replacement · Burns")).toBeVisible();
   await expect(page.getByText("urgent", { exact: true })).toBeVisible();
+  await expect(page.getByText("Source: Website")).toBeVisible();
+  await expect(page.getByLabel("Filter spam leads")).toHaveValue("active");
+  await page.getByLabel("Filter leads by source").selectOption("Website");
+  await expect(page.getByText("Harney County homeowner")).toBeVisible();
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
 });
 
@@ -215,6 +226,9 @@ test("staff can operate a lead and create a fact-scoped AI draft", async ({ page
     city: "Burns",
     created_at: "2026-07-14T12:00:00Z",
     assigned_to: null,
+    source: "Google",
+    is_spam: false,
+    spam_reason: null,
     payload: {
       address: "123 Main St",
       timeline: "This month",
@@ -255,6 +269,10 @@ test("staff can operate a lead and create a fact-scoped AI draft", async ({ page
   await page.route("**/api/benson/v1/settings/notifications", (route) => route.fulfill({ status: 403 }));
   await page.route("**/api/benson/v1/leads/lead-1", async (route) => {
     expect(route.request().headers().authorization).toBe("Bearer test-token");
+    if (route.request().method() === "DELETE") {
+      await route.fulfill({ status: 204 });
+      return;
+    }
     if (route.request().method() === "PATCH") {
       const change = route.request().postDataJSON() as Record<string, string>;
       if (change.note)
@@ -303,6 +321,13 @@ test("staff can operate a lead and create a fact-scoped AI draft", async ({ page
   await expect(page.getByRole("heading", { name: "Harney County homeowner" })).toBeVisible();
   await expect(page.getByText("Two windows need review.")).toBeVisible();
   await expect(page.getByRole("button", { name: /window.jpg/ })).toBeVisible();
+  await expect(page.getByLabel("Lead source")).toHaveValue("Google");
+  await page.getByLabel("Name").fill("Edited homeowner");
+  await page.getByLabel("Lead source").fill("Referral");
+  await page.getByRole("button", { name: "Save lead details" }).click();
+  await expect(page.getByRole("heading", { name: "Edited homeowner" })).toBeVisible();
+  await page.getByRole("button", { name: "Mark as spam" }).click();
+  await expect(page.getByRole("button", { name: "Not spam" })).toBeVisible();
   await expect(page.getByLabel("Assigned to")).toHaveValue("");
   await expect(page.getByLabel("Assigned to").getByRole("option", { name: "Elric" })).toHaveAttribute(
     "value",
@@ -316,6 +341,9 @@ test("staff can operate a lead and create a fact-scoped AI draft", async ({ page
   await expect(page.getByText("Called and left a voicemail.")).toBeVisible();
   await page.getByRole("button", { name: "Create draft" }).click();
   await expect(page.getByText("Call the homeowner and confirm measurements.")).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Delete lead" }).click();
+  await expect(page.getByRole("heading", { name: "Leads" })).toBeVisible();
   const results = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
   expect(results.violations.filter((item) => ["serious", "critical"].includes(item.impact ?? ""))).toEqual([]);
 });

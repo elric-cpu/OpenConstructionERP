@@ -577,6 +577,53 @@ def test_staff_can_filter_open_update_and_audit_lead(isolated_settings: Settings
     assert "contacted to scheduled" in invalid.json()["detail"]
 
 
+def test_spam_is_autofiltered_editable_and_soft_deletable(isolated_settings: Settings) -> None:
+    created = post_signed_lead(
+        isolated_settings,
+        canonical_lead(
+            name="SEO Vendor",
+            message="We sell SEO services and backlinks for higher domain authority.",
+            utm_source="cold-outreach",
+        ),
+        key="spam-1",
+    ).json()
+    lead_id = created["lead_id"]
+
+    assert client.get("/api/benson/v1/leads", headers=STAFF_HEADERS).json()["leads"] == []
+    spam = client.get("/api/benson/v1/leads?spam=spam", headers=STAFF_HEADERS).json()["leads"]
+    assert spam[0]["id"] == lead_id
+    assert spam[0]["source"] == "cold-outreach"
+    assert spam[0]["is_spam"] is True
+    assert "spam language" in spam[0]["spam_reason"]
+    assert operations_store(isolated_settings.resolved_database_url()).notification_counts() == {}
+
+    corrected = client.patch(
+        f"/api/benson/v1/leads/{lead_id}",
+        headers=STAFF_HEADERS,
+        json={
+            "is_spam": False,
+            "name": "Real Homeowner",
+            "phone": "541-555-0199",
+            "email": "real@example.com",
+            "service_type": "Siding repair",
+            "city": "Hines",
+            "source": "Referral",
+        },
+    )
+    assert corrected.status_code == 200
+    assert corrected.json()["name"] == "Real Homeowner"
+    assert corrected.json()["is_spam"] == 0
+    active = client.get(
+        "/api/benson/v1/leads?source=Referral&spam=active", headers=STAFF_HEADERS
+    ).json()["leads"]
+    assert [lead["id"] for lead in active] == [lead_id]
+
+    deleted = client.delete(f"/api/benson/v1/leads/{lead_id}", headers=STAFF_HEADERS)
+    assert deleted.status_code == 204
+    assert client.get(f"/api/benson/v1/leads/{lead_id}", headers=STAFF_HEADERS).status_code == 404
+    assert client.get("/api/benson/v1/leads?spam=all", headers=STAFF_HEADERS).json()["leads"] == []
+
+
 def test_lead_workspace_denies_non_operations_roles(isolated_settings: Settings) -> None:
     lead_id = post_signed_lead(isolated_settings, canonical_lead(), key="role-scope").json()[
         "lead_id"

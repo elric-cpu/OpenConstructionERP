@@ -1,5 +1,17 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, Download, FileText, History, LoaderCircle, Send, Sparkles, UserRound } from "lucide-react";
+import {
+  ArrowLeft,
+  Download,
+  FileText,
+  History,
+  LoaderCircle,
+  Save,
+  Send,
+  ShieldAlert,
+  Sparkles,
+  Trash2,
+  UserRound,
+} from "lucide-react";
 
 export type Lead = {
   id: string;
@@ -12,6 +24,9 @@ export type Lead = {
   city: string;
   created_at: string;
   assigned_to: string | null;
+  source: string;
+  is_spam: boolean;
+  spam_reason: string | null;
 };
 
 type Attachment = {
@@ -67,11 +82,13 @@ export function LeadWorkspace({
   credential,
   onBack,
   onChanged,
+  onDeleted,
 }: {
   leadId: string;
   credential: string;
   onBack(): void;
   onChanged(lead: Lead): void;
+  onDeleted(leadId: string): void;
 }) {
   const [lead, setLead] = useState<LeadDetail | null>(null);
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -83,6 +100,7 @@ export function LeadWorkspace({
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState<"lead" | "save" | "draft" | "">("lead");
   const [error, setError] = useState("");
+  const [edit, setEdit] = useState({ name: "", phone: "", email: "", service_type: "", city: "", source: "" });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -98,6 +116,14 @@ export function LeadWorkspace({
         if (!active) return;
         setLead(detail);
         setAssignee(detail.assigned_to ?? "");
+        setEdit({
+          name: detail.name,
+          phone: detail.phone,
+          email: detail.email ?? "",
+          service_type: detail.service_type,
+          city: detail.city,
+          source: detail.source,
+        });
         setSkills(catalog.skills);
         setStaff(directory.staff);
         setSkillId((current) =>
@@ -117,7 +143,7 @@ export function LeadWorkspace({
     };
   }, [credential, leadId]);
 
-  const save = async (change: Record<string, string>) => {
+  const save = async (change: Record<string, string | boolean>) => {
     setBusy("save");
     setError("");
     try {
@@ -127,11 +153,40 @@ export function LeadWorkspace({
       });
       setLead(updated);
       setAssignee(updated.assigned_to ?? "");
+      setEdit({
+        name: updated.name,
+        phone: updated.phone,
+        email: updated.email ?? "",
+        service_type: updated.service_type,
+        city: updated.city,
+        source: updated.source,
+      });
       setNote("");
       onChanged(updated);
     } catch {
       setError("The lead change was not saved. Review the values and try again.");
     } finally {
+      setBusy("");
+    }
+  };
+
+  const deleteLead = async () => {
+    if (
+      !lead ||
+      !window.confirm(`Delete ${lead.name}? The lead will be removed from the queue but retained for audit.`)
+    )
+      return;
+    setBusy("save");
+    setError("");
+    try {
+      const response = await fetch(`/api/benson/v1/leads/${lead.id}`, {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${credential}` },
+      });
+      if (!response.ok) throw new Error("delete failed");
+      onDeleted(lead.id);
+    } catch {
+      setError("The lead was not deleted. Owner access is required.");
       setBusy("");
     }
   };
@@ -205,7 +260,8 @@ export function LeadWorkspace({
           <span className={`priority ${lead.priority === "urgent" ? "urgent" : ""}`}>{lead.priority}</span>
           <h1>{lead.name}</h1>
           <p>
-            {lead.service_type} · {lead.city || "Location pending"} · received {formatDate(lead.created_at)}
+            {lead.service_type} · {lead.city || "Location pending"} · source {lead.source} · received{" "}
+            {formatDate(lead.created_at)}
           </p>
         </div>
         <a className="primary" href={`tel:${lead.phone}`}>
@@ -228,9 +284,25 @@ export function LeadWorkspace({
               </div>
               <FileText />
             </div>
-            <dl className="intake-grid">
-              <Detail label="Email" value={lead.email} />
-              <Detail label="Phone" value={lead.phone} />
+            <form
+              className="lead-edit-grid"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const { email, ...fields } = edit;
+                void save(email ? { ...fields, email } : fields);
+              }}
+            >
+              <EditField label="Name" field="name" value={edit.name} setEdit={setEdit} />
+              <EditField label="Phone" field="phone" value={edit.phone} setEdit={setEdit} />
+              <EditField label="Email" field="email" type="email" value={edit.email} setEdit={setEdit} />
+              <EditField label="Service" field="service_type" value={edit.service_type} setEdit={setEdit} />
+              <EditField label="City" field="city" value={edit.city} setEdit={setEdit} />
+              <EditField label="Lead source" field="source" value={edit.source} setEdit={setEdit} />
+              <button className="secondary edit-save" disabled={busy === "save"}>
+                <Save /> {busy === "save" ? "Saving…" : "Save lead details"}
+              </button>
+            </form>
+            <dl className="intake-grid intake-message">
               <Detail label="Address" value={stringValue(intake.address)} />
               <Detail label="Timeline" value={stringValue(intake.timeline)} />
               <Detail label="Request" value={stringValue(intake.message)} wide />
@@ -338,6 +410,15 @@ export function LeadWorkspace({
             >
               Save assignment
             </button>
+            <div className="record-actions">
+              <button className="secondary" onClick={() => void save({ is_spam: !lead.is_spam })}>
+                <ShieldAlert /> {lead.is_spam ? "Not spam" : "Mark as spam"}
+              </button>
+              {lead.is_spam && <small>{lead.spam_reason || "Flagged by staff"}</small>}
+              <button className="danger-button" onClick={() => void deleteLead()}>
+                <Trash2 /> Delete lead
+              </button>
+            </div>
           </section>
 
           <section className="workspace-card lead-agent">
@@ -417,6 +498,35 @@ function Detail({ label, value, wide = false }: { label: string; value: string |
       <dt>{label}</dt>
       <dd>{value || "Not provided"}</dd>
     </div>
+  );
+}
+
+type EditableLead = { name: string; phone: string; email: string; service_type: string; city: string; source: string };
+
+function EditField({
+  label,
+  field,
+  value,
+  type = "text",
+  setEdit,
+}: {
+  label: string;
+  field: keyof EditableLead;
+  value: string;
+  type?: string;
+  setEdit: React.Dispatch<React.SetStateAction<EditableLead>>;
+}) {
+  return (
+    <label>
+      {label}
+      <input
+        aria-label={label}
+        type={type}
+        required={field !== "email" && field !== "city"}
+        value={value}
+        onChange={(event) => setEdit((current) => ({ ...current, [field]: event.target.value }))}
+      />
+    </label>
   );
 }
 function stringValue(value: unknown): string {

@@ -11,6 +11,7 @@ import {
   LogOut,
   Menu,
   Search,
+  ShieldAlert,
   Sparkles,
   Users,
   X,
@@ -63,6 +64,8 @@ export function App() {
   const [selectedLead, setSelectedLead] = useState("");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("");
+  const [spamFilter, setSpamFilter] = useState<"active" | "spam" | "all">("active");
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings | null>(null);
   const [settingsStatus, setSettingsStatus] = useState<"" | "saving" | "saved" | "error">("");
   const [activeView, setActiveView] = useState<"overview" | "leads">(() =>
@@ -99,10 +102,10 @@ export function App() {
     const protectedHeaders = requestHeaders(credential);
     Promise.all([
       fetch("/api/v1/dashboard", { headers: protectedHeaders, signal: controller.signal }),
-      fetch(
-        `/api/benson/v1/leads?limit=100${statusFilter ? `&status=${statusFilter}` : ""}${query ? `&query=${encodeURIComponent(query)}` : ""}`,
-        { headers: protectedHeaders, signal: controller.signal },
-      ),
+      fetch(`/api/benson/v1/leads?${leadQuery(statusFilter, sourceFilter, spamFilter, query)}`, {
+        headers: protectedHeaders,
+        signal: controller.signal,
+      }),
       fetch("/api/benson/v1/settings/notifications", { headers: protectedHeaders, signal: controller.signal }),
     ])
       .then(async ([dashboardResponse, leadsResponse, settingsResponse]) => {
@@ -135,7 +138,7 @@ export function App() {
       active = false;
       controller.abort();
     };
-  }, [credential, query, statusFilter]);
+  }, [credential, query, sourceFilter, spamFilter, statusFilter]);
 
   useEffect(() => {
     if (requestStatus !== "auth-required" || !googleButton.current) return;
@@ -300,6 +303,10 @@ export function App() {
               onChanged={(changed) =>
                 setLeads((current) => current.map((lead) => (lead.id === changed.id ? changed : lead)))
               }
+              onDeleted={(leadId) => {
+                setLeads((current) => current.filter((lead) => lead.id !== leadId));
+                setSelectedLead("");
+              }}
             />
           ) : requestStatus === "ready" ? (
             <>
@@ -382,6 +389,31 @@ export function App() {
                         ))}
                       </select>
                     </label>
+                    <label>
+                      Source
+                      <select
+                        aria-label="Filter leads by source"
+                        value={sourceFilter}
+                        onChange={(event) => setSourceFilter(event.target.value)}
+                      >
+                        <option value="">All sources</option>
+                        {[...new Set(leads.map((lead) => lead.source))].sort().map((source) => (
+                          <option key={source}>{source}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Queue
+                      <select
+                        aria-label="Filter spam leads"
+                        value={spamFilter}
+                        onChange={(event) => setSpamFilter(event.target.value as "active" | "spam" | "all")}
+                      >
+                        <option value="active">Active leads</option>
+                        <option value="spam">Spam</option>
+                        <option value="all">All leads</option>
+                      </select>
+                    </label>
                     <span>{leads.length} shown</span>
                   </div>
                   {leads.length ? (
@@ -404,6 +436,7 @@ export function App() {
                             <small>
                               {lead.service_type} · {lead.city || "Location pending"}
                             </small>
+                            <small className="lead-source">Source: {lead.source}</small>
                           </div>
                           <time>
                             {new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(
@@ -411,6 +444,11 @@ export function App() {
                             )}
                           </time>
                           <span className="lead-status">{lead.status}</span>
+                          {lead.is_spam && (
+                            <span className="spam-flag">
+                              <ShieldAlert /> Spam
+                            </span>
+                          )}
                         </button>
                       ))}
                     </div>
@@ -476,6 +514,14 @@ export function App() {
       </main>
     </div>
   );
+}
+
+function leadQuery(status: string, source: string, spam: string, query: string): string {
+  const params = new URLSearchParams({ limit: "100", spam });
+  if (status) params.set("status", status);
+  if (source) params.set("source", source);
+  if (query) params.set("query", query);
+  return params.toString();
 }
 
 function Panel({

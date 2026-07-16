@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import (
     Depends,
@@ -258,6 +258,8 @@ def list_leads(
     priority: str | None = None,
     assigned_to: str | None = None,
     query: str | None = None,
+    source: str | None = None,
+    spam: Literal["active", "spam", "all"] = "active",
     _principal: Principal = Depends(require_operations_staff),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
@@ -269,6 +271,8 @@ def list_leads(
             priority=priority,
             assigned_to=assigned_to,
             query=query,
+            source=source,
+            spam=spam,
         )
     }
 
@@ -292,7 +296,7 @@ def update_lead(
     principal: Principal = Depends(require_operations_staff),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    if change.status is None and change.assigned_to is None and change.note is None:
+    if not change.model_dump(exclude_none=True):
         raise HTTPException(status_code=400, detail="At least one lead change is required")
     if change.assigned_to is not None:
         assignable_emails = {member["email"] for member in settings.assignable_staff()}
@@ -307,6 +311,17 @@ def update_lead(
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
     return lead
+
+
+@app.delete("/api/benson/v1/leads/{lead_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_lead(
+    lead_id: str,
+    principal: Principal = Depends(require_owner),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    if not store(settings).delete_lead(lead_id, actor=principal.email):
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.get("/api/benson/v1/attachments/{attachment_id}")
