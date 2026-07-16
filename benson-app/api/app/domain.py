@@ -230,6 +230,18 @@ class EmployeeSummary(BaseModel):
     created_at: datetime
 
 
+class EmployeeInviteReceipt(BaseModel):
+    id: UUID
+    employee_id: UUID
+    status: Literal["pending_delivery"] = "pending_delivery"
+    expires_at: datetime
+
+
+class EmployeeInviteActivation(BaseModel):
+    token: str = Field(min_length=32, max_length=500)
+    credential: str = Field(min_length=20, max_length=10_000)
+
+
 class ComplianceRequirement(BaseModel):
     id: str
     label: str

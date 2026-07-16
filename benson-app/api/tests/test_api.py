@@ -24,7 +24,7 @@ from app.notifications import DeliveryResult, NotificationDeliveryError, deliver
 from app.object_storage import delete_upload, detect_upload_type, read_upload, store_upload
 from app.policy import ActionRisk, evaluate_agent_action
 from app.accounting_provider import SYNC_OWNERSHIP, SyncDirection, SyncEnvelope
-from app.signing import signature_for
+from app.signing import employee_invite_token, signature_for
 from app.skill_registry import load_registry
 from app.storage import operations_store
 
@@ -82,6 +82,7 @@ def production_settings(**overrides: object) -> Settings:
     values: dict[str, object] = {
         "environment": "production",
         "website_signing_secret": "x" * 32,
+        "employee_invite_signing_secret": "i" * 32,
         "staff_google_audience": "client.apps.googleusercontent.com",
         "database_url": "postgresql://user:pass@db/operations",
         "upload_bucket": "private-uploads",
@@ -359,6 +360,39 @@ def test_notification_provider_invalid_json_is_a_delivery_error(
         )
 
 
+def test_invitation_email_derives_token_only_at_delivery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = MagicMock()
+    response.json.return_value = {"id": "invite-email-123"}
+    post = MagicMock(return_value=response)
+    monkeypatch.setattr("app.notifications.httpx.post", post)
+    settings = production_settings()
+    invite_id = "7e805943-3810-40c6-abed-e5da24f2c223"
+    payload = {
+        "kind": "employee_invitation",
+        "name": "New Employee",
+        "invite_base_url": "https://erp.bensonhomesolutions.com",
+        "invite_id": invite_id,
+        "expires_at": "2026-08-03T00:00:00+00:00",
+    }
+
+    result = deliver_notification(
+        {
+            "id": "outbox-invite",
+            "channel": "email",
+            "destination": "new.employee@bensonhomesolutions.com",
+            "payload": payload,
+        },
+        settings,
+    )
+
+    expected_token = employee_invite_token(settings.employee_invite_signing_secret, invite_id)
+    assert result.provider_message_id == "invite-email-123"
+    assert expected_token in post.call_args.kwargs["json"]["text"]
+    assert "token" not in json.dumps(payload)
+
+
 def test_signed_intake_rejects_missing_bad_and_expired_signatures(
     isolated_settings: Settings,
 ) -> None:
@@ -498,6 +532,204 @@ def test_employee_foundation_is_owner_scoped_and_classification_safe(
         },
     )
     assert invalid.status_code == 422
+
+
+def test_owner_can_queue_secure_single_use_employee_invitation(
+    isolated_settings: Settings,
+) -> None:
+    employee = client.post(
+        "/api/benson/v1/employees",
+        headers=STAFF_HEADERS,
+        json={
+            "name": "Invited Employee",
+            "email": "invitee@bensonhomesolutions.com",
+            "start_date": "2026-08-03",
+            "work_location": "Burns, Oregon",
+            "classification": "employee",
+            "role": "field",
+        },
+    ).json()
+
+    invitation = client.post(
+        f"/api/benson/v1/employees/{employee['id']}/invite", headers=STAFF_HEADERS
+    )
+
+    assert invitation.status_code == 202
+    assert invitation.json()["status"] == "pending_delivery"
+    assert "token" not in invitation.text
+    listed = client.get("/api/benson/v1/employees", headers=STAFF_HEADERS).json()
+    assert listed[0]["status"] == "invited"
+    claimed = operations_store(
+        isolated_settings.resolved_database_url()
+    ).claim_employee_notifications(limit=1)
+    assert claimed[0]["destination"] == "invitee@bensonhomesolutions.com"
+    assert "token" not in json.dumps(claimed[0]["payload"])
+    assert "invite_url" not in claimed[0]["payload"]
+
+
+def test_invitation_delivery_uses_durable_outbox(
+    isolated_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    employee = client.post(
+        "/api/benson/v1/employees",
+        headers=STAFF_HEADERS,
+        json={
+            "name": "Delivery Employee",
+            "email": "delivery@bensonhomesolutions.com",
+            "start_date": "2026-08-03",
+            "work_location": "Burns, Oregon",
+            "classification": "employee",
+            "role": "office",
+        },
+    ).json()
+    assert (
+        client.post(
+            f"/api/benson/v1/employees/{employee['id']}/invite", headers=STAFF_HEADERS
+        ).status_code
+        == 202
+    )
+    delivery = MagicMock(return_value=DeliveryResult(provider_message_id="invite-message-123"))
+    monkeypatch.setattr("app.main.deliver_notification", delivery)
+
+    drained = client.post("/api/internal/v1/notifications/drain")
+
+    assert drained.status_code == 200
+    assert drained.json()["sent"] == 1
+    assert delivery.call_args.args[0]["payload"]["kind"] == "employee_invitation"
+
+
+def test_only_owner_can_invite_and_missing_employee_is_404(isolated_settings: Settings) -> None:
+    isolated_settings.field_emails = "field@bensonhomesolutions.com"
+    field_headers = {"X-Dev-Staff-Email": "field@bensonhomesolutions.com"}
+    assert (
+        client.post("/api/benson/v1/employees/missing/invite", headers=field_headers).status_code
+        == 403
+    )
+    assert (
+        client.post("/api/benson/v1/employees/missing/invite", headers=STAFF_HEADERS).status_code
+        == 404
+    )
+
+
+def test_invited_employee_activates_with_matching_verified_google_identity(
+    isolated_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    isolated_settings.staff_google_audience = "client.apps.googleusercontent.com"
+    employee = client.post(
+        "/api/benson/v1/employees",
+        headers=STAFF_HEADERS,
+        json={
+            "name": "Portal Employee",
+            "email": "portal.employee@bensonhomesolutions.com",
+            "start_date": "2026-08-03",
+            "work_location": "Burns, Oregon",
+            "classification": "employee",
+            "role": "field",
+        },
+    ).json()
+    invitation = client.post(
+        f"/api/benson/v1/employees/{employee['id']}/invite", headers=STAFF_HEADERS
+    ).json()
+    token = employee_invite_token(
+        isolated_settings.employee_invite_signing_secret, invitation["id"]
+    )
+    verify = MagicMock(
+        return_value={
+            "email": "portal.employee@bensonhomesolutions.com",
+            "email_verified": True,
+            "sub": "employee-google-subject",
+        }
+    )
+    monkeypatch.setattr("app.auth.id_token.verify_oauth2_token", verify)
+
+    activated = client.post(
+        "/api/benson/v1/onboarding/activate",
+        json={
+            "token": token,
+            "credential": "google-credential-value",
+        },
+    )
+
+    assert activated.status_code == 200
+    assert activated.json()["status"] == "active"
+    me = client.get(
+        "/api/benson/v1/onboarding/me",
+        headers={"Authorization": "Bearer google-credential-value"},
+    )
+    assert me.status_code == 200
+    assert me.json()["id"] == employee["id"]
+    assert (
+        client.post(
+            "/api/benson/v1/onboarding/activate",
+            json={
+                "token": token,
+                "credential": "google-credential-value",
+            },
+        ).status_code
+        == 409
+    )
+
+
+def test_invitation_rejects_wrong_google_account(
+    isolated_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    isolated_settings.staff_google_audience = "client.apps.googleusercontent.com"
+    employee = client.post(
+        "/api/benson/v1/employees",
+        headers=STAFF_HEADERS,
+        json={
+            "name": "Exact Identity",
+            "email": "right@bensonhomesolutions.com",
+            "start_date": "2026-08-03",
+            "work_location": "Burns, Oregon",
+            "classification": "employee",
+            "role": "office",
+        },
+    ).json()
+    invitation = client.post(
+        f"/api/benson/v1/employees/{employee['id']}/invite", headers=STAFF_HEADERS
+    ).json()
+    token = employee_invite_token(
+        isolated_settings.employee_invite_signing_secret, invitation["id"]
+    )
+    monkeypatch.setattr(
+        "app.auth.id_token.verify_oauth2_token",
+        MagicMock(
+            return_value={
+                "email": "wrong@bensonhomesolutions.com",
+                "email_verified": True,
+                "sub": "wrong-sub",
+            }
+        ),
+    )
+
+    response = client.post(
+        "/api/benson/v1/onboarding/activate",
+        json={"token": token, "credential": "google-credential-value"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Invitation does not match the signed-in account"
+
+
+def test_employee_requires_managed_workspace_email() -> None:
+    response = client.post(
+        "/api/benson/v1/employees",
+        headers=STAFF_HEADERS,
+        json={
+            "name": "Personal Email Employee",
+            "email": "personal@example.com",
+            "start_date": "2026-08-03",
+            "work_location": "Burns, Oregon",
+            "classification": "employee",
+            "role": "field",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == (
+        "Employees must use an @bensonhomesolutions.com Workspace email"
+    )
 
 
 def test_compliance_matrix_is_explicitly_pending_review() -> None:

@@ -44,6 +44,7 @@ async def test_production_agent_gateway_uses_cloud_run_identity(
     settings = Settings(
         environment="production",
         website_signing_secret="x" * 32,
+        employee_invite_signing_secret="i" * 32,
         staff_google_audience="client.apps.googleusercontent.com",
         database_url="postgresql://user:pass@db/operations",
         upload_bucket="private-uploads",

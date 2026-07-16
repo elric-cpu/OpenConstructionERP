@@ -4,6 +4,7 @@ from typing import Any
 import httpx
 
 from .config import Settings
+from .signing import employee_invite_token
 
 
 class NotificationDeliveryError(RuntimeError):
@@ -30,10 +31,34 @@ def _lead_summary(payload: dict[str, Any]) -> str:
     )
 
 
+def _email_message(payload: dict[str, Any], settings: Settings) -> tuple[str, str]:
+    if payload.get("kind") == "employee_invitation":
+        token = employee_invite_token(
+            settings.employee_invite_signing_secret, str(payload["invite_id"])
+        )
+        invite_url = f"{payload['invite_base_url']}/#/activate?token={token}"
+        return (
+            "Your Benson Home Solutions staff portal invitation",
+            "\n".join(
+                (
+                    f"Hello {payload['name']},",
+                    "",
+                    "Benson Home Solutions invited you to set up your staff portal account.",
+                    f"Open this secure invitation before {payload['expires_at']}:",
+                    invite_url,
+                    "",
+                    "If you were not expecting this invitation, do not use the link.",
+                )
+            ),
+        )
+    return f"New {payload['urgency']} lead: {payload['name']}", _lead_summary(payload)
+
+
 def deliver_notification(item: dict[str, Any], settings: Settings) -> DeliveryResult:
     payload = item["payload"]
     try:
         if item["channel"] == "email":
+            subject, text = _email_message(payload, settings)
             response = httpx.post(
                 "https://api.resend.com/emails",
                 headers={
@@ -43,8 +68,8 @@ def deliver_notification(item: dict[str, Any], settings: Settings) -> DeliveryRe
                 json={
                     "from": settings.resend_from_email,
                     "to": [item["destination"]],
-                    "subject": f"New {payload['urgency']} lead: {payload['name']}",
-                    "text": _lead_summary(payload),
+                    "subject": subject,
+                    "text": text,
                 },
                 timeout=20,
             )

@@ -10,6 +10,11 @@ def signature_for(secret: str, timestamp: str, body: bytes) -> str:
     return hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()
 
 
+def employee_invite_token(secret: str, invite_id: str) -> str:
+    signature = hmac.new(secret.encode(), invite_id.encode(), hashlib.sha256).hexdigest()
+    return f"{invite_id}.{signature}"
+
+
 def verify_website_signature(
     *, secret: str, timestamp: str | None, signature: str | None, body: bytes, max_age_seconds: int
 ) -> None:

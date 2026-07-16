@@ -1,3 +1,4 @@
+import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
@@ -26,12 +27,14 @@ from sqlalchemy.exc import IntegrityError
 
 from .domain import (
     EmployeeCreate,
+    EmployeeInviteReceipt,
     EmployeeSummary,
     LeadCreate,
     LeadReceipt,
     LeadSummary,
     LeadUpdate,
 )
+from .signing import employee_invite_token
 
 metadata = MetaData()
 
@@ -49,6 +52,10 @@ class InvalidLeadTransition(ValueError):
 
 
 class IdempotencyConflict(ValueError):
+    pass
+
+
+class InvalidEmployeeInvite(ValueError):
     pass
 
 
@@ -191,8 +198,41 @@ employees = Table(
     Column("federal_contract_applicability", String(40), nullable=False),
     Column("status", String(40), nullable=False),
     Column("created_by", String(320), nullable=False),
+    Column("google_subject", String(200), unique=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
+employee_invites = Table(
+    "employee_invites",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("employee_id", String(36), nullable=False, index=True),
+    Column("token_hash", String(64), nullable=False, unique=True),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Column("consumed_at", DateTime(timezone=True)),
+    Column("revoked_at", DateTime(timezone=True)),
+    Column("created_by", String(320), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+employee_notification_outbox = Table(
+    "employee_notification_outbox",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("employee_id", String(36), nullable=False, index=True),
+    Column("destination", String(320), nullable=False),
+    Column("payload", Text, nullable=False),
+    Column("status", String(20), nullable=False, index=True),
+    Column("attempts", Integer, nullable=False),
+    Column("max_attempts", Integer, nullable=False),
+    Column("available_at", DateTime(timezone=True), nullable=False, index=True),
+    Column("locked_at", DateTime(timezone=True)),
+    Column("last_error", Text),
+    Column("provider_message_id", String(200)),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Column("sent_at", DateTime(timezone=True)),
 )
 
 
@@ -310,6 +350,168 @@ class OperationsStore:
         with self.engine.connect() as db:
             rows = db.execute(select(employees).order_by(employees.c.name)).mappings().all()
         return [EmployeeSummary.model_validate(dict(row)) for row in rows]
+
+    def get_employee_by_identity(self, email: str, subject: str) -> EmployeeSummary | None:
+        with self.engine.connect() as db:
+            row = (
+                db.execute(
+                    select(employees).where(
+                        employees.c.email == email.lower(),
+                        employees.c.google_subject == subject,
+                        employees.c.status.in_(("active", "onboarding_complete")),
+                    )
+                )
+                .mappings()
+                .first()
+            )
+        return EmployeeSummary.model_validate(dict(row)) if row else None
+
+    def create_employee_invite(
+        self,
+        employee_id: str,
+        *,
+        actor: str,
+        invite_base_url: str,
+        invite_signing_secret: str,
+        expires_in_hours: int,
+        notification_max_attempts: int,
+    ) -> EmployeeInviteReceipt | None:
+        now = datetime.now(UTC)
+        expires_at = now + timedelta(hours=expires_in_hours)
+        invite_id = str(uuid4())
+        token = employee_invite_token(invite_signing_secret, invite_id)
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        with self.engine.begin() as db:
+            employee = (
+                db.execute(select(employees).where(employees.c.id == employee_id))
+                .mappings()
+                .first()
+            )
+            if not employee:
+                return None
+            db.execute(
+                update(employee_invites)
+                .where(
+                    employee_invites.c.employee_id == employee_id,
+                    employee_invites.c.consumed_at.is_(None),
+                    employee_invites.c.revoked_at.is_(None),
+                )
+                .values(revoked_at=now)
+            )
+            db.execute(
+                employee_invites.insert().values(
+                    id=invite_id,
+                    employee_id=employee_id,
+                    token_hash=token_hash,
+                    expires_at=expires_at,
+                    created_by=actor,
+                    created_at=now,
+                )
+            )
+            db.execute(
+                employee_notification_outbox.insert().values(
+                    id=str(uuid4()),
+                    employee_id=employee_id,
+                    destination=employee["email"],
+                    payload=json.dumps(
+                        {
+                            "kind": "employee_invitation",
+                            "name": employee["name"],
+                            "invite_base_url": invite_base_url.rstrip("/"),
+                            "invite_id": invite_id,
+                            "expires_at": expires_at.isoformat(),
+                        },
+                        sort_keys=True,
+                    ),
+                    status="pending",
+                    attempts=0,
+                    max_attempts=notification_max_attempts,
+                    available_at=now,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            db.execute(
+                update(employees)
+                .where(employees.c.id == employee_id)
+                .values(status="invited", updated_at=now)
+            )
+            self._audit(
+                db,
+                event="employee.invited",
+                actor=actor,
+                subject_type="employee",
+                subject_id=employee_id,
+                payload={"invite_id": invite_id, "expires_at": expires_at.isoformat()},
+            )
+        return EmployeeInviteReceipt(
+            id=invite_id,
+            employee_id=employee_id,
+            expires_at=expires_at,
+        )
+
+    def activate_employee_invite(
+        self, token: str, *, email: str, google_subject: str
+    ) -> EmployeeSummary:
+        now = datetime.now(UTC)
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        with self.engine.begin() as db:
+            invitation = (
+                db.execute(
+                    select(employee_invites).where(employee_invites.c.token_hash == token_hash)
+                )
+                .mappings()
+                .first()
+            )
+            if not invitation:
+                raise InvalidEmployeeInvite("Invitation is invalid or no longer available")
+            expires_at = invitation["expires_at"]
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=UTC)
+            if invitation["consumed_at"] or invitation["revoked_at"] or expires_at <= now:
+                raise InvalidEmployeeInvite("Invitation is invalid or no longer available")
+            employee = (
+                db.execute(select(employees).where(employees.c.id == invitation["employee_id"]))
+                .mappings()
+                .one()
+            )
+            if employee["email"] != email.lower():
+                raise InvalidEmployeeInvite("Invitation does not match the signed-in account")
+            already_bound = db.execute(
+                select(employees.c.id).where(
+                    employees.c.google_subject == google_subject,
+                    employees.c.id != employee["id"],
+                )
+            ).first()
+            if already_bound:
+                raise InvalidEmployeeInvite("Google account is already linked to another employee")
+            consumed = db.execute(
+                update(employee_invites)
+                .where(
+                    employee_invites.c.id == invitation["id"],
+                    employee_invites.c.consumed_at.is_(None),
+                    employee_invites.c.revoked_at.is_(None),
+                )
+                .values(consumed_at=now)
+            )
+            if consumed.rowcount != 1:
+                raise InvalidEmployeeInvite("Invitation is invalid or no longer available")
+            db.execute(
+                update(employees)
+                .where(employees.c.id == employee["id"])
+                .values(status="active", google_subject=google_subject, updated_at=now)
+            )
+            self._audit(
+                db,
+                event="employee.invitation_accepted",
+                actor=email.lower(),
+                subject_type="employee",
+                subject_id=employee["id"],
+                payload={"invite_id": invitation["id"]},
+            )
+            updated = dict(employee)
+            updated.update(status="active", google_subject=google_subject, updated_at=now)
+        return EmployeeSummary.model_validate(updated)
 
     def _audit(
         self,
@@ -494,21 +696,78 @@ class OperationsStore:
                 if result.rowcount == 1:
                     item = dict(row)
                     item["payload"] = json.loads(item["payload"])
+                    item["outbox_type"] = "lead"
                     claimed.append(item)
         return claimed
 
-    def mark_notification_sent(self, notification_id: str, provider_message_id: str) -> None:
+    def claim_employee_notifications(
+        self, *, limit: int, lock_timeout_minutes: int = 10
+    ) -> list[dict[str, Any]]:
         now = datetime.now(UTC)
+        stale_before = now - timedelta(minutes=lock_timeout_minutes)
+        with self.engine.begin() as db:
+            rows = (
+                db.execute(
+                    select(employee_notification_outbox)
+                    .where(
+                        employee_notification_outbox.c.attempts
+                        < employee_notification_outbox.c.max_attempts,
+                        employee_notification_outbox.c.available_at <= now,
+                        or_(
+                            employee_notification_outbox.c.status == "pending",
+                            (
+                                (employee_notification_outbox.c.status == "processing")
+                                & (employee_notification_outbox.c.locked_at <= stale_before)
+                            ),
+                        ),
+                    )
+                    .order_by(employee_notification_outbox.c.available_at)
+                    .limit(limit)
+                    .with_for_update(skip_locked=True)
+                )
+                .mappings()
+                .all()
+            )
+            claimed: list[dict[str, Any]] = []
+            for row in rows:
+                result = db.execute(
+                    update(employee_notification_outbox)
+                    .where(
+                        employee_notification_outbox.c.id == row["id"],
+                        or_(
+                            employee_notification_outbox.c.status == "pending",
+                            employee_notification_outbox.c.locked_at <= stale_before,
+                        ),
+                    )
+                    .values(status="processing", locked_at=now, updated_at=now)
+                )
+                if result.rowcount == 1:
+                    item = dict(row)
+                    item["channel"] = "email"
+                    item["payload"] = json.loads(item["payload"])
+                    item["outbox_type"] = "employee"
+                    claimed.append(item)
+        return claimed
+
+    @staticmethod
+    def _outbox(outbox_type: str) -> Table:
+        return employee_notification_outbox if outbox_type == "employee" else notification_outbox
+
+    def mark_notification_sent(
+        self, notification_id: str, provider_message_id: str, *, outbox_type: str = "lead"
+    ) -> None:
+        now = datetime.now(UTC)
+        outbox = self._outbox(outbox_type)
         with self.engine.begin() as db:
             db.execute(
-                update(notification_outbox)
+                update(outbox)
                 .where(
-                    notification_outbox.c.id == notification_id,
-                    notification_outbox.c.status == "processing",
+                    outbox.c.id == notification_id,
+                    outbox.c.status == "processing",
                 )
                 .values(
                     status="sent",
-                    attempts=notification_outbox.c.attempts + 1,
+                    attempts=outbox.c.attempts + 1,
                     provider_message_id=provider_message_id,
                     last_error=None,
                     locked_at=None,
@@ -517,14 +776,17 @@ class OperationsStore:
                 )
             )
 
-    def mark_notification_failed(self, notification_id: str, error: str) -> None:
+    def mark_notification_failed(
+        self, notification_id: str, error: str, *, outbox_type: str = "lead"
+    ) -> None:
         now = datetime.now(UTC)
+        outbox = self._outbox(outbox_type)
         with self.engine.begin() as db:
             row = (
                 db.execute(
-                    select(notification_outbox).where(
-                        notification_outbox.c.id == notification_id,
-                        notification_outbox.c.status == "processing",
+                    select(outbox).where(
+                        outbox.c.id == notification_id,
+                        outbox.c.status == "processing",
                     )
                 )
                 .mappings()
@@ -536,8 +798,8 @@ class OperationsStore:
             exhausted = attempts >= int(row["max_attempts"])
             retry_minutes = min(60, 2 ** min(attempts - 1, 6))
             db.execute(
-                update(notification_outbox)
-                .where(notification_outbox.c.id == notification_id)
+                update(outbox)
+                .where(outbox.c.id == notification_id)
                 .values(
                     status="failed" if exhausted else "pending",
                     attempts=attempts,

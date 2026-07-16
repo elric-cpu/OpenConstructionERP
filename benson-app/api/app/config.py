@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     unit_system: Literal["imperial"] = "imperial"
 
     website_signing_secret: str = Field(default="development-signing-secret", min_length=16)
+    employee_invite_signing_secret: str = Field(
+        default="development-invite-signing-secret", min_length=16
+    )
     website_signature_max_age_seconds: int = Field(default=300, ge=30, le=900)
     staff_google_audience: str = ""
     staff_google_domain: str = "bensonhomesolutions.com"
@@ -71,6 +74,8 @@ class Settings(BaseSettings):
         missing: list[str] = []
         if self.website_signing_secret == "development-signing-secret":
             missing.append("BENSON_WEBSITE_SIGNING_SECRET")
+        if self.employee_invite_signing_secret == "development-invite-signing-secret":
+            missing.append("BENSON_EMPLOYEE_INVITE_SIGNING_SECRET")
         if not self.staff_google_audience:
             missing.append("BENSON_STAFF_GOOGLE_AUDIENCE")
         if not self.database_url.startswith(("postgresql://", "postgresql+psycopg://")):

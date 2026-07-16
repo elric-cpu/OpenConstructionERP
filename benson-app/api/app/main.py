@@ -27,10 +27,12 @@ from pydantic import ValidationError
 from .ai_gateway import AiGatewayUnavailable, run_agent_prompt
 from .auth import (
     Principal,
+    require_employee,
     require_notification_worker,
     require_operations_staff,
     require_owner,
     require_staff,
+    verify_google_identity,
 )
 from .config import Settings, get_settings
 from .compliance import ONBOARDING_REQUIREMENTS
@@ -38,6 +40,8 @@ from .domain import (
     AgentRunRequest,
     BENSON_MODULES,
     EmployeeCreate,
+    EmployeeInviteActivation,
+    EmployeeInviteReceipt,
     EmployeeSummary,
     LeadCreate,
     LeadReceipt,
@@ -51,7 +55,13 @@ from .notifications import NotificationDeliveryError, deliver_notification
 from .policy import ActionRisk
 from .signing import verify_website_signature
 from .skill_registry import SkillDefinition, load_registry
-from .storage import IdempotencyConflict, InvalidLeadTransition, OperationsStore, operations_store
+from .storage import (
+    IdempotencyConflict,
+    InvalidEmployeeInvite,
+    InvalidLeadTransition,
+    OperationsStore,
+    operations_store,
+)
 
 
 @asynccontextmanager
@@ -114,6 +124,9 @@ def drain_notifications(
 ) -> dict[str, Any]:
     notification_store = store(settings)
     claimed = notification_store.claim_notifications(limit=settings.notification_batch_size)
+    remaining = max(0, settings.notification_batch_size - len(claimed))
+    if remaining:
+        claimed.extend(notification_store.claim_employee_notifications(limit=remaining))
     sent = 0
     failed = 0
     sms_enabled = (
@@ -130,7 +143,11 @@ def drain_notifications(
             result = deliver_notification(item, settings)
         except NotificationDeliveryError:
             failed += 1
-            notification_store.mark_notification_failed(item["id"], "provider delivery failed")
+            notification_store.mark_notification_failed(
+                item["id"],
+                "provider delivery failed",
+                outbox_type=item["outbox_type"],
+            )
             logger.exception(
                 "notification_delivery_failed notification_id=%s channel=%s attempt=%s",
                 item["id"],
@@ -139,7 +156,9 @@ def drain_notifications(
             )
         else:
             sent += 1
-            notification_store.mark_notification_sent(item["id"], result.provider_message_id)
+            notification_store.mark_notification_sent(
+                item["id"], result.provider_message_id, outbox_type=item["outbox_type"]
+            )
     counts = notification_store.notification_counts()
     logger.info(
         "notification_drain_complete claimed=%s sent=%s failed=%s pending=%s exhausted=%s",
@@ -228,10 +247,69 @@ def create_employee(
     principal: Principal = Depends(require_owner),
     settings: Settings = Depends(get_settings),
 ) -> EmployeeSummary:
+    if employee.classification == "employee":
+        email_domain = str(employee.email).lower().partition("@")[2]
+        if email_domain != settings.staff_google_domain.lower():
+            raise HTTPException(
+                status_code=422,
+                detail=f"Employees must use an @{settings.staff_google_domain} Workspace email",
+            )
     try:
         return store(settings).create_employee(employee, actor=principal.email)
     except ValueError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.post(
+    "/api/benson/v1/employees/{employee_id}/invite",
+    response_model=EmployeeInviteReceipt,
+    status_code=202,
+)
+def invite_employee(
+    employee_id: str,
+    principal: Principal = Depends(require_owner),
+    settings: Settings = Depends(get_settings),
+) -> EmployeeInviteReceipt:
+    invitation = store(settings).create_employee_invite(
+        employee_id,
+        actor=principal.email,
+        invite_base_url=str(settings.upload_base_url),
+        invite_signing_secret=settings.employee_invite_signing_secret,
+        expires_in_hours=72,
+        notification_max_attempts=settings.notification_max_attempts,
+    )
+    if not invitation:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    return invitation
+
+
+@app.post("/api/benson/v1/onboarding/activate", response_model=EmployeeSummary)
+def activate_employee_invitation(
+    activation: EmployeeInviteActivation,
+    settings: Settings = Depends(get_settings),
+) -> EmployeeSummary:
+    claims = verify_google_identity(activation.credential, settings)
+    if not claims.get("email_verified") or not claims.get("email") or not claims.get("sub"):
+        raise HTTPException(status_code=403, detail="Verified Google account required")
+    try:
+        return store(settings).activate_employee_invite(
+            activation.token,
+            email=str(claims["email"]),
+            google_subject=str(claims["sub"]),
+        )
+    except InvalidEmployeeInvite as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.get("/api/benson/v1/onboarding/me", response_model=EmployeeSummary)
+def onboarding_me(
+    principal: Principal = Depends(require_employee),
+    settings: Settings = Depends(get_settings),
+) -> EmployeeSummary:
+    employee = store(settings).get_employee_by_identity(principal.email, principal.subject)
+    if not employee:
+        raise HTTPException(status_code=403, detail="Active employee account required")
+    return employee
 
 
 @app.get("/api/v1/dashboard")
