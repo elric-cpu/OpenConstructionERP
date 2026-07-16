@@ -5,8 +5,8 @@ Benson Home Solutions' focused construction operating system. This application i
 ## Operating profile
 
 - English, USD, imperial units, United States, Oregon, Harney County
-- Current release: durable website CRM intake, private customer uploads, staff lead queue, persisted customers and guarded lead conversion, server-totaled estimate drafts and decisions, accepted-estimate job conversion, secure employee onboarding, Google Workspace roles, immutable audit events, and confirmation-gated AI drafts
-- Planned modules: schedules, field records, change orders, invoicing/payments, accounting/reporting, procurement, equipment, quality, safety, service, and customer/subcontractor portals
+- Current release: durable website CRM intake, private customer uploads, staff lead queue, persisted customers and guarded lead conversion, server-totaled estimate drafts and decisions, accepted-estimate job conversion, race-safe staff scheduling, secure employee onboarding, Google Workspace roles, immutable audit events, and confirmation-gated AI drafts
+- Planned modules: field records, change orders, invoicing/payments, accounting/reporting, procurement, equipment, quality, safety, service, and customer/subcontractor portals
 - The accounting provider remains the planned financial system of record; this release defines ownership policy but does not yet sync accounting data
 - AI drafts route through the configured Free Claude Code gateway; this release does not execute mutations or external sends
 

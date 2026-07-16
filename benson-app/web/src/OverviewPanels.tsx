@@ -36,11 +36,11 @@ export function OverviewAgent() {
 export function DeferredPanels() {
   return (
     <>
-      <Panel title="Today’s schedule" subtitle="Field visits and committed work." link="Coming later">
+      <Panel title="Today’s schedule" subtitle="Field visits and committed work." link="Available now">
         <Empty
           icon={<CalendarDays />}
-          title="Schedule is outside launch scope"
-          body="The lead foundation does not schedule field work yet."
+          title="No scheduled work yet"
+          body="Planned visits and assigned field work appear in the Schedule workspace."
           compact
         />
       </Panel>

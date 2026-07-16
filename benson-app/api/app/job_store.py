@@ -7,8 +7,16 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from .domain import JobCreateFromEstimate, JobSummary, JobUpdate, Role
+from .schedule_store import lock_schedule_job, schedule_write_lock
 from .store_base import StoreBase
-from .storage_schema import audit_events, customers, estimates, jobs
+from .storage_schema import (
+    audit_events,
+    customers,
+    estimates,
+    jobs,
+    schedule_entries,
+    schedule_status_history,
+)
 
 
 class JobStoreMixin(StoreBase):
@@ -118,7 +126,8 @@ class JobStoreMixin(StoreBase):
         changes = change.model_dump(exclude_unset=True)
         if changes.get("assigned_to") is not None:
             changes["assigned_to"] = str(changes["assigned_to"])
-        with self.engine.begin() as db:
+        with schedule_write_lock, self.engine.begin() as db:
+            lock_schedule_job(db, job_id)
             current = (
                 db.execute(select(jobs).where(jobs.c.id == job_id)).mappings().first()
             )
@@ -157,7 +166,8 @@ class JobStoreMixin(StoreBase):
     ) -> JobSummary | None:
         from .domain import JOB_TRANSITIONS
 
-        with self.engine.begin() as db:
+        with schedule_write_lock, self.engine.begin() as db:
+            lock_schedule_job(db, job_id)
             current = (
                 db.execute(select(jobs).where(jobs.c.id == job_id)).mappings().first()
             )
@@ -169,10 +179,84 @@ class JobStoreMixin(StoreBase):
                 raise ValueError(
                     f"Job cannot move from {current['status']} to {target}"
                 )
+            now = datetime.now(UTC)
+            if target in {"completed", "cancelled"}:
+                active_schedule = db.execute(
+                    select(schedule_entries.c.id).where(
+                        schedule_entries.c.job_id == job_id,
+                        schedule_entries.c.status == "in_progress",
+                    )
+                ).first()
+                if active_schedule:
+                    raise ValueError(
+                        "Finish the in-progress schedule entry before closing the job"
+                    )
+                scheduled_entries = (
+                    db.execute(
+                        select(
+                            schedule_entries.c.id,
+                            schedule_entries.c.version,
+                        ).where(
+                            schedule_entries.c.job_id == job_id,
+                            schedule_entries.c.status == "scheduled",
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+                for entry in scheduled_entries:
+                    history_id = str(uuid4())
+                    next_version = entry["version"] + 1
+                    retired = db.execute(
+                        update(schedule_entries)
+                        .where(
+                            schedule_entries.c.id == entry["id"],
+                            schedule_entries.c.status == "scheduled",
+                            schedule_entries.c.version == entry["version"],
+                        )
+                        .values(
+                            status="cancelled",
+                            version=next_version,
+                            updated_at=now,
+                        )
+                    )
+                    if retired.rowcount != 1:
+                        raise ValueError(
+                            "Schedule changed concurrently; reload before closing job"
+                        )
+                    db.execute(
+                        schedule_status_history.insert().values(
+                            id=history_id,
+                            schedule_entry_id=entry["id"],
+                            from_status="scheduled",
+                            to_status="cancelled",
+                            note=(
+                                f"Automatically retired when job moved to {target}. "
+                                f"{note.strip()}"
+                            ).strip(),
+                            actor=actor,
+                            occurred_at=now,
+                        )
+                    )
+                    self._audit(
+                        db,
+                        event="schedule.status_changed",
+                        actor=actor,
+                        subject_type="schedule_entry",
+                        subject_id=entry["id"],
+                        payload={
+                            "from": "scheduled",
+                            "to": "cancelled",
+                            "from_version": entry["version"],
+                            "to_version": next_version,
+                            "history_id": history_id,
+                            "reason": "job_terminal",
+                        },
+                    )
             changed = db.execute(
                 update(jobs)
                 .where(jobs.c.id == job_id, jobs.c.status == current["status"])
-                .values(status=target, updated_at=datetime.now(UTC))
+                .values(status=target, updated_at=now)
             )
             if changed.rowcount != 1:
                 raise ValueError("Job changed concurrently; reload before retrying")

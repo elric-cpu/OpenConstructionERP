@@ -9,6 +9,20 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: benson
+          POSTGRES_PASSWORD: benson
+          POSTGRES_DB: benson_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U benson -d benson_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -25,3 +39,5 @@ jobs:
         working-directory: benson-app/api
       - run: npm run verify
         working-directory: benson-app
+        env:
+          BENSON_POSTGRES_TEST_URL: postgresql+psycopg://benson:benson@127.0.0.1:5432/benson_test

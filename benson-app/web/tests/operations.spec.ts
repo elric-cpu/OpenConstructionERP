@@ -56,7 +56,7 @@ test("mobile rail opens and exposes operations navigation", async ({ page }, tes
   await page.goto("/");
   await page.getByRole("button", { name: "Open menu" }).click();
   await expect(page.getByText("Jobs", { exact: true })).toBeVisible();
-  await expect(page.getByText("Later", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Schedule" })).toBeVisible();
   await page.getByRole("button", { name: "Close menu" }).click();
   await expect(page.locator("aside")).not.toHaveClass(/open/);
 });
@@ -65,6 +65,8 @@ test("sidebar navigation switches launch views and does not route to deferred mo
   await mockEmptyWorkspace(page);
   await page.route("**/api/benson/v1/jobs", (route) => route.fulfill({ json: [] }));
   await page.route("**/api/benson/v1/estimates?status=accepted", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/benson/v1/staff", (route) => route.fulfill({ json: { staff: [] } }));
+  await page.route("**/api/benson/v1/schedule", (route) => route.fulfill({ json: [] }));
   await page.goto("/#overview");
   const overview = page.getByRole("link", { name: "Overview" });
   const leads = page.getByRole("link", { name: "Leads" });
@@ -86,12 +88,11 @@ test("sidebar navigation switches launch views and does not route to deferred mo
   await expect(page.getByRole("heading", { name: "Jobs", exact: true })).toBeVisible();
 
   if (mobile) await page.getByRole("button", { name: "Open menu" }).click();
-  const schedule = page.getByText("Schedule", { exact: true });
-  await expect(schedule).toBeVisible();
-  await expect(schedule.locator("..")).toHaveClass(/nav-disabled/);
-  await expect(page.getByRole("link", { name: "Schedule" })).toHaveCount(0);
-  await expect(page).toHaveURL(/#jobs$/);
-  await expect(jobs).toHaveAttribute("aria-current", "page");
+  const schedule = page.getByRole("link", { name: "Schedule" });
+  await schedule.click();
+  await expect(page).toHaveURL(/#schedule$/);
+  await expect(schedule).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "Schedule", exact: true })).toBeVisible();
 });
 
 test("staff can create and edit a persisted customer", async ({ page }) => {
@@ -264,10 +265,18 @@ test("staff convert an accepted estimate and deliver the planned job", async ({ 
   await page.route("**/api/benson/v1/estimates?status=accepted", (route) =>
     route.fulfill({ json: jobs.length ? [] : [estimate] }),
   );
+  await page.route("**/api/benson/v1/staff", (route) =>
+    route.fulfill({
+      json: {
+        staff: [{ email: "elric@bensonhomesolutions.com", display_name: "Elric", role: "owner" }],
+      },
+    }),
+  );
   await page.route("**/api/benson/v1/jobs", (route) => route.fulfill({ json: jobs }));
   await page.route(`**/api/benson/v1/jobs/from-estimate/${estimate.id}`, async (route) => {
     expect(route.request().method()).toBe("POST");
     const plan = route.request().postDataJSON() as Partial<typeof job>;
+    expect(plan.assigned_to).toBe("elric@bensonhomesolutions.com");
     job = { ...job, ...plan };
     jobs = [job];
     await route.fulfill({ status: 201, json: job });
@@ -294,7 +303,11 @@ test("staff convert an accepted estimate and deliver the planned job", async ({ 
   await page.getByRole("button", { name: "Create job" }).click();
   await page.getByLabel("Target start").fill(job.target_start);
   await page.getByLabel("Target completion").fill(job.target_completion);
-  await page.getByLabel("Assigned staff email").fill(job.assigned_to);
+  await page.getByLabel("Assigned to").selectOption(job.assigned_to);
+  await expect(page.getByLabel("Assigned to").getByRole("option", { name: /Elric/ })).toHaveAttribute(
+    "value",
+    "elric@bensonhomesolutions.com",
+  );
   await page.getByLabel("Site address").fill(job.site_address);
   await page.getByRole("button", { name: "Create planned job" }).click();
   await expect(page.getByText("planned", { exact: true })).toBeVisible();
@@ -330,8 +343,10 @@ for (const role of ["field", "accounting"] as const) {
       }),
     );
     let requestedCrm = false;
+    let requestedDirectory = false;
     page.on("request", (request) => {
       if (/\/leads|\/customers|\/estimates/.test(new URL(request.url()).pathname)) requestedCrm = true;
+      if (new URL(request.url()).pathname.endsWith("/staff")) requestedDirectory = true;
     });
     await page.route("**/api/benson/v1/jobs", (route) =>
       route.fulfill({
@@ -367,12 +382,198 @@ for (const role of ["field", "accounting"] as const) {
     await expect(page.getByRole("button", { name: "Create job" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Start job" })).toHaveCount(role === "field" ? 1 : 0);
     expect(requestedCrm).toBe(false);
+    expect(requestedDirectory).toBe(false);
   });
 }
 
+test("planners schedule, edit, resolve conflicts, and cancel job visits", async ({ page }) => {
+  await mockEmptyWorkspace(page);
+  const job = {
+    id: "job-schedule",
+    number: "JOB-2026-SCHEDULE",
+    estimate_id: "estimate-schedule",
+    estimate_number: "EST-2026-SCHEDULE",
+    customer_id: "customer-schedule",
+    customer_name: "Fields Property Owner",
+    title: "Remote window installation",
+    scope_snapshot: "",
+    contract_value_cents: 0,
+    status: "planned",
+    target_start: null,
+    target_completion: null,
+    assigned_to: null,
+    site_address: "1 Fields Highway, Fields, OR 97710",
+    created_at: "2026-07-16T00:00:00Z",
+    updated_at: "2026-07-16T00:00:00Z",
+  };
+  let entry = {
+    id: "schedule-1",
+    job_id: job.id,
+    job_number: job.number,
+    job_title: job.title,
+    customer_name: job.customer_name,
+    site_address: job.site_address,
+    event_type: "work",
+    starts_at: "2026-08-03T16:00:00Z",
+    ends_at: "2026-08-03T18:00:00Z",
+    timezone: "America/Los_Angeles",
+    assigned_to: "office@bensonhomesolutions.com",
+    status: "scheduled",
+    version: 1,
+    created_at: "2026-07-16T00:00:00Z",
+    updated_at: "2026-07-16T00:00:00Z",
+  };
+  let entries: (typeof entry)[] = [];
+  let patchAttempts = 0;
+  await page.route("**/api/benson/v1/jobs", (route) => route.fulfill({ json: [job] }));
+  await page.route("**/api/benson/v1/staff", (route) =>
+    route.fulfill({
+      json: {
+        staff: [
+          { email: "office@bensonhomesolutions.com", display_name: "Office Coordinator", role: "office" },
+          { email: "elric@bensonhomesolutions.com", display_name: "Elric", role: "owner" },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/benson/v1/schedule", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: entries });
+    const payload = route.request().postDataJSON() as Partial<typeof entry>;
+    expect(payload.starts_at).toBe("2026-08-03T09:00:00-07:00");
+    expect(payload.ends_at).toBe("2026-08-03T11:00:00-07:00");
+    expect(payload.timezone).toBe("America/Los_Angeles");
+    entry = { ...entry, ...payload };
+    entries = [entry];
+    await route.fulfill({ status: 201, json: entry });
+  });
+  await page.route("**/api/benson/v1/schedule/schedule-1", async (route) => {
+    patchAttempts += 1;
+    if (patchAttempts === 1) {
+      await route.fulfill({ status: 409, json: { detail: "Schedule changed; reload and try again." } });
+      return;
+    }
+    const payload = route.request().postDataJSON() as Partial<typeof entry> & { expected_version: number };
+    expect(payload.expected_version).toBe(1);
+    entry = { ...entry, ...payload, version: 2 };
+    entries = [entry];
+    await route.fulfill({ json: entry });
+  });
+  await page.route("**/api/benson/v1/schedule/schedule-1/transition", async (route) => {
+    const payload = route.request().postDataJSON() as { expected_version: number; status: string; note: string };
+    expect(payload).toEqual({ expected_version: 2, status: "cancelled", note: "Weather delay" });
+    entry = { ...entry, status: "cancelled", version: 3 };
+    entries = [entry];
+    await route.fulfill({ json: entry });
+  });
+
+  await page.goto("/#schedule");
+  await page.getByRole("button", { name: "+ Schedule work" }).click();
+  await page.getByLabel("Job").selectOption(job.id);
+  await page.getByLabel("Starts").fill("2026-03-08T02:30");
+  await page.getByLabel("Ends").fill("2026-03-08T03:30");
+  await page.getByLabel("Assigned to").selectOption(entry.assigned_to);
+  await page.getByRole("button", { name: "Add to schedule" }).press("Enter");
+  await expect(page.getByRole("alert")).toContainText("does not exist");
+  await page.getByLabel("Starts").fill("2026-08-03T09:00");
+  await page.getByLabel("Ends").fill("2026-08-03T11:00");
+  await expect(page.getByLabel("Assigned to")).toHaveValue(entry.assigned_to);
+  await expect(page.getByLabel("Assigned to").getByRole("option", { name: /Elric/ })).toHaveAttribute(
+    "value",
+    "elric@bensonhomesolutions.com",
+  );
+  await page.getByRole("button", { name: "Add to schedule" }).press("Enter");
+  await expect(page.getByRole("heading", { name: job.title })).toBeVisible();
+  await expect(page.getByText("9:00 AM")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start visit" })).toBeVisible();
+  await page.getByRole("button", { name: "Edit" }).click();
+  await page.getByLabel("Visit type").selectOption("inspection");
+  await page.getByRole("button", { name: "Save schedule" }).press("Enter");
+  await expect(page.getByRole("status")).toHaveText("Schedule changed; reload and try again.");
+  await page.getByRole("button", { name: "Save schedule" }).press("Enter");
+  await expect(page.getByText(`${job.number} · inspection`)).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept("Weather delay"));
+  await page.getByRole("button", { name: "Cancel visit" }).click();
+  await expect(page.getByText("cancelled", { exact: true })).toBeVisible();
+  const results = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
+  expect(results.violations.filter((item) => ["serious", "critical"].includes(item.impact ?? ""))).toEqual([]);
+});
+
+test("assigned field staff deliver only their server-scoped schedule", async ({ page }) => {
+  await page.addInitScript(() => sessionStorage.setItem("benson-google-credential", "field-token"));
+  await page.unroute("**/api/benson/v1/session");
+  await page.route("**/api/benson/v1/session", (route) =>
+    route.fulfill({
+      json: {
+        kind: "staff",
+        email: "field@bensonhomesolutions.com",
+        role: "field",
+        default_view: "jobs",
+        employee: null,
+      },
+    }),
+  );
+  let entry = {
+    id: "field-schedule",
+    job_id: "field-job",
+    job_number: "JOB-2026-FIELD",
+    job_title: "Assigned inspection",
+    customer_name: "Assigned Customer",
+    site_address: "Burns, OR",
+    event_type: "inspection",
+    starts_at: "2026-07-21T16:00:00Z",
+    ends_at: "2026-07-21T17:00:00Z",
+    timezone: "America/Los_Angeles",
+    assigned_to: "field@bensonhomesolutions.com",
+    status: "scheduled",
+    version: 1,
+    created_at: "2026-07-16T00:00:00Z",
+    updated_at: "2026-07-16T00:00:00Z",
+  };
+  await page.route("**/api/benson/v1/schedule", (route) => route.fulfill({ json: [entry] }));
+  await page.route("**/api/benson/v1/schedule/field-schedule/transition", async (route) => {
+    const payload = route.request().postDataJSON() as { status: typeof entry.status; note: string };
+    if (payload.status === "completed") expect(payload.note).toBe("Inspection complete");
+    entry = { ...entry, status: payload.status, version: entry.version + 1 };
+    await route.fulfill({ json: entry });
+  });
+
+  await page.goto("/#schedule");
+  await expect(page.getByRole("link", { name: "Schedule" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("button", { name: "+ Schedule work" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Edit" })).toHaveCount(0);
+  await expect(page.getByText("Assigned inspection")).toBeVisible();
+  await page.getByRole("button", { name: "Start visit" }).click();
+  await expect(page.getByText("in progress", { exact: true })).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept("Inspection complete"));
+  await page.getByRole("button", { name: "Complete visit" }).click();
+  await expect(page.getByText("completed", { exact: true })).toBeVisible();
+  const results = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
+  expect(results.violations.filter((item) => ["serious", "critical"].includes(item.impact ?? ""))).toEqual([]);
+});
+
+test("accounting staff cannot navigate to Schedule", async ({ page }) => {
+  await page.addInitScript(() => sessionStorage.setItem("benson-google-credential", "accounting-token"));
+  await page.unroute("**/api/benson/v1/session");
+  await page.route("**/api/benson/v1/session", (route) =>
+    route.fulfill({
+      json: {
+        kind: "staff",
+        email: "accounting@bensonhomesolutions.com",
+        role: "accounting",
+        default_view: "jobs",
+        employee: null,
+      },
+    }),
+  );
+  await page.route("**/api/benson/v1/jobs", (route) => route.fulfill({ json: [] }));
+  await page.goto("/#schedule");
+  await expect(page).toHaveURL(/#jobs$/);
+  await expect(page.getByRole("link", { name: "Schedule" })).toHaveCount(0);
+});
+
 test("unsupported legacy hashes normalize to the overview", async ({ page }) => {
   await mockEmptyWorkspace(page);
-  await page.goto("/#schedule");
+  await page.goto("/#invoices");
   await expect(page).toHaveURL(/#overview$/);
   await expect(page.getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");
 });
@@ -382,7 +583,7 @@ test("empty states never fabricate operational records", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText("You’re caught up")).toBeVisible();
   await expect(page.getByText("No active jobs yet")).toBeVisible();
-  await expect(page.getByText("Schedule is outside launch scope")).toBeVisible();
+  await expect(page.getByText("No scheduled work yet")).toBeVisible();
 });
 
 test("authenticated staff see persisted website leads", async ({ page }) => {

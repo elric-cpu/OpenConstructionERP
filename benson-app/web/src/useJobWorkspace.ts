@@ -1,28 +1,39 @@
 import { useEffect, useState } from "react";
 import { requestHeaders } from "./api";
 import type { JobPlan } from "./JobPlanForm";
-import type { Estimate, Job } from "./types";
+import type { Estimate, Job, StaffMember } from "./types";
 
 export function useJobWorkspace(credential: string, canPlan: boolean) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [estimates, setEstimates] = useState<Estimate[]>([]);
+  const [staff, setStaff] = useState<StaffMember[]>([]);
   const [status, setStatus] = useState("loading");
   const headers = { ...requestHeaders(credential), "content-type": "application/json" };
   useEffect(() => {
     const controller = new AbortController();
-    Promise.all([
-      fetch("/api/benson/v1/jobs", { headers: requestHeaders(credential), signal: controller.signal }),
-      canPlan
-        ? fetch("/api/benson/v1/estimates?status=accepted", {
+    const plannerData = canPlan
+      ? Promise.all([
+          fetch("/api/benson/v1/estimates?status=accepted", {
             headers: requestHeaders(credential),
             signal: controller.signal,
-          })
-        : Promise.resolve(null),
+          }),
+          fetch("/api/benson/v1/staff", { headers: requestHeaders(credential), signal: controller.signal }),
+        ])
+      : Promise.resolve(null);
+    Promise.all([
+      fetch("/api/benson/v1/jobs", { headers: requestHeaders(credential), signal: controller.signal }),
+      plannerData,
     ])
-      .then(async ([jobResponse, estimateResponse]) => {
-        if (!jobResponse.ok || (estimateResponse && !estimateResponse.ok)) throw new Error("Job API unavailable");
+      .then(async ([jobResponse, plannerResponses]) => {
+        if (!jobResponse.ok || plannerResponses?.some((response) => !response.ok)) {
+          throw new Error("Job API unavailable");
+        }
         setJobs((await jobResponse.json()) as Job[]);
-        setEstimates(estimateResponse ? ((await estimateResponse.json()) as Estimate[]) : []);
+        if (plannerResponses) {
+          const directory = (await plannerResponses[1].json()) as { staff: StaffMember[] };
+          setEstimates((await plannerResponses[0].json()) as Estimate[]);
+          setStaff(directory.staff);
+        }
         setStatus("");
       })
       .catch((error) => {
@@ -71,5 +82,5 @@ export function useJobWorkspace(credential: string, canPlan: boolean) {
     setJobs((current) => current.map((item) => (item.id === changed.id ? changed : item)));
     setStatus(`Job marked ${changed.status.replace("_", " ")}.`);
   };
-  return { create, estimates, jobs, status, transition, update };
+  return { create, estimates, jobs, staff, status, transition, update };
 }

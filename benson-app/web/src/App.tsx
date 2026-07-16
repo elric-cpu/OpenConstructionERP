@@ -7,6 +7,7 @@ import { LeadWorkspace } from "./LeadWorkspace";
 import { JobWorkspace } from "./JobWorkspace";
 import { NewHireWorkspace } from "./NewHireWorkspace";
 import { OperationsHome } from "./OperationsHome";
+import { ScheduleWorkspace } from "./ScheduleWorkspace";
 import { useActiveView } from "./useActiveView";
 import { useGoogleIdentity } from "./useGoogleIdentity";
 import { useOperationsData } from "./useOperationsData";
@@ -26,10 +27,34 @@ function useRouteGuards(
     if (requestStatus !== "ready" || !session) return;
     if (session.kind === "employee" && activeView !== "tasks") navigate("tasks");
     if (session.kind === "staff" && ["tasks", "activate"].includes(activeView)) navigate("overview");
-    if (session.kind === "staff" && ["field", "accounting"].includes(session.role) && activeView !== "jobs")
+    if (session.kind === "staff" && session.role === "field" && !["jobs", "schedule"].includes(activeView))
       navigate("jobs");
+    if (session.kind === "staff" && session.role === "accounting" && activeView !== "jobs") navigate("jobs");
     if (activeView === "employees" && !["owner", "admin"].includes(session.role)) navigate("overview");
   }, [activeView, navigate, requestStatus, session]);
+}
+
+function DeliveryWorkspace({
+  activeView,
+  credential,
+  session,
+}: {
+  activeView: ActiveView;
+  credential: string;
+  session: PortalSession | null;
+}) {
+  const role = session?.role || "";
+  if (activeView === "schedule") {
+    return <ScheduleWorkspace credential={credential} email={session?.email || ""} role={role} />;
+  }
+  return (
+    <JobWorkspace
+      canCancel={["owner", "admin"].includes(role)}
+      canDeliver={["owner", "admin", "office", "estimator_pm", "field"].includes(role)}
+      canPlan={["owner", "admin", "office", "estimator_pm"].includes(role)}
+      credential={credential}
+    />
+  );
 }
 
 export function App() {
@@ -72,10 +97,6 @@ export function App() {
   );
   const googleButton = useGoogleIdentity(operations.requestStatus, onCredential, onIdentityUnavailable);
   const canApprove = ["owner", "admin"].includes(operations.portalSession?.role || "");
-  const canPlanJobs = ["owner", "admin", "office", "estimator_pm"].includes(operations.portalSession?.role || "");
-  const canDeliverJobs = ["owner", "admin", "office", "estimator_pm", "field"].includes(
-    operations.portalSession?.role || "",
-  );
 
   useRouteGuards(activeView, clearSelection, navigate, operations.portalSession, operations.requestStatus);
 
@@ -141,12 +162,11 @@ export function App() {
           />
         ) : operations.requestStatus === "ready" && activeView === "estimates" ? (
           <EstimateWorkspace canVoid={canApprove} credential={operations.credential} customers={operations.customers} />
-        ) : operations.requestStatus === "ready" && activeView === "jobs" ? (
-          <JobWorkspace
-            canCancel={canApprove}
-            canDeliver={canDeliverJobs}
-            canPlan={canPlanJobs}
+        ) : operations.requestStatus === "ready" && ["jobs", "schedule"].includes(activeView) ? (
+          <DeliveryWorkspace
+            activeView={activeView}
             credential={operations.credential}
+            session={operations.portalSession}
           />
         ) : operations.requestStatus === "ready" && selectedLead ? (
           <LeadWorkspace
