@@ -229,6 +229,79 @@ describe('buildBOQSheetData', () => {
   });
 });
 
+/* ── Round-trip identity: the Position ID column (GitHub #360) ─────────── */
+
+describe('buildBOQSheetData - Position ID round-trip column', () => {
+  /** The last cell of a row is the Position ID column. */
+  const idCell = (row: (string | number | null)[]): string | number | null => row[row.length - 1];
+
+  it('labels the identity column in the header row', () => {
+    const { rows } = buildBOQSheetData(baseOptions({ positions: [pos()] }));
+    // The column-header row is the one carrying "Description".
+    const headerRow = rows.find((r) => r.includes('Description'));
+    expect(headerRow).toBeDefined();
+    expect(idCell(headerRow!)).toBe('Position ID');
+  });
+
+  it('stamps each position row with its stable id in the last column', () => {
+    const p = pos({ id: 'pos-abc-123', description: 'RC slab' });
+    const { rows } = buildBOQSheetData(
+      baseOptions({ positions: [p], netTotal: 1850, grossTotal: 1850 }),
+    );
+    const dataRow = rows.find((r) => r[1] === 'RC slab');
+    expect(dataRow).toBeDefined();
+    expect(idCell(dataRow!)).toBe('pos-abc-123');
+  });
+
+  it('stamps the section header row with the section id', () => {
+    const section = pos({
+      id: 'sec-1',
+      ordinal: '01',
+      description: 'Earthworks',
+      unit: '',
+      quantity: 0,
+      unit_rate: 0,
+      total: 0,
+      sort_order: 1,
+    });
+    const child = pos({ id: 'c-1', parent_id: 'sec-1', ordinal: '0010', total: 5000, sort_order: 2 });
+    const { rows } = buildBOQSheetData(
+      baseOptions({ positions: [section, child], netTotal: 5000, grossTotal: 5000 }),
+    );
+    const sectionRow = rows.find((r) => r[0] === '01');
+    expect(sectionRow).toBeDefined();
+    expect(idCell(sectionRow!)).toBe('sec-1');
+    const childRow = rows.find((r) => r[0] === '0010');
+    expect(idCell(childRow!)).toBe('c-1');
+  });
+
+  it('keeps the id stable across repeated builds of the same input', () => {
+    const p = pos({ id: 'stable-xyz', description: 'Waterproofing' });
+    const opts = baseOptions({ positions: [p] });
+    const first = buildBOQSheetData(opts).rows.find((r) => r[1] === 'Waterproofing');
+    const second = buildBOQSheetData(opts).rows.find((r) => r[1] === 'Waterproofing');
+    expect(idCell(first!)).toBe('stable-xyz');
+    expect(idCell(second!)).toBe('stable-xyz');
+  });
+
+  it('leaves the id cell empty for a resource breakdown row (not a position)', () => {
+    const p = pos({
+      id: 'pos-1',
+      description: 'Concrete assembly',
+      metadata: {
+        resources: [{ name: 'Cement', type: 'material', code: 'C1', unit: 'kg', quantity: 300, unit_rate: 0.1 }],
+      },
+    });
+    const { rows } = buildBOQSheetData(baseOptions({ positions: [p] }));
+    // The resource row is the one whose description carries the tree prefix.
+    const resourceRow = rows.find(
+      (r) => typeof r[1] === 'string' && (r[1] as string).includes('Cement'),
+    );
+    expect(resourceRow).toBeDefined();
+    expect(idCell(resourceRow!)).toBeNull();
+  });
+});
+
 /* ── buildSummarySheetData ────────────────────────────────────────────── */
 
 describe('buildSummarySheetData', () => {

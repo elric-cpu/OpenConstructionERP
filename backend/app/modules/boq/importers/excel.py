@@ -38,6 +38,7 @@ from app.modules.boq.importers._encoding import (
     parse_numeric_cell,
     safe_float,
 )
+from app.modules.boq.roundtrip import ID_COLUMN_ALIASES, normalise_id
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,10 @@ logger = logging.getLogger(__name__)
 # this map is the supported extension point for new locale variants
 # (Polish ``Ilosc``, Italian ``Quantità`` etc. land here).
 _COLUMN_ALIASES: dict[str, frozenset[str]] = {
+    # Round-trip identity column (GitHub #360). Recognised FIRST so an
+    # exported "Position ID" header maps here, never to ``ordinal``. A blank
+    # cell -> new row; a value belonging to the target BOQ -> update in place.
+    "position_id": ID_COLUMN_ALIASES,
     "ordinal": frozenset(
         {
             "pos",
@@ -356,6 +361,12 @@ _TOTAL_ROW_DESCRIPTIONS = {
     "gesamtsumme",
     "subtotal",
     "zwischensumme",
+    # Export artifacts of our own workbook - never re-imported as positions
+    # on a round-trip (GitHub #360).
+    "direct cost",
+    "cost summary",
+    "net total",
+    "gross total",
 }
 
 
@@ -403,6 +414,12 @@ def _rows_to_positions(
                 ordinal = str(auto_ordinal)
             auto_ordinal += 1
 
+            # Round-trip identity (GitHub #360): the dedicated "Position ID"
+            # column an export stamped. Blank -> new row; a value belonging to
+            # the target BOQ -> update in place (resolved downstream by the
+            # diff against the BOQ's current ids).
+            position_id = normalise_id(row.get("position_id"))
+
             unit_raw = str(row.get("unit", "")).strip()
             quantity_raw = row.get("quantity")
             unit_rate_raw = row.get("unit_rate")
@@ -449,6 +466,7 @@ def _rows_to_positions(
                             "section_header": True,
                         },
                         is_section=True,
+                        position_id=position_id,
                     )
                 )
                 continue
@@ -521,6 +539,7 @@ def _rows_to_positions(
                     classification=classification,
                     source=source,
                     metadata={"import_row_index": row_idx},
+                    position_id=position_id,
                 )
             )
 

@@ -65,6 +65,12 @@ class ImportedPosition:
     # Optional: a section header row (no quantity, no rate). The
     # dispatcher persists these with ``unit="section"``.
     is_section: bool = False
+    # Round-trip identity (GitHub #360). Populated only by the Excel/CSV
+    # importer when the sheet carries the dedicated "Position ID" column an
+    # export stamped. Blank / absent -> a new row; a value that belongs to
+    # the target BOQ -> update in place. Every other importer leaves it
+    # ``None`` (all-create, unchanged behaviour).
+    position_id: str | None = None
 
 
 @dataclass(slots=True)
