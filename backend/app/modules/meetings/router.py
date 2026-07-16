@@ -10,6 +10,7 @@ Endpoints:
     PATCH  /{meeting_id}                  - Update meeting
     DELETE /{meeting_id}                  - Delete meeting
     POST   /{meeting_id}/complete         - Mark meeting as completed
+    GET    /{meeting_id}/calendar.ics     - Export meeting (or series) as an iCalendar feed
     GET    /{meeting_id}/export/pdf       - Export meeting minutes as PDF
 """
 
@@ -20,9 +21,10 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
+from app.modules.meetings import ics as ics_builder
 from app.modules.meetings.schemas import (
     ActionItemEntry,
     ActionRegisterItemCreate,
@@ -1198,6 +1200,86 @@ async def complete_meeting(
     await verify_project_access(existing.project_id, str(user_id), session)
     meeting = await service.complete_meeting(meeting_id, user_id=user_id)
     return _meeting_to_response(meeting)
+
+
+# ── iCalendar (ICS) Export ────────────────────────────────────────────────────
+
+
+def _meeting_ics_payload(meeting: object) -> dict:
+    """Flatten an ORM Meeting into the plain mapping the pure ICS builder reads.
+
+    Keeps ``app.modules.meetings.ics`` free of any ORM/DB knowledge - the pure
+    builder only ever sees plain dicts, which is what its unit tests feed it too.
+    """
+    return {
+        "id": meeting.id,  # type: ignore[attr-defined]
+        "title": meeting.title,  # type: ignore[attr-defined]
+        "meeting_number": meeting.meeting_number,  # type: ignore[attr-defined]
+        "meeting_type": meeting.meeting_type,  # type: ignore[attr-defined]
+        "meeting_date": meeting.meeting_date,  # type: ignore[attr-defined]
+        "location": meeting.location,  # type: ignore[attr-defined]
+        "chairperson_id": (
+            str(meeting.chairperson_id) if meeting.chairperson_id else None  # type: ignore[attr-defined]
+        ),
+        "status": meeting.status,  # type: ignore[attr-defined]
+        "attendees": meeting.attendees or [],  # type: ignore[attr-defined]
+        "agenda_items": meeting.agenda_items or [],  # type: ignore[attr-defined]
+        "minutes": meeting.minutes,  # type: ignore[attr-defined]
+        "recurrence_rule": getattr(meeting, "recurrence_rule", None),
+        "metadata": getattr(meeting, "metadata_", {}) or {},
+    }
+
+
+@router.get(
+    "/{meeting_id}/calendar.ics",
+    dependencies=[Depends(RequirePermission("meetings.read"))],
+)
+async def export_meeting_ics(
+    meeting_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    service: MeetingService = Depends(_get_service),
+) -> Response:
+    """Export a meeting as an iCalendar (.ics) feed.
+
+    Returns a single VEVENT, or - when the meeting is a recurring series master -
+    the same VEVENT carrying an RRULE so a calendar client expands the whole
+    series. The body is ``text/calendar`` and downloads as ``.ics`` for a
+    one-click "add to calendar".
+    """
+    meeting = await service.get_meeting(meeting_id)
+    await verify_project_access(meeting.project_id, str(user_id), session)
+    ics_text = ics_builder.calendar_from_meeting(_meeting_ics_payload(meeting))
+    filename = f"meeting_{meeting.meeting_number}.ics"
+    return Response(
+        content=ics_text,
+        media_type=ics_builder.MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# Export-convention mirror of the route above (matches ``/{meeting_id}/export/pdf/``).
+@router.get(
+    "/{meeting_id}/export/ics/",
+    include_in_schema=False,
+    dependencies=[Depends(RequirePermission("meetings.read"))],
+)
+async def export_meeting_ics_alias(
+    meeting_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    service: MeetingService = Depends(_get_service),
+) -> Response:
+    """Alias of ``/{meeting_id}/calendar.ics`` following the export-URL convention."""
+    meeting = await service.get_meeting(meeting_id)
+    await verify_project_access(meeting.project_id, str(user_id), session)
+    ics_text = ics_builder.calendar_from_meeting(_meeting_ics_payload(meeting))
+    filename = f"meeting_{meeting.meeting_number}.ics"
+    return Response(
+        content=ics_text,
+        media_type=ics_builder.MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ── Recurring Series ─────────────────────────────────────────────────────────
