@@ -1,19 +1,21 @@
 import { useEffect, useState } from "react";
 import type { ActiveView } from "./types";
 
+function viewFromHash(): ActiveView | null {
+  const route = window.location.hash.slice(1).split("?", 1)[0];
+  return ["overview", "leads", "employees", "tasks", "activate"].includes(route) ? (route as ActiveView) : null;
+}
+
 export function useActiveView(onNavigate: () => void) {
-  const [activeView, setActiveView] = useState<ActiveView>(() =>
-    window.location.hash === "#leads" ? "leads" : "overview",
-  );
+  const [activeView, setActiveView] = useState<ActiveView>(() => viewFromHash() ?? "overview");
 
   useEffect(() => {
     const syncView = () => {
-      const requestedView = window.location.hash;
-      const nextView = requestedView === "#leads" ? "leads" : "overview";
-      if (requestedView !== "#overview" && requestedView !== "#leads") {
+      const nextView = viewFromHash();
+      if (!nextView) {
         window.history.replaceState(null, "", "#overview");
       }
-      setActiveView(nextView);
+      setActiveView(nextView ?? "overview");
       onNavigate();
     };
     syncView();
@@ -21,9 +23,10 @@ export function useActiveView(onNavigate: () => void) {
     return () => window.removeEventListener("hashchange", syncView);
   }, [onNavigate]);
 
-  const openLeads = () => {
-    setActiveView("leads");
-    window.history.replaceState(null, "", "#leads");
+  const navigate = (view: Exclude<ActiveView, "activate">) => {
+    setActiveView(view);
+    window.history.replaceState(null, "", `#${view}`);
+    onNavigate();
   };
-  return { activeView, openLeads };
+  return { activeView, navigate, openLeads: () => navigate("leads") };
 }

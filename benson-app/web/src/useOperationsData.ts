@@ -1,6 +1,16 @@
 import { useEffect, useState } from "react";
-import { leadQuery, requestHeaders } from "./api";
-import type { Dashboard, Lead, NotificationSettings, RequestStatus, SpamFilter } from "./types";
+import { requestHeaders } from "./api";
+import { loadPortalData } from "./portalData";
+import type {
+  Dashboard,
+  EmployeeDocument,
+  EmployeeTask,
+  Lead,
+  NotificationSettings,
+  PortalSession,
+  RequestStatus,
+  SpamFilter,
+} from "./types";
 
 const tokenKey = "benson-google-credential";
 const emptyDashboard: Dashboard = {
@@ -15,6 +25,9 @@ export function useOperationsData(status: string, source: string, spam: SpamFilt
   const [data, setData] = useState(emptyDashboard);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [requestStatus, setRequestStatus] = useState<RequestStatus>("loading");
+  const [portalSession, setPortalSession] = useState<PortalSession | null>(null);
+  const [employeeTasks, setEmployeeTasks] = useState<EmployeeTask[]>([]);
+  const [employeeDocuments, setEmployeeDocuments] = useState<EmployeeDocument[]>([]);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings | null>(null);
   const [settingsStatus, setSettingsStatus] = useState<"" | "saving" | "saved" | "error">("");
 
@@ -23,39 +36,40 @@ export function useOperationsData(status: string, source: string, spam: SpamFilt
       setData(emptyDashboard);
       setLeads([]);
       setNotificationSettings(null);
+      setPortalSession(null);
+      setEmployeeTasks([]);
+      setEmployeeDocuments([]);
       setRequestStatus("auth-required");
       return;
     }
     const controller = new AbortController();
     let active = true;
-    const headers = requestHeaders(credential);
-    Promise.all([
-      fetch("/api/v1/dashboard", { headers, signal: controller.signal }),
-      fetch(`/api/benson/v1/leads?${leadQuery(status, source, spam, query)}`, {
-        headers,
-        signal: controller.signal,
-      }),
-      fetch("/api/benson/v1/settings/notifications", { headers, signal: controller.signal }),
-    ])
-      .then(async ([dashboardResponse, leadsResponse, settingsResponse]) => {
+    loadPortalData({ credential, query, signal: controller.signal, source, spam, status })
+      .then((next) => {
         if (!active) return;
-        if ([dashboardResponse, leadsResponse].some((response) => [401, 403].includes(response.status))) {
+        if (next.kind === "unauthorized") {
           setData(emptyDashboard);
           setLeads([]);
           setNotificationSettings(null);
+          setPortalSession(null);
           setRequestStatus("auth-required");
           return;
         }
-        if (!dashboardResponse.ok || !leadsResponse.ok) throw Error("Operations API unavailable");
-        const [nextData, nextLeads, nextSettings] = await Promise.all([
-          dashboardResponse.json(),
-          leadsResponse.json(),
-          settingsResponse.ok ? settingsResponse.json() : Promise.resolve(null),
-        ]);
-        if (!active) return;
-        setData(nextData);
-        setLeads(nextLeads.leads);
-        setNotificationSettings(nextSettings);
+        setPortalSession(next.session);
+        if (next.kind === "employee") {
+          setEmployeeTasks(next.tasks);
+          setEmployeeDocuments(next.documents);
+          setData(emptyDashboard);
+          setLeads([]);
+          setNotificationSettings(null);
+          setRequestStatus("ready");
+          return;
+        }
+        setEmployeeTasks([]);
+        setEmployeeDocuments([]);
+        setData(next.dashboard);
+        setLeads(next.leads);
+        setNotificationSettings(next.notificationSettings);
         setRequestStatus("ready");
       })
       .catch((error) => {
@@ -77,6 +91,9 @@ export function useOperationsData(status: string, source: string, spam: SpamFilt
     setData(emptyDashboard);
     setLeads([]);
     setNotificationSettings(null);
+    setPortalSession(null);
+    setEmployeeTasks([]);
+    setEmployeeDocuments([]);
     setRequestStatus("auth-required");
   };
   const setSmsEnabled = async (smsEnabled: boolean) => {
@@ -104,9 +121,14 @@ export function useOperationsData(status: string, source: string, spam: SpamFilt
     data,
     leads,
     notificationSettings,
+    portalSession,
+    employeeTasks,
+    employeeDocuments,
     requestStatus,
     settingsStatus,
     setLeads,
+    setEmployeeTasks,
+    setEmployeeDocuments,
     authenticate,
     signOut,
     setRequestStatus,

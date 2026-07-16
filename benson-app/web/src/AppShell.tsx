@@ -6,12 +6,14 @@ import {
   Home,
   Inbox,
   LogOut,
+  ListChecks,
   Menu,
   Search,
+  UserPlus,
   Users,
   X,
 } from "lucide-react";
-import type { ActiveView, RequestStatus } from "./types";
+import type { ActiveView, PortalSession, RequestStatus } from "./types";
 
 const nav = [
   [Home, "Overview", "overview"],
@@ -29,6 +31,7 @@ export function AppShell({
   menu,
   query,
   requestStatus,
+  portalSession,
   setMenu,
   setQuery,
   signOut,
@@ -39,6 +42,7 @@ export function AppShell({
   menu: boolean;
   query: string;
   requestStatus: RequestStatus;
+  portalSession: PortalSession | null;
   setMenu(value: boolean): void;
   setQuery(value: string): void;
   signOut(): void;
@@ -49,6 +53,12 @@ export function AppShell({
     "auth-required": "Sign in required",
     offline: "Connection issue",
   }[requestStatus];
+  const employeePortal = portalSession?.kind === "employee";
+  const staffNav =
+    portalSession && ["owner", "admin"].includes(portalSession.role)
+      ? [...nav.slice(0, 2), [UserPlus, "New hires", "employees"] as const, ...nav.slice(2)]
+      : nav;
+  const visibleNav = employeePortal ? ([[ListChecks, "Tasks", "tasks"]] as const) : staffNav;
   return (
     <div className="shell">
       <aside className={menu ? "open" : ""}>
@@ -63,7 +73,7 @@ export function AppShell({
           </button>
         </div>
         <nav>
-          {nav.map(([Icon, label, route]) =>
+          {visibleNav.map(([Icon, label, route]) =>
             route ? (
               <a
                 aria-current={activeView === route ? "page" : undefined}
@@ -84,8 +94,8 @@ export function AppShell({
         <div className="rail-foot">
           <img className="avatar" src="/benson-enterprises-logo.svg" alt="" />
           <div>
-            <b>Benson staff</b>
-            <small>Burns, Oregon</small>
+            <b>{portalSession?.employee?.name || "Benson staff"}</b>
+            <small>{portalSession?.email || "Burns, Oregon"}</small>
           </div>
         </div>
       </aside>
@@ -94,15 +104,19 @@ export function AppShell({
           <button className="menu" aria-label="Open menu" onClick={() => setMenu(true)}>
             <Menu />
           </button>
-          <div className="search">
-            <Search />
-            <input
-              aria-label="Search leads"
-              placeholder="Search leads, phone, city…"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </div>
+          {!employeePortal && activeView !== "employees" ? (
+            <div className="search">
+              <Search />
+              <input
+                aria-label="Search leads"
+                placeholder="Search leads, phone, city…"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </div>
+          ) : (
+            <div className="header-context">{employeePortal ? "Onboarding" : "People operations"}</div>
+          )}
           <div className="header-actions">
             <span className={requestStatus === "offline" ? "status offline" : "status"}>{connectionLabel}</span>
             {credential && (

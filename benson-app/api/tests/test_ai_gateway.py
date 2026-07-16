@@ -28,7 +28,9 @@ async def test_agent_gateway_normalizes_transport_failures() -> None:
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         with pytest.raises(AiGatewayUnavailable):
-            await run_agent_prompt(Settings(), "Summarize", "Use supplied records", client=client)
+            await run_agent_prompt(
+                Settings(), "Summarize", "Use supplied records", client=client
+            )
 
 
 @pytest.mark.asyncio
@@ -36,7 +38,8 @@ async def test_production_agent_gateway_uses_cloud_run_identity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "app.ai_gateway.id_token.fetch_id_token", lambda _request, audience: f"id:{audience}"
+        "app.ai_gateway.id_token.fetch_id_token",
+        lambda _request, audience: f"id:{audience}",
     )
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -82,7 +85,9 @@ async def test_agent_gateway_parses_fcc_streaming_response() -> None:
     )
 
     def handler(_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, headers={"content-type": "text/event-stream"}, text=body)
+        return httpx.Response(
+            200, headers={"content-type": "text/event-stream"}, text=body
+        )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         result = await run_agent_prompt(

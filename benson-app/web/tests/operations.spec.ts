@@ -1,6 +1,20 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/benson/v1/session", (route) =>
+    route.fulfill({
+      json: {
+        kind: "staff",
+        email: "office@bensonhomesolutions.com",
+        role: "office",
+        default_view: "overview",
+        employee: null,
+      },
+    }),
+  );
+});
+
 async function mockEmptyWorkspace(page: import("@playwright/test").Page) {
   await page.addInitScript(() => sessionStorage.setItem("benson-google-credential", "test-token"));
   await page.route("**/api/v1/dashboard", (route) =>

@@ -4,6 +4,10 @@ Status: **Pending qualified HR/legal review. Do not use this draft as a legal-co
 
 The API exposes the machine-readable matrix at `GET /api/benson/v1/onboarding/requirements`. Every rule is conditional on worker classification, work location, contract clauses, contract value, and the applicable wage determination. Direct deposit is an optional payment election, not a universal legal prerequisite. Form W-2 is issued by the employer after the tax year and is not a new-hire task.
 
+## Workspace identity and license boundary
+
+Employees sign in with an `@bensonhomesolutions.com` Google identity, but onboarding must never assign a paid Google Workspace license. Account creation is an approval-gated external action. Until automated provisioning is independently verified, an administrator must create the identity in an organizational unit where paid automatic licensing is disabled and confirm that no paid license was assigned. The portal records `no_paid_license` as policy; it does not treat a successful Directory API user creation as proof of license state. Invitations use a separate reachable delivery email so onboarding does not depend on the unlicensed identity having a mailbox.
+
 | Requirement | Applies when | Owner | Data | Official source |
 | --- | --- | --- | --- | --- |
 | Form I-9 | Employee hired for U.S. work | Employee and employer | Restricted | [USCIS I-9 Central](https://www.uscis.gov/i-9-central/retain-and-store-form-i-9) |

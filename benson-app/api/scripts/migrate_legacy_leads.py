@@ -103,11 +103,15 @@ def _content_fingerprint(rows: list[dict[str, Any]]) -> str:
     normalized = []
     for row in rows:
         item = {
-            field: row[field].isoformat() if isinstance(row[field], datetime) else row[field]
+            field: row[field].isoformat()
+            if isinstance(row[field], datetime)
+            else row[field]
             for field in fields
         }
         normalized.append(item)
-    encoded = json.dumps(sorted(normalized, key=lambda item: item["id"]), sort_keys=True)
+    encoded = json.dumps(
+        sorted(normalized, key=lambda item: item["id"]), sort_keys=True
+    )
     return hashlib.sha256(encoded.encode()).hexdigest()
 
 
@@ -124,7 +128,9 @@ def migrate(source_url: str, target_url: str, *, apply: bool) -> dict[str, Any]:
     try:
         metadata.create_all(target)
         with target.begin() as db:
-            target_count = int(db.execute(select(func.count()).select_from(leads)).scalar_one())
+            target_count = int(
+                db.execute(select(func.count()).select_from(leads)).scalar_one()
+            )
             existing_ids = set(
                 db.execute(
                     select(leads.c.id).where(
@@ -162,7 +168,9 @@ def migrate(source_url: str, target_url: str, *, apply: bool) -> dict[str, Any]:
                             occurred_at=now,
                         )
                     )
-            final_count = EXPECTED_LEADS if apply and target_count == 0 else target_count
+            final_count = (
+                EXPECTED_LEADS if apply and target_count == 0 else target_count
+            )
             target_rows = [
                 dict(row)
                 for row in db.execute(select(leads).where(leads.c.id.in_(expected_ids)))
@@ -186,19 +194,26 @@ def migrate(source_url: str, target_url: str, *, apply: bool) -> dict[str, Any]:
         "target_count_after": final_count,
         "id_fingerprint": _fingerprint(expected_ids),
         "content_fingerprint": expected_content_fingerprint,
-        "content_reconciled": actual_content_fingerprint == expected_content_fingerprint,
+        "content_reconciled": actual_content_fingerprint
+        == expected_content_fingerprint,
         "notifications_enqueued": 0,
     }
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Migrate the approved Benson legacy lead set")
-    parser.add_argument("--apply", action="store_true", help="write after all count guards pass")
+    parser = argparse.ArgumentParser(
+        description="Migrate the approved Benson legacy lead set"
+    )
+    parser.add_argument(
+        "--apply", action="store_true", help="write after all count guards pass"
+    )
     args = parser.parse_args()
     source_url = os.environ.get("BENSON_LEGACY_DATABASE_URL", "")
     target_url = os.environ.get("BENSON_TARGET_DATABASE_URL", "")
     if not source_url or not target_url:
-        raise SystemExit("BENSON_LEGACY_DATABASE_URL and BENSON_TARGET_DATABASE_URL are required")
+        raise SystemExit(
+            "BENSON_LEGACY_DATABASE_URL and BENSON_TARGET_DATABASE_URL are required"
+        )
     print(json.dumps(migrate(source_url, target_url, apply=args.apply), sort_keys=True))
 
 

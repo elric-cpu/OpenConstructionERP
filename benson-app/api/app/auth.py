@@ -16,7 +16,7 @@ class Principal:
     subject: str
 
 
-def _role_for_email(email: str, settings: Settings) -> Role | None:
+def staff_role_for_email(email: str, settings: Settings) -> Role | None:
     for role in (
         Role.OWNER,
         Role.ADMIN,
@@ -44,7 +44,8 @@ def verify_google_identity(credential: str, settings: Settings) -> dict[str, Any
         )
     except ValueError as error:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Google identity token"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Google identity token",
         ) from error
     return claims
 
@@ -56,7 +57,7 @@ def require_staff(
 ) -> Principal:
     if settings.environment != "production" and x_dev_staff_email:
         email = x_dev_staff_email.strip().lower()
-        role = _role_for_email(email, settings)
+        role = staff_role_for_email(email, settings)
         if role is None:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -65,20 +66,28 @@ def require_staff(
         return Principal(email=email, role=role, subject=f"dev:{email}")
     if not settings.staff_google_audience:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Staff SSO is not configured"
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Staff SSO is not configured",
         )
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Google sign-in is required"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Google sign-in is required",
         )
-    claims = verify_google_identity(authorization.removeprefix("Bearer ").strip(), settings)
+    claims = verify_google_identity(
+        authorization.removeprefix("Bearer ").strip(), settings
+    )
     email = str(claims.get("email", "")).lower()
     hosted_domain = str(claims.get("hd", "")).lower()
-    if not claims.get("email_verified") or hosted_domain != settings.staff_google_domain.lower():
+    if (
+        not claims.get("email_verified")
+        or hosted_domain != settings.staff_google_domain.lower()
+    ):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Benson Workspace account required"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Benson Workspace account required",
         )
-    role = _role_for_email(email, settings)
+    role = staff_role_for_email(email, settings)
     if role is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -93,34 +102,95 @@ def require_employee(
 ) -> Principal:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Google sign-in is required"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Google sign-in is required",
         )
-    claims = verify_google_identity(authorization.removeprefix("Bearer ").strip(), settings)
-    if not claims.get("email_verified") or not claims.get("email") or not claims.get("sub"):
+    claims = verify_google_identity(
+        authorization.removeprefix("Bearer ").strip(), settings
+    )
+    if (
+        not claims.get("email_verified")
+        or not claims.get("email")
+        or not claims.get("sub")
+    ):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Verified Google account required"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Verified Google account required",
         )
     email = str(claims["email"]).lower()
     subject = str(claims["sub"])
     from .storage import operations_store
 
-    employee = operations_store(settings.resolved_database_url()).get_employee_by_identity(
-        email, subject
-    )
+    employee = operations_store(
+        settings.resolved_database_url()
+    ).get_employee_by_identity(email, subject)
     if not employee:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Active employee account required"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Active employee account required",
+        )
+    return Principal(email=email, role=employee.role, subject=subject)
+
+
+def require_portal_user(
+    authorization: Annotated[str | None, Header()] = None,
+    x_dev_staff_email: Annotated[str | None, Header(alias="X-Dev-Staff-Email")] = None,
+    settings: Settings = Depends(get_settings),
+) -> Principal:
+    if settings.environment != "production" and x_dev_staff_email:
+        return require_staff(
+            authorization=authorization,
+            x_dev_staff_email=x_dev_staff_email,
+            settings=settings,
+        )
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Google sign-in is required",
+        )
+    claims = verify_google_identity(
+        authorization.removeprefix("Bearer ").strip(), settings
+    )
+    email = str(claims.get("email", "")).lower()
+    subject = str(claims.get("sub", ""))
+    hosted_domain = str(claims.get("hd", "")).lower()
+    if (
+        not claims.get("email_verified")
+        or not email
+        or not subject
+        or hosted_domain != settings.staff_google_domain.lower()
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Benson Workspace account required",
+        )
+    staff_role = staff_role_for_email(email, settings)
+    if staff_role:
+        return Principal(email=email, role=staff_role, subject=subject)
+    from .storage import operations_store
+
+    employee = operations_store(
+        settings.resolved_database_url()
+    ).get_employee_by_identity(email, subject)
+    if not employee:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Portal account is not authorized",
         )
     return Principal(email=email, role=employee.role, subject=subject)
 
 
 def require_owner(principal: Principal = Depends(require_staff)) -> Principal:
     if principal.role not in {Role.OWNER, Role.ADMIN}:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Owner approval required")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Owner approval required"
+        )
     return principal
 
 
-def require_operations_staff(principal: Principal = Depends(require_staff)) -> Principal:
+def require_operations_staff(
+    principal: Principal = Depends(require_staff),
+) -> Principal:
     if principal.role not in STAFF:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -135,7 +205,10 @@ def require_notification_worker(
 ) -> str:
     if settings.environment != "production":
         return "development-notification-worker"
-    if not settings.notification_worker_audience or not settings.notification_worker_email:
+    if (
+        not settings.notification_worker_audience
+        or not settings.notification_worker_email
+    ):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Notification worker identity is not configured",
@@ -157,7 +230,10 @@ def require_notification_worker(
             detail="Invalid notification worker identity",
         ) from error
     email = str(claims.get("email", "")).lower()
-    if not claims.get("email_verified") or email != settings.notification_worker_email.lower():
+    if (
+        not claims.get("email_verified")
+        or email != settings.notification_worker_email.lower()
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Notification worker is not authorized",

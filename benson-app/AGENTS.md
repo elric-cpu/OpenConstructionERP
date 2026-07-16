@@ -32,6 +32,14 @@
 - Files above 500 lines must be decomposed when touched. Split API clients, orchestration hooks, forms, filters, panels, and presentation components by responsibility.
 - Do not add lint disables or cosmetic wrapper components to evade these boundaries.
 
+## Python maintainability
+
+- Format Python at 88 characters and keep modules focused on one responsibility.
+- Target 150–500 code lines per Python file; 550 nonblank, noncomment lines is the enforced hard ceiling.
+- Generated migration files are the only file-size exception. Do not add legacy or convenience allowlists.
+- When a file approaches the ceiling, split at natural API, persistence, domain, provider, or test boundaries.
+- `tests/test_file_size.py` runs in the API suite and pre-commit hook; do not weaken or bypass it.
+
 ## Release safety
 
 - Build immutable images and deploy candidate revisions at zero traffic until the approved UAT and cutover gates pass.

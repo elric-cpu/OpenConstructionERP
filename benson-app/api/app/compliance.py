@@ -191,8 +191,14 @@ def initial_employee_tasks(employee: EmployeeCreate) -> list[dict[str, Any]]:
         for task in (
             ("e-verify", "Complete applicable E-Verify/E-Verify+ case"),
             ("davis-bacon", "Confirm Davis-Bacon classification and payroll setup"),
-            ("section-503-self-id", "Issue applicable Section 503 self-identification invitation"),
-            ("vevraa-self-id", "Issue applicable VEVRAA self-identification invitation"),
+            (
+                "section-503-self-id",
+                "Issue applicable Section 503 self-identification invitation",
+            ),
+            (
+                "vevraa-self-id",
+                "Issue applicable VEVRAA self-identification invitation",
+            ),
         ):
             tasks.append(
                 {

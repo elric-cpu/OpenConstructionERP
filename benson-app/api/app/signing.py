@@ -11,16 +11,24 @@ def signature_for(secret: str, timestamp: str, body: bytes) -> str:
 
 
 def employee_invite_token(secret: str, invite_id: str) -> str:
-    signature = hmac.new(secret.encode(), invite_id.encode(), hashlib.sha256).hexdigest()
+    signature = hmac.new(
+        secret.encode(), invite_id.encode(), hashlib.sha256
+    ).hexdigest()
     return f"{invite_id}.{signature}"
 
 
 def verify_website_signature(
-    *, secret: str, timestamp: str | None, signature: str | None, body: bytes, max_age_seconds: int
+    *,
+    secret: str,
+    timestamp: str | None,
+    signature: str | None,
+    body: bytes,
+    max_age_seconds: int,
 ) -> None:
     if not timestamp or not signature:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Signed website request required"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Signed website request required",
         )
     try:
         sent_at = datetime.fromtimestamp(int(timestamp), UTC)

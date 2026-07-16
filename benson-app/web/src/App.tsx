@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "./AppShell";
+import { EmployeeTasks } from "./EmployeeTasks";
 import { LeadWorkspace } from "./LeadWorkspace";
+import { NewHireWorkspace } from "./NewHireWorkspace";
 import { OperationsHome } from "./OperationsHome";
 import { useActiveView } from "./useActiveView";
 import { useGoogleIdentity } from "./useGoogleIdentity";
@@ -14,12 +16,32 @@ export function App() {
   const [statusFilter, setStatusFilter] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
   const [spamFilter, setSpamFilter] = useState<SpamFilter>("active");
+  const [activationError, setActivationError] = useState("");
   const clearSelection = useCallback(() => setSelectedLead(""), []);
-  const { activeView, openLeads } = useActiveView(clearSelection);
+  const { activeView, navigate, openLeads } = useActiveView(clearSelection);
   const operations = useOperationsData(statusFilter, sourceFilter, spamFilter, query);
   const onCredential = useCallback(
-    (credential: string) => operations.authenticate(credential),
-    [operations.authenticate],
+    async (credential: string) => {
+      if (activeView === "activate") {
+        const token = new URLSearchParams(window.location.hash.split("?", 2)[1] || "").get("token");
+        if (!token) {
+          setActivationError("This invitation link is incomplete.");
+          return;
+        }
+        const response = await fetch("/api/benson/v1/onboarding/activate", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ token, credential }),
+        });
+        if (!response.ok) {
+          const body = (await response.json().catch(() => ({}))) as { detail?: string };
+          setActivationError(body.detail || "This invitation could not be accepted.");
+          return;
+        }
+      }
+      operations.authenticate(credential);
+    },
+    [activeView, operations.authenticate],
   );
   const onIdentityUnavailable = useCallback(
     () => operations.setRequestStatus("auth-required"),
@@ -30,6 +52,12 @@ export function App() {
   useEffect(() => {
     if (operations.requestStatus === "auth-required") clearSelection();
   }, [clearSelection, operations.requestStatus]);
+  useEffect(() => {
+    if (operations.requestStatus !== "ready" || !operations.portalSession) return;
+    if (operations.portalSession.kind === "employee" && activeView !== "tasks") navigate("tasks");
+    if (operations.portalSession.kind === "staff" && ["tasks", "activate"].includes(activeView)) navigate("overview");
+    if (activeView === "employees" && !["owner", "admin"].includes(operations.portalSession.role)) navigate("overview");
+  }, [activeView, navigate, operations.portalSession, operations.requestStatus]);
 
   const openLead = (leadId: string) => {
     openLeads();
@@ -47,6 +75,7 @@ export function App() {
       menu={menu}
       query={query}
       requestStatus={operations.requestStatus}
+      portalSession={operations.portalSession}
       setMenu={setMenu}
       setQuery={setQuery}
       signOut={signOut}
@@ -55,14 +84,34 @@ export function App() {
         {operations.requestStatus === "auth-required" && (
           <section className="auth-banner" aria-label="Staff sign in">
             <div>
-              <small>STAFF WORKSPACE</small>
-              <h2>Sign in with your Benson Google Workspace account.</h2>
-              <p>Customer, project, pricing, and accounting information stays behind staff authentication.</p>
+              <small>{activeView === "activate" ? "SECURE INVITATION" : "STAFF WORKSPACE"}</small>
+              <h2>
+                {activeView === "activate"
+                  ? "Accept your invitation with the assigned Benson account."
+                  : "Sign in with your Benson Google Workspace account."}
+              </h2>
+              <p>
+                {activeView === "activate"
+                  ? "Use the exact unlicensed Workspace identity created for you."
+                  : "Customer, project, pricing, and accounting information stays behind staff authentication."}
+              </p>
+              {activationError && <p className="form-error">{activationError}</p>}
             </div>
             <div ref={googleButton} className="google-button" />
           </section>
         )}
-        {operations.requestStatus === "ready" && selectedLead ? (
+        {operations.requestStatus === "ready" && operations.portalSession?.kind === "employee" ? (
+          <EmployeeTasks
+            credential={operations.credential}
+            documents={operations.employeeDocuments}
+            session={operations.portalSession}
+            setDocuments={operations.setEmployeeDocuments}
+            setTasks={operations.setEmployeeTasks}
+            tasks={operations.employeeTasks}
+          />
+        ) : operations.requestStatus === "ready" && activeView === "employees" ? (
+          <NewHireWorkspace credential={operations.credential} />
+        ) : operations.requestStatus === "ready" && selectedLead ? (
           <LeadWorkspace
             leadId={selectedLead}
             credential={operations.credential}

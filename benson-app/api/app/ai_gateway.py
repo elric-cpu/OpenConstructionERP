@@ -72,7 +72,9 @@ async def run_agent_prompt(
         response.raise_for_status()
         return _parse_gateway_response(response)
     except (httpx.HTTPError, ValueError, TypeError) as error:
-        raise AiGatewayUnavailable("Benson AI gateway is temporarily unavailable") from error
+        raise AiGatewayUnavailable(
+            "Benson AI gateway is temporarily unavailable"
+        ) from error
     finally:
         if owns_client:
             await http.aclose()

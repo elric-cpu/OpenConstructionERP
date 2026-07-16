@@ -8,7 +8,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="BENSON_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="BENSON_", env_file=".env", extra="ignore"
+    )
 
     app_name: str = "Benson Operations"
     environment: Literal["development", "test", "production"] = "development"
@@ -19,7 +21,9 @@ class Settings(BaseSettings):
     timezone: str = "America/Los_Angeles"
     unit_system: Literal["imperial"] = "imperial"
 
-    website_signing_secret: str = Field(default="development-signing-secret", min_length=16)
+    website_signing_secret: str = Field(
+        default="development-signing-secret", min_length=16
+    )
     employee_invite_signing_secret: str = Field(
         default="development-invite-signing-secret", min_length=16
     )
@@ -62,7 +66,9 @@ class Settings(BaseSettings):
     upload_max_bytes: int = Field(default=15_000_000, ge=1_000_000, le=25_000_000)
     upload_session_hours: int = Field(default=72, ge=1, le=168)
     upload_session_max_files: int = Field(default=20, ge=1, le=50)
-    upload_session_max_bytes: int = Field(default=75_000_000, ge=1_000_000, le=250_000_000)
+    upload_session_max_bytes: int = Field(
+        default=75_000_000, ge=1_000_000, le=250_000_000
+    )
     upload_storage_path: Path = Path("./private-uploads")
     upload_bucket: str = ""
     database_path: Path = Path("./benson-operations.sqlite3")
@@ -82,7 +88,9 @@ class Settings(BaseSettings):
         try:
             self.employee_document_key_bytes()
         except ValueError:
-            missing.append("BENSON_EMPLOYEE_DOCUMENT_ENCRYPTION_KEY (base64 32-byte key)")
+            missing.append(
+                "BENSON_EMPLOYEE_DOCUMENT_ENCRYPTION_KEY (base64 32-byte key)"
+            )
         if not self.staff_google_audience:
             missing.append("BENSON_STAFF_GOOGLE_AUDIENCE")
         if not self.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
@@ -102,13 +110,17 @@ class Settings(BaseSettings):
         if self.sms_enabled_default and not self.twilio_is_configured():
             missing.append("BENSON_TWILIO_* and BENSON_SMS_TO")
         if missing:
-            raise ValueError(f"Production configuration is incomplete: {', '.join(missing)}")
+            raise ValueError(
+                f"Production configuration is incomplete: {', '.join(missing)}"
+            )
         return self
 
     def resolved_database_url(self) -> str:
         if self.database_url:
             if self.database_url.startswith("postgresql://"):
-                return self.database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+                return self.database_url.replace(
+                    "postgresql://", "postgresql+psycopg://", 1
+                )
             return self.database_url
         return f"sqlite+pysqlite:///{self.database_path.resolve()}"
 
@@ -117,7 +129,9 @@ class Settings(BaseSettings):
         try:
             key = base64.b64decode(raw, validate=True)
         except ValueError as error:
-            raise ValueError("Employee document encryption key must be valid base64") from error
+            raise ValueError(
+                "Employee document encryption key must be valid base64"
+            ) from error
         if len(key) != 32:
             raise ValueError("Employee document encryption key must decode to 32 bytes")
         return key
@@ -143,7 +157,9 @@ class Settings(BaseSettings):
                 if email in seen:
                     continue
                 seen.add(email)
-                fallback_name = email.split("@", 1)[0].replace(".", " ").replace("_", " ").title()
+                fallback_name = (
+                    email.split("@", 1)[0].replace(".", " ").replace("_", " ").title()
+                )
                 members.append(
                     {
                         "email": email,
@@ -173,7 +189,10 @@ class Settings(BaseSettings):
             source.parents[1] / self.ddc_registry_path,
             source.parents[2] / self.ddc_registry_path,
         ]
-        return next((candidate for candidate in candidates if candidate.is_file()), candidates[0])
+        return next(
+            (candidate for candidate in candidates if candidate.is_file()),
+            candidates[0],
+        )
 
 
 @lru_cache

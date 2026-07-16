@@ -30,7 +30,10 @@ FINANCE_STAFF = {Role.OWNER, Role.ADMIN, Role.ACCOUNTING}
 
 BENSON_MODULES = [
     ModuleDefinition(
-        id="dashboard", label="Today", group="workspace", roles=FIELD_STAFF | FINANCE_STAFF
+        id="dashboard",
+        label="Today",
+        group="workspace",
+        roles=FIELD_STAFF | FINANCE_STAFF,
     ),
     ModuleDefinition(id="crm", label="Leads & CRM", group="sales", roles=STAFF),
     ModuleDefinition(
@@ -40,9 +43,15 @@ BENSON_MODULES = [
     ModuleDefinition(
         id="projects", label="Jobs", group="delivery", roles=FIELD_STAFF | FINANCE_STAFF
     ),
-    ModuleDefinition(id="schedule", label="Schedule", group="delivery", roles=FIELD_STAFF),
-    ModuleDefinition(id="field", label="Field Notes", group="delivery", roles=FIELD_STAFF),
-    ModuleDefinition(id="time", label="Time", group="delivery", roles=FIELD_STAFF | FINANCE_STAFF),
+    ModuleDefinition(
+        id="schedule", label="Schedule", group="delivery", roles=FIELD_STAFF
+    ),
+    ModuleDefinition(
+        id="field", label="Field Notes", group="delivery", roles=FIELD_STAFF
+    ),
+    ModuleDefinition(
+        id="time", label="Time", group="delivery", roles=FIELD_STAFF | FINANCE_STAFF
+    ),
     ModuleDefinition(
         id="documents",
         label="Documents",
@@ -50,7 +59,10 @@ BENSON_MODULES = [
         roles=FIELD_STAFF | FINANCE_STAFF | {Role.CUSTOMER},
     ),
     ModuleDefinition(
-        id="procurement", label="Purchasing", group="operations", roles=STAFF | FINANCE_STAFF
+        id="procurement",
+        label="Purchasing",
+        group="operations",
+        roles=STAFF | FINANCE_STAFF,
     ),
     ModuleDefinition(
         id="subcontractors",
@@ -58,7 +70,9 @@ BENSON_MODULES = [
         group="operations",
         roles=STAFF | FINANCE_STAFF | {Role.SUBCONTRACTOR},
     ),
-    ModuleDefinition(id="inventory", label="Materials", group="operations", roles=FIELD_STAFF),
+    ModuleDefinition(
+        id="inventory", label="Materials", group="operations", roles=FIELD_STAFF
+    ),
     ModuleDefinition(
         id="quality",
         label="Quality & Punch",
@@ -78,10 +92,16 @@ BENSON_MODULES = [
         id="accounting", label="Accounting Sync", group="finance", roles=FINANCE_STAFF
     ),
     ModuleDefinition(
-        id="portal", label="Customer Portal", group="portal", roles=STAFF | {Role.CUSTOMER}
+        id="portal",
+        label="Customer Portal",
+        group="portal",
+        roles=STAFF | {Role.CUSTOMER},
     ),
     ModuleDefinition(
-        id="agent", label="Operations Agent", group="intelligence", roles=STAFF | FINANCE_STAFF
+        id="agent",
+        label="Operations Agent",
+        group="intelligence",
+        roles=STAFF | FINANCE_STAFF,
     ),
     ModuleDefinition(
         id="audit", label="Audit Trail", group="admin", roles={Role.OWNER, Role.ADMIN}
@@ -177,7 +197,9 @@ class LeadSummary(BaseModel):
 
 
 class LeadUpdate(BaseModel):
-    status: Literal["new", "contacted", "qualified", "scheduled", "closed"] | None = None
+    status: Literal["new", "contacted", "qualified", "scheduled", "closed"] | None = (
+        None
+    )
     assigned_to: EmailStr | None = None
     note: str | None = Field(default=None, min_length=1, max_length=5_000)
     name: str | None = Field(default=None, min_length=1, max_length=200)
@@ -202,17 +224,27 @@ class NotificationSettings(BaseModel):
 class EmployeeCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     email: EmailStr
+    invite_delivery_email: EmailStr | None = None
+    workspace_unlicensed_confirmed: bool = False
     start_date: date
     work_location: str = Field(min_length=1, max_length=200)
     classification: Literal["employee", "independent_contractor"]
     role: Role
-    federal_contract_applicability: Literal["unknown", "not_applicable", "applicable"] = "unknown"
+    federal_contract_applicability: Literal[
+        "unknown", "not_applicable", "applicable"
+    ] = "unknown"
 
     @model_validator(mode="after")
     def classification_matches_role(self) -> "EmployeeCreate":
-        if self.classification == "independent_contractor" and self.role is not Role.SUBCONTRACTOR:
+        if (
+            self.classification == "independent_contractor"
+            and self.role is not Role.SUBCONTRACTOR
+        ):
             raise ValueError("Independent contractors must use the subcontractor role")
-        if self.classification == "employee" and self.role in {Role.SUBCONTRACTOR, Role.CUSTOMER}:
+        if self.classification == "employee" and self.role in {
+            Role.SUBCONTRACTOR,
+            Role.CUSTOMER,
+        }:
             raise ValueError("Employees must use a staff role")
         return self
 
@@ -221,13 +253,26 @@ class EmployeeSummary(BaseModel):
     id: UUID
     name: str
     email: EmailStr
+    invite_delivery_email: EmailStr | None = None
     start_date: date
     work_location: str
     classification: Literal["employee", "independent_contractor"]
     role: Role
     federal_contract_applicability: Literal["unknown", "not_applicable", "applicable"]
     status: Literal["draft", "invited", "active", "onboarding_complete", "inactive"]
+    workspace_account_status: Literal[
+        "external_unlicensed_required", "unlicensed_attested"
+    ] = "external_unlicensed_required"
+    workspace_license_policy: Literal["no_paid_license"] = "no_paid_license"
     created_at: datetime
+
+
+class PortalSession(BaseModel):
+    kind: Literal["staff", "employee"]
+    email: EmailStr
+    role: Role
+    default_view: Literal["overview", "tasks"]
+    employee: EmployeeSummary | None = None
 
 
 class EmployeeInviteReceipt(BaseModel):
@@ -248,7 +293,9 @@ class EmployeeTaskSummary(BaseModel):
     requirement_id: str
     label: str
     responsible_party: Literal["employee", "employer", "contractor"]
-    status: Literal["pending", "blocked", "submitted", "completed", "rejected", "not_applicable"]
+    status: Literal[
+        "pending", "blocked", "submitted", "completed", "rejected", "not_applicable"
+    ]
     due_date: date
     instructions: str
     applicability_reason: str

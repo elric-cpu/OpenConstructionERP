@@ -23,7 +23,12 @@ def detect_upload_type(content: bytes) -> str | None:
 
 
 def store_upload(
-    settings: Settings, *, lead_id: str, original_name: str, content_type: str, content: bytes
+    settings: Settings,
+    *,
+    lead_id: str,
+    original_name: str,
+    content_type: str,
+    content: bytes,
 ) -> tuple[str, str]:
     digest = hashlib.sha256(content).hexdigest()
     suffix = Path(original_name).suffix.lower()[:10]
@@ -48,7 +53,9 @@ def delete_upload(settings: Settings, storage_key: str) -> None:
         prefix = f"gs://{settings.upload_bucket}/"
         if not settings.upload_bucket or not storage_key.startswith(prefix):
             raise ValueError("Upload object does not belong to the configured bucket")
-        gcs.Client().bucket(settings.upload_bucket).blob(storage_key.removeprefix(prefix)).delete()
+        gcs.Client().bucket(settings.upload_bucket).blob(
+            storage_key.removeprefix(prefix)
+        ).delete()
         return
     root = settings.upload_storage_path.resolve()
     destination = Path(storage_key).resolve()

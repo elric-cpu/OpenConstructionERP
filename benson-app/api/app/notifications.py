@@ -99,5 +99,7 @@ def deliver_notification(item: dict[str, Any], settings: Settings) -> DeliveryRe
         raise NotificationDeliveryError(str(error)[:1_000]) from error
     message_id = str(body.get("id") or body.get("sid") or "")
     if not message_id:
-        raise NotificationDeliveryError("Provider response did not include a message ID")
+        raise NotificationDeliveryError(
+            "Provider response did not include a message ID"
+        )
     return DeliveryResult(provider_message_id=message_id)

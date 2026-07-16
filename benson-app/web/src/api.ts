@@ -5,15 +5,27 @@ export function requestHeaders(token: string): Record<string, string> {
 }
 
 export async function operationsApi<T>(url: string, credential: string, init?: RequestInit): Promise<T> {
+  const jsonBody = init?.body && !(init.body instanceof FormData);
   const response = await fetch(url, {
     ...init,
     headers: {
       authorization: `Bearer ${credential}`,
-      ...(init?.body ? { "content-type": "application/json" } : {}),
+      ...(jsonBody ? { "content-type": "application/json" } : {}),
       ...init?.headers,
     },
   });
-  if (!response.ok) throw new Error((await response.text()) || "Operations request failed");
+  if (!response.ok) {
+    const body = await response.text();
+    try {
+      const parsed = JSON.parse(body) as { detail?: string };
+      throw new Error(parsed.detail || "Operations request failed");
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new Error(body || "Operations request failed", { cause: error });
+      }
+      throw error;
+    }
+  }
   return response.json() as Promise<T>;
 }
 
