@@ -38,6 +38,13 @@ interface ChangelogEntry {
 // date, title and meaning intact; trim the prose, not the facts.
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '11.11.0',
+    date: '2026-07-16',
+    tag: 'NEW',
+    summary:
+      'Five new registers cover work that usually lives in spreadsheets: temporary works with its permit-to-load and permit-to-strike gates, the interface register between work packages, the defects liability period with its retention-release readiness signal, pre-construction site readiness, and on-site material stock. This release also stops the desktop app implying your data is lost when offline (it keeps saving locally, only live multi-user collaboration pauses), reopens external links in the system browser, adds a wider spread of project analytics, and closes cross-tenant access gaps on several endpoints.',
+  },
+  {
     version: '11.10.0',
     date: '2026-07-16',
     tag: 'NEW',

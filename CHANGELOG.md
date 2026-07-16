@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [11.11.0] - 2026-07-16
+
+This release adds five registers for parts of a job that usually live in spreadsheets. Temporary works tracks falsework, propping and excavation support through their design check, permit to load and permit to strike, and flags anything carrying load without a valid permit. The interface register tracks the handshakes between work packages and contractors, who owns each one, who is waiting on it, the date it must be agreed by, and a health score per package. The defects liability register carries post-handover warranties and the defect notices raised against them, and works out which entries have run their period with no outstanding defects and are clear for the final retention release. Site preparation is a pre-construction mobilization checklist with an overall readiness gate, and site inventory meters material on site with a running stock balance per location.
+
+The project dashboard and analytics get a wider spread of numbers: bid line-level parity, clash interference ranked against the schedule, a BIM quality scorecard with a trend, cost-composition KPIs, committed cost against budget, design versus earned quantity variance, contract final-account readiness, a retention and withholding ledger, leading and lagging safety indicators, and supplier on-time-in-full delivery. Post-calculation compares planned against actual labour productivity per work item, forms gain conditional fields that show or require themselves based on other answers, meetings export to iCalendar, and BIM-LV containers import and export to DIN SPEC 91350. A bill of quantities exported to Excel now re-imports faithfully, updating each position in place instead of creating duplicates.
+
+On the desktop app the offline banner no longer suggests your data is lost when there is no internet. The desktop backend runs on your own machine, so your work keeps saving locally, and the banner now says exactly that and notes only live multi-user collaboration pauses until the connection returns. External links open in the system browser again instead of doing nothing. This release also closes cross-tenant access gaps on several by-id and list endpoints, so a project can only ever be read or changed by someone who belongs to it.
+
 ## [11.10.0] - 2026-07-16
 
 Onboarding no longer makes a new user wait. Importing a regional cost base or installing a sample project can take a while on a small server, and the first-run wizard used to sit and wait for it. Now it hands that work to the server, moves you straight on to the next step, and shows a live progress bar while the base and the samples load in the background. If a base is slow or unavailable the wizard carries on regardless, so nothing blocks the start.
