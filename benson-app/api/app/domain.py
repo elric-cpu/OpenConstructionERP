@@ -1,4 +1,5 @@
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Literal
 from uuid import UUID, uuid4
@@ -253,6 +254,69 @@ class CustomerSummary(CustomerCreate):
     source_lead_id: UUID | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class EstimateLineInput(BaseModel):
+    description: str = Field(min_length=1, max_length=1_000)
+    quantity: Decimal = Field(gt=0, le=1_000_000, max_digits=12, decimal_places=2)
+    unit: str = Field(default="each", min_length=1, max_length=40)
+    unit_price_cents: int = Field(ge=0, le=100_000_000)
+
+
+class EstimateCreate(BaseModel):
+    customer_id: UUID
+    title: str = Field(min_length=1, max_length=300)
+    scope_notes: str = Field(default="", max_length=10_000)
+    valid_until: date
+    lines: list[EstimateLineInput] = Field(min_length=1, max_length=200)
+
+
+class EstimateUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=300)
+    scope_notes: str | None = Field(default=None, max_length=10_000)
+    valid_until: date | None = None
+    lines: list[EstimateLineInput] | None = Field(
+        default=None, min_length=1, max_length=200
+    )
+
+
+class EstimateTransition(BaseModel):
+    status: Literal["draft", "ready", "sent", "accepted", "declined", "void"]
+    external_delivery_confirmed: bool = False
+    note: str = Field(default="", max_length=2_000)
+
+
+class EstimateLineSummary(EstimateLineInput):
+    id: UUID
+    position: int
+    line_total_cents: int
+
+
+class EstimateSummary(BaseModel):
+    id: UUID
+    number: str
+    customer_id: UUID
+    customer_name: str
+    title: str
+    scope_notes: str
+    valid_until: date
+    status: Literal["draft", "ready", "sent", "accepted", "declined", "void"]
+    version: int
+    subtotal_cents: int
+    total_cents: int
+    lines: list[EstimateLineSummary]
+    created_at: datetime
+    updated_at: datetime
+
+
+ESTIMATE_TRANSITIONS = {
+    "draft": {"ready", "void"},
+    "ready": {"draft", "sent", "void"},
+    "sent": {"accepted", "declined", "void"},
+    "accepted": set(),
+    "declined": set(),
+    "void": set(),
+}
 
 
 class EmployeeCreate(BaseModel):

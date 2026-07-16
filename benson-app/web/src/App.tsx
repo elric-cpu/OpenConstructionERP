@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "./AppShell";
 import { CustomerWorkspace } from "./CustomerWorkspace";
 import { EmployeeTasks } from "./EmployeeTasks";
+import { EstimateWorkspace } from "./EstimateWorkspace";
 import { LeadWorkspace } from "./LeadWorkspace";
 import { NewHireWorkspace } from "./NewHireWorkspace";
 import { OperationsHome } from "./OperationsHome";
@@ -119,6 +120,12 @@ export function App() {
             customers={operations.customers}
             leads={operations.leads}
             setCustomers={operations.setCustomers}
+          />
+        ) : operations.requestStatus === "ready" && activeView === "estimates" ? (
+          <EstimateWorkspace
+            canVoid={["owner", "admin"].includes(operations.portalSession?.role || "")}
+            credential={operations.credential}
+            customers={operations.customers}
           />
         ) : operations.requestStatus === "ready" && selectedLead ? (
           <LeadWorkspace

@@ -1,0 +1,64 @@
+.estimate-workspace,
+.estimate-form {
+  display: grid;
+  gap: 20px;
+}
+.estimate-form,
+.estimate-list article,
+.estimate-lines fieldset {
+  background: white;
+  border: 1px solid #ded8cc;
+  border-radius: 5px;
+  padding: 20px;
+}
+.estimate-form select,
+.estimate-form input,
+.estimate-form textarea {
+  border: 1px solid #b8b2a8;
+  border-radius: 4px;
+  padding: 10px;
+  font: inherit;
+}
+.estimate-form label {
+  display: grid;
+  gap: 6px;
+}
+.estimate-form textarea {
+  min-height: 110px;
+}
+.estimate-lines {
+  display: grid;
+  gap: 12px;
+}
+.estimate-lines fieldset {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) repeat(3, minmax(100px, 1fr)) auto;
+  gap: 12px;
+  align-items: end;
+}
+.estimate-list {
+  display: grid;
+  gap: 10px;
+}
+.estimate-list article {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto auto auto;
+  gap: 18px;
+  align-items: center;
+}
+.estimate-list h2,
+.estimate-list p {
+  margin: 3px 0;
+}
+.estimate-status {
+  border: 1px solid var(--silver);
+  border-radius: 999px;
+  padding: 5px 9px;
+  text-transform: capitalize;
+}
+@media (max-width: 850px) {
+  .estimate-lines fieldset,
+  .estimate-list article {
+    grid-template-columns: 1fr;
+  }
+}

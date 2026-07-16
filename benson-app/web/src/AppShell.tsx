@@ -20,7 +20,7 @@ const nav = [
   [Inbox, "Leads", "leads"],
   [BriefcaseBusiness, "Jobs", null],
   [CalendarDays, "Schedule", null],
-  [ClipboardCheck, "Estimates", null],
+  [ClipboardCheck, "Estimates", "estimates"],
   [Users, "Customers", "customers"],
 ] as const;
 
@@ -59,6 +59,7 @@ export function AppShell({
       ? [...nav.slice(0, 2), [UserPlus, "New hires", "employees"] as const, ...nav.slice(2)]
       : nav;
   const visibleNav = employeePortal ? ([[ListChecks, "Tasks", "tasks"]] as const) : staffNav;
+  const showSearch = ["overview", "leads", "customers"].includes(activeView);
   return (
     <div className="shell">
       <aside className={menu ? "open" : ""}>
@@ -104,7 +105,7 @@ export function AppShell({
           <button className="menu" aria-label="Open menu" onClick={() => setMenu(true)}>
             <Menu />
           </button>
-          {!employeePortal && activeView !== "employees" ? (
+          {!employeePortal && showSearch ? (
             <div className="search">
               <Search />
               <input
@@ -115,7 +116,9 @@ export function AppShell({
               />
             </div>
           ) : (
-            <div className="header-context">{employeePortal ? "Onboarding" : "People operations"}</div>
+            <div className="header-context">
+              {employeePortal ? "Onboarding" : activeView === "estimates" ? "Sales" : "People operations"}
+            </div>
           )}
           <div className="header-actions">
             <span className={requestStatus === "offline" ? "status offline" : "status"}>{connectionLabel}</span>

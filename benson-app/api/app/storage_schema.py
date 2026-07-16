@@ -1,4 +1,5 @@
 from sqlalchemy import (
+    BigInteger,
     Column,
     Date,
     DateTime,
@@ -202,6 +203,38 @@ customers = Table(
     Column("created_by", String(320), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
+estimates = Table(
+    "estimates",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("number", String(40), nullable=False, unique=True),
+    Column("customer_id", String(36), nullable=False, index=True),
+    Column("title", String(300), nullable=False),
+    Column("scope_notes", Text, nullable=False, default=""),
+    Column("valid_until", Date, nullable=False),
+    Column("status", String(40), nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("subtotal_cents", BigInteger, nullable=False),
+    Column("total_cents", BigInteger, nullable=False),
+    Column("created_by", String(320), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
+estimate_lines = Table(
+    "estimate_lines",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("estimate_id", String(36), nullable=False, index=True),
+    Column("position", Integer, nullable=False),
+    Column("description", String(1_000), nullable=False),
+    Column("quantity", String(40), nullable=False),
+    Column("unit", String(40), nullable=False),
+    Column("unit_price_cents", Integer, nullable=False),
+    Column("line_total_cents", BigInteger, nullable=False),
+    UniqueConstraint("estimate_id", "position", name="uq_estimate_line_position"),
 )
 
 employee_invites = Table(
