@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [11.11.1] - 2026-07-16
+
+A packaging fix for 11.11.0. A type annotation in the bill of quantities Excel export test tripped the strict frontend build inside the release pipeline, so the 11.11.0 installers and Python wheel never published. The build is corrected and the full 11.11.0 feature set ships here unchanged.
+
 ## [11.11.0] - 2026-07-16
 
 This release adds five registers for parts of a job that usually live in spreadsheets. Temporary works tracks falsework, propping and excavation support through their design check, permit to load and permit to strike, and flags anything carrying load without a valid permit. The interface register tracks the handshakes between work packages and contractors, who owns each one, who is waiting on it, the date it must be agreed by, and a health score per package. The defects liability register carries post-handover warranties and the defect notices raised against them, and works out which entries have run their period with no outstanding defects and are clear for the final retention release. Site preparation is a pre-construction mobilization checklist with an overall readiness gate, and site inventory meters material on site with a running stock balance per location.

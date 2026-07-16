@@ -38,6 +38,13 @@ interface ChangelogEntry {
 // date, title and meaning intact; trim the prose, not the facts.
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '11.11.1',
+    date: '2026-07-16',
+    tag: 'FIX',
+    summary:
+      'A packaging fix for 11.11.0: a test type annotation tripped the strict frontend build in the release pipeline, so the installers and wheel did not publish. Same feature set, build corrected.',
+  },
+  {
     version: '11.11.0',
     date: '2026-07-16',
     tag: 'NEW',
