@@ -1030,3 +1030,52 @@ class ClashGroupActionResponse(BaseModel):
     cluster_id: int
     results_linked: int = 0
     results_advanced: int = 0
+
+
+# ── Interference risk matrix (clash x schedule correlation) ──────────────────
+# Statuses the correlation can assign to a clash, worst-first.
+CLASH_RISK_STATUSES = ("imminent", "upcoming", "no-overlap", "no-schedule-data")
+
+
+class ClashRiskMatrixItem(BaseModel):
+    """One clash correlated against the schedule.
+
+    Money fields (``cost_impact``, ``risk_score``) are serialised as strings
+    so the Decimal value survives the wire without binary-float rounding.
+    ``days_until_overlap`` is signed (negative once the shared window has
+    opened) and ``None`` when the trades never overlap or a schedule link is
+    missing; ``gap_days`` is the days between the two windows when disjoint.
+    """
+
+    clash_id: uuid.UUID
+    severity: str
+    trade_a: str
+    trade_b: str
+    cost_impact: str
+    status: str
+    overlaps: bool
+    overlap_days: int
+    days_until_overlap: int | None = None
+    gap_days: int | None = None
+    window_a_start: str | None = None
+    window_a_end: str | None = None
+    window_b_start: str | None = None
+    window_b_end: str | None = None
+    risk_score: str
+    explanation: str
+
+
+class ClashRiskMatrixResponse(BaseModel):
+    """Ranked interference risk list for a project's open clashes.
+
+    ``counts`` carries a tally per status plus ``total``. ``generated_for`` is
+    the reference date the correlation was run against (ISO date), so the
+    caller can see which ``today`` drove the imminent / upcoming split.
+    """
+
+    project_id: uuid.UUID
+    currency: str
+    horizon_days: int
+    generated_for: str
+    counts: dict[str, int]
+    items: list[ClashRiskMatrixItem]

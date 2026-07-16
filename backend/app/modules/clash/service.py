@@ -40,8 +40,9 @@ import hashlib
 import logging
 import math
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from itertools import combinations
+from typing import Any
 
 import numpy as np
 from fastapi import HTTPException, status
@@ -4464,6 +4465,170 @@ class ClashService:
             exported += 1
         await self.session.flush()
         return exported, skipped
+
+    # ── Interference risk matrix (clash x schedule correlation) ─────────────
+
+    async def build_project_risk_matrix(
+        self,
+        project_id: uuid.UUID,
+        *,
+        imminent_within_days: int = 30,
+        today: date | None = None,
+    ) -> dict[str, Any] | None:
+        """Correlate the project's open clashes with the construction schedule.
+
+        A static clash list never warns anyone when the two colliding trades
+        are booked to be on site in the same window while the clash is still
+        open. This assembles that correlation and ranks it by risk.
+
+        Reused linkages (no new schema, computed from existing rows only):
+
+        * clash -> affected BOQ positions: the ``clash_cost_impact`` mapping
+          on the stable element ids (``a_stable_id`` / ``b_stable_id`` vs
+          ``Position.cad_element_ids``). We reuse
+          :class:`~app.modules.clash_cost_impact.service.ClashCostImpactService`
+          for the open-clash query, the position load and the exact Decimal
+          cost per clash, so the money here can never drift from the
+          cost-impact surface. The one thing that module does not expose is a
+          per-side split, so :func:`_positions_for_stable_id` mirrors its
+          matching convention for one element id.
+        * BOQ position -> schedule activity -> planned window:
+          ``Activity.boq_position_ids`` links an activity to its positions and
+          ``Activity.start_date`` / ``end_date`` carry the planned window.
+
+        Returns ``None`` when the project is missing (the router maps that to
+        a 404); the caller is responsible for the access check first.
+        """
+        from sqlalchemy import select
+
+        from app.modules.clash.risk_matrix import (
+            ClashScheduleFacts,
+            build_interference_risk_matrix,
+        )
+        from app.modules.clash_cost_impact.service import ClashCostImpactService
+        from app.modules.projects.models import Project
+        from app.modules.schedule.models import Activity, Schedule
+
+        if today is None:
+            today = datetime.now(UTC).date()
+        horizon = max(1, int(imminent_within_days))
+
+        project = await self.session.get(Project, project_id)
+        if project is None:
+            return None
+
+        cost_service = ClashCostImpactService(self.session)
+        # Open clashes only (new / active / reviewed) - reuses the exact
+        # open-status filter the cost-impact rollup uses.
+        clashes = await cost_service._open_clashes_for_project(project_id, status_filter="open")
+        positions = await cost_service._positions_for_project(project_id)
+
+        # Preload every activity in the project once, keyed by its linked
+        # position-id set + planned window, so the per-clash assembly is a
+        # handful of set intersections rather than an N+1 of queries.
+        act_stmt = (
+            select(Activity)
+            .join(Schedule, Schedule.id == Activity.schedule_id)
+            .where(Schedule.project_id == project_id)
+        )
+        activities = list((await self.session.execute(act_stmt)).scalars().all())
+        activity_index: list[tuple[set[str], tuple[str, str]]] = []
+        for act in activities:
+            pid_set = {str(pid) for pid in (act.boq_position_ids or [])}
+            if pid_set:
+                activity_index.append((pid_set, (act.start_date, act.end_date)))
+
+        def _windows_for(side_positions: list) -> list[tuple[str, str]]:
+            pos_ids = {str(p.id) for p in side_positions}
+            if not pos_ids:
+                return []
+            return [win for pid_set, win in activity_index if pid_set & pos_ids]
+
+        facts: list[ClashScheduleFacts] = []
+        for clash in clashes:
+            side_a = _positions_for_stable_id(positions, clash.a_stable_id)
+            side_b = _positions_for_stable_id(positions, clash.b_stable_id)
+            # Union of both sides = the affected set the cost formula expects.
+            affected = list({p.id: p for p in (*side_a, *side_b)}.values())
+            _, cost_total = cost_service._compute_impact(clash, project, affected)
+            facts.append(
+                ClashScheduleFacts(
+                    clash_id=str(clash.id),
+                    severity=clash.severity,
+                    cost_impact=cost_total,
+                    trade_a=clash.a_discipline,
+                    trade_b=clash.b_discipline,
+                    activity_windows_a=_windows_for(side_a),
+                    activity_windows_b=_windows_for(side_b),
+                    status=clash.status,
+                )
+            )
+
+        records = build_interference_risk_matrix(facts, today=today, imminent_within_days=horizon)
+
+        counts: dict[str, int] = {
+            "imminent": 0,
+            "upcoming": 0,
+            "no-overlap": 0,
+            "no-schedule-data": 0,
+            "total": len(records),
+        }
+        items: list[dict[str, Any]] = []
+        for r in records:
+            counts[r.status] = counts.get(r.status, 0) + 1
+            items.append(
+                {
+                    "clash_id": r.clash_id,
+                    "severity": r.severity,
+                    "trade_a": r.trade_a,
+                    "trade_b": r.trade_b,
+                    "cost_impact": str(r.cost_impact),
+                    "status": r.status,
+                    "overlaps": r.overlaps,
+                    "overlap_days": r.overlap_days,
+                    "days_until_overlap": r.days_until_overlap,
+                    "gap_days": r.gap_days,
+                    "window_a_start": r.window_a[0].isoformat() if r.window_a else None,
+                    "window_a_end": r.window_a[1].isoformat() if r.window_a else None,
+                    "window_b_start": r.window_b[0].isoformat() if r.window_b else None,
+                    "window_b_end": r.window_b[1].isoformat() if r.window_b else None,
+                    "risk_score": str(r.risk_score),
+                    "explanation": r.explanation,
+                }
+            )
+
+        return {
+            "project_id": project_id,
+            "currency": project.currency or "",
+            "horizon_days": horizon,
+            "generated_for": today.isoformat(),
+            "counts": counts,
+            "items": items,
+        }
+
+
+def _positions_for_stable_id(positions: list, stable_id: str | None) -> list:
+    """BOQ positions whose ``cad_element_ids`` contain one stable element id.
+
+    Mirrors ``clash_cost_impact.service._affected_positions`` but for a single
+    side of the clash (that helper matches A *or* B together and so cannot tell
+    which trade a position belongs to). Defends against the rare non-list
+    ``cad_element_ids`` row exactly as the cost-impact matcher does, so a
+    string / dict in that JSON slot can never match by character.
+    """
+    wanted = (stable_id or "").strip()
+    if not wanted:
+        return []
+    out: list = []
+    for pos in positions:
+        ids = pos.cad_element_ids or []
+        if not isinstance(ids, list) or not ids:
+            continue
+        for raw in ids:
+            if str(raw).strip() == wanted:
+                out.append(pos)
+                break
+    return out
 
 
 def _build_summary(results: list[ClashResult]) -> dict:
