@@ -58,6 +58,7 @@ import { useToastStore } from '@/stores/useToastStore';
 import {
   useBackgroundInstallStore,
   type BgInstallStep,
+  type BgInstallStepStatus,
   type BackgroundInstall,
 } from '@/stores/useBackgroundInstallStore';
 import { useUploadQueueStore } from '@/stores/useUploadQueueStore';
@@ -94,6 +95,11 @@ import {
   type FullInstallStepName,
   type FullInstallStepStatus,
 } from './partnerPacksApi';
+import {
+  provisionOnboarding,
+  fetchOnboardingStatus,
+  type OnboardingJobState,
+} from './onboardingApi';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -684,6 +690,167 @@ function startBackgroundReadyPackInstall(
   });
 }
 
+// ── Background onboarding provisioning (region cost base + sample projects) ──
+//
+// The country-pack picker used to BLOCK on the raw cost-base import and sample
+// install, spinning a card for tens of seconds. This drives the SAME idea as
+// the ready-pack SSE stream but for the plain region + demo path: it POSTs the
+// work to the onboarding job API, writes live progress into the global
+// background-install store so the root banner renders it, and resolves the
+// moment the work is done OR a short grace window elapses, so the caller can
+// route the user on and let the rest finish in the background. Module-scoped so
+// it survives the navigation into the app, exactly like the ready-pack driver.
+
+const ONBOARDING_POLL_MS = 1500;
+const ONBOARDING_GRACE_MS = 30_000;
+const ONBOARDING_TERMINAL_STATES = new Set(['success', 'failed', 'cancelled']);
+
+/** Map a background job state onto a banner row status. */
+function onboardingJobToBgStatus(state: string): BgInstallStepStatus {
+  switch (state) {
+    case 'started':
+      return 'running';
+    case 'success':
+      return 'ok';
+    case 'failed':
+      return 'error';
+    case 'cancelled':
+      return 'skipped';
+    default:
+      return 'pending';
+  }
+}
+
+/**
+ * Provision a region cost base and/or sample projects in the background.
+ *
+ * Resolves ``'done'`` when every job finished within the grace window, or
+ * ``'backgrounded'`` once the grace window elapses with work still running (the
+ * caller routes the user on; the root banner keeps tracking to completion). A
+ * submit failure rejects so the caller can fall back to a retry. Never leaves
+ * the banner spinning forever: it always reaches a terminal state.
+ */
+async function startBackgroundOnboardingProvision(opts: {
+  region?: string | null;
+  demoIds?: string[];
+  country: string;
+  graceMs?: number;
+}): Promise<'done' | 'backgrounded'> {
+  const region = opts.region || null;
+  const demoIds = (opts.demoIds ?? []).filter((d) => Boolean(d));
+  const graceMs = opts.graceMs ?? ONBOARDING_GRACE_MS;
+  const store = useBackgroundInstallStore.getState();
+
+  // Seed only the rows we are actually provisioning.
+  const seed: BgInstallStep[] = [];
+  if (region) {
+    seed.push({
+      step: 'cost_db',
+      label: i18n.t('onboarding.pp_step_cost_db', { defaultValue: 'Cost database' }),
+      status: 'pending',
+    });
+  }
+  if (demoIds.length > 0) {
+    seed.push({
+      step: 'demos',
+      label: i18n.t('onboarding.pp_step_demos', { defaultValue: 'Example projects' }),
+      status: 'pending',
+    });
+  }
+  if (seed.length === 0) return 'done';
+  store.begin(`onboarding:${region ?? 'demo'}`, opts.country, seed);
+
+  let jobs: OnboardingJobState[];
+  try {
+    jobs = await provisionOnboarding({ region, demo_ids: demoIds });
+  } catch (err) {
+    // Submit failed outright - clear the seeded banner and let the caller fall
+    // back (e.g. re-enable the card so the user can retry).
+    store.dismiss();
+    throw err;
+  }
+  const ids = jobs.map((j) => j.id);
+  if (ids.length === 0) {
+    store.finish(false);
+    return 'done';
+  }
+
+  return new Promise<'done' | 'backgrounded'>((resolve) => {
+    let settled = false;
+    const startedAt = Date.now();
+
+    const settle = (outcome: 'done' | 'backgrounded') => {
+      if (settled) return;
+      settled = true;
+      resolve(outcome);
+    };
+
+    const applyStates = (states: OnboardingJobState[]): void => {
+      const s = useBackgroundInstallStore.getState();
+      if (!s.install) return;
+      if (region) {
+        const cwicr = states.find((j) => j.kind === 'onboarding.load_cwicr');
+        if (cwicr) {
+          if (cwicr.state === 'started') s.markRunning('cost_db');
+          else if (ONBOARDING_TERMINAL_STATES.has(cwicr.state)) {
+            s.markDone('cost_db', onboardingJobToBgStatus(cwicr.state));
+          }
+        }
+      }
+      if (demoIds.length > 0) {
+        const demoJobs = states.filter((j) => j.kind === 'onboarding.install_demo');
+        if (demoJobs.length > 0) {
+          const allTerminal = demoJobs.every((j) => ONBOARDING_TERMINAL_STATES.has(j.state));
+          if (allTerminal) {
+            const hadError = demoJobs.some((j) => j.state === 'failed');
+            const okCount = demoJobs.filter((j) => j.state === 'success').length;
+            s.markDone(
+              'demos',
+              hadError ? 'error' : okCount > 0 ? 'ok' : 'skipped',
+              okCount > 0 ? String(okCount) : undefined,
+            );
+          } else if (demoJobs.some((j) => j.state === 'started')) {
+            s.markRunning('demos');
+          }
+        }
+      }
+    };
+
+    const poll = async (): Promise<void> => {
+      let states: OnboardingJobState[] = [];
+      try {
+        states = await fetchOnboardingStatus(ids);
+      } catch {
+        // Transient poll error - keep the banner and try again next tick.
+      }
+
+      if (states.length > 0) applyStates(states);
+
+      // The user dismissed the banner - stop polling and release the caller.
+      if (!useBackgroundInstallStore.getState().install) {
+        settle('backgrounded');
+        return;
+      }
+
+      const allTerminal =
+        states.length > 0 && states.every((j) => ONBOARDING_TERMINAL_STATES.has(j.state));
+      if (allTerminal) {
+        const hadError = states.some((j) => j.state === 'failed');
+        useBackgroundInstallStore.getState().finish(hadError);
+        settle('done');
+        return;
+      }
+
+      // Grace elapsed: let the caller advance while work keeps running here.
+      if (Date.now() - startedAt >= graceMs) settle('backgrounded');
+
+      window.setTimeout(() => void poll(), ONBOARDING_POLL_MS);
+    };
+
+    void poll();
+  });
+}
+
 /** Get the suggested region for the current language */
 function getSuggestedRegion(lang?: string): string {
   const code = lang || i18n.language || 'en';
@@ -1243,40 +1410,34 @@ function ReadyPackPicker({
       // pack flow.
       onActivateLocale(pack.locale);
 
+      const country = t(pack.labelKey, { defaultValue: pack.labelDefault });
       try {
-        const token = useAuthStore.getState().accessToken;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000);
-        const res = await fetch(`/api/v1/costs/load-cwicr/${pack.region}`, {
-          method: 'POST',
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          signal: controller.signal,
+        // Import the cost base (and a representative sample project) in the
+        // BACKGROUND. Resolves as soon as the work is done, or after a short
+        // grace window if it runs long, so the user is never stuck on a
+        // spinner: the root background banner keeps showing live progress after
+        // they route into the app.
+        const outcome = await startBackgroundOnboardingProvision({
+          region: pack.region,
+          demoIds: pack.demoId ? [pack.demoId] : [],
+          country,
         });
-        clearTimeout(timeoutId);
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(extractErrorMessageFromBody(body) ?? `HTTP ${res.status}`);
-        }
-
-        // A representative built-in demo, when the pack declares one. Best
-        // effort: a missing demo must not fail the whole setup.
-        if (pack.demoId) {
-          try {
-            await apiPost(`/demo/install/${pack.demoId}`, undefined, { longRunning: true });
-          } catch {
-            // ignore - the cost database is the essential part
-          }
-        }
 
         addToast({
           type: 'success',
-          title: t('onboarding.pp_language_ready', {
-            defaultValue: '{{country}} is ready, finishing setup in the background',
-            country: t(pack.labelKey, { defaultValue: pack.labelDefault }),
-          }),
+          title:
+            outcome === 'done'
+              ? t('onboarding.country_ready', {
+                  defaultValue: '{{country}} is ready',
+                  country,
+                })
+              : t('onboarding.pp_language_ready', {
+                  defaultValue: '{{country}} is ready, finishing setup in the background',
+                  country,
+                }),
         });
         // Record a synthetic slug so the wizard treats this as a completed pack
-        // install and advances to Finish.
+        // install and advances to Finish. The rest keeps loading in the banner.
         onInstalled(`country:${pack.id}`);
       } catch (err) {
         addToast({
