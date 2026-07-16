@@ -461,6 +461,13 @@ class OnboardingRequest(BaseModel):
         pattern=r"^[a-z][a-z0-9_]{1,48}$",
         description="Selected company type preset key",
     )
+    company_size: str | None = Field(
+        default=None,
+        # Optional parallel dimension to ``company_type``: the company-size
+        # preset key (``size_solo`` .. ``size_large``). Same slug shape.
+        pattern=r"^[a-z][a-z0-9_]{1,48}$",
+        description="Selected company-size preset key (optional)",
+    )
     enabled_modules: list[str] = Field(
         default_factory=list,
         description="Final list of module keys the user wants enabled",
@@ -481,5 +488,6 @@ class OnboardingResponse(BaseModel):
 
     completed: bool = False
     company_type: str | None = None
+    company_size: str | None = None
     enabled_modules: list[str] = Field(default_factory=list)
     interface_mode: str | None = None
