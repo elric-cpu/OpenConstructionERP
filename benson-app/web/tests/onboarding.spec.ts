@@ -23,6 +23,7 @@ async function mockOwnerPortal(page: import("@playwright/test").Page) {
     }),
   );
   await page.route("**/api/benson/v1/leads?limit=100*", (route) => route.fulfill({ json: { leads: [] } }));
+  await page.route("**/api/benson/v1/customers?query=*", (route) => route.fulfill({ json: [] }));
   await page.route("**/api/benson/v1/settings/notifications", (route) => route.fulfill({ status: 403 }));
 }
 

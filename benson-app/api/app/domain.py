@@ -221,6 +221,40 @@ class NotificationSettings(BaseModel):
     sms_configured: bool
 
 
+class CustomerCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    company: str = Field(default="", max_length=200)
+    phone: str = Field(min_length=7, max_length=40)
+    email: EmailStr | None = None
+    billing_address: str = Field(default="", max_length=500)
+    service_address: str = Field(default="", max_length=500)
+    city: str = Field(default="", max_length=120)
+    state: str = Field(default="OR", min_length=2, max_length=2)
+    zip_code: str = Field(default="", pattern=r"^$|^\d{5}$")
+    notes: str = Field(default="", max_length=5_000)
+
+
+class CustomerUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    company: str | None = Field(default=None, max_length=200)
+    phone: str | None = Field(default=None, min_length=7, max_length=40)
+    email: EmailStr | None = None
+    billing_address: str | None = Field(default=None, max_length=500)
+    service_address: str | None = Field(default=None, max_length=500)
+    city: str | None = Field(default=None, max_length=120)
+    state: str | None = Field(default=None, min_length=2, max_length=2)
+    zip_code: str | None = Field(default=None, pattern=r"^$|^\d{5}$")
+    notes: str | None = Field(default=None, max_length=5_000)
+
+
+class CustomerSummary(CustomerCreate):
+    id: UUID
+    status: Literal["active", "archived"]
+    source_lead_id: UUID | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class EmployeeCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     email: EmailStr

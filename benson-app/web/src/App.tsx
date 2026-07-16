@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "./AppShell";
+import { CustomerWorkspace } from "./CustomerWorkspace";
 import { EmployeeTasks } from "./EmployeeTasks";
 import { LeadWorkspace } from "./LeadWorkspace";
 import { NewHireWorkspace } from "./NewHireWorkspace";
@@ -111,6 +112,14 @@ export function App() {
           />
         ) : operations.requestStatus === "ready" && activeView === "employees" ? (
           <NewHireWorkspace credential={operations.credential} />
+        ) : operations.requestStatus === "ready" && activeView === "customers" ? (
+          <CustomerWorkspace
+            canArchive={["owner", "admin"].includes(operations.portalSession?.role || "")}
+            credential={operations.credential}
+            customers={operations.customers}
+            leads={operations.leads}
+            setCustomers={operations.setCustomers}
+          />
         ) : operations.requestStatus === "ready" && selectedLead ? (
           <LeadWorkspace
             leadId={selectedLead}

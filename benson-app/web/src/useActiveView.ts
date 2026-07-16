@@ -3,7 +3,9 @@ import type { ActiveView } from "./types";
 
 function viewFromHash(): ActiveView | null {
   const route = window.location.hash.slice(1).split("?", 1)[0];
-  return ["overview", "leads", "employees", "tasks", "activate"].includes(route) ? (route as ActiveView) : null;
+  return ["overview", "leads", "customers", "employees", "tasks", "activate"].includes(route)
+    ? (route as ActiveView)
+    : null;
 }
 
 export function useActiveView(onNavigate: () => void) {
