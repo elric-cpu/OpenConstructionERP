@@ -319,11 +319,7 @@ export function LeadWorkspace({
             </label>
             <label>
               Assigned to
-              <select
-                aria-label="Assigned to"
-                value={assignee}
-                onChange={(event) => setAssignee(event.target.value)}
-              >
+              <select aria-label="Assigned to" value={assignee} onChange={(event) => setAssignee(event.target.value)}>
                 <option value="">Unassigned</option>
                 {lead.assigned_to && !staff.some((member) => member.email === lead.assigned_to) && (
                   <option value={lead.assigned_to}>{lead.assigned_to}</option>

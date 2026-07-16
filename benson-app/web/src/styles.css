@@ -4,7 +4,10 @@
   --maroon-dark: #5c252c;
   --burgundy: #8b454d;
   --wine: #4a1f24;
-  --gold: #d4af37;
+  --graphite: #272a2d;
+  --iron: #4b5055;
+  --steel: #747b81;
+  --silver: #c5c9cc;
   --cream: #f5f1e8;
   --off-white: #faf8f3;
   --charcoal: #2d2d2d;
@@ -41,14 +44,14 @@ aside {
   gap: 11px;
   padding: 0 8px 28px;
 }
-.brand > span {
-  display: grid;
-  place-items: center;
-  width: 39px;
-  height: 39px;
-  background: var(--gold);
-  color: var(--wine);
-  font: 18px Newsreader;
+.brand > img {
+  width: 48px;
+  height: 40px;
+  object-fit: contain;
+  border: 1px solid #82878b;
+  border-radius: 4px;
+  filter: invert(1);
+  box-shadow: 0 0 0 3px #191b1d;
 }
 .brand div,
 .rail-foot > div:last-child {
@@ -100,7 +103,7 @@ nav .nav-disabled > span {
   flex: 1;
 }
 nav .nav-disabled small {
-  color: #c39f55;
+  color: var(--silver);
   font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -125,14 +128,12 @@ nav a:hover {
   font-size: 12px;
 }
 .avatar {
-  width: 34px;
+  width: 42px;
   height: 34px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: var(--gold);
-  color: var(--wine);
-  font-weight: 700;
+  object-fit: contain;
+  border: 0;
+  background: transparent;
+  filter: invert(1);
 }
 main {
   min-width: 0;
@@ -251,7 +252,7 @@ header {
   padding: 18px 19px;
   display: grid;
   gap: 5px;
-  border-top: 3px solid var(--gold);
+  border-top: 3px solid var(--graphite);
 }
 .metrics small {
   text-transform: uppercase;
@@ -309,7 +310,7 @@ header {
   color: #8a8178;
 }
 .empty svg {
-  color: #af8f5c;
+  color: var(--steel);
 }
 .empty h3 {
   font-size: 14px;
@@ -334,8 +335,8 @@ header {
   align-items: center;
 }
 .agent-head > svg {
-  background: var(--gold);
-  color: var(--wine);
+  background: var(--graphite);
+  color: var(--silver);
   padding: 8px;
   width: 38px;
   height: 38px;
@@ -378,8 +379,8 @@ header {
 }
 .ask button {
   border: 0;
-  background: var(--gold);
-  color: var(--wine);
+  background: var(--graphite);
+  color: white;
   font-weight: 700;
   padding: 0 15px;
 }
@@ -390,12 +391,12 @@ header {
   gap: 28px;
   margin-bottom: 28px;
   padding: 22px 24px;
-  border-left: 4px solid var(--gold);
+  border-left: 4px solid var(--iron);
   background: var(--wine);
   color: var(--off-white);
 }
 .auth-banner small {
-  color: var(--gold);
+  color: var(--silver);
   letter-spacing: 0.12em;
 }
 .auth-banner h2 {
@@ -566,7 +567,7 @@ header {
 .workspace-card {
   background: white;
   border: 1px solid #ded8cc;
-  border-top: 3px solid var(--gold);
+  border-top: 3px solid var(--graphite);
   padding: 22px;
   box-shadow: 0 8px 28px #42220d0b;
 }
@@ -592,7 +593,7 @@ header {
   margin-bottom: 16px;
 }
 .card-heading > svg {
-  color: #a2824e;
+  color: var(--iron);
   width: 20px;
 }
 .intake-grid {
@@ -666,7 +667,7 @@ header {
   margin-top: 18px;
 }
 .note-list article {
-  border-left: 2px solid #d9bd69;
+  border-left: 2px solid var(--steel);
   padding: 2px 0 2px 13px;
 }
 .note-list p {
@@ -699,7 +700,7 @@ button:disabled {
 }
 .lead-agent {
   border-color: var(--wine);
-  border-top-color: var(--gold);
+  border-top-color: var(--iron);
   background: var(--wine);
   color: #f7f1ea;
 }
@@ -727,8 +728,8 @@ button:disabled {
   gap: 8px;
   margin-top: 10px;
   border: 0;
-  background: var(--gold);
-  color: var(--wine);
+  background: var(--graphite);
+  color: white;
   padding: 12px;
   font-weight: 800;
   cursor: pointer;
@@ -738,7 +739,7 @@ button:disabled {
 }
 .draft-output {
   margin-top: 14px;
-  border-left: 3px solid var(--gold);
+  border-left: 3px solid var(--iron);
   background: #f7f1ea;
   color: #342d28;
   padding: 13px 14px;
@@ -808,7 +809,7 @@ button:disabled {
   align-items: center;
   background: #f7f1ea;
   border-radius: 10px;
-  color: var(--gold);
+  color: var(--iron);
   display: flex;
   height: 42px;
   justify-content: center;
@@ -822,7 +823,7 @@ button:disabled {
   grid-template-columns: auto 1fr;
 }
 .toggle-setting input {
-  accent-color: var(--gold);
+  accent-color: var(--graphite);
   grid-row: 1 / 3;
   height: 18px;
   width: 18px;

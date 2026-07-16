@@ -22,6 +22,12 @@ test("operations dashboard is responsive and accessible", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Good morning." })).toBeVisible();
   await expect(page.getByText("Benson Assistant")).toBeVisible();
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", "/benson-enterprises-logo.svg");
+  await expect(page.getByRole("img", { name: "Benson Home Solutions" })).toHaveAttribute(
+    "src",
+    "/benson-enterprises-logo.svg",
+  );
+  await expect(page.getByText("BH", { exact: true })).toHaveCount(0);
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
@@ -298,7 +304,8 @@ test("staff can operate a lead and create a fact-scoped AI draft", async ({ page
   await expect(page.getByText("Two windows need review.")).toBeVisible();
   await expect(page.getByRole("button", { name: /window.jpg/ })).toBeVisible();
   await expect(page.getByLabel("Assigned to")).toHaveValue("");
-  await expect(page.getByLabel("Assigned to").getByRole("option", { name: "Elric" })).toHaveValue(
+  await expect(page.getByLabel("Assigned to").getByRole("option", { name: "Elric" })).toHaveAttribute(
+    "value",
     "elric@bensonhomesolutions.com",
   );
   await page.getByLabel("Assigned to").selectOption("elric@bensonhomesolutions.com");

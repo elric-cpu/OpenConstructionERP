@@ -219,7 +219,7 @@ export function App() {
     <div className="shell">
       <aside className={menu ? "open" : ""}>
         <div className="brand">
-          <span>BH</span>
+          <img src="/benson-enterprises-logo.svg" alt="Benson Home Solutions" />
           <div>
             <b>Benson</b>
             <small>Operations</small>
@@ -251,7 +251,7 @@ export function App() {
           )}
         </nav>
         <div className="rail-foot">
-          <div className="avatar">BH</div>
+          <img className="avatar" src="/benson-enterprises-logo.svg" alt="" />
           <div>
             <b>Benson staff</b>
             <small>Burns, Oregon</small>
