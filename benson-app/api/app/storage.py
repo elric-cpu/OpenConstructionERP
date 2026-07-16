@@ -29,11 +29,13 @@ from .domain import (
     EmployeeCreate,
     EmployeeInviteReceipt,
     EmployeeSummary,
+    EmployeeTaskSummary,
     LeadCreate,
     LeadReceipt,
     LeadSummary,
     LeadUpdate,
 )
+from .compliance import RULE_VERSION, initial_employee_tasks
 from .signing import employee_invite_token
 
 metadata = MetaData()
@@ -216,6 +218,26 @@ employee_invites = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
 )
 
+employee_tasks = Table(
+    "employee_tasks",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("employee_id", String(36), nullable=False, index=True),
+    Column("requirement_id", String(120), nullable=False),
+    Column("label", String(300), nullable=False),
+    Column("responsible_party", String(40), nullable=False),
+    Column("status", String(40), nullable=False),
+    Column("due_date", Date, nullable=False),
+    Column("instructions", Text, nullable=False),
+    Column("applicability_reason", Text, nullable=False),
+    Column("evidence_required", Integer, nullable=False),
+    Column("rule_version", String(120), nullable=False),
+    Column("completed_at", DateTime(timezone=True)),
+    Column("completed_by", String(320)),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
 employee_notification_outbox = Table(
     "employee_notification_outbox",
     metadata,
@@ -329,6 +351,24 @@ class OperationsStore:
         try:
             with self.engine.begin() as db:
                 db.execute(employees.insert().values(**values))
+                for task in initial_employee_tasks(employee):
+                    db.execute(
+                        employee_tasks.insert().values(
+                            id=str(uuid4()),
+                            employee_id=employee_id,
+                            requirement_id=task["requirement_id"],
+                            label=task["label"],
+                            responsible_party=task["responsible_party"],
+                            status="blocked" if task["blocked"] else "pending",
+                            due_date=employee.start_date,
+                            instructions=task["instructions"],
+                            applicability_reason=task["applicability_reason"],
+                            evidence_required=int(task["evidence_required"]),
+                            rule_version=RULE_VERSION,
+                            created_at=now,
+                            updated_at=now,
+                        )
+                    )
                 self._audit(
                     db,
                     event="employee.created",
@@ -365,6 +405,24 @@ class OperationsStore:
                 .first()
             )
         return EmployeeSummary.model_validate(dict(row)) if row else None
+
+    def list_employee_tasks(self, employee_id: str) -> list[EmployeeTaskSummary]:
+        with self.engine.connect() as db:
+            rows = (
+                db.execute(
+                    select(employee_tasks)
+                    .where(employee_tasks.c.employee_id == employee_id)
+                    .order_by(employee_tasks.c.due_date, employee_tasks.c.label)
+                )
+                .mappings()
+                .all()
+            )
+        return [
+            EmployeeTaskSummary.model_validate(
+                {**dict(row), "evidence_required": bool(row["evidence_required"])}
+            )
+            for row in rows
+        ]
 
     def create_employee_invite(
         self,

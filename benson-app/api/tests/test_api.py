@@ -732,6 +732,104 @@ def test_employee_requires_managed_workspace_email() -> None:
     )
 
 
+def test_employee_tasks_are_generated_by_classification_and_applicability(
+    isolated_settings: Settings,
+) -> None:
+    employee = client.post(
+        "/api/benson/v1/employees",
+        headers=STAFF_HEADERS,
+        json={
+            "name": "Federal Employee",
+            "email": "federal.employee@bensonhomesolutions.com",
+            "start_date": "2026-08-03",
+            "work_location": "Burns, Oregon",
+            "classification": "employee",
+            "role": "field",
+            "federal_contract_applicability": "unknown",
+        },
+    ).json()
+
+    response = client.get(f"/api/benson/v1/employees/{employee['id']}/tasks", headers=STAFF_HEADERS)
+
+    assert response.status_code == 200
+    tasks = {task["requirement_id"]: task for task in response.json()}
+    assert {"form-i9", "federal-w4", "oregon-w4", "payroll-enrollment"} <= tasks.keys()
+    assert "contractor-w9" not in tasks
+    assert "w2" not in tasks
+    assert tasks["e-verify"]["status"] == "blocked"
+    assert tasks["davis-bacon"]["status"] == "blocked"
+
+
+def test_contractor_gets_separate_w9_task_only() -> None:
+    contractor = client.post(
+        "/api/benson/v1/employees",
+        headers=STAFF_HEADERS,
+        json={
+            "name": "Independent Trade Partner",
+            "email": "trade.partner@example.com",
+            "start_date": "2026-08-03",
+            "work_location": "Burns, Oregon",
+            "classification": "independent_contractor",
+            "role": "subcontractor",
+        },
+    ).json()
+
+    tasks = client.get(
+        f"/api/benson/v1/employees/{contractor['id']}/tasks", headers=STAFF_HEADERS
+    ).json()
+
+    assert [task["requirement_id"] for task in tasks] == ["contractor-w9"]
+
+
+def test_activated_employee_tasks_are_the_default_view(
+    isolated_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    isolated_settings.staff_google_audience = "client.apps.googleusercontent.com"
+    employee = client.post(
+        "/api/benson/v1/employees",
+        headers=STAFF_HEADERS,
+        json={
+            "name": "Tasks Employee",
+            "email": "tasks.employee@bensonhomesolutions.com",
+            "start_date": "2026-08-03",
+            "work_location": "Burns, Oregon",
+            "classification": "employee",
+            "role": "field",
+            "federal_contract_applicability": "not_applicable",
+        },
+    ).json()
+    invitation = client.post(
+        f"/api/benson/v1/employees/{employee['id']}/invite", headers=STAFF_HEADERS
+    ).json()
+    token = employee_invite_token(
+        isolated_settings.employee_invite_signing_secret, invitation["id"]
+    )
+    monkeypatch.setattr(
+        "app.auth.id_token.verify_oauth2_token",
+        MagicMock(
+            return_value={
+                "email": "tasks.employee@bensonhomesolutions.com",
+                "email_verified": True,
+                "sub": "tasks-google-subject",
+            }
+        ),
+    )
+    client.post(
+        "/api/benson/v1/onboarding/activate",
+        json={"token": token, "credential": "tasks-google-credential"},
+    )
+
+    response = client.get(
+        "/api/benson/v1/onboarding/tasks",
+        headers={"Authorization": "Bearer tasks-google-credential"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["default_view"] == "tasks"
+    assert response.json()["progress"] == {"completed": 0, "total": 8}
+    assert response.json()["employee"]["id"] == employee["id"]
+
+
 def test_compliance_matrix_is_explicitly_pending_review() -> None:
     response = client.get("/api/benson/v1/onboarding/requirements", headers=STAFF_HEADERS)
 

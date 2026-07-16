@@ -1,4 +1,8 @@
-from .domain import ComplianceRequirement
+from typing import Any
+
+from .domain import ComplianceRequirement, EmployeeCreate
+
+RULE_VERSION = "2026-07-16.pending-legal-review"
 
 
 ONBOARDING_REQUIREMENTS = [
@@ -93,3 +97,112 @@ ONBOARDING_REQUIREMENTS = [
         official_source="https://www.irs.gov/forms-pubs/about-form-w-9",
     ),
 ]
+
+
+def initial_employee_tasks(employee: EmployeeCreate) -> list[dict[str, Any]]:
+    if employee.classification == "independent_contractor":
+        return [
+            {
+                "requirement_id": "contractor-w9",
+                "label": "Complete Form W-9",
+                "responsible_party": "contractor",
+                "instructions": "Complete the current Form W-9 for Benson's information-return records.",
+                "applicability_reason": "Worker is classified as a genuine independent contractor.",
+                "evidence_required": True,
+                "blocked": False,
+            }
+        ]
+
+    tasks: list[dict[str, Any]] = [
+        {
+            "requirement_id": "form-i9",
+            "label": "Complete Form I-9 employee section",
+            "responsible_party": "employee",
+            "instructions": "Complete the employee section using the approved I-9 workflow. Do not email identity documents.",
+            "applicability_reason": "Required for a U.S. employee hire.",
+            "evidence_required": True,
+            "blocked": False,
+        },
+        {
+            "requirement_id": "federal-w4",
+            "label": "Complete federal Form W-4",
+            "responsible_party": "employee",
+            "instructions": "Complete the current IRS Form W-4 for federal payroll withholding.",
+            "applicability_reason": "Worker is an employee.",
+            "evidence_required": True,
+            "blocked": False,
+        },
+        {
+            "requirement_id": "oregon-w4",
+            "label": "Complete Oregon Form OR-W-4",
+            "responsible_party": "employee",
+            "instructions": "Complete the current Oregon Form OR-W-4 for state withholding.",
+            "applicability_reason": "Initial work location is in Oregon.",
+            "evidence_required": True,
+            "blocked": False,
+        },
+        {
+            "requirement_id": "payroll-enrollment",
+            "label": "Complete payroll enrollment",
+            "responsible_party": "employee",
+            "instructions": "Provide required payroll details through the protected payroll workflow.",
+            "applicability_reason": "Worker is an employee paid through payroll.",
+            "evidence_required": True,
+            "blocked": False,
+        },
+        {
+            "requirement_id": "payment-election",
+            "label": "Choose a payment method",
+            "responsible_party": "employee",
+            "instructions": "Choose direct deposit or the lawful alternative offered by Benson.",
+            "applicability_reason": "A payroll payment method is required; direct deposit itself is optional.",
+            "evidence_required": True,
+            "blocked": False,
+        },
+        {
+            "requirement_id": "emergency-contact",
+            "label": "Provide an emergency contact",
+            "responsible_party": "employee",
+            "instructions": "Provide the emergency contact Benson should use for workplace emergencies.",
+            "applicability_reason": "Benson company onboarding requirement.",
+            "evidence_required": False,
+            "blocked": False,
+        },
+        {
+            "requirement_id": "company-policies",
+            "label": "Review and acknowledge company policies",
+            "responsible_party": "employee",
+            "instructions": "Review the current employee policies and record your acknowledgement.",
+            "applicability_reason": "Benson company onboarding requirement.",
+            "evidence_required": True,
+            "blocked": False,
+        },
+        {
+            "requirement_id": "safety-orientation",
+            "label": "Complete safety orientation",
+            "responsible_party": "employee",
+            "instructions": "Complete the role-appropriate construction safety orientation.",
+            "applicability_reason": "Benson construction safety onboarding requirement.",
+            "evidence_required": True,
+            "blocked": False,
+        },
+    ]
+    if employee.federal_contract_applicability != "not_applicable":
+        for task in (
+            ("e-verify", "Complete applicable E-Verify/E-Verify+ case"),
+            ("davis-bacon", "Confirm Davis-Bacon classification and payroll setup"),
+            ("section-503-self-id", "Issue applicable Section 503 self-identification invitation"),
+            ("vevraa-self-id", "Issue applicable VEVRAA self-identification invitation"),
+        ):
+            tasks.append(
+                {
+                    "requirement_id": task[0],
+                    "label": task[1],
+                    "responsible_party": "employer",
+                    "instructions": "Qualified HR/legal review must approve applicability before this task opens.",
+                    "applicability_reason": "Federal-contract applicability is unknown or potentially applicable.",
+                    "evidence_required": True,
+                    "blocked": True,
+                }
+            )
+    return tasks

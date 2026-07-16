@@ -242,6 +242,24 @@ class EmployeeInviteActivation(BaseModel):
     credential: str = Field(min_length=20, max_length=10_000)
 
 
+class EmployeeTaskSummary(BaseModel):
+    id: UUID
+    employee_id: UUID
+    requirement_id: str
+    label: str
+    responsible_party: Literal["employee", "employer", "contractor"]
+    status: Literal["pending", "blocked", "submitted", "completed", "rejected", "not_applicable"]
+    due_date: date
+    instructions: str
+    applicability_reason: str
+    evidence_required: bool
+    rule_version: str
+    completed_at: datetime | None = None
+    completed_by: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class ComplianceRequirement(BaseModel):
     id: str
     label: str

@@ -43,6 +43,7 @@ from .domain import (
     EmployeeInviteActivation,
     EmployeeInviteReceipt,
     EmployeeSummary,
+    EmployeeTaskSummary,
     LeadCreate,
     LeadReceipt,
     LeadUpdate,
@@ -310,6 +311,39 @@ def onboarding_me(
     if not employee:
         raise HTTPException(status_code=403, detail="Active employee account required")
     return employee
+
+
+@app.get("/api/benson/v1/onboarding/tasks")
+def onboarding_tasks(
+    principal: Principal = Depends(require_employee),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    employee = store(settings).get_employee_by_identity(principal.email, principal.subject)
+    if not employee:
+        raise HTTPException(status_code=403, detail="Active employee account required")
+    tasks = store(settings).list_employee_tasks(str(employee.id))
+    completed = sum(task.status in {"completed", "not_applicable"} for task in tasks)
+    return {
+        "default_view": "tasks",
+        "employee": employee,
+        "tasks": tasks,
+        "progress": {"completed": completed, "total": len(tasks)},
+    }
+
+
+@app.get(
+    "/api/benson/v1/employees/{employee_id}/tasks",
+    response_model=list[EmployeeTaskSummary],
+)
+def employee_tasks(
+    employee_id: str,
+    _principal: Principal = Depends(require_owner),
+    settings: Settings = Depends(get_settings),
+) -> list[EmployeeTaskSummary]:
+    employees = {str(employee.id) for employee in store(settings).list_employees()}
+    if employee_id not in employees:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    return store(settings).list_employee_tasks(employee_id)
 
 
 @app.get("/api/v1/dashboard")
