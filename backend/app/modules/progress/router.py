@@ -9,6 +9,7 @@ Endpoints:
     GET    /cumulative/?project_id=X        - Per-period breakdown + running total
     GET    /position/{position_id}/summary  - Position summary (parent rollup)
     GET    /s-curve/?project_id=X           - Actual vs planned S-curve
+    GET    /quantity-variance/?project_id=X - Design vs earned quantity variance
     POST   /plan/                           - Upsert a planned data point
     GET    /plan/?project_id=X              - List plan data points
 """
@@ -28,6 +29,7 @@ from app.modules.progress.schemas import (
     ProgressEntryResponse,
     ProgressPlanCreate,
     ProgressPlanResponse,
+    QuantityVarianceResponse,
     SCurveResponse,
 )
 from app.modules.progress.service import ProgressService
@@ -189,6 +191,29 @@ async def get_s_curve(
     """
     await verify_project_access(project_id, user_id, session)
     return await service.get_s_curve(project_id)
+
+
+# --- Quantity variance --------------------------------------------------------
+
+
+@router.get("/quantity-variance/", response_model=QuantityVarianceResponse)
+async def get_quantity_variance(
+    session: SessionDep,
+    project_id: uuid.UUID = Query(...),
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("progress.read")),
+    service: ProgressService = Depends(_get_service),
+) -> QuantityVarianceResponse:
+    """Design-vs-earned quantity variance for a project.
+
+    For each BOQ position with a recorded progress observation, compares the
+    installed-to-date quantity (design quantity x latest percent / 100)
+    against the design quantity, reporting the variance, a guarded variance
+    percent, and an over-run / under-run flag, then rolls the counts and
+    totals up to the project.
+    """
+    await verify_project_access(project_id, user_id, session)
+    return await service.get_quantity_variance(project_id)
 
 
 # ── Plan management ───────────────────────────────────────────────────────────

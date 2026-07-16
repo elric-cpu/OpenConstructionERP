@@ -24,13 +24,22 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.progress.models import ProgressEntry
+from app.modules.progress.quantity_variance import (
+    PositionQuantityInput,
+    QuantityVarianceReport,
+    build_report,
+    to_decimal,
+)
 from app.modules.progress.repository import ProgressRepository
 from app.modules.progress.schemas import (
     CumulativeProgressResponse,
     PeriodProgress,
     PositionProgressSummary,
+    PositionQuantityVarianceItem,
     ProgressEntryCreate,
     ProgressPlanCreate,
+    QuantityVarianceResponse,
+    QuantityVarianceRollupResponse,
     SCurvePoint,
     SCurveResponse,
 )
@@ -78,6 +87,45 @@ def _compute_deltas(period_rows: list[tuple[str, float]]) -> list[PeriodProgress
         )
         prev_cumulative = cum_pct
     return results
+
+
+def _variance_report_to_response(
+    project_id: uuid.UUID,
+    report: QuantityVarianceReport,
+) -> QuantityVarianceResponse:
+    """Map the pure-helper dataclasses to the Pydantic response (Decimal -> str)."""
+    positions = [
+        PositionQuantityVarianceItem(
+            boq_position_id=uuid.UUID(row.boq_position_id),
+            ordinal=row.ordinal,
+            description=row.description,
+            unit=row.unit,
+            design_quantity=str(row.design_quantity),
+            earned_quantity=str(row.earned_quantity),
+            percent_complete=str(row.percent_complete),
+            variance=str(row.variance),
+            variance_percent=(None if row.variance_percent is None else str(row.variance_percent)),
+            status=row.status,
+            is_over_run=row.is_over_run,
+            is_under_run=row.is_under_run,
+        )
+        for row in report.positions
+    ]
+    rollup = report.rollup
+    return QuantityVarianceResponse(
+        project_id=project_id,
+        positions=positions,
+        rollup=QuantityVarianceRollupResponse(
+            position_count=rollup.position_count,
+            over_run_count=rollup.over_run_count,
+            under_run_count=rollup.under_run_count,
+            on_target_count=rollup.on_target_count,
+            design_quantity_total=str(rollup.design_quantity_total),
+            earned_quantity_total=str(rollup.earned_quantity_total),
+            variance_total=str(rollup.variance_total),
+            variance_percent=(None if rollup.variance_percent is None else str(rollup.variance_percent)),
+        ),
+    )
 
 
 class ProgressService:
@@ -338,6 +386,81 @@ class ProgressService:
                 "Could not fetch BOQ children for position %s - treating as leaf",
                 parent_id,
             )
+            return {}
+
+    # --- Quantity variance (design vs earned quantity) --------------------
+
+    async def get_quantity_variance(self, project_id: uuid.UUID) -> QuantityVarianceResponse:
+        """Build the design-vs-earned quantity variance report for a project.
+
+        For every BOQ position that has at least one recorded progress
+        observation, the earned (installed-to-date) quantity is derived from
+        the position's latest percent-complete and its design quantity
+        (``earned = design * percent / 100``) and compared against the design
+        quantity. Positions never measured are omitted so the report reflects
+        work actually observed on site. Results roll up to project counts and
+        totals. All quantities stay Decimal and are serialised as strings.
+        """
+        positions_meta = await self._fetch_project_positions(project_id)
+        if not positions_meta:
+            return QuantityVarianceResponse(project_id=project_id)
+
+        latest_pct = await self.repo.latest_pct_for_positions(project_id, list(positions_meta))
+        inputs: list[PositionQuantityInput] = []
+        for pos_id, pct in latest_pct.items():
+            meta = positions_meta.get(pos_id)
+            if meta is None:
+                # Progress row references a position outside this project's BOQs.
+                continue
+            ordinal, description, unit, quantity = meta
+            inputs.append(
+                PositionQuantityInput(
+                    boq_position_id=str(pos_id),
+                    design_quantity=to_decimal(quantity),
+                    percent_complete=to_decimal(pct),
+                    ordinal=ordinal,
+                    description=description,
+                    unit=unit,
+                )
+            )
+
+        report = build_report(inputs)
+        return _variance_report_to_response(project_id, report)
+
+    async def _fetch_project_positions(
+        self,
+        project_id: uuid.UUID,
+    ) -> dict[uuid.UUID, tuple[str | None, str | None, str | None, str | None]]:
+        """Return ``{position_id: (ordinal, description, unit, quantity)}`` for a project.
+
+        Reads the BOQ positions belonging to the project's BOQs. ``quantity``
+        is the stored design quantity (a string, coerced to Decimal by the
+        caller). On any lookup failure an empty mapping is returned so the
+        variance report degrades to empty rather than raising.
+        """
+        try:
+            from sqlalchemy import select as sa_select
+
+            from app.modules.boq.models import BOQ, Position
+
+            stmt = (
+                sa_select(
+                    Position.id,
+                    Position.ordinal,
+                    Position.description,
+                    Position.unit,
+                    Position.quantity,
+                )
+                .join(BOQ, Position.boq_id == BOQ.id)
+                .where(BOQ.project_id == project_id)
+            )
+            rows = (await self.session.execute(stmt)).all()
+            result: dict[uuid.UUID, tuple[str | None, str | None, str | None, str | None]] = {}
+            for pos_id, ordinal, description, unit, quantity in rows:
+                result[pos_id] = (ordinal, description, unit, quantity)
+            return result
+        except Exception:
+            logger.debug("Could not fetch BOQ positions for project %s", project_id)
             return {}
 
     # ── S-curve ───────────────────────────────────────────────────────────

@@ -176,3 +176,49 @@ class SCurveResponse(BaseModel):
 
     project_id: UUID
     points: list[SCurvePoint] = Field(default_factory=list)
+
+
+# --- Quantity variance (design vs earned quantity) ---------------------------
+
+
+class PositionQuantityVarianceItem(BaseModel):
+    """Design-vs-earned quantity variance for one BOQ position.
+
+    Quantities are Decimal serialised as strings (never float) to match the
+    BOQ position storage convention. ``variance_percent`` is None when the
+    design quantity is zero (guarded division).
+    """
+
+    boq_position_id: UUID
+    ordinal: str | None = None
+    description: str | None = None
+    unit: str | None = None
+    design_quantity: str = "0"
+    earned_quantity: str = "0"
+    percent_complete: str = "0"
+    variance: str = "0"
+    variance_percent: str | None = None
+    status: str = "on_target"
+    is_over_run: bool = False
+    is_under_run: bool = False
+
+
+class QuantityVarianceRollupResponse(BaseModel):
+    """Project-level rollup of quantity variance across positions."""
+
+    position_count: int = 0
+    over_run_count: int = 0
+    under_run_count: int = 0
+    on_target_count: int = 0
+    design_quantity_total: str = "0"
+    earned_quantity_total: str = "0"
+    variance_total: str = "0"
+    variance_percent: str | None = None
+
+
+class QuantityVarianceResponse(BaseModel):
+    """Full quantity-variance report for a project: per-position rows + rollup."""
+
+    project_id: UUID
+    positions: list[PositionQuantityVarianceItem] = Field(default_factory=list)
+    rollup: QuantityVarianceRollupResponse = Field(default_factory=QuantityVarianceRollupResponse)
