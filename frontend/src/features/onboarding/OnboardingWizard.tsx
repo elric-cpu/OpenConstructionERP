@@ -1806,6 +1806,33 @@ function ReadyPackProgressPanel({
 // companyType / enabledModules state a role pick would. A quiet link swaps in
 // the detailed role grid for anyone who would rather choose by trade.
 
+// Wizard key -> its i18n label key, so a size preset's ``enabled_modules`` can
+// be rendered as friendly, translated module names in the size step.
+const MODULE_LABEL_KEY_BY_KEY: Record<string, string> = Object.fromEntries(
+  ALL_MODULES.map((m) => [m.key, m.labelKey]),
+);
+
+// A short, recognisable foundation every company gets regardless of size, so
+// the preview can reassure a solo user that the basics are always on.
+const SIZE_FOUNDATION_KEYS = ['projects', 'dashboards', 'costs', 'catalog'];
+
+// English fallbacks for the per-tier team-size hint. Localised via
+// ``onboarding.<size_key>_people``; a tier with no entry simply hides the pill.
+const DEFAULT_PEOPLE_HINT: Record<string, string> = {
+  size_solo: 'Just you',
+  size_small: 'Up to 5 people',
+  size_medium: '5 to 50 people',
+  size_large: '50+ people',
+};
+
+// How many module chips to show before collapsing into "+N more".
+const SIZE_MAIN_CHIP_CAP = 14;
+const SIZE_GROWS_CHIP_CAP = 10;
+
+function prettifyModuleKey(key: string): string {
+  return key.replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function StepCompanySize({
   onNext,
   onBack,
@@ -1822,6 +1849,10 @@ function StepCompanySize({
   onChooseByRole: () => void;
 }) {
   const { t } = useTranslation();
+  // Hovering a card previews its modules without committing the choice, so a
+  // user can scan all four tiers quickly before picking one.
+  const [hoverKey, setHoverKey] = useState<string | null>(null);
+
   // Size cards resolve their copy from ``onboarding.<size_key>`` (e.g.
   // ``onboarding.size_solo`` / ``onboarding.size_solo_desc``), falling back to
   // the backend's English label when a locale string is not present.
@@ -1829,16 +1860,44 @@ function StepCompanySize({
     t(`onboarding.${p.key}`, { defaultValue: p.label });
   const sizeDesc = (p: ApiCompanyPreset) =>
     t(`onboarding.${p.key}_desc`, { defaultValue: p.description });
+  const peopleHint = (p: ApiCompanyPreset) =>
+    t(`onboarding.${p.key}_people`, { defaultValue: DEFAULT_PEOPLE_HINT[p.key] ?? '' });
+  const moduleLabel = (key: string) => {
+    const labelKey = MODULE_LABEL_KEY_BY_KEY[key];
+    return labelKey ? t(labelKey, { defaultValue: prettifyModuleKey(key) }) : prettifyModuleKey(key);
+  };
+
+  // What to preview: the hovered tier, else the selected one, else the first
+  // (smallest) tier so the panel is informative the moment the step opens.
+  const previewKey = hoverKey ?? selectedType ?? sizePresets[0]?.key ?? null;
+  const previewPreset = sizePresets.find((p) => p.key === previewKey) ?? null;
+  const previewIndex = previewPreset
+    ? sizePresets.findIndex((p) => p.key === previewPreset.key)
+    : -1;
+  const nextPreset = previewIndex >= 0 ? sizePresets[previewIndex + 1] : undefined;
+
+  const mainKeys = previewPreset?.enabled_modules ?? [];
+  const mainShown = mainKeys.slice(0, SIZE_MAIN_CHIP_CAP);
+  const mainExtra = Math.max(0, mainKeys.length - mainShown.length);
+  const mainSet = new Set(mainKeys);
+
+  // "Grows into" = the modules the next tier up adds on top of this one.
+  const growsKeys = nextPreset
+    ? nextPreset.enabled_modules.filter((k) => !mainSet.has(k))
+    : [];
+  const growsShown = growsKeys.slice(0, SIZE_GROWS_CHIP_CAP);
+  const growsExtra = Math.max(0, growsKeys.length - growsShown.length);
+  const foundationLabels = SIZE_FOUNDATION_KEYS.map(moduleLabel).join(', ');
 
   return (
     <div className="flex flex-col items-center">
       <h2 className="text-2xl font-bold text-content-primary text-center">
         {t('onboarding.size_title', { defaultValue: 'How big is your team?' })}
       </h2>
-      <p className="mt-2 max-w-md text-center text-sm text-content-secondary">
+      <p className="mt-2 max-w-lg text-center text-sm text-content-secondary">
         {t('onboarding.size_subtitle', {
           defaultValue:
-            "We'll pre-select the right modules for a team your size. You can fine-tune them next.",
+            "We switch on exactly the modules a team your size needs, and show what you grow into. You can fine-tune everything next.",
         })}
       </p>
 
@@ -1847,12 +1906,17 @@ function StepCompanySize({
         {sizePresets.map((preset) => {
           const isSelected = selectedType === preset.key;
           const Icon = presetIcon(preset.icon);
+          const hint = peopleHint(preset);
 
           return (
             <button
               key={preset.key}
               type="button"
               onClick={() => onSelectType(preset.key)}
+              onMouseEnter={() => setHoverKey(preset.key)}
+              onMouseLeave={() => setHoverKey(null)}
+              onFocus={() => setHoverKey(preset.key)}
+              onBlur={() => setHoverKey(null)}
               aria-pressed={isSelected}
               className={clsx(
                 'group relative flex flex-col items-start rounded-2xl p-5 text-start',
@@ -1888,15 +1952,109 @@ function StepCompanySize({
                 {sizeDesc(preset)}
               </p>
 
-              {/* Module-count pill */}
-              <span className="mt-3 inline-flex items-center rounded-full bg-surface-tertiary px-2.5 py-0.5 text-2xs font-medium text-content-secondary">
-                {preset.module_count}{' '}
-                {t('onboarding.modules_label', { defaultValue: 'modules' })}
-              </span>
+              {/* Team-size hint + module count */}
+              <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                {hint && (
+                  <span className="inline-flex items-center rounded-full bg-oe-blue-subtle/50 px-2.5 py-0.5 text-2xs font-semibold text-oe-blue">
+                    {hint}
+                  </span>
+                )}
+                <span className="inline-flex items-center rounded-full bg-surface-tertiary px-2.5 py-0.5 text-2xs font-medium text-content-secondary">
+                  {preset.module_count}{' '}
+                  {t('onboarding.modules_label', { defaultValue: 'modules' })}
+                </span>
+              </div>
             </button>
           );
         })}
       </div>
+
+      {/* Live preview: the modules this size switches on now, and what it grows
+          into next. Reacts to the hovered (or selected) tier. */}
+      {previewPreset && mainShown.length > 0 && (
+        <div className="mt-6 w-full max-w-3xl rounded-2xl border border-border-light bg-surface-secondary/40 p-5 text-start">
+          <div className="flex items-center gap-2">
+            <Package size={16} className="shrink-0 text-oe-blue" />
+            <h4 className="text-sm font-semibold text-content-primary">
+              {t('onboarding.size_you_get', {
+                defaultValue: 'What {{name}} switches on',
+                name: sizeLabel(previewPreset),
+              })}
+            </h4>
+            <span className="ms-auto shrink-0 rounded-full bg-surface-tertiary px-2.5 py-0.5 text-2xs font-medium text-content-secondary">
+              {previewPreset.module_count}{' '}
+              {t('onboarding.modules_label', { defaultValue: 'modules' })}
+            </span>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {mainShown.map((key) => (
+              <span
+                key={key}
+                className="inline-flex items-center gap-1 rounded-lg bg-surface-primary px-2.5 py-1 text-xs font-medium text-content-secondary shadow-sm shadow-black/[0.03]"
+              >
+                <Check size={12} className="shrink-0 text-oe-blue" />
+                {moduleLabel(key)}
+              </span>
+            ))}
+            {mainExtra > 0 && (
+              <span className="inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium text-content-tertiary">
+                +{mainExtra} {t('onboarding.more', { defaultValue: 'more' })}
+              </span>
+            )}
+          </div>
+
+          {growsShown.length > 0 && (
+            <div className="mt-4 border-t border-border-light pt-3">
+              <div className="flex items-center gap-2">
+                <Sparkles size={14} className="shrink-0 text-content-tertiary" />
+                <h5 className="text-xs font-semibold uppercase tracking-wider text-content-tertiary">
+                  {t('onboarding.size_grows', { defaultValue: 'Grows with you' })}
+                </h5>
+              </div>
+              <p className="mt-1 text-xs text-content-tertiary">
+                {t('onboarding.size_grows_hint', {
+                  defaultValue: 'Switch these on in one click as your team grows.',
+                })}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {growsShown.map((key) => (
+                  <span
+                    key={key}
+                    className="inline-flex items-center rounded-lg border border-dashed border-border-medium px-2.5 py-1 text-xs text-content-tertiary"
+                  >
+                    {moduleLabel(key)}
+                  </span>
+                ))}
+                {growsExtra > 0 && (
+                  <span className="inline-flex items-center rounded-lg px-2.5 py-1 text-xs text-content-quaternary">
+                    +{growsExtra} {t('onboarding.more', { defaultValue: 'more' })}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {growsKeys.length === 0 && previewPreset.key === 'size_large' && (
+            <p className="mt-3 border-t border-border-light pt-3 text-xs text-content-tertiary">
+              {t('onboarding.size_everything', {
+                defaultValue:
+                  'Everything is included, the whole platform across the full construction lifecycle.',
+              })}
+            </p>
+          )}
+
+          <p className="mt-4 flex items-start gap-1.5 text-2xs text-content-quaternary">
+            <CheckCircle2 size={12} className="mt-0.5 shrink-0 text-content-tertiary" />
+            <span>
+              {t('onboarding.size_foundation', {
+                defaultValue: 'Always included: {{list}}',
+                list: foundationLabels,
+              })}
+            </span>
+          </p>
+        </div>
+      )}
 
       {/* Escape hatch to the detailed role grid (writes the same state). */}
       <button
