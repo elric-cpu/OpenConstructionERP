@@ -798,14 +798,92 @@ COMPANY_PRESETS: dict[str, CompanyPreset] = {
 }
 
 
+# ── Company-size presets ──────────────────────────────────────────────────────
+# A parallel dimension to the role grid above. Where ``COMPANY_PRESETS`` answers
+# "what kind of work do you do", these answer "how big is your team" - a much
+# quicker first cut for a new user who does not want to scan the full role list.
+#
+# They reuse the exact same machinery: a size maps to a functional-module set
+# which ``modules_for`` turns into the ``module_preferences`` map the sidebar
+# honours (core modules are always merged in, so a size can never hide
+# Projects/Settings/costs/catalog/assemblies). Kept intentionally separate from
+# ``COMPANY_PRESETS`` so the two dimensions never pollute each other's grid; the
+# keys carry a ``size_`` prefix and still satisfy the onboarding id regex
+# ``^[a-z][a-z0-9_]{1,48}$``.
+SIZE_PRESETS: dict[str, CompanyPreset] = {
+    "size_solo": CompanyPreset(
+        key="size_solo",
+        label="Solo / Freelancer",
+        description="Just me - quick takeoff, a priced BoQ and a clean report, without the overhead.",
+        icon="HardHat",
+        tags=["Takeoff", "BOQ", "Reports"],
+        enabled_modules=["boq", "takeoff", "validation", "ai", "reporting"],
+    ),
+    "size_small": CompanyPreset(
+        key="size_small",
+        label="Small Team",
+        description="A handful of us - estimating, a schedule, procurement and the day-to-day paperwork.",
+        icon="Briefcase",
+        tags=["Estimating", "Schedule", "Procurement"],
+        enabled_modules=[
+            "boq",
+            "validation",
+            "cost_match",
+            "match",
+            "takeoff",
+            "dwg_takeoff",
+            "ai",
+            "schedule",
+            "tasks",
+            "procurement",
+            "changeorders",
+            "contracts",
+            "variations",
+            "documents",
+            "markups",
+            "reporting",
+        ],
+    ),
+    "size_medium": CompanyPreset(
+        key="size_medium",
+        label="Mid-sized Company",
+        description="A full contractor - estimating, site, procurement, quality and cost control end to end.",
+        icon="Building2",
+        tags=["Site", "Finance", "Quality"],
+        # Mirror the broad general-contractor role set: a mid-sized company
+        # typically runs the same wide span of the lifecycle. Reused from the
+        # role grid so the two never drift.
+        enabled_modules=list(COMPANY_PRESETS["general_contractor"].enabled_modules),
+    ),
+    "size_large": CompanyPreset(
+        key="size_large",
+        label="Large Enterprise",
+        description="The whole organisation - every module across the full construction lifecycle.",
+        icon="Boxes",
+        tags=["Enterprise", "All modules", "Lifecycle"],
+        enabled_modules=list(_ALL_FUNCTIONAL),
+    ),
+}
+
+
 def get_preset(company_type: str) -> CompanyPreset | None:
     """Return a preset by key, or ``None`` if unknown."""
     return COMPANY_PRESETS.get(company_type)
 
 
+def get_size_preset(company_size: str) -> CompanyPreset | None:
+    """Return a company-size preset by key, or ``None`` if unknown."""
+    return SIZE_PRESETS.get(company_size)
+
+
 def get_all_presets() -> list[dict[str, Any]]:
     """Return all presets as serialisable dicts (for the GET endpoint)."""
     return [p.to_dict() for p in COMPANY_PRESETS.values()]
+
+
+def get_all_size_presets() -> list[dict[str, Any]]:
+    """Return all company-size presets as serialisable dicts (for the GET endpoint)."""
+    return [p.to_dict() for p in SIZE_PRESETS.values()]
 
 
 def is_core_module(key: str) -> bool:

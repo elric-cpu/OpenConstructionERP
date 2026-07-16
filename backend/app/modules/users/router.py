@@ -1025,6 +1025,7 @@ async def get_onboarding(
     return OnboardingResponse(
         completed=onboarding.get("completed", False),
         company_type=onboarding.get("company_type"),
+        company_size=onboarding.get("company_size"),
         enabled_modules=onboarding.get("enabled_modules", []),
         interface_mode=onboarding.get("interface_mode"),
     )
@@ -1053,16 +1054,24 @@ async def save_onboarding(
     # and ``modules_for`` would write an explicit False for them, silently
     # hiding live sidebar routes (BIM, Finance, CRM and the rest). Making the
     # server authoritative here closes that drift for good.
-    from app.core.onboarding_presets import get_preset, modules_for
+    from app.core.onboarding_presets import get_preset, get_size_preset, modules_for
 
     effective_modules = data.enabled_modules
     if data.company_type == "full_enterprise":
         full_enterprise = get_preset("full_enterprise")
         if full_enterprise is not None:
             effective_modules = list(full_enterprise.enabled_modules)
+    elif data.company_type == "size_large":
+        # "Large Enterprise" is the size-dimension twin of Full Enterprise: it
+        # means the whole platform, so pin it to the server's authoritative
+        # functional-module list for the same anti-drift reason as above.
+        size_large = get_size_preset("size_large")
+        if size_large is not None:
+            effective_modules = list(size_large.enabled_modules)
 
     metadata["onboarding"] = {
         "company_type": data.company_type,
+        "company_size": data.company_size,
         "enabled_modules": effective_modules,
         "interface_mode": data.interface_mode,
         "completed": data.completed,
@@ -1078,6 +1087,7 @@ async def save_onboarding(
     return OnboardingResponse(
         completed=data.completed,
         company_type=data.company_type,
+        company_size=data.company_size,
         enabled_modules=effective_modules,
         interface_mode=data.interface_mode,
     )
@@ -1108,6 +1118,7 @@ async def complete_onboarding(
     return OnboardingResponse(
         completed=True,
         company_type=onboarding.get("company_type"),
+        company_size=onboarding.get("company_size"),
         enabled_modules=onboarding.get("enabled_modules", []),
         interface_mode=onboarding.get("interface_mode"),
     )
@@ -1122,6 +1133,20 @@ async def get_onboarding_presets() -> list[dict[str, Any]]:
     from app.core.onboarding_presets import get_all_presets
 
     return get_all_presets()
+
+
+@router.get("/onboarding-presets/sizes/")
+async def get_onboarding_size_presets() -> list[dict[str, Any]]:
+    """Return all company-size presets for the onboarding wizard.
+
+    Public endpoint (no auth required) - the presets are non-sensitive. A
+    parallel dimension to ``/onboarding-presets/`` (company role): the size the
+    user picks maps to the same ``module_preferences`` machinery, so the two
+    endpoints share one response shape.
+    """
+    from app.core.onboarding_presets import get_all_size_presets
+
+    return get_all_size_presets()
 
 
 # ── Admin: User management ─────────────────────────────────────────────────
