@@ -26,6 +26,7 @@ import {
   Trash2,
   Settings2,
   Info,
+  HelpCircle,
   Undo2,
   Redo2,
   Pencil,
@@ -159,6 +160,8 @@ import { replicateMeasurementsToPages } from '../../features/takeoff/lib/takeoff
 import { CalibrationDialog } from '../../features/takeoff/components/CalibrationDialog';
 import { ScaleAutoDetect } from '../../features/takeoff/components/ScaleAutoDetect';
 import { MeasurementLedger } from '../../features/takeoff/components/MeasurementLedger';
+import { CreateRfiFromMeasurementDialog } from '../../features/takeoff/components/CreateRfiFromMeasurementDialog';
+import { ReferencedInPanel } from '../../features/file-references/ReferencedInPanel';
 import {
   buildExportFilename,
   buildTakeoffPdf,
@@ -868,6 +871,11 @@ export default function TakeoffViewerModule({
   // measurable, human-confirmed) measurements awaiting a target BOQ pick.
   // null = panel closed. Reuses the link-picker project/BOQ state above.
   const [bulkAddMeasurements, setBulkAddMeasurements] = useState<Measurement[] | null>(null);
+
+  // Cross-module linking (issue: takeoff -> Issue/RFI): the measurement the
+  // "Create RFI" dialog is open for, or null when closed. A measurement must
+  // be synced (have a serverId) to be linkable, so the openers gate on that.
+  const [rfiMeasurement, setRfiMeasurement] = useState<Measurement | null>(null);
 
   // Document persistence + server sync
   const [fileName, setFileName] = useState<string | null>(null);
@@ -5362,6 +5370,31 @@ export default function TakeoffViewerModule({
     setSelectedMeasurementId(m.id);
   }, [currentPage, totalPages]);
 
+  /* ── Cross-module linking (takeoff -> RFI) ───────────────────────────
+   * Open the "Create RFI from measurement" dialog. A measurement can only
+   * be the "file" side of a cross-entity reference once it has synced (it
+   * needs a durable serverId), so an unsynced row is bounced with a hint to
+   * save first rather than silently failing. */
+  const openRfiForMeasurement = useCallback(
+    (m: Measurement) => {
+      if (!m.serverId) {
+        addToast({
+          type: 'info',
+          title: t('takeoff_crosslink.save_first', {
+            defaultValue: 'Save the measurement first',
+          }),
+          message: t('takeoff_crosslink.save_first_msg', {
+            defaultValue:
+              'This measurement has not synced yet. Save it, then create the RFI.',
+          }),
+        });
+        return;
+      }
+      setRfiMeasurement(m);
+    },
+    [addToast, t],
+  );
+
   /* ── Ledger → BOQ actions ─────────────────────────────────────────── */
 
   /** Per-row "Add to BOQ" from the Ledger tab. Reuses the inline link
@@ -7657,6 +7690,7 @@ export default function TakeoffViewerModule({
                   selectedMeasurementId={selectedMeasurementId}
                   onAddToBoq={handleLedgerAddToBoq}
                   onAddAllToBoq={handleLedgerAddAllToBoq}
+                  onCreateRfi={openRfiForMeasurement}
                 />
               </div>
             )}
@@ -7680,6 +7714,43 @@ export default function TakeoffViewerModule({
                     <X size={12} />
                   </button>
                 </div>
+
+                {/* Linked in - cross-module references for this measurement.
+                    Read-only chips; self-hides when the measurement has never
+                    synced (no serverId) or carries no links yet. */}
+                {selectedMeasurement.serverId && (
+                  <ReferencedInPanel
+                    projectId={activeProjectId || selectedProjectId || ''}
+                    fileKind="takeoff"
+                    fileId={selectedMeasurement.serverId}
+                    onChipClick={(ref) => {
+                      const openTab = (path: string) =>
+                        window.open(path, '_blank', 'noopener');
+                      switch (ref.target_type) {
+                        case 'rfi':
+                          openTab(`/rfi/${ref.target_id}`);
+                          break;
+                        case 'punch_item':
+                          openTab(`/punchlist?highlight=${ref.target_id}`);
+                          break;
+                        case 'task':
+                          openTab('/tasks');
+                          break;
+                        case 'boq_position':
+                          // The reference carries the position id, not the
+                          // owning BOQ id, so land on the BOQ list with the
+                          // position highlighted instead of guessing a boqId.
+                          openTab(`/boq?highlight=${ref.target_id}`);
+                          break;
+                        case 'ncr':
+                          openTab(`/ncr?highlight=${ref.target_id}`);
+                          break;
+                        default:
+                          break;
+                      }
+                    }}
+                  />
+                )}
 
                 {/* Group dropdown */}
                 <div>
@@ -9146,6 +9217,20 @@ export default function TakeoffViewerModule({
             </button>
             <button
               type="button"
+              onClick={() => {
+                const target = measurements.find((mm) => mm.id === contextMenu.measurementId);
+                setContextMenu(null);
+                if (target) openRfiForMeasurement(target);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-start text-xs text-content-primary hover:bg-surface-secondary transition-colors"
+              role="menuitem"
+              data-testid="context-create-rfi"
+            >
+              <HelpCircle size={13} />
+              <span className="flex-1">{t('takeoff_crosslink.create_rfi', { defaultValue: 'Create RFI' })}</span>
+            </button>
+            <button
+              type="button"
               onClick={() => { deleteMeasurement(contextMenu.measurementId); setContextMenu(null); }}
               className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-semantic-error hover:bg-semantic-error-bg transition-colors"
               role="menuitem"
@@ -9157,6 +9242,18 @@ export default function TakeoffViewerModule({
             </button>
           </div>
         </div>
+      )}
+      {/* Create RFI from a measurement (cross-module link). Rendered fresh per
+          open so the prefilled fields initialise from the chosen measurement. */}
+      {rfiMeasurement && (
+        <CreateRfiFromMeasurementDialog
+          measurement={rfiMeasurement}
+          projectId={activeProjectId || selectedProjectId || ''}
+          documentId={documentId}
+          documentName={fileName}
+          onClose={() => setRfiMeasurement(null)}
+          onCreated={() => setRfiMeasurement(null)}
+        />
       )}
       {/* Volume depth input dialog */}
       {showVolumeDepthInput && (

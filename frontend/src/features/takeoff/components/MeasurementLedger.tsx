@@ -17,6 +17,7 @@ import {
   ArrowUpDown,
   FileSpreadsheet,
   Filter,
+  HelpCircle,
   Link2,
   X,
 } from 'lucide-react';
@@ -54,6 +55,11 @@ export interface MeasurementLedgerProps {
   /** Bulk "Add all to BOQ" over the currently filtered, linkable rows
    *  (unconfirmed AI suggestions and annotation rows are excluded). */
   onAddAllToBoq?: (measurements: Measurement[]) => void;
+  /** Per-measurement "Create RFI" action. When provided, a second trailing
+   *  action button appears on linkable rows so an estimator can raise a
+   *  request for information tied to the measurement straight from the
+   *  ledger. Gated the same way as {@link onAddToBoq}. */
+  onCreateRfi?: (measurement: Measurement) => void;
 }
 
 /** Measurement types that carry a pushable quantity. Annotation types
@@ -96,6 +102,7 @@ export function MeasurementLedger({
   selectedMeasurementId,
   onAddToBoq,
   onAddAllToBoq,
+  onCreateRfi,
 }: MeasurementLedgerProps) {
   const { t } = useTranslation();
   // Display the canonical-metric quantities in the user's preferred system.
@@ -125,7 +132,7 @@ export function MeasurementLedger({
   /** Rows the bulk "Add all to BOQ" action applies to (respects the
    *  active filters so "add all" means "add everything I'm looking at"). */
   const linkableRows = useMemo(() => sorted.filter(isLinkable), [sorted]);
-  const hasActionColumn = Boolean(onAddToBoq);
+  const hasActionColumn = Boolean(onAddToBoq) || Boolean(onCreateRfi);
   const columnCount = COLUMNS.length + (hasActionColumn ? 1 : 0);
 
   // Build a grouped structure so we can slot subtotal rows between groups.
@@ -422,6 +429,7 @@ export function MeasurementLedger({
                     selectedId={selectedMeasurementId ?? null}
                     onRowClick={onRowClick}
                     onAddToBoq={onAddToBoq}
+                    onCreateRfi={onCreateRfi}
                     measurementSystem={measurementSystem}
                   />
                 );
@@ -475,6 +483,7 @@ function GroupRows({
   selectedId,
   onRowClick,
   onAddToBoq,
+  onCreateRfi,
   measurementSystem,
 }: {
   group: string;
@@ -484,9 +493,11 @@ function GroupRows({
   selectedId: string | null;
   onRowClick?: (m: Measurement) => void;
   onAddToBoq?: (m: Measurement) => void;
+  onCreateRfi?: (m: Measurement) => void;
   measurementSystem: import('@/stores/usePreferencesStore').MeasurementSystem;
 }) {
   const { t } = useTranslation();
+  const hasRowActions = Boolean(onAddToBoq) || Boolean(onCreateRfi);
   return (
     <>
       {groupRows.map(({ ordinal, measurement }) => {
@@ -573,42 +584,65 @@ function GroupRows({
             </td>
             <td className="px-1.5 py-1 text-content-secondary">{disp.unit}</td>
             <td className="px-1.5 py-1 text-right text-content-tertiary">{measurement.page}</td>
-            {onAddToBoq && (
-              <td className="px-1 py-1 text-right">
+            {hasRowActions && (
+              <td className="px-1 py-1 text-end">
                 {isLinkable(measurement) && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onAddToBoq(measurement);
-                    }}
-                    className={clsx(
-                      'p-0.5 rounded transition-colors',
-                      measurement.linkedPositionId
-                        ? 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/30'
-                        : 'text-content-tertiary hover:text-oe-blue hover:bg-oe-blue/10',
+                  <span className="inline-flex items-center justify-end gap-0.5">
+                    {onAddToBoq && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAddToBoq(measurement);
+                        }}
+                        className={clsx(
+                          'p-0.5 rounded transition-colors',
+                          measurement.linkedPositionId
+                            ? 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/30'
+                            : 'text-content-tertiary hover:text-oe-blue hover:bg-oe-blue/10',
+                        )}
+                        aria-label={t('takeoff_viewer.ledger_add_to_boq', {
+                          defaultValue: 'Add to BOQ',
+                        })}
+                        title={
+                          measurement.linkedPositionId
+                            ? t('takeoff_viewer.ledger_relink_to_boq', {
+                                // "ordinal" is a reserved i18next option
+                                // (ordinal plurals) - use posOrdinal.
+                                defaultValue:
+                                  'Linked to {{posOrdinal}} - re-link or unlink',
+                                posOrdinal: measurement.linkedPositionOrdinal ?? '',
+                              })
+                            : t('takeoff_viewer.ledger_add_to_boq_hint', {
+                                defaultValue:
+                                  "Send this measurement's quantity to a BOQ position",
+                              })
+                        }
+                        data-testid="ledger-add-to-boq"
+                      >
+                        <Link2 size={11} />
+                      </button>
                     )}
-                    aria-label={t('takeoff_viewer.ledger_add_to_boq', {
-                      defaultValue: 'Add to BOQ',
-                    })}
-                    title={
-                      measurement.linkedPositionId
-                        ? t('takeoff_viewer.ledger_relink_to_boq', {
-                            // "ordinal" is a reserved i18next option
-                            // (ordinal plurals) - use posOrdinal.
-                            defaultValue:
-                              'Linked to {{posOrdinal}} - re-link or unlink',
-                            posOrdinal: measurement.linkedPositionOrdinal ?? '',
-                          })
-                        : t('takeoff_viewer.ledger_add_to_boq_hint', {
-                            defaultValue:
-                              "Send this measurement's quantity to a BOQ position",
-                          })
-                    }
-                    data-testid="ledger-add-to-boq"
-                  >
-                    <Link2 size={11} />
-                  </button>
+                    {onCreateRfi && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onCreateRfi(measurement);
+                        }}
+                        className="p-0.5 rounded text-content-tertiary hover:text-oe-blue hover:bg-oe-blue/10 transition-colors"
+                        aria-label={t('takeoff_crosslink.create_rfi', {
+                          defaultValue: 'Create RFI',
+                        })}
+                        title={t('takeoff_crosslink.create_rfi_hint', {
+                          defaultValue: 'Raise an RFI tied to this measurement',
+                        })}
+                        data-testid="ledger-create-rfi"
+                      >
+                        <HelpCircle size={11} />
+                      </button>
+                    )}
+                  </span>
                 )}
               </td>
             )}
@@ -640,7 +674,7 @@ function GroupRows({
               </td>
               <td className="px-1.5 py-1 text-content-secondary">{disp.unit}</td>
               <td />
-              {onAddToBoq && <td />}
+              {hasRowActions && <td />}
             </tr>
             );
           })}
