@@ -11,8 +11,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { useQueries } from '@tanstack/react-query';
-import { ArrowLeft, ChevronRight, HardDrive, UploadCloud, Search, Send } from 'lucide-react';
+import { useQueries, useQueryClient } from '@tanstack/react-query';
+import { ArrowLeft, ChevronRight, HardDrive, UploadCloud, Search, Send, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 import { EmptyState, ModuleGuideButton } from '@/shared/ui';
@@ -24,8 +24,9 @@ import type { TagRecord } from '@/features/file-tags/types';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useToastStore } from '@/stores/useToastStore';
 import {
+  fileManagerKeys,
   useFavorites,
-  useFileList,
+  useInfiniteFileList,
   useFileTree,
   useFolderPermissionCounts,
   useIsProjectOwner,
@@ -33,12 +34,21 @@ import {
   useStorageLocations,
   useToggleFavorite,
 } from './hooks';
+import { useFileUpload } from './useFileUpload';
 import { PathBar } from './components/PathBar';
 import { FileTree } from './components/FileTree';
 import { FileGrid } from './components/FileGrid';
 import { FileList } from './components/FileList';
+import { FileContextMenu } from './components/FileContextMenu';
+import { RenameDialog } from './components/RenameDialog';
 import { FilePreviewPane } from './components/FilePreviewPane';
 import { FileActionsBar, type ViewMode } from './components/FileActionsBar';
+import { useContentSearch, useReindexProject } from '@/features/file-search/hooks';
+import type { SearchMode } from '@/features/file-search/types';
+import { softDelete } from '@/features/file-trash/api';
+import { useRestoreFromTrash } from '@/features/file-trash/hooks';
+import { showUndoDeleteToast } from '@/features/file-trash/UndoDeleteToast';
+import type { TrashKind } from '@/features/file-trash/types';
 import { ExportWizard } from './components/ExportWizard';
 import { ImportWizard } from './components/ImportWizard';
 import { EmailDialog } from './components/EmailDialog';
@@ -160,6 +170,16 @@ export function FileManagerPage() {
   const [uploadKind, setUploadKind] = useState<FileKind | null>(null);
   const [permsKind, setPermsKind] = useState<FileKind | null>(null);
   const [showCheatsheet, setShowCheatsheet] = useState(false);
+  // Right-click context menu (row + cursor position) and the rename modal.
+  const [menu, setMenu] = useState<{ row: FileRow; x: number; y: number } | null>(null);
+  const [renameRow, setRenameRow] = useState<FileRow | null>(null);
+  // Filename vs content (OCR) search mode.
+  const [searchMode, setSearchMode] = useState<SearchMode>('filename');
+  // Page-level drag-and-drop upload overlay.
+  const [pageDragOver, setPageDragOver] = useState(false);
+  const dragDepthRef = useRef(0);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
 
   // Folder-permissions surface — gear + lock badge.
   const isOwner = useIsProjectOwner(projectId);
@@ -294,11 +314,73 @@ export function FileManagerPage() {
   const { data: locations, isLoading: locLoading } = useStorageLocations(projectId);
   // The list query is only needed when a category is selected; the
   // folder-grid view reads counts straight off the tree and skips the
-  // (potentially very large) full-file list response entirely.
-  const { data: list, isLoading: listLoading } = useFileList(
-    selectedKind ? projectId : null,
-    filters,
+  // (potentially very large) full-file list response entirely. Paged with
+  // useInfiniteQuery so a large category streams in on scroll rather than
+  // loading every row up front.
+  const {
+    data: listPages,
+    isLoading: listLoading,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useInfiniteFileList(selectedKind ? projectId : null, filters);
+  const flatItems = useMemo<FileRow[]>(
+    () => listPages?.pages.flatMap((p) => p.items) ?? [],
+    [listPages],
   );
+  const listTotal = listPages?.pages[0]?.total ?? 0;
+
+  // ── Content (OCR) search ─────────────────────────────────────────────
+  // Fires only in content mode with a non-empty query. Hits are mapped to
+  // FileRow-shaped rows so they render through the very same grid/list and
+  // reuse selection, open, context-menu and favourite wiring.
+  const contentActive = searchMode === 'content' && query.trim().length > 0;
+  const contentSearch = useContentSearch(
+    projectId,
+    searchMode === 'content' ? query : '',
+    selectedKind ?? undefined,
+    'content',
+  );
+  const reindex = useReindexProject();
+  const searchRows = useMemo<FileRow[]>(() => {
+    const hits = contentSearch.data?.hits ?? [];
+    return hits.map((hit) => {
+      const dot = hit.canonical_name.lastIndexOf('.');
+      const extension = dot > 0 ? hit.canonical_name.slice(dot) : null;
+      const kind = hit.kind as FileKind;
+      return {
+        id: hit.file_id,
+        kind,
+        name: hit.canonical_name,
+        project_id: projectId as string,
+        size_bytes: 0,
+        mime_type: null,
+        extension,
+        modified_at: null,
+        physical_path: '',
+        relative_path: '',
+        storage_backend: 'local',
+        download_url:
+          kind === 'document' ? `/api/v1/documents/${hit.file_id}/download/` : null,
+        preview_url: null,
+        thumbnail_url: null,
+        discipline: null,
+        category: null,
+        extra: {
+          snippet: hit.snippet,
+          score: hit.score,
+          page_count: hit.page_count,
+        },
+      } satisfies FileRow;
+    });
+  }, [contentSearch.data, projectId]);
+
+  // Rows the current view is built from: search hits in content mode, the
+  // paged file list otherwise. All find-by-id / selection lookups use this.
+  const baseItems = contentActive ? searchRows : flatItems;
+
+  // Shared upload routine for the page-level drag-and-drop drop zone.
+  const { doUpload } = useFileUpload(projectId);
 
   // Per-user favourites — drives the star toggle + the "Favourites only"
   // filter chip. The hook returns an O(1) membership set keyed by
@@ -327,7 +409,7 @@ export function FileManagerPage() {
   // repeated visits warm and never re-issues an in-flight request.
   // Until the backend learns a ``?tag_ids=`` filter this is the
   // smallest change that gives the toolbar real teeth.
-  const visibleItems = list?.items ?? [];
+  const visibleItems = baseItems;
   const tagFilterActive = selectedTagIds.length > 0 && Boolean(projectId);
   const tagQueries = useQueries({
     queries: tagFilterActive
@@ -384,11 +466,14 @@ export function FileManagerPage() {
     ? mediaItems.findIndex((m) => m.id === lightboxId)
     : -1;
 
-  // Whenever filters change, drop selection that no longer matches the
-  // visible result set so the preview pane never shows a stale row.
+  // Whenever the paged filename list changes, drop selection that no longer
+  // matches the accumulated result set so the preview pane never shows a
+  // stale row. Skipped during content search (a shrinking hit list must not
+  // wipe a selection made in the filename view) and tolerant of pagination:
+  // ``flatItems`` only grows as pages load, so prior selection survives.
   useEffect(() => {
-    if (!list) return;
-    const visibleIds = new Set(list.items.map((r) => r.id));
+    if (contentActive || !listPages) return;
+    const visibleIds = new Set(flatItems.map((r) => r.id));
     setSelectedIds((prev) => {
       const next = new Set([...prev].filter((id) => visibleIds.has(id)));
       return next.size === prev.size ? prev : next;
@@ -396,20 +481,20 @@ export function FileManagerPage() {
     if (previewRow && !visibleIds.has(previewRow.id)) {
       setPreviewRow(null);
     }
-  }, [list, previewRow]);
+  }, [listPages, flatItems, previewRow, contentActive]);
 
   // Deep-link: `?file={id}` pre-selects that file in the preview pane.
   // Used by the "Open in File Manager" secondary action so users land
   // directly on the focused file rather than just the category grid.
   const fileIdParam = searchParams.get('file');
   useEffect(() => {
-    if (!fileIdParam || !list) return;
-    const target = list.items.find((r) => r.id === fileIdParam);
+    if (!fileIdParam || flatItems.length === 0) return;
+    const target = flatItems.find((r) => r.id === fileIdParam);
     if (target) {
       setPreviewRow(target);
       setSelectedIds(new Set([fileIdParam]));
     }
-  }, [fileIdParam, list]);
+  }, [fileIdParam, flatItems]);
 
   /* Anchor for shift-click range selection — the last single-clicked id.
      Shift+click expands the visible range from anchor to target; plain click
@@ -430,7 +515,7 @@ export function FileManagerPage() {
           for (const rid of range) next.add(rid);
           return next;
         });
-        const row = list?.items.find((r) => r.id === id);
+        const row = baseItems.find((r) => r.id === id);
         if (row) setPreviewRow(row);
         return;
       }
@@ -446,7 +531,7 @@ export function FileManagerPage() {
       return next;
     });
     lastClickedRef.current = id;
-    const row = list?.items.find((r) => r.id === id);
+    const row = baseItems.find((r) => r.id === id);
     if (row) setPreviewRow(row);
   }
 
@@ -491,7 +576,7 @@ export function FileManagerPage() {
     // reconstruct the minimal row from the recents entry. We only do this for
     // the ``document`` kind, whose id IS a Document id the download route
     // resolves - a ``sheet`` id is a Sheet PK and must keep its takeoff route.
-    const recentRow: FileRow | undefined = list?.items.find((r) => r.id === item.id);
+    const recentRow: FileRow | undefined = flatItems.find((r) => r.id === item.id);
     if (recentRow && isInlinePreviewRow(recentRow)) {
       setInlinePdfRow(recentRow);
       return;
@@ -558,6 +643,118 @@ export function FileManagerPage() {
     setShowUpload(true);
   }
 
+  // Single-file delete from the context menu — soft-delete (recycle bin)
+  // plus the inline Undo toast, mirroring the bulk-bar delete pattern.
+  const restoreMutation = useRestoreFromTrash(projectId);
+  function handleContextDelete(row: FileRow) {
+    if (!projectId) return;
+    softDelete({
+      project_id: projectId,
+      kind: row.kind as TrashKind,
+      original_id: row.id,
+      canonical_name: row.name,
+    })
+      .then((trash) => {
+        queryClient.invalidateQueries({ queryKey: [fileManagerKeys.tree, projectId] });
+        queryClient.invalidateQueries({ queryKey: [fileManagerKeys.list, projectId] });
+        setSelectedIds((prev) => {
+          if (!prev.has(row.id)) return prev;
+          const next = new Set(prev);
+          next.delete(row.id);
+          return next;
+        });
+        if (previewRow?.id === row.id) setPreviewRow(null);
+        showUndoDeleteToast({
+          fileName: row.name,
+          trashId: trash.id,
+          onUndo: (tid: string) => restoreMutation.mutate(tid),
+          t,
+        });
+      })
+      .catch((err: unknown) =>
+        addToast({
+          type: 'error',
+          title: t('files.bulk.delete_failed', { defaultValue: 'Bulk delete failed' }),
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      );
+  }
+
+  // "Update search index" — re-OCR every file so recent uploads become
+  // searchable by their text content.
+  function handleReindex() {
+    if (!projectId || reindex.isPending) return;
+    reindex.mutate(projectId, {
+      onSuccess: (res) =>
+        addToast({
+          type: 'success',
+          title: t('files.search.reindex_done', { defaultValue: 'Search index updated' }),
+          message: t('files.search.reindex_summary', {
+            defaultValue: '{{indexed}} indexed, {{skipped}} skipped',
+            indexed: res.indexed,
+            skipped: res.skipped,
+          }),
+        }),
+      onError: (err: Error) =>
+        addToast({
+          type: 'error',
+          title: t('files.search.reindex_failed', {
+            defaultValue: 'Could not update the index',
+          }),
+          message: err.message,
+        }),
+    });
+  }
+
+  // Page-level drag-and-drop upload. A depth counter keeps the overlay
+  // stable while dragging over nested children (each fires its own
+  // enter/leave). Files drop into the current category via the shared
+  // upload path.
+  const dragHasFiles = (e: React.DragEvent) =>
+    Array.from(e.dataTransfer.types).includes('Files');
+  function handlePageDragEnter(e: React.DragEvent) {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    dragDepthRef.current += 1;
+    setPageDragOver(true);
+  }
+  function handlePageDragOver(e: React.DragEvent) {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+  }
+  function handlePageDragLeave(e: React.DragEvent) {
+    if (!dragHasFiles(e)) return;
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setPageDragOver(false);
+  }
+  function handlePageDrop(e: React.DragEvent) {
+    e.preventDefault();
+    dragDepthRef.current = 0;
+    setPageDragOver(false);
+    if (e.dataTransfer.files.length > 0) {
+      void doUpload(e.dataTransfer.files, selectedKind);
+    }
+  }
+
+  // IntersectionObserver-driven load-more for the filename list. Attaches
+  // only when a next page exists and content search is off. Older runtimes
+  // without the API fall back to the visible "Load more" button.
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node || contentActive || !hasNextPage) return;
+    if (typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((en) => en.isIntersecting) && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { rootMargin: '300px 0px', threshold: 0 },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [contentActive, hasNextPage, isFetchingNextPage, fetchNextPage, flatItems.length]);
+
   useFileShortcuts({
     enabled: !showCheatsheet && !showUpload && !showExport && !showImport,
     onFocusSearch: () => {
@@ -600,7 +797,7 @@ export function FileManagerPage() {
     );
   }
 
-  const selectedRows = list?.items.filter((r) => selectedIds.has(r.id)) ?? [];
+  const selectedRows = baseItems.filter((r) => selectedIds.has(r.id));
   const showFolderGrid = selectedKind === null;
   const activeKindLabel = selectedKind
     ? t(`files.category.${selectedKind}`, { defaultValue: selectedKind })
@@ -752,9 +949,11 @@ export function FileManagerPage() {
                 onExport={() => setShowExport(true)}
                 onImport={() => setShowImport(true)}
                 totalCount={
-                  showFavoritesOnly || tagFilterActive
-                    ? displayItems.length
-                    : list?.total ?? 0
+                  contentActive
+                    ? contentSearch.data?.total ?? displayItems.length
+                    : showFavoritesOnly || tagFilterActive
+                      ? displayItems.length
+                      : listTotal
                 }
                 extension={extension}
                 onExtensionChange={setExtension}
@@ -765,22 +964,33 @@ export function FileManagerPage() {
                 favoritesOnly={showFavoritesOnly}
                 onFavoritesOnlyChange={setShowFavoritesOnly}
                 favoritesCount={favorites.keys.size}
+                searchMode={searchMode}
+                onSearchModeChange={setSearchMode}
+                onReindex={handleReindex}
+                reindexing={reindex.isPending}
               />
               <BulkActionsBar
                 selectedRows={selectedRows}
                 projectId={projectId}
                 onClear={() => setSelectedIds(new Set())}
               />
-              <div className="flex-1 overflow-auto">
+              <div
+                className="relative flex-1 overflow-auto"
+                onDragEnter={handlePageDragEnter}
+                onDragOver={handlePageDragOver}
+                onDragLeave={handlePageDragLeave}
+                onDrop={handlePageDrop}
+              >
                 {view === 'grid' ? (
                   <FileGrid
                     items={displayItems}
                     selectedIds={selectedIds}
                     onSelect={handleSelect}
                     onOpen={handleOpen}
-                    isLoading={listLoading}
+                    isLoading={contentActive ? contentSearch.isLoading : listLoading}
                     favoriteKeys={favorites.keys}
                     onToggleFavorite={handleToggleFavorite}
+                    onContextMenu={(row, x, y) => setMenu({ row, x, y })}
                   />
                 ) : (
                   <FileList
@@ -790,10 +1000,43 @@ export function FileManagerPage() {
                     onOpen={handleOpen}
                     sort={sort}
                     onSortChange={setSort}
-                    isLoading={listLoading}
+                    isLoading={contentActive ? contentSearch.isLoading : listLoading}
                     favoriteKeys={favorites.keys}
                     onToggleFavorite={handleToggleFavorite}
+                    onContextMenu={(row, x, y) => setMenu({ row, x, y })}
                   />
+                )}
+
+                {/* Load-more sentinel — auto-fetches the next page when it
+                    scrolls into view (filename list only). The button is a
+                    click fallback for runtimes without IntersectionObserver. */}
+                {!contentActive && hasNextPage && (
+                  <div ref={sentinelRef} className="flex justify-center py-4">
+                    <button
+                      type="button"
+                      onClick={() => fetchNextPage()}
+                      disabled={isFetchingNextPage}
+                      className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium border border-border-light text-content-secondary hover:bg-surface-secondary disabled:opacity-60"
+                    >
+                      {isFetchingNextPage && <Loader2 size={13} className="animate-spin" />}
+                      {t('files.load_more', { defaultValue: 'Load more' })}
+                    </button>
+                  </div>
+                )}
+
+                {/* Drop overlay — shown while dragging files over the list. */}
+                {pageDragOver && (
+                  <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-oe-blue/10 backdrop-blur-sm">
+                    <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-oe-blue bg-surface-elevated/90 px-8 py-6 shadow-lg">
+                      <UploadCloud size={28} className="text-oe-blue" />
+                      <p className="text-sm font-semibold text-content-primary">
+                        {t('files.drop_to_upload', {
+                          defaultValue: 'Drop files to upload to {{category}}',
+                          category: activeKindLabel,
+                        })}
+                      </p>
+                    </div>
+                  </div>
                 )}
               </div>
             </>
@@ -870,6 +1113,27 @@ export function FileManagerPage() {
           const item = mediaItems[next];
           if (item) setLightboxId(item.id);
         }}
+      />
+      {/* Right-click context menu — Open / Download / Copy link / Rename /
+          Delete. Rename opens the modal below; Delete soft-deletes with an
+          inline Undo toast. */}
+      {menu && (
+        <FileContextMenu
+          row={menu.row}
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          onRename={(row) => setRenameRow(row)}
+          onDelete={(row) => handleContextDelete(row)}
+          onInlinePreview={(row) => setInlinePdfRow(row)}
+          onMediaPreview={(row) => setLightboxId(row.id)}
+        />
+      )}
+      <RenameDialog
+        open={renameRow !== null}
+        row={renameRow}
+        projectId={projectId}
+        onClose={() => setRenameRow(null)}
       />
     </div>
   );

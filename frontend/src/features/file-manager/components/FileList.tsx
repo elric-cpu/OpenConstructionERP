@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /** Table view of files — alternative to FileGrid. */
 
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowDown, ArrowUp, ExternalLink, FileText, Image as ImageIcon, Layout, Box, Pencil, File, PenTool, FileBarChart, Tag, Star } from 'lucide-react';
 import clsx from 'clsx';
@@ -33,6 +34,8 @@ interface FileListProps {
   favoriteKeys?: Set<string>;
   /** Toggle a row's favourite state. Omit to hide the star column. */
   onToggleFavorite?: (row: FileRow, isFavorite: boolean) => void;
+  /** Right-click a row — opens the shared FileContextMenu at the cursor. */
+  onContextMenu?: (row: FileRow, x: number, y: number) => void;
 }
 
 function fmtBytes(bytes: number): string {
@@ -71,9 +74,65 @@ export function FileList({
   isLoading,
   favoriteKeys,
   onToggleFavorite,
+  onContextMenu,
 }: FileListProps) {
   const { t } = useTranslation();
   const showStar = Boolean(onToggleFavorite);
+
+  // ── Keyboard roving navigation ──────────────────────────────────────
+  // One row carries ``tabIndex={0}``; Up/Down move focus, Enter opens,
+  // Space toggles selection, Shift+Arrow extends. Mirrors the grid.
+  const [focusIndex, setFocusIndex] = useState(0);
+  const rowRefs = useRef<(HTMLTableRowElement | null)[]>([]);
+
+  useEffect(() => {
+    if (focusIndex > items.length - 1) {
+      setFocusIndex(Math.max(0, items.length - 1));
+    }
+  }, [items.length, focusIndex]);
+
+  const stepRow = (nextIndex: number, shift: boolean) => {
+    const clamped = Math.max(0, Math.min(items.length - 1, nextIndex));
+    const targetRow = items[clamped];
+    if (shift && targetRow) onSelect(targetRow.id, true, true);
+    setFocusIndex(clamped);
+    rowRefs.current[clamped]?.focus();
+  };
+
+  const handleRowKeyDown = (e: React.KeyboardEvent, idx: number, row: FileRow) => {
+    // Ignore keys bubbling up from the inner star / open-in buttons so their
+    // own Enter/Space activation doesn't also trigger row open/select.
+    if (e.target !== e.currentTarget) return;
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        stepRow(idx + 1, e.shiftKey);
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        stepRow(idx - 1, e.shiftKey);
+        break;
+      case 'Home':
+        e.preventDefault();
+        stepRow(0, e.shiftKey);
+        break;
+      case 'End':
+        e.preventDefault();
+        stepRow(items.length - 1, e.shiftKey);
+        break;
+      case 'Enter':
+        e.preventDefault();
+        onOpen(row);
+        break;
+      case ' ':
+      case 'Spacebar':
+        e.preventDefault();
+        onSelect(row.id, true);
+        break;
+      default:
+        break;
+    }
+  };
 
   const Header = ({ field, label, align = 'left' }: { field: SortKey; label: string; align?: 'left' | 'right' }) => {
     const active = sort === field;
@@ -137,7 +196,7 @@ export function FileList({
               </td>
             </tr>
           ) : (
-            items.map((row) => {
+            items.map((row, idx) => {
               const Icon = KIND_ICON[row.kind] ?? File;
               const isSelected = selectedIds.has(row.id);
               const target = primaryModule(row.kind, row.extension);
@@ -153,14 +212,31 @@ export function FileList({
               return (
                 <tr
                   key={row.id}
+                  ref={(el) => {
+                    rowRefs.current[idx] = el;
+                  }}
+                  tabIndex={idx === focusIndex ? 0 : -1}
                   className={clsx(
                     'border-b border-border-light cursor-pointer transition-colors',
+                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-oe-blue/40',
                     isSelected
                       ? 'bg-oe-blue/10'
                       : 'hover:bg-surface-secondary/60',
                   )}
-                  onClick={(e) => onSelect(row.id, e.metaKey || e.ctrlKey, e.shiftKey)}
+                  onClick={(e) => {
+                    setFocusIndex(idx);
+                    onSelect(row.id, e.metaKey || e.ctrlKey, e.shiftKey);
+                  }}
                   onDoubleClick={() => onOpen(row)}
+                  onKeyDown={(e) => handleRowKeyDown(e, idx, row)}
+                  onContextMenu={
+                    onContextMenu
+                      ? (e) => {
+                          e.preventDefault();
+                          onContextMenu(row, e.clientX, e.clientY);
+                        }
+                      : undefined
+                  }
                 >
                   {showStar && (
                     <td className="px-2 py-2 text-center">
