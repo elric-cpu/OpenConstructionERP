@@ -157,6 +157,19 @@ def test_signed_website_lead_is_durable_and_idempotent(isolated_settings: Settin
     }
 
 
+def test_idempotency_key_reuse_with_different_payload_is_rejected(
+    isolated_settings: Settings,
+) -> None:
+    assert post_signed_lead(isolated_settings, canonical_lead(), key="same-key").status_code == 201
+    conflict = post_signed_lead(
+        isolated_settings,
+        canonical_lead(message="A different project description."),
+        key="same-key",
+    )
+    assert conflict.status_code == 409
+    assert "different lead payload" in conflict.json()["detail"]
+
+
 def test_intake_enqueues_email_only_when_emergency_sms_is_disabled(
     isolated_settings: Settings,
 ) -> None:
@@ -326,6 +339,24 @@ def test_notification_provider_contracts(
     assert result.provider_message_id == next(iter(provider_body.values()))
     assert post.call_args.args[0] == expected_url
     response.raise_for_status.assert_called_once()
+
+
+def test_notification_provider_invalid_json_is_a_delivery_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = MagicMock()
+    response.json.side_effect = ValueError("invalid json")
+    monkeypatch.setattr("app.notifications.httpx.post", MagicMock(return_value=response))
+    with pytest.raises(NotificationDeliveryError, match="invalid json"):
+        deliver_notification(
+            {
+                "id": "outbox-invalid-json",
+                "channel": "email",
+                "destination": "office@example.com",
+                "payload": canonical_lead(),
+            },
+            production_settings(),
+        )
 
 
 def test_signed_intake_rejects_missing_bad_and_expired_signatures(
@@ -612,19 +643,24 @@ def test_ai_skill_creates_owner_approved_persisted_proposal(
 ) -> None:
     gateway = AsyncMock(return_value={"output_text": "Draft estimate"})
     monkeypatch.setattr("app.main.run_agent_prompt", gateway)
+    lead_id = post_signed_lead(isolated_settings, canonical_lead()).json()["lead_id"]
     run = client.post(
         "/api/benson/v1/ai/runs",
         headers=STAFF_HEADERS,
         json={
             "skill_id": "estimate-builder",
             "prompt": "Draft from supplied scope",
-            "record_context": {"scope": "two windows"},
+            "lead_id": lead_id,
         },
     )
     assert run.status_code == 200
     assert run.json()["status"] == "confirmation_required"
     assert gateway.await_args is not None
-    assert '"scope": "two windows"' in gateway.await_args.args[1]
+    model_prompt = gateway.await_args.args[1]
+    assert '"project_description": "Two windows need review."' in model_prompt
+    assert "homeowner@example.com" not in model_prompt
+    assert "458-555-0100" not in model_prompt
+    assert "Test Homeowner" not in model_prompt
     proposal_id = run.json()["proposal_id"]
     approved = client.post(
         f"/api/benson/v1/ai/proposals/{proposal_id}/approve",
@@ -644,12 +680,14 @@ def test_ai_skill_creates_owner_approved_persisted_proposal(
 
 
 def test_ai_skill_rejects_unknown_skill_and_gateway_failure_has_no_mutation(
+    isolated_settings: Settings,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    lead_id = post_signed_lead(isolated_settings, canonical_lead()).json()["lead_id"]
     missing = client.post(
         "/api/benson/v1/ai/runs",
         headers=STAFF_HEADERS,
-        json={"skill_id": "missing", "prompt": "No"},
+        json={"skill_id": "missing", "prompt": "No", "lead_id": lead_id},
     )
     assert missing.status_code == 404
     from app.ai_gateway import AiGatewayUnavailable
@@ -660,7 +698,11 @@ def test_ai_skill_rejects_unknown_skill_and_gateway_failure_has_no_mutation(
     failed = client.post(
         "/api/benson/v1/ai/runs",
         headers=STAFF_HEADERS,
-        json={"skill_id": "historical-cost-analyzer", "prompt": "Summarize supplied costs"},
+        json={
+            "skill_id": "historical-cost-analyzer",
+            "prompt": "Summarize supplied costs",
+            "lead_id": lead_id,
+        },
     )
     assert failed.status_code == 200
     assert failed.json()["status"] == "failed"

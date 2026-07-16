@@ -83,13 +83,16 @@ export function LeadWorkspace({
   const [error, setError] = useState("");
 
   useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
     setBusy("lead");
     setError("");
     Promise.all([
-      api<LeadDetail>(`/api/benson/v1/leads/${leadId}`, credential),
-      api<{ skills: Skill[] }>("/api/benson/v1/ai/skills", credential),
+      api<LeadDetail>(`/api/benson/v1/leads/${leadId}`, credential, { signal: controller.signal }),
+      api<{ skills: Skill[] }>("/api/benson/v1/ai/skills", credential, { signal: controller.signal }),
     ])
       .then(([detail, catalog]) => {
+        if (!active) return;
         setLead(detail);
         setAssignee(detail.assigned_to ?? "");
         setSkills(catalog.skills);
@@ -97,8 +100,17 @@ export function LeadWorkspace({
           catalog.skills.some((skill) => skill.id === current) ? current : (catalog.skills[0]?.id ?? ""),
         );
       })
-      .catch(() => setError("Lead details could not be loaded."))
-      .finally(() => setBusy(""));
+      .catch((error) => {
+        if (active && error instanceof Error && error.name !== "AbortError")
+          setError("Lead details could not be loaded.");
+      })
+      .finally(() => {
+        if (active) setBusy("");
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [credential, leadId]);
 
   const save = async (change: Record<string, string>) => {
@@ -131,21 +143,7 @@ export function LeadWorkspace({
         body: JSON.stringify({
           skill_id: skillId,
           prompt,
-          record_context: {
-            lead: {
-              id: lead.id,
-              status: lead.status,
-              priority: lead.priority,
-              assigned_to: lead.assigned_to,
-              intake: lead.payload,
-              notes: lead.notes.map(({ author, body, created_at }) => ({ author, body, created_at })),
-              attachments: lead.attachments.map(({ original_name, content_type, size_bytes }) => ({
-                original_name,
-                content_type,
-                size_bytes,
-              })),
-            },
-          },
+          lead_id: lead.id,
         }),
       });
       setDraft(result.summary);

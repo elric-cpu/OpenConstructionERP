@@ -69,9 +69,9 @@ def deliver_notification(item: dict[str, Any], settings: Settings) -> DeliveryRe
         else:
             raise NotificationDeliveryError(f"Unsupported channel: {item['channel']}")
         response.raise_for_status()
-    except (httpx.HTTPError, KeyError) as error:
+        body = response.json()
+    except (httpx.HTTPError, KeyError, TypeError, ValueError) as error:
         raise NotificationDeliveryError(str(error)[:1_000]) from error
-    body = response.json()
     message_id = str(body.get("id") or body.get("sid") or "")
     if not message_id:
         raise NotificationDeliveryError("Provider response did not include a message ID")

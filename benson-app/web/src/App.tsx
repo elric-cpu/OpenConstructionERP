@@ -68,26 +68,55 @@ export function App() {
   const googleButton = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!credential) {
+      setData(empty);
+      setLeads([]);
+      setSelectedLead("");
+      setNotificationSettings(null);
+      setRequestStatus("auth-required");
+      return;
+    }
+    const controller = new AbortController();
+    let active = true;
+    const protectedHeaders = requestHeaders(credential);
     Promise.all([
-      fetch("/api/v1/dashboard", { headers: requestHeaders(credential) }),
+      fetch("/api/v1/dashboard", { headers: protectedHeaders, signal: controller.signal }),
       fetch(
         `/api/benson/v1/leads?limit=100${statusFilter ? `&status=${statusFilter}` : ""}${query ? `&query=${encodeURIComponent(query)}` : ""}`,
-        { headers: requestHeaders(credential) },
+        { headers: protectedHeaders, signal: controller.signal },
       ),
-      fetch("/api/benson/v1/settings/notifications", { headers: requestHeaders(credential) }),
+      fetch("/api/benson/v1/settings/notifications", { headers: protectedHeaders, signal: controller.signal }),
     ])
       .then(async ([dashboardResponse, leadsResponse, settingsResponse]) => {
-        if ([401, 403, 503].includes(dashboardResponse.status)) {
+        if (!active) return;
+        if ([dashboardResponse, leadsResponse].some((response) => [401, 403].includes(response.status))) {
+          setData(empty);
+          setLeads([]);
+          setSelectedLead("");
+          setNotificationSettings(null);
           setRequestStatus("auth-required");
           return;
         }
+        if (dashboardResponse.status === 503 || leadsResponse.status === 503) throw Error("Operations API unavailable");
         if (!dashboardResponse.ok || !leadsResponse.ok) throw Error("Operations API unavailable");
-        setData(await dashboardResponse.json());
-        setLeads((await leadsResponse.json()).leads);
-        setNotificationSettings(settingsResponse.ok ? await settingsResponse.json() : null);
+        const [nextData, nextLeads, nextSettings] = await Promise.all([
+          dashboardResponse.json(),
+          leadsResponse.json(),
+          settingsResponse.ok ? settingsResponse.json() : Promise.resolve(null),
+        ]);
+        if (!active) return;
+        setData(nextData);
+        setLeads(nextLeads.leads);
+        setNotificationSettings(nextSettings);
         setRequestStatus("ready");
       })
-      .catch(() => setRequestStatus("offline"));
+      .catch((error) => {
+        if (active && error instanceof Error && error.name !== "AbortError") setRequestStatus("offline");
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [credential, query, statusFilter]);
 
   useEffect(() => {
@@ -118,7 +147,7 @@ export function App() {
         script.onload = render;
         document.head.append(script);
       })
-      .catch(() => setRequestStatus("offline"));
+      .catch(() => setRequestStatus("auth-required"));
   }, [requestStatus]);
 
   const signOut = () => {
@@ -141,9 +170,17 @@ export function App() {
     month: "long",
     day: "numeric",
   }).format(new Date());
+  const connectionLabel = {
+    loading: "Connecting",
+    ready: "System ready",
+    "auth-required": "Sign in required",
+    offline: "Connection issue",
+  }[requestStatus];
 
   const setSmsEnabled = async (smsEnabled: boolean) => {
     if (!notificationSettings) return;
+    const previous = notificationSettings;
+    setNotificationSettings({ ...notificationSettings, sms_enabled: smsEnabled });
     setSettingsStatus("saving");
     try {
       const response = await fetch("/api/benson/v1/settings/notifications", {
@@ -155,6 +192,7 @@ export function App() {
       setNotificationSettings(await response.json());
       setSettingsStatus("saved");
     } catch {
+      setNotificationSettings(previous);
       setSettingsStatus("error");
     }
   };
@@ -203,9 +241,7 @@ export function App() {
             />
           </div>
           <div className="header-actions">
-            <span className={requestStatus === "offline" ? "status offline" : "status"}>
-              {requestStatus === "offline" ? "Connection issue" : "System ready"}
-            </span>
+            <span className={requestStatus === "offline" ? "status offline" : "status"}>{connectionLabel}</span>
             {credential && (
               <button className="sign-out" onClick={signOut} aria-label="Sign out">
                 <LogOut />
@@ -224,7 +260,7 @@ export function App() {
               <div ref={googleButton} className="google-button" />
             </section>
           )}
-          {selectedLead ? (
+          {requestStatus === "ready" && selectedLead ? (
             <LeadWorkspace
               leadId={selectedLead}
               credential={credential}
@@ -233,7 +269,7 @@ export function App() {
                 setLeads((current) => current.map((lead) => (lead.id === changed.id ? changed : lead)))
               }
             />
-          ) : (
+          ) : requestStatus === "ready" ? (
             <>
               <div className="headline">
                 <div>
@@ -385,7 +421,7 @@ export function App() {
                 </Panel>
               </div>
             </>
-          )}
+          ) : null}
         </div>
       </main>
     </div>

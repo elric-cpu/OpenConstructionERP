@@ -38,6 +38,10 @@ class InvalidLeadTransition(ValueError):
     pass
 
 
+class IdempotencyConflict(ValueError):
+    pass
+
+
 leads = Table(
     "leads",
     metadata,
@@ -171,6 +175,10 @@ class OperationsStore:
     def initialize_schema(self) -> None:
         metadata.create_all(self.engine)
 
+    def readiness_probe(self) -> None:
+        with self.engine.connect() as db:
+            db.execute(select(1)).scalar_one()
+
     def _audit(
         self,
         db: Any,
@@ -286,6 +294,10 @@ class OperationsStore:
                     )
                     .mappings()
                     .one()
+                )
+            if existing["payload"] != lead.model_dump_json():
+                raise IdempotencyConflict(
+                    "Idempotency-Key was already used for a different lead payload"
                 )
             return self._receipt(existing, session, upload_base_url, duplicate=True)
         return LeadReceipt(

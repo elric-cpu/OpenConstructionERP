@@ -48,7 +48,7 @@ from .notifications import NotificationDeliveryError, deliver_notification
 from .policy import ActionRisk
 from .signing import verify_website_signature
 from .skill_registry import SkillDefinition, load_registry
-from .storage import InvalidLeadTransition, OperationsStore, operations_store
+from .storage import IdempotencyConflict, InvalidLeadTransition, OperationsStore, operations_store
 
 
 @asynccontextmanager
@@ -91,6 +91,7 @@ def create_lead_receipt(lead: LeadCreate, idempotency_key: str, settings: Settin
 
 @app.get("/api/health")
 async def health(settings: Settings = Depends(get_settings)) -> dict[str, Any]:
+    await run_in_threadpool(store(settings).readiness_probe)
     return {
         "status": "healthy",
         "service": settings.app_name,
@@ -112,9 +113,12 @@ def drain_notifications(
     claimed = notification_store.claim_notifications(limit=settings.notification_batch_size)
     sent = 0
     failed = 0
-    sms_enabled = notification_store.notification_settings(
-        sms_enabled_default=settings.sms_enabled_default
-    )["sms_enabled"]
+    sms_enabled = (
+        notification_store.notification_settings(sms_enabled_default=settings.sms_enabled_default)[
+            "sms_enabled"
+        ]
+        and settings.twilio_is_configured()
+    )
     for item in claimed:
         if item["channel"] == "sms" and not sms_enabled:
             notification_store.mark_notification_disabled(item["id"])
@@ -231,7 +235,10 @@ async def benson_website_lead(
         lead = LeadCreate.model_validate_json(body)
     except ValidationError as error:
         raise HTTPException(status_code=422, detail=json.loads(error.json())) from error
-    receipt = await run_in_threadpool(create_lead_receipt, lead, idempotency_key, settings)
+    try:
+        receipt = await run_in_threadpool(create_lead_receipt, lead, idempotency_key, settings)
+    except IdempotencyConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
     response.status_code = status.HTTP_200_OK if receipt.duplicate else status.HTTP_201_CREATED
     return receipt
 
@@ -411,6 +418,29 @@ def skill_system_prompt(skill: SkillDefinition) -> str:
     )
 
 
+def lead_ai_context(lead: dict[str, Any]) -> dict[str, Any]:
+    intake = lead["payload"]
+    return {
+        "lead": {
+            "id": lead["id"],
+            "status": lead["status"],
+            "priority": lead["priority"],
+            "assigned": bool(lead.get("assigned_to")),
+            "service_type": lead["service_type"],
+            "city": lead["city"],
+            "urgency": intake.get("urgency"),
+            "customer_type": intake.get("customer_type"),
+            "item_count": intake.get("item_count"),
+            "dimensions": intake.get("dimensions"),
+            "access_notes": intake.get("access_notes"),
+            "timeline": intake.get("timeline"),
+            "project_description": intake.get("message"),
+            "staff_notes": [note["body"] for note in lead["notes"]],
+            "attachment_count": len(lead["attachments"]),
+        }
+    }
+
+
 @app.post("/api/benson/v1/ai/runs")
 async def run_ai_skill(
     request: AgentRunRequest,
@@ -420,7 +450,11 @@ async def run_ai_skill(
     skill = registry(settings).get(request.skill_id)
     if not skill or not skill.enabled or principal.role not in skill.allowed_roles:
         raise HTTPException(status_code=404, detail="Skill is not available for this role")
-    context_json = json.dumps(request.record_context, sort_keys=True)
+    lead = await run_in_threadpool(store(settings).get_lead, str(request.lead_id))
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead was not found")
+    record_context = lead_ai_context(lead)
+    context_json = json.dumps(record_context, sort_keys=True)
     if len(context_json.encode()) > 50_000:
         raise HTTPException(status_code=413, detail="AI record context is too large")
     model_prompt = f"{request.prompt}\n\nSupplied record context:\n{context_json}"
@@ -440,7 +474,7 @@ async def run_ai_skill(
         prompt=request.prompt,
         summary=summary,
         model=settings.fcc_model,
-        context=request.record_context,
+        context=record_context,
         risk=skill.risk if run_status != "failed" else ActionRisk.INTERNAL,
     )
     return {

@@ -192,7 +192,7 @@ class NotificationSettings(BaseModel):
 class AgentRunRequest(BaseModel):
     skill_id: str = Field(min_length=1, max_length=120)
     prompt: str = Field(min_length=1, max_length=20_000)
-    record_context: dict[str, Any] = Field(default_factory=dict)
+    lead_id: UUID
 
 
 class AgentActionRequest(BaseModel):

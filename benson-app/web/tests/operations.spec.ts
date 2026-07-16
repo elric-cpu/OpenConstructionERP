@@ -1,7 +1,24 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
+async function mockEmptyWorkspace(page: import("@playwright/test").Page) {
+  await page.addInitScript(() => sessionStorage.setItem("benson-google-credential", "test-token"));
+  await page.route("**/api/v1/dashboard", (route) =>
+    route.fulfill({
+      json: {
+        metrics: { new_leads: 0, active_jobs: 0, open_tasks: 0, unbilled_work: 0 },
+        attention: [],
+        schedule: [],
+        jobs: [],
+      },
+    }),
+  );
+  await page.route("**/api/benson/v1/leads?limit=100*", (route) => route.fulfill({ json: { leads: [] } }));
+  await page.route("**/api/benson/v1/settings/notifications", (route) => route.fulfill({ status: 403 }));
+}
+
 test("operations dashboard is responsive and accessible", async ({ page }) => {
+  await mockEmptyWorkspace(page);
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Good morning." })).toBeVisible();
   await expect(page.getByText("Benson Assistant")).toBeVisible();
@@ -23,6 +40,7 @@ test("mobile rail opens and exposes operations navigation", async ({ page }, tes
 });
 
 test("empty states never fabricate operational records", async ({ page }) => {
+  await mockEmptyWorkspace(page);
   await page.goto("/");
   await expect(page.getByText("You’re caught up")).toBeVisible();
   await expect(page.getByText("No active jobs yet")).toBeVisible();
@@ -67,6 +85,55 @@ test("authenticated staff see persisted website leads", async ({ page }) => {
   await expect(page.getByText("Window replacement · Burns")).toBeVisible();
   await expect(page.getByText("urgent", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+});
+
+test("sign out invalidates in-flight authenticated responses", async ({ page }) => {
+  await page.addInitScript(() => sessionStorage.setItem("benson-google-credential", "test-token"));
+  let releaseResponses: () => void = () => undefined;
+  const delayed = new Promise<void>((resolve) => {
+    releaseResponses = resolve;
+  });
+  await page.route("**/api/v1/dashboard", async (route) => {
+    await delayed;
+    await route.fulfill({
+      json: {
+        metrics: { new_leads: 1, active_jobs: 0, open_tasks: 0, unbilled_work: 0 },
+        attention: [],
+        schedule: [],
+        jobs: [],
+      },
+    });
+  });
+  await page.route("**/api/benson/v1/leads?limit=100*", async (route) => {
+    await delayed;
+    await route.fulfill({
+      json: {
+        leads: [
+          {
+            id: "private-lead",
+            status: "new",
+            priority: "normal",
+            name: "Private homeowner",
+            service_type: "Repair",
+            city: "Burns",
+            created_at: "2026-07-14T12:00:00Z",
+          },
+        ],
+      },
+    });
+  });
+  await page.route("**/api/benson/v1/settings/notifications", async (route) => {
+    await delayed;
+    await route.fulfill({ json: { email_enabled: true, sms_enabled: false, sms_configured: false } });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Sign out" }).click();
+  releaseResponses();
+
+  await expect(page.getByRole("heading", { name: /Sign in with your Benson/ })).toBeVisible();
+  await expect(page.getByText("Private homeowner")).not.toBeVisible();
+  await expect(page.getByText("System ready")).not.toBeVisible();
 });
 
 test("owners can opt in to emergency SMS from settings", async ({ page }) => {
@@ -183,8 +250,7 @@ test("staff can operate a lead and create a fact-scoped AI draft", async ({ page
   );
   await page.route("**/api/benson/v1/ai/runs", async (route) => {
     const request = route.request().postDataJSON();
-    expect(request.record_context.lead.id).toBe("lead-1");
-    expect(request.record_context.lead.intake.message).toBe("Two windows need review.");
+    expect(request.lead_id).toBe("lead-1");
     await route.fulfill({ json: { status: "completed", summary: "Call the homeowner and confirm measurements." } });
   });
 
