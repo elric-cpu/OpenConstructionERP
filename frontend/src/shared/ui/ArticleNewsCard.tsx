@@ -2,7 +2,6 @@
 // Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 import { useTranslation } from 'react-i18next';
 import { ArrowUpRight, Newspaper } from 'lucide-react';
-import { isTauri, openExternalUrl } from '@/shared/lib/desktop';
 
 /**
  * ArticleNewsCard - a compact promo card pinned near the foot of the sidebar
@@ -32,15 +31,6 @@ export function ArticleNewsCard() {
       href={ARTICLE_URL}
       target="_blank"
       rel="noopener noreferrer"
-      onClick={(e) => {
-        // Inside the desktop shell a target="_blank" link is swallowed by the
-        // webview and nothing opens, so hand the URL to the OS browser instead.
-        // In a normal web build this branch is skipped and the anchor behaves.
-        if (isTauri) {
-          e.preventDefault();
-          void openExternalUrl(ARTICLE_URL);
-        }
-      }}
       data-testid="sidebar-article-news"
       aria-label={`${title} - ${read}`}
       className="group mx-2 mb-2 flex items-start gap-2.5 overflow-hidden rounded-lg border border-border-light bg-surface-elevated px-3 py-2.5 shadow-sm ring-1 ring-black/5 transition-shadow animate-card-in hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60 dark:ring-white/5"

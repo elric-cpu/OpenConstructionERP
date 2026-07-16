@@ -36,6 +36,7 @@ import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
 import { useTranslation } from 'react-i18next';
 import { getLanguageByCode } from './i18n';
 import { initErrorLogger } from '@/shared/lib/errorLogger';
+import { installDesktopExternalLinks } from '@/shared/lib/desktop';
 
 // Lazy-loaded heavy pages — code-split into separate chunks
 const BOQEditorPage = lazy(() =>
@@ -827,6 +828,14 @@ export default function App() {
   if (typeof window !== 'undefined') {
     (window as any).__ddc_oe = ddcVerifyIntegrity();
   }
+
+  // Desktop shell: outbound links (docs, GitHub, marketing site, contact mail)
+  // must be handed to the OS browser, because the webview swallows a
+  // target="_blank" anchor and nothing opens. Install the one global click
+  // handler once on mount. No-op in a normal web build.
+  useEffect(() => {
+    installDesktopExternalLinks();
+  }, []);
 
   // Pull the user's saved custom-unit catalogue once after auth resolves.
   // Fire-and-forget — the BOQ Unit dropdown still works from localStorage

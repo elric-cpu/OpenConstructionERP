@@ -32,6 +32,23 @@ function safeAppPath(path?: string): string | undefined {
   return path;
 }
 
+type TauriInvoke = (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
+
+/**
+ * Resolve the Tauri `invoke` bridge exposed by `withGlobalTauri`.
+ *
+ * Returns the core invoke function (or the legacy top-level one) when running
+ * inside the desktop shell, otherwise undefined. Both `openAppInBrowser` and
+ * `openExternalUrl` reach native Rust commands through this rather than the
+ * `@tauri-apps/*` npm packages, which are deliberately NOT part of the web
+ * bundle - importing them at runtime in the built webview just throws.
+ */
+function getTauriInvoke(): TauriInvoke | undefined {
+  const tauri = (window as { __TAURI__?: Record<string, unknown> }).__TAURI__;
+  const core = tauri?.core as { invoke?: TauriInvoke } | undefined;
+  return core?.invoke ?? (tauri?.invoke as TauriInvoke | undefined);
+}
+
 /**
  * Open the running app in the user's normal web browser (desktop only).
  *
@@ -50,15 +67,7 @@ export async function openAppInBrowser(path?: string): Promise<boolean> {
   if (!isTauri) return false;
 
   const cleanPath = safeAppPath(path);
-  const tauri = (window as { __TAURI__?: Record<string, unknown> }).__TAURI__;
-  const core = tauri?.core as
-    | { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> }
-    | undefined;
-  const invoke =
-    core?.invoke ??
-    (tauri?.invoke as
-      | ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>)
-      | undefined);
+  const invoke = getTauriInvoke();
 
   if (invoke) {
     try {
@@ -82,23 +91,74 @@ export async function openAppInBrowser(path?: string): Promise<boolean> {
  *
  * In a web build a plain `<a target="_blank">` already opens a new tab, so
  * callers should reach for this only inside the Tauri shell, where the webview
- * swallows a target link and nothing opens. It resolves the shell plugin
- * dynamically - through a string variable so the web bundle never tries to
- * resolve the missing dependency - and asks the OS to open the link. Returns
- * true when an open was attempted, false in a browser build or on error, so a
- * caller can fall back to default link behaviour.
+ * swallows a target link and nothing opens. It calls the native
+ * `open_external_url` command (which shells out to the OS opener) through the
+ * `withGlobalTauri` invoke bridge. We deliberately do NOT import
+ * `@tauri-apps/plugin-shell`: that package is not part of the bundle, so a
+ * runtime import of it in the built webview just throws and every outbound link
+ * silently dies. Returns true when an open was attempted, false otherwise.
  */
 export async function openExternalUrl(url: string): Promise<boolean> {
   if (!isTauri || !url) return false;
+  const invoke = getTauriInvoke();
+  if (!invoke) return false;
   try {
-    const tauriPluginShell = '@tauri-apps/plugin-shell';
-    const mod = (await import(/* @vite-ignore */ tauriPluginShell)) as {
-      open: (target: string) => Promise<void>;
-    };
-    await mod.open(url);
+    await invoke('open_external_url', { url });
     return true;
   } catch (err) {
-    console.warn('Tauri shell open failed:', err);
+    console.warn('open_external_url failed:', err);
     return false;
   }
+}
+
+/**
+ * Route every external-link click to the OS browser (desktop only).
+ *
+ * Inside the Tauri webview a plain `<a href="https://…" target="_blank">` goes
+ * nowhere: the webview refuses to navigate off the local app origin and no new
+ * window opens, so every outbound link in the UI (docs, GitHub, the marketing
+ * site, contact mail) looks dead. This installs one capture-phase click
+ * listener that catches those clicks before the webview swallows them and hands
+ * the URL to the native opener. Same-origin app routes (react-router links,
+ * in-app anchors) are left untouched so navigation still works normally.
+ * Idempotent, and a no-op in a normal web build where anchors behave already.
+ */
+export function installDesktopExternalLinks(): void {
+  if (!isTauri || typeof document === 'undefined') return;
+  const flagged = window as { __oeExternalLinks?: boolean };
+  if (flagged.__oeExternalLinks) return;
+  flagged.__oeExternalLinks = true;
+
+  document.addEventListener(
+    'click',
+    (event) => {
+      // Left-click only; middle-click fires 'auxclick', keyboard activation
+      // reports button 0. Never fight a click a component already handled.
+      if (event.defaultPrevented || event.button !== 0) return;
+      const origin = event.target as Element | null;
+      const anchor = origin?.closest?.('a');
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      if (!href) return;
+
+      let resolved: URL;
+      try {
+        resolved = new URL(href, window.location.href);
+      } catch {
+        return;
+      }
+      const scheme = resolved.protocol.toLowerCase();
+      const isWeb =
+        (scheme === 'http:' || scheme === 'https:') &&
+        resolved.origin !== window.location.origin;
+      const isMail = scheme === 'mailto:';
+      if (!isWeb && !isMail) return;
+
+      // Genuinely external: stop the webview navigating and open it in the real
+      // browser instead.
+      event.preventDefault();
+      void openExternalUrl(resolved.href);
+    },
+    true,
+  );
 }

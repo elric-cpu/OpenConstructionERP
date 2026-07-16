@@ -88,6 +88,28 @@ fn open_app_in_browser(app: tauri::AppHandle, path: Option<String>) -> Result<()
         .map_err(|e| format!("Could not open your browser: {e}"))
 }
 
+/// Open an arbitrary external link (http/https/mailto) in the OS default handler.
+///
+/// The in-app UI carries many outbound links - the docs, the GitHub repo, the
+/// marketing site, contact mail. Inside the webview a `target="_blank"` anchor is
+/// swallowed and nothing opens, so the frontend routes every external-link click
+/// here. Only web and mail schemes are honoured, so a stray or crafted href can
+/// never launch an arbitrary local program through the opener.
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    let target = url.trim();
+    let lower = target.to_ascii_lowercase();
+    let allowed = lower.starts_with("http://")
+        || lower.starts_with("https://")
+        || lower.starts_with("mailto:");
+    if !allowed {
+        return Err("Only http, https and mailto links can be opened".to_string());
+    }
+    open_with_os_default(target)
+        .map(|_| ())
+        .map_err(|e| format!("Could not open the link: {e}"))
+}
+
 /// Combine the resolved local base URL with a caller-supplied app path.
 ///
 /// Only same-origin paths are honoured: the path must start with a single "/"
@@ -562,6 +584,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             open_log_file,
             open_app_in_browser,
+            open_external_url,
             get_app_url
         ])
         .setup(move |app| {
