@@ -233,7 +233,8 @@ describe('buildBOQSheetData', () => {
 
 describe('buildBOQSheetData - Position ID round-trip column', () => {
   /** The last cell of a row is the Position ID column. */
-  const idCell = (row: (string | number | null)[]): string | number | null => row[row.length - 1];
+  const idCell = (row: (string | number | null)[]): string | number | null =>
+    row[row.length - 1] ?? null;
 
   it('labels the identity column in the header row', () => {
     const { rows } = buildBOQSheetData(baseOptions({ positions: [pos()] }));
