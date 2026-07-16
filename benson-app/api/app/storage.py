@@ -10,6 +10,7 @@ from .lead_store import LeadStoreMixin
 from .job_store import JobStoreMixin
 from .logistics_store import LogisticsStoreMixin
 from .notification_store import NotificationStoreMixin
+from .schedule_store import ScheduleStoreMixin
 from .storage_schema import (
     IdempotencyConflict,
     InvalidEmployeeInvite,
@@ -22,6 +23,7 @@ class OperationsStore(
     CustomerStoreMixin,
     EstimateStoreMixin,
     JobStoreMixin,
+    ScheduleStoreMixin,
     EmployeeStoreMixin,
     EmployeeTaskStoreMixin,
     EmployeeDocumentStoreMixin,

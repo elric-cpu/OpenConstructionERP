@@ -16,7 +16,7 @@ export function JobWorkspace({
   canPlan: boolean;
   credential: string;
 }) {
-  const { create, estimates, jobs, status, transition, update } = useJobWorkspace(credential, canPlan);
+  const { create, estimates, jobs, staff, status, transition, update } = useJobWorkspace(credential, canPlan);
   const [source, setSource] = useState<Estimate | null>(null);
   const [editing, setEditing] = useState<Job | null>(null);
   const closeForm = () => {
@@ -28,7 +28,15 @@ export function JobWorkspace({
     if (saved) closeForm();
   };
   if (source || editing) {
-    return <JobPlanForm estimate={source || undefined} job={editing || undefined} onCancel={closeForm} onSave={save} />;
+    return (
+      <JobPlanForm
+        estimate={source || undefined}
+        job={editing || undefined}
+        onCancel={closeForm}
+        onSave={save}
+        staff={staff}
+      />
+    );
   }
   return (
     <section className="job-workspace" aria-labelledby="jobs-heading">

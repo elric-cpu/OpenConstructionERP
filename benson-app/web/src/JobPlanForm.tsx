@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Estimate, Job } from "./types";
+import type { Estimate, Job, StaffMember } from "./types";
 
 export type JobPlan = {
   title?: string;
@@ -14,17 +14,23 @@ export function JobPlanForm({
   job,
   onCancel,
   onSave,
+  staff,
 }: {
   estimate?: Estimate;
   job?: Job;
   onCancel(): void;
   onSave(plan: JobPlan): void;
+  staff: StaffMember[];
 }) {
   const [title, setTitle] = useState(job?.title || estimate?.title || "");
   const [targetStart, setTargetStart] = useState(job?.target_start || "");
   const [targetCompletion, setTargetCompletion] = useState(job?.target_completion || "");
   const [assignedTo, setAssignedTo] = useState(job?.assigned_to || "");
   const [siteAddress, setSiteAddress] = useState(job?.site_address || "");
+  const assignees =
+    assignedTo && !staff.some((member) => member.email === assignedTo)
+      ? [...staff, { email: assignedTo, display_name: "Current assignee", role: "unknown" }]
+      : staff;
   return (
     <form
       className="job-plan-form"
@@ -64,8 +70,15 @@ export function JobPlanForm({
           />
         </label>
         <label>
-          Assigned staff email
-          <input type="email" value={assignedTo} onChange={(event) => setAssignedTo(event.target.value)} />
+          Assigned to
+          <select value={assignedTo} onChange={(event) => setAssignedTo(event.target.value)}>
+            <option value="">Unassigned</option>
+            {assignees.map((member) => (
+              <option key={member.email} value={member.email}>
+                {member.display_name} · {member.email}
+              </option>
+            ))}
+          </select>
         </label>
       </div>
       <label>

@@ -281,6 +281,51 @@ jobs = Table(
     ),
 )
 
+schedule_entries = Table(
+    "schedule_entries",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("job_id", String(36), ForeignKey("jobs.id"), nullable=False, index=True),
+    Column("event_type", String(40), nullable=False),
+    Column("status", String(40), nullable=False),
+    Column("starts_at", DateTime(timezone=True), nullable=False, index=True),
+    Column("ends_at", DateTime(timezone=True), nullable=False, index=True),
+    Column("timezone", String(64), nullable=False),
+    Column("assigned_to", String(320), nullable=False, index=True),
+    Column("version", Integer, nullable=False),
+    Column("created_by", String(320), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    CheckConstraint(
+        "event_type IN ('site_visit', 'work', 'inspection', 'delivery')",
+        name="ck_schedule_entries_event_type",
+    ),
+    CheckConstraint(
+        "status IN ('scheduled', 'in_progress', 'completed', 'cancelled')",
+        name="ck_schedule_entries_status",
+    ),
+    CheckConstraint("ends_at > starts_at", name="ck_schedule_entries_interval"),
+    CheckConstraint("version > 0", name="ck_schedule_entries_version"),
+)
+
+schedule_status_history = Table(
+    "schedule_status_history",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column(
+        "schedule_entry_id",
+        String(36),
+        ForeignKey("schedule_entries.id"),
+        nullable=False,
+        index=True,
+    ),
+    Column("from_status", String(40), nullable=False),
+    Column("to_status", String(40), nullable=False),
+    Column("note", Text, nullable=False),
+    Column("actor", String(320), nullable=False),
+    Column("occurred_at", DateTime(timezone=True), nullable=False),
+)
+
 employee_invites = Table(
     "employee_invites",
     metadata,

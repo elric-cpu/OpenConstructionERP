@@ -19,7 +19,7 @@ const nav = [
   [Home, "Overview", "overview"],
   [Inbox, "Leads", "leads"],
   [BriefcaseBusiness, "Jobs", "jobs"],
-  [CalendarDays, "Schedule", null],
+  [CalendarDays, "Schedule", "schedule"],
   [ClipboardCheck, "Estimates", "estimates"],
   [Users, "Customers", "customers"],
 ] as const;
@@ -55,7 +55,7 @@ export function AppShell({
   }[requestStatus];
   const employeePortal = portalSession?.kind === "employee";
   const role = portalSession?.role;
-  const roleNav = ["field", "accounting"].includes(role || "") ? [nav[2]] : nav;
+  const roleNav = role === "field" ? [nav[2], nav[3]] : role === "accounting" ? [nav[2]] : nav;
   const staffNav =
     role && ["owner", "admin"].includes(role)
       ? [...roleNav.slice(0, 2), [UserPlus, "New hires", "employees"] as const, ...roleNav.slice(2)]
@@ -76,23 +76,17 @@ export function AppShell({
           </button>
         </div>
         <nav>
-          {visibleNav.map(([Icon, label, route]) =>
-            route ? (
-              <a
-                aria-current={activeView === route ? "page" : undefined}
-                className={activeView === route ? "active" : ""}
-                href={`#${route}`}
-                key={label}
-                onClick={() => setMenu(false)}
-              >
-                <Icon /> {label}
-              </a>
-            ) : (
-              <span className="nav-disabled" key={label} title={`${label} is outside the lead-foundation launch scope`}>
-                <Icon /> <span>{label}</span> <small>Later</small>
-              </span>
-            ),
-          )}
+          {visibleNav.map(([Icon, label, route]) => (
+            <a
+              aria-current={activeView === route ? "page" : undefined}
+              className={activeView === route ? "active" : ""}
+              href={`#${route}`}
+              key={label}
+              onClick={() => setMenu(false)}
+            >
+              <Icon /> {label}
+            </a>
+          ))}
         </nav>
         <div className="rail-foot">
           <img className="avatar" src="/benson-enterprises-logo.svg" alt="" />

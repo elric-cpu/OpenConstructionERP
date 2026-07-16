@@ -217,6 +217,28 @@ def require_delivery_staff(principal: Principal = Depends(require_staff)) -> Pri
     return principal
 
 
+def require_schedule_viewer(
+    principal: Principal = Depends(require_staff),
+) -> Principal:
+    if principal.role not in STAFF | {Role.FIELD}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Schedule workspace access required",
+        )
+    return principal
+
+
+def require_schedule_planner(
+    principal: Principal = Depends(require_staff),
+) -> Principal:
+    if principal.role not in STAFF:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Schedule planning access required",
+        )
+    return principal
+
+
 def require_notification_worker(
     authorization: Annotated[str | None, Header()] = None,
     settings: Settings = Depends(get_settings),

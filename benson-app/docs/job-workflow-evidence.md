@@ -39,6 +39,11 @@ and foreign keys to accepted source records. It contains no destructive SQL.
 
 ## Release evidence still required
 
-- PostgreSQL candidate deployment at zero traffic.
+- Fork PR 7 merged at `85d1f070`; Cloud Build
+  `f7ea81ce-5338-4cb7-8abc-f9aba9e31fab` produced immutable digest
+  `sha256:5433f75254ac9296000fdf3e7440dafe9c3b842f10f9178acf27404ab6c43ae4`.
+- Cloud Run revision `benson-operations-00015-mon`, tagged
+  `jobs-candidate`, returned a healthy PostgreSQL readiness response at zero
+  traffic. Production remained 100% on `benson-operations-full-erp2-20260716`.
 - Authenticated human UAT against the candidate revision.
 - Backup/restore evidence and approved production cutover.

@@ -1,5 +1,6 @@
 export type RequestStatus = "loading" | "ready" | "auth-required" | "offline";
-export type ActiveView = "overview" | "leads" | "customers" | "estimates" | "jobs" | "employees" | "tasks" | "activate";
+export type ActiveView =
+  "overview" | "leads" | "customers" | "estimates" | "jobs" | "schedule" | "employees" | "tasks" | "activate";
 export type SpamFilter = "active" | "spam" | "all";
 export type BusyState = "lead" | "save" | "draft" | "";
 
@@ -92,6 +93,24 @@ export type Job = {
   target_completion: string | null;
   assigned_to: string | null;
   site_address: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ScheduleEntry = {
+  id: string;
+  job_id: string;
+  job_number: string;
+  job_title: string;
+  customer_name: string;
+  site_address: string;
+  event_type: "site_visit" | "work" | "inspection" | "delivery";
+  starts_at: string;
+  ends_at: string;
+  timezone: "America/Los_Angeles";
+  assigned_to: string;
+  status: "scheduled" | "in_progress" | "completed" | "cancelled";
+  version: number;
   created_at: string;
   updated_at: string;
 };
