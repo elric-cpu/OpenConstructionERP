@@ -2102,6 +2102,7 @@ export function RFIPage() {
               }
               onClick={() => exportMut.mutate()}
               disabled={exportMut.isPending || !projectId}
+              data-guide="rfi-export"
             >
               {t('rfi.export_rfi_log', { defaultValue: 'Export RFI Log' })}
             </Button>
@@ -2112,6 +2113,7 @@ export function RFIPage() {
               disabled={!projectId}
               title={!projectId ? t('common.select_project_first', { defaultValue: 'Please select a project first' }) : undefined}
               icon={<Plus size={14} />}
+              data-guide="rfi-new"
             >
               {t('rfi.new_rfi', { defaultValue: 'New RFI' })}
             </Button>
@@ -2154,7 +2156,7 @@ export function RFIPage() {
       {projectId ? (
       <>
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-guide="rfi-stats">
         <div className="rounded-xl border border-border-light bg-surface-elevated/90 p-4 shadow-xs transition-shadow duration-normal ease-oe hover:shadow-sm animate-card-in">
           <p className="text-2xs font-medium text-content-tertiary uppercase tracking-wide">
             {t('rfi.stat_total', { defaultValue: 'Total RFIs' })}
@@ -2195,7 +2197,7 @@ export function RFIPage() {
       {/* Quick-view chips — saved-view shortcuts for the most common
           "what's on my plate?" slices. Mutually exclusive, kept above
           the dropdown toolbar so the eye can land on them first. */}
-      <div className="flex flex-wrap gap-1.5" role="tablist" aria-label={t('rfi.quick_views_aria', { defaultValue: 'Quick views' })}>
+      <div className="flex flex-wrap gap-1.5" role="tablist" aria-label={t('rfi.quick_views_aria', { defaultValue: 'Quick views' })} data-guide="rfi-quickviews">
         {(
           [
             { key: 'all', label: t('rfi.quick_all', { defaultValue: 'All' }) },

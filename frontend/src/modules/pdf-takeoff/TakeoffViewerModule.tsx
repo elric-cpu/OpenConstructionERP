@@ -6850,7 +6850,7 @@ export default function TakeoffViewerModule({
 
               {/* Measure tools - one segmented track, icon-only with tooltips
                   + shortcut letters; the armed tool gets the blue accent. */}
-              <div className={TB_GROUP} role="group" aria-label={t('takeoff_viewer.measure_tools', { defaultValue: 'Measure tools' })}>
+              <div className={TB_GROUP} role="group" aria-label={t('takeoff_viewer.measure_tools', { defaultValue: 'Measure tools' })} data-guide="takeoff-tools">
                 {([
                   { tool: 'select' as MeasureTool, icon: MousePointer2, label: t('takeoff_viewer.tool_select', { defaultValue: 'Select' }) },
                   { tool: 'distance' as MeasureTool, icon: Minus, label: t('takeoff_viewer.tool_distance', { defaultValue: 'Distance' }) },

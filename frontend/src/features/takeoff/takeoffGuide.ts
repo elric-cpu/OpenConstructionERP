@@ -40,6 +40,8 @@ export const takeoffGuide: ModuleGuideContent = {
       bodyKey: 'guide.takeoff.tools.body',
       bodyDefault:
         'Use Area for floors and walls, Distance or Polyline for runs of pipe, skirting or kerb, and Count for fittings like doors and sockets. Add a depth to an area to get a volume. Each measurement shows its live quantity and unit.',
+      spotlightSelector: '[data-guide="takeoff-tools"]',
+      spotlightPosition: 'bottom',
     },
     {
       icon: 'PencilLine',
@@ -48,6 +50,8 @@ export const takeoffGuide: ModuleGuideContent = {
       bodyKey: 'guide.takeoff.organize.body',
       bodyDefault:
         'Give each measurement a clear description and drop it into a group such as Structural or Finishes. Good names keep the ledger readable and make the BOQ items that follow easy to recognise.',
+      spotlightSelector: '[data-testid="measurement-ledger"]',
+      spotlightPosition: 'left',
     },
     {
       icon: 'ListChecks',

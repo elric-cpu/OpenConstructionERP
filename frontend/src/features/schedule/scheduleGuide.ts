@@ -32,6 +32,7 @@ export const scheduleGuide: ModuleGuideContent = {
       bodyKey: 'guide.schedule.activities.body',
       bodyDefault:
         'Each activity has a name, a WBS code, start and end dates, and a type of task, milestone or summary. Add them one at a time, or use Generate from BOQ to build the whole activity list straight from your priced positions, with durations estimated from quantities.',
+      spotlightSelector: '[data-guide="schedule-generate"]',
     },
     {
       icon: 'Layers',
@@ -48,6 +49,7 @@ export const scheduleGuide: ModuleGuideContent = {
       bodyKey: 'guide.schedule.cpm.body',
       bodyDefault:
         'Calculate CPM to find the longest chain of dependent activities that sets the project finish date. Critical activities are flagged with a CP badge and highlighted in red, so you know which slips push the whole plan and which have float to spare.',
+      spotlightSelector: '[data-guide="schedule-cpm"]',
     },
     {
       icon: 'ClipboardCheck',
@@ -56,6 +58,7 @@ export const scheduleGuide: ModuleGuideContent = {
       bodyKey: 'guide.schedule.risk.body',
       bodyDefault:
         'Risk analysis runs a PERT pass over the critical path and reports P50, P80 and P95 durations alongside a suggested buffer. Carry that buffer forward into the Risk Register or turn it into cost contingency in the 5D view.',
+      spotlightSelector: '[data-guide="schedule-risk"]',
     },
     {
       icon: 'Sparkles',

@@ -66,6 +66,13 @@ import {
 import clsx from 'clsx';
 
 import { useFocusTrap } from '@/shared/hooks/useFocusTrap';
+import { useIsRTL } from '@/shared/hooks/useIsRTL';
+import {
+  useSpotlightTarget,
+  SpotlightScrim,
+  TOOLTIP_W,
+  type TooltipPosition,
+} from './spotlight';
 
 /* ── Content model ──────────────────────────────────────────────────────── */
 
@@ -100,6 +107,13 @@ export interface ModuleGuideSection {
   bodyDefault: string;
   /** Optional CSS selector to spotlight while this card is shown. */
   spotlightSelector?: string;
+  /** Preferred side for the card relative to the spotlit element. Defaults to
+   *  'bottom'; the placement logic falls back to a side that fits. */
+  spotlightPosition?: TooltipPosition;
+  /** When the target lives inside a collapsible sidebar group that is
+   *  collapsed by default, set this to the group id so the guide can ask the
+   *  Sidebar to expand it before measuring (dispatches `oe:tour-reveal`). */
+  revealGroupId?: string;
 }
 
 /**
@@ -161,31 +175,6 @@ function iconFor(name: string | undefined): ComponentType<LucideProps> {
   return Lightbulb;
 }
 
-/* ── Spotlight geometry (mirrors ProductTour) ───────────────────────────── */
-
-interface SpotlightRect {
-  top: number;
-  left: number;
-  width: number;
-  height: number;
-}
-
-const SPOTLIGHT_PADDING = 8; // px halo around the highlighted element
-
-function measureSpotlight(selector: string): SpotlightRect | null {
-  if (typeof document === 'undefined') return null;
-  const el = document.querySelector(selector);
-  if (!el) return null;
-  const rect = el.getBoundingClientRect();
-  if (rect.width === 0 && rect.height === 0) return null;
-  return {
-    top: rect.top - SPOTLIGHT_PADDING,
-    left: rect.left - SPOTLIGHT_PADDING,
-    width: rect.width + SPOTLIGHT_PADDING * 2,
-    height: rect.height + SPOTLIGHT_PADDING * 2,
-  };
-}
-
 /* ── Component ──────────────────────────────────────────────────────────── */
 
 export interface ModuleGuideProps {
@@ -202,8 +191,6 @@ export interface ModuleGuideProps {
   onCta?: () => void;
 }
 
-const SHADOW_SPREAD = 9999; // px — large enough to dim the entire viewport.
-
 export function ModuleGuide({ open, onClose, content, onCta }: ModuleGuideProps) {
   const { t } = useTranslation();
   const cardRef = useRef<HTMLDivElement>(null);
@@ -212,7 +199,6 @@ export function ModuleGuide({ open, onClose, content, onCta }: ModuleGuideProps)
   const total = sections.length;
 
   const [index, setIndex] = useState(0);
-  const [spotlight, setSpotlight] = useState<SpotlightRect | null>(null);
 
   // Track theme so the spotlight scrim + accent ring (inline rgba, outside
   // Tailwind's reach) can swap to high-contrast dark values.
@@ -239,61 +225,21 @@ export function ModuleGuide({ open, onClose, content, onCta }: ModuleGuideProps)
   const isFirst = index === 0;
   const isLast = index === total - 1;
   const section = sections[index];
+  const isRTL = useIsRTL();
 
-  /* ── Spotlight measurement + live re-position ─────────────────────────── */
-  useEffect(() => {
-    if (!open || !section) {
-      setSpotlight(null);
-      return;
-    }
-    const selector = section.spotlightSelector;
-    if (!selector) {
-      setSpotlight(null);
-      return;
-    }
-
-    let rafId = 0;
-    // First pass also scrolls the target to centre so a partially-scrolled or
-    // off-screen element is brought fully into view before we measure it.
-    // Subsequent recomputes (scroll / resize / layout shift) only re-measure
-    // so they never fight the user's own scrolling.
-    const measure = () => setSpotlight(measureSpotlight(selector));
-    const scrollAndMeasure = () => {
-      const el = document.querySelector(selector);
-      if (el) {
-        try {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-        } catch {
-          /* older browsers - ignore */
-        }
-        // Measure on the next frame so the rect reflects the settled layout.
-        rafId = window.requestAnimationFrame(measure);
-      } else {
-        // Target not on screen for this card. Degrade to a centred, fully
-        // dimmed modal instead of drawing a halo at the wrong spot.
-        // eslint-disable-next-line no-console
-        console.warn(`[ModuleGuide] spotlight target not found: ${selector}`);
-        setSpotlight(null);
-      }
-    };
-
-    // Defer the first measure so a smooth scroll has time to make progress.
-    const id = window.setTimeout(scrollAndMeasure, 160);
-    window.addEventListener('resize', measure);
-    window.addEventListener('scroll', measure, true);
-    let ro: ResizeObserver | null = null;
-    if (typeof ResizeObserver !== 'undefined') {
-      ro = new ResizeObserver(measure);
-      ro.observe(document.body);
-    }
-    return () => {
-      window.clearTimeout(id);
-      if (rafId) window.cancelAnimationFrame(rafId);
-      window.removeEventListener('resize', measure);
-      window.removeEventListener('scroll', measure, true);
-      if (ro) ro.disconnect();
-    };
-  }, [open, section]);
+  /* ── Spotlight target: anchor the card beside the section's element ────── */
+  // When the section sets no spotlightSelector (the common case for most
+  // guides) the hook reports no rect and we render the centred fallback card
+  // below — zero regression for the many guides that spotlight nothing.
+  const { rect: spotlight, tooltipCoords } = useSpotlightTarget(
+    section?.spotlightSelector,
+    {
+      preferredPosition: section?.spotlightPosition,
+      revealGroupId: section?.revealGroupId,
+      active: open,
+      rtl: isRTL,
+    },
+  );
 
   /* ── Navigation ───────────────────────────────────────────────────────── */
   const goNext = useCallback(() => {
@@ -318,20 +264,24 @@ export function ModuleGuide({ open, onClose, content, onCta }: ModuleGuideProps)
         onClose();
         return;
       }
-      if (e.key === 'ArrowRight') {
+      // Arrow direction mirrors in RTL: the "forward" key is Left and "back"
+      // is Right, matching how the layout reads.
+      const forwardKey = isRTL ? 'ArrowLeft' : 'ArrowRight';
+      const backKey = isRTL ? 'ArrowRight' : 'ArrowLeft';
+      if (e.key === forwardKey) {
         e.preventDefault();
         if (isLast) finish();
         else goNext();
         return;
       }
-      if (e.key === 'ArrowLeft') {
+      if (e.key === backKey) {
         e.preventDefault();
         goPrev();
       }
     };
     document.addEventListener('keydown', handler, { capture: true });
     return () => document.removeEventListener('keydown', handler, { capture: true });
-  }, [open, isLast, finish, goNext, goPrev, onClose]);
+  }, [open, isLast, isRTL, finish, goNext, goPrev, onClose]);
 
   /* ── Body scroll lock while open ──────────────────────────────────────── */
   useEffect(() => {
@@ -374,10 +324,6 @@ export function ModuleGuide({ open, onClose, content, onCta }: ModuleGuideProps)
   const prevLabel = t('guide.back', { defaultValue: 'Back' });
   const nextLabel = t('guide.next', { defaultValue: 'Next' });
 
-  // Spotlight scrim values mirror ProductTour: darker near-black scrim in
-  // dark mode, historical slate tint in light mode.
-  const scrimColor = isDark ? 'rgba(2, 6, 23, 0.80)' : 'rgba(15, 23, 42, 0.55)';
-
   const overlay = (
     <div
       data-module-guide="root"
@@ -397,41 +343,11 @@ export function ModuleGuide({ open, onClose, content, onCta }: ModuleGuideProps)
             data-testid="module-guide-backdrop"
             tabIndex={-1}
           />
-          <div
-            aria-hidden="true"
-            data-testid="module-guide-spotlight"
-            style={{
-              position: 'fixed',
-              top: spotlight.top,
-              left: spotlight.left,
-              width: spotlight.width,
-              height: spotlight.height,
-              boxShadow: `0 0 0 ${SHADOW_SPREAD}px ${scrimColor}`,
-              borderRadius: 12,
-              pointerEvents: 'none',
-              transition:
-                'top 200ms ease, left 200ms ease, width 200ms ease, height 200ms ease',
-            }}
-          />
-          <div
-            aria-hidden="true"
-            style={{
-              position: 'fixed',
-              top: spotlight.top,
-              left: spotlight.left,
-              width: spotlight.width,
-              height: spotlight.height,
-              borderRadius: 12,
-              pointerEvents: 'none',
-              border: isDark
-                ? '2px solid rgba(125, 211, 252, 0.95)'
-                : '2px solid rgba(14, 165, 233, 0.85)',
-              boxShadow: isDark
-                ? '0 0 0 4px rgba(125, 211, 252, 0.25), 0 0 32px 6px rgba(56, 189, 248, 0.55)'
-                : '0 0 0 4px rgba(14, 165, 233, 0.20), 0 0 18px 2px rgba(14, 165, 233, 0.35)',
-              transition:
-                'top 200ms ease, left 200ms ease, width 200ms ease, height 200ms ease',
-            }}
+          <SpotlightScrim
+            rect={spotlight}
+            accent="blue"
+            isDark={isDark}
+            testId="module-guide-spotlight"
           />
         </>
       ) : (
@@ -449,13 +365,14 @@ export function ModuleGuide({ open, onClose, content, onCta }: ModuleGuideProps)
         />
       )}
 
-      {/* The explanatory card. When a spotlight is active we pin the card to
-          the bottom-centre so it never covers the highlighted element; with
-          no spotlight we centre it. */}
+      {/* The explanatory card. With a spotlight we anchor the card beside the
+          highlighted element (placeTooltip picks a side that fits and keeps
+          it clear of the cutout); with no spotlight we centre it — the
+          zero-regression fallback the majority of guides still use. */}
       <div
         className={clsx(
-          'pointer-events-none fixed inset-0 flex p-4 sm:p-6',
-          spotlight ? 'items-end justify-center' : 'items-center justify-center',
+          'pointer-events-none fixed inset-0',
+          !spotlight && 'flex items-center justify-center p-4 sm:p-6',
         )}
       >
         <div
@@ -464,13 +381,23 @@ export function ModuleGuide({ open, onClose, content, onCta }: ModuleGuideProps)
           aria-modal="true"
           aria-labelledby="module-guide-title"
           data-testid="module-guide-card"
+          style={
+            spotlight
+              ? {
+                  position: 'fixed',
+                  top: tooltipCoords.top,
+                  left: tooltipCoords.left,
+                  width: TOOLTIP_W,
+                }
+              : undefined
+          }
           className={clsx(
-            'pointer-events-auto relative w-full max-w-md',
+            'pointer-events-auto relative',
+            spotlight ? 'max-w-[92vw]' : 'w-full max-w-md',
             'rounded-2xl border glass-strong shadow-2xl',
             'border-border-light dark:border-sky-400/50',
             'dark:shadow-[0_12px_48px_rgba(2,6,23,0.65),0_0_0_1px_rgba(125,211,252,0.18)]',
             'animate-scale-in',
-            spotlight && 'mb-2',
           )}
         >
           {/* Accent top hairline for a polished, modern edge. */}

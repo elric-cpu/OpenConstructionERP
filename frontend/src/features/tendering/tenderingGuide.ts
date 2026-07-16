@@ -24,6 +24,7 @@ export const tenderingGuide: ModuleGuideContent = {
       bodyKey: 'guide.tendering.packages.body',
       bodyDefault:
         'A tender package is a scope of work you put out to bid, created straight from a project Bill of Quantities. Click New Tender Package, give it a name, pick the source BOQ and an optional deadline. Each package shows its bid count and status, and opens to a detail view when you select it.',
+      spotlightSelector: '[data-guide="tendering-new"]',
     },
     {
       icon: 'Send',
@@ -32,6 +33,8 @@ export const tenderingGuide: ModuleGuideContent = {
       bodyKey: 'guide.tendering.lifecycle.body',
       bodyDefault:
         'A package runs through Draft, Issued, Collecting, Evaluating and Awarded. The primary button changes with the stage: Issue, then Start Collecting, then Evaluate Bids, then Mark Awarded. Export the source BOQ as GAEB X83 or a tender summary PDF to send the scope to bidders.',
+      spotlightSelector: '[data-guide="tendering-packages"]',
+      spotlightPosition: 'top',
     },
     {
       icon: 'ListChecks',
