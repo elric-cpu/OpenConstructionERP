@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [11.9.0] - 2026-07-16
+
+The files area grew into a proper document workspace. A right-click menu now opens rename, download, move, status and delete right where you are working, search looks inside document contents and not just file names, and long folders load a page at a time instead of all at once. You can drag files straight in from your desktop to upload them, move between files with the keyboard, and set the review status on a whole selection at once.
+
+The How it works guide now points at the real thing. Instead of describing a feature in a side panel, each step lights up the actual button or area it is talking about across the modules, and the takeoff measure-tools step lands on its own toolbar group so there is no guessing which control it means.
+
+Takeoff measurements no longer live on their own. A measurement can now be linked to an issue or RFI, and once it is linked it shows the other places it is referenced, so a quantity on a drawing and the question raised about it stay connected as you move between the takeoff, the issue log and the rest of the project.
+
+Setup now asks how big your company is. The first-run wizard offers a simple choice between a single user, a small team, a mid-sized company and a large organization, and tailors what it sets up to match, so a solo estimator and a seventy-person contractor each start from something that fits.
+
+The worked-case library is fuller and reads better. The step flow on a case is connected end to end, each case opens with an at-a-glance panel that sums up the situation before you dive in, and twelve new cases are included, from a three-way match before paying a supplier to witnessing MEP commissioning. The flow arrows on the reactive facilities-management case are redrawn so they line up cleanly instead of clashing. Around the app, the sidebar card about the uberization article now links straight to it, the Takeoff menu keeps quantities in its natural last place, and the ecosystem list on the About page reads as two tidy columns.
+
 ## [11.8.0] - 2026-07-16
 
 PDF takeoff gets a round of viewer fixes that make measuring on a busy drawing far less fiddly. The small readout card that follows the cursor no longer freezes on top of a point while you drag it, so you can see what you are reshaping. A measurement's value now sits just off its line instead of on top of it, so a wide line no longer hides its own number. While you drag the points of a wide line, or move it, the full width band follows the cursor rather than a single hairline, so you see the real footprint as you work. Pressing a tool shortcut in the middle of dragging a point no longer leaks that drag into a brand new measurement.

@@ -38,6 +38,13 @@ interface ChangelogEntry {
 // date, title and meaning intact; trim the prose, not the facts.
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '11.9.0',
+    date: '2026-07-16',
+    tag: 'NEW',
+    summary:
+      'The files area becomes a real document workspace with a right-click menu, content search, paged folders, drag-and-drop upload, keyboard navigation and bulk status changes. Takeoff measurements can now link to issues and RFIs, the How it works guide highlights the actual control it describes, setup adapts to your company size, and the worked-case library gains twelve new cases with a connected step flow and an at-a-glance panel.',
+  },
+  {
     version: '11.8.0',
     date: '2026-07-16',
     tag: 'NEW',
