@@ -33,7 +33,13 @@ from app.core.file_signature import (
     mime_for_signature,
 )
 from app.core.file_signature import require as require_signature
-from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
+from app.dependencies import (
+    CurrentUserId,
+    RequirePermission,
+    SessionDep,
+    accessible_project_ids,
+    verify_project_access,
+)
 from app.modules.subcontractors.models import LienWaiver
 from app.modules.subcontractors.schemas import (
     AgreementCreate,
@@ -565,6 +571,13 @@ async def list_agreements(
     svc = SubcontractorService(session)
     if subcontractor_id is not None:
         rows = await svc.agreements.list_for_subcontractor(subcontractor_id, status=status_filter)
+        # Cross-tenant guard: a subcontractor's agreements span every project it
+        # works on, so scope the result to the projects the caller may access -
+        # otherwise a shared subcontractor leaks another tenant's commercial
+        # terms. Admins get None (unrestricted) and stay unfiltered.
+        allowed = await accessible_project_ids(session, user_id)
+        if allowed is not None:
+            rows = [r for r in rows if r.project_id in allowed]
     elif project_id is not None:
         rows = await svc.agreements.list_for_project(project_id, status=status_filter)
     else:

@@ -948,12 +948,18 @@ async def delete_sla(
 
 @router.get("/schedules/", response_model=list[ServiceScheduleResponse])
 async def list_schedules(
-    _user: CurrentUserId,
-    _perm: None = Depends(RequirePermission("service.read")),
+    session: SessionDep,
+    user_id: CurrentUserId,
     asset_id: uuid.UUID = Query(...),
+    _perm: None = Depends(RequirePermission("service.read")),
     service: ServiceService = Depends(_get_service),
 ) -> list[ServiceScheduleResponse]:
     """List PPM schedules for an asset."""
+    # Cross-tenant guard: schedules inherit project scope from their asset's
+    # contract, so gate the asset before listing its PPM schedules.
+    asset = await service.asset_repo.get_by_id(asset_id)
+    if asset is not None:
+        await _verify_contract_project(asset.contract_id, user_id, session, service)
     items = await service.schedule_repo.list_for_asset(asset_id)
     return [ServiceScheduleResponse.model_validate(it) for it in items]
 
@@ -961,11 +967,19 @@ async def list_schedules(
 @router.post("/schedules/", response_model=ServiceScheduleResponse, status_code=201)
 async def create_schedule(
     data: ServiceScheduleCreate,
-    _user: CurrentUserId,
+    session: SessionDep,
+    user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("service.create")),
     service: ServiceService = Depends(_get_service),
 ) -> ServiceScheduleResponse:
     """Create a new PPM schedule."""
+    # Cross-tenant guard: a schedule attaches to an asset, so gate the caller
+    # against that asset's contract project before creating a schedule on
+    # another tenant's asset. A missing asset falls through to the service's own
+    # existence check (both paths return 404, so there is no leakage oracle).
+    asset = await service.asset_repo.get_by_id(data.asset_id)
+    if asset is not None:
+        await _verify_contract_project(asset.contract_id, user_id, session, service)
     sched = await service.create_schedule(data)
     return ServiceScheduleResponse.model_validate(sched)
 
@@ -973,11 +987,18 @@ async def create_schedule(
 @router.get("/schedules/{schedule_id}", response_model=ServiceScheduleResponse)
 async def get_schedule(
     schedule_id: uuid.UUID,
-    _user: CurrentUserId,
+    session: SessionDep,
+    user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("service.read")),
     service: ServiceService = Depends(_get_service),
 ) -> ServiceScheduleResponse:
     """Get a single PPM schedule."""
+    # Cross-tenant guard: resolve schedule → asset → contract project scope.
+    sched = await service.schedule_repo.get_by_id(schedule_id)
+    if sched is not None:
+        asset = await service.asset_repo.get_by_id(sched.asset_id)
+        if asset is not None:
+            await _verify_contract_project(asset.contract_id, user_id, session, service)
     sched = await service.get_schedule(schedule_id)
     return ServiceScheduleResponse.model_validate(sched)
 
@@ -986,11 +1007,18 @@ async def get_schedule(
 async def update_schedule(
     schedule_id: uuid.UUID,
     data: ServiceScheduleUpdate,
-    _user: CurrentUserId,
+    session: SessionDep,
+    user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("service.update")),
     service: ServiceService = Depends(_get_service),
 ) -> ServiceScheduleResponse:
     """Update a PPM schedule."""
+    # Cross-tenant guard: resolve schedule → asset → contract project scope.
+    existing = await service.schedule_repo.get_by_id(schedule_id)
+    if existing is not None:
+        asset = await service.asset_repo.get_by_id(existing.asset_id)
+        if asset is not None:
+            await _verify_contract_project(asset.contract_id, user_id, session, service)
     sched = await service.update_schedule(schedule_id, data)
     return ServiceScheduleResponse.model_validate(sched)
 
@@ -998,11 +1026,18 @@ async def update_schedule(
 @router.delete("/schedules/{schedule_id}", status_code=204)
 async def delete_schedule(
     schedule_id: uuid.UUID,
-    _user: CurrentUserId,
+    session: SessionDep,
+    user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("service.delete")),
     service: ServiceService = Depends(_get_service),
 ) -> None:
     """Delete a PPM schedule."""
+    # Cross-tenant guard: resolve schedule → asset → contract project scope.
+    existing = await service.schedule_repo.get_by_id(schedule_id)
+    if existing is not None:
+        asset = await service.asset_repo.get_by_id(existing.asset_id)
+        if asset is not None:
+            await _verify_contract_project(asset.contract_id, user_id, session, service)
     await service.delete_schedule(schedule_id)
 
 

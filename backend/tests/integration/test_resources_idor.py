@@ -115,14 +115,43 @@ async def _promote_to_admin(email: str) -> None:
         await s.commit()
 
 
+async def _promote_to_manager(email: str) -> None:
+    """Promote a user to manager via direct DB write.
+
+    The attacker B is a *manager*, not a viewer: the assignment mutation
+    endpoints require EDITOR/MANAGER permissions, so a viewer would be
+    rejected at the RBAC layer (403) and never reach the project-access
+    guard under test. A manager clears the permission gate but is NOT an
+    admin, so ``verify_project_access`` still denies every project B does
+    not own - proving the guard (not the permission layer) is what stops
+    the cross-tenant access. Role is re-hydrated from the DB per request,
+    so no re-login is needed for the new role to take effect.
+    """
+    from sqlalchemy import update
+
+    from app.database import async_session_factory
+    from app.modules.users.models import User
+
+    async with async_session_factory() as s:
+        await s.execute(update(User).where(User.email == email.lower()).values(role="manager", is_active=True))
+        await s.commit()
+
+
 @pytest_asyncio.fixture(scope="module")
 async def two_tenants(http_client):
-    """A owns a project + resource + request; B is the attacker."""
+    """A owns a project + resource + request + assignment; B is the attacker.
+
+    B is promoted to *manager* and given their own project + resource +
+    assignment. The manager role lets B clear the RBAC permission gate on
+    the mutation endpoints (so the project-access guard is what must deny
+    the cross-tenant calls), and owning a project lets B exercise the
+    "move an assignment onto a foreign project" guard on PATCH.
+    """
     a_uid, a_email, a_password, _a_headers0 = await _register_and_login(
         http_client,
         tenant="a",
     )
-    b_uid, b_email, _b_password, b_headers = await _register_and_login(
+    b_uid, b_email, b_password, b_headers = await _register_and_login(
         http_client,
         tenant="b",
     )
@@ -130,6 +159,9 @@ async def two_tenants(http_client):
     # A needs admin so they can create projects + resources (registration
     # drops new accounts to viewer; viewer cannot create resources).
     await _promote_to_admin(a_email)
+    # B is a manager (not admin): high enough to pass the mutation RBAC gate,
+    # not high enough to bypass verify_project_access. See _promote_to_manager.
+    await _promote_to_manager(b_email)
 
     a_login = await http_client.post(
         "/api/v1/users/auth/login",
@@ -137,6 +169,15 @@ async def two_tenants(http_client):
     )
     assert a_login.status_code == 200, a_login.text
     a_headers = {"Authorization": f"Bearer {a_login.json()['access_token']}"}
+
+    # Re-login B so the manager role lands in the JWT too (role is also
+    # re-hydrated from the DB per request, so this is belt-and-braces).
+    b_login = await http_client.post(
+        "/api/v1/users/auth/login",
+        json={"email": b_email, "password": b_password},
+    )
+    assert b_login.status_code == 200, b_login.text
+    b_headers = {"Authorization": f"Bearer {b_login.json()['access_token']}"}
 
     # A's confidential project
     proj = await http_client.post(
@@ -186,15 +227,82 @@ async def two_tenants(http_client):
     assert req.status_code == 201, f"request create failed: {req.text}"
     request_id = req.json()["id"]
 
+    # A's confidential assignment (the by-id IDOR target).
+    assign = await http_client.post(
+        "/api/v1/resources/assignments/",
+        json={
+            "resource_id": resource_id,
+            "project_id": project_id,
+            "start_at": "2026-06-01T08:00:00+00:00",
+            "end_at": "2026-06-10T17:00:00+00:00",
+            "allocation_percent": 100,
+            "status": "proposed",
+            "notes": "secret-assignment-marker",
+        },
+        headers=a_headers,
+    )
+    assert assign.status_code == 201, f"assignment create failed: {assign.text}"
+    assignment_id = assign.json()["id"]
+
+    # B's OWN project + resource + assignment, used to exercise the PATCH
+    # move-guard (B legitimately owns this assignment but must not be able to
+    # re-home it onto A's project).
+    b_proj = await http_client.post(
+        "/api/v1/projects/",
+        json={"name": f"Resources-B {uuid.uuid4().hex[:6]}", "currency": "EUR"},
+        headers=b_headers,
+    )
+    assert b_proj.status_code == 201, f"B project create failed: {b_proj.text}"
+    b_project_id = b_proj.json()["id"]
+
+    b_res = await http_client.post(
+        "/api/v1/resources/resources/",
+        json={
+            "code": f"RES-{uuid.uuid4().hex[:6].upper()}",
+            "name": "B own worker",
+            "resource_type": "person",
+            "home_project_id": b_project_id,
+            "default_cost_rate": "50.00",
+            "currency": "EUR",
+            "status": "active",
+        },
+        headers=b_headers,
+    )
+    assert b_res.status_code == 201, f"B resource create failed: {b_res.text}"
+    b_resource_id = b_res.json()["id"]
+
+    b_assign = await http_client.post(
+        "/api/v1/resources/assignments/",
+        json={
+            "resource_id": b_resource_id,
+            "project_id": b_project_id,
+            "start_at": "2026-06-01T08:00:00+00:00",
+            "end_at": "2026-06-10T17:00:00+00:00",
+            "allocation_percent": 100,
+            "status": "proposed",
+        },
+        headers=b_headers,
+    )
+    assert b_assign.status_code == 201, f"B assignment create failed: {b_assign.text}"
+    b_assignment_id = b_assign.json()["id"]
+
     return {
         "a": {
             "headers": a_headers,
             "project_id": project_id,
             "resource_id": resource_id,
             "request_id": request_id,
+            "assignment_id": assignment_id,
             "resource_code": rcode,
         },
-        "b": {"user_id": b_uid, "email": b_email, "headers": b_headers},
+        "b": {
+            "user_id": b_uid,
+            "email": b_email,
+            "headers": b_headers,
+            "project_id": b_project_id,
+            "resource_id": b_resource_id,
+            "assignment_id": b_assignment_id,
+        },
     }
 
 
@@ -368,3 +476,126 @@ async def test_tenant_b_cannot_propose_assignment_against_a_project(
     assert resp.status_code in (403, 404), (
         f"WRITE-IDOR: B proposed assignment on A's project: {resp.status_code} {resp.text!r}"
     )
+
+
+# ── Assignment by-id IDOR vectors (regression for issue #29) ───────────────
+#
+# The by-id assignment endpoints (GET/PATCH/DELETE/confirm/complete/cancel)
+# historically took only ``assignment_id`` + a permission gate and never
+# verified the caller could access the assignment's project. B is a manager
+# here, so these calls clear the RBAC gate and reach - and must be stopped
+# by - the new ``verify_project_access`` guard.
+
+
+@pytest.mark.asyncio
+async def test_tenant_b_cannot_read_assignment_by_id(http_client, two_tenants):
+    """``GET /assignments/{id}`` must NOT leak A's assignment."""
+    a = two_tenants["a"]
+    b = two_tenants["b"]
+
+    resp = await http_client.get(
+        f"/api/v1/resources/assignments/{a['assignment_id']}",
+        headers=b["headers"],
+    )
+    assert resp.status_code in (403, 404), f"LEAK: B read A's assignment: {resp.status_code} {resp.text!r}"
+    assert "secret-assignment-marker" not in resp.text
+
+
+@pytest.mark.asyncio
+async def test_tenant_b_cannot_patch_assignment(http_client, two_tenants):
+    """``PATCH /assignments/{id}`` must reject A's assignment."""
+    a = two_tenants["a"]
+    b = two_tenants["b"]
+
+    resp = await http_client.patch(
+        f"/api/v1/resources/assignments/{a['assignment_id']}",
+        json={"notes": "B-overwrote-A"},
+        headers=b["headers"],
+    )
+    assert resp.status_code in (403, 404), f"WRITE-IDOR: B patched A's assignment: {resp.status_code} {resp.text!r}"
+
+
+@pytest.mark.asyncio
+async def test_tenant_b_cannot_delete_assignment(http_client, two_tenants):
+    """``DELETE /assignments/{id}`` must reject A's assignment."""
+    a = two_tenants["a"]
+    b = two_tenants["b"]
+
+    resp = await http_client.delete(
+        f"/api/v1/resources/assignments/{a['assignment_id']}",
+        headers=b["headers"],
+    )
+    assert resp.status_code in (403, 404), f"WRITE-IDOR: B deleted A's assignment: {resp.status_code} {resp.text!r}"
+
+
+@pytest.mark.asyncio
+async def test_tenant_b_cannot_confirm_assignment(http_client, two_tenants):
+    """``POST /assignments/{id}/confirm`` must reject A's assignment."""
+    a = two_tenants["a"]
+    b = two_tenants["b"]
+
+    resp = await http_client.post(
+        f"/api/v1/resources/assignments/{a['assignment_id']}/confirm",
+        headers=b["headers"],
+    )
+    assert resp.status_code in (403, 404), f"WRITE-IDOR: B confirmed A's assignment: {resp.status_code} {resp.text!r}"
+
+
+@pytest.mark.asyncio
+async def test_tenant_b_cannot_complete_assignment(http_client, two_tenants):
+    """``POST /assignments/{id}/complete`` must reject A's assignment."""
+    a = two_tenants["a"]
+    b = two_tenants["b"]
+
+    resp = await http_client.post(
+        f"/api/v1/resources/assignments/{a['assignment_id']}/complete",
+        headers=b["headers"],
+    )
+    assert resp.status_code in (403, 404), f"WRITE-IDOR: B completed A's assignment: {resp.status_code} {resp.text!r}"
+
+
+@pytest.mark.asyncio
+async def test_tenant_b_cannot_cancel_assignment(http_client, two_tenants):
+    """``POST /assignments/{id}/cancel`` must reject A's assignment."""
+    a = two_tenants["a"]
+    b = two_tenants["b"]
+
+    resp = await http_client.post(
+        f"/api/v1/resources/assignments/{a['assignment_id']}/cancel?reason=x",
+        headers=b["headers"],
+    )
+    assert resp.status_code in (403, 404), f"WRITE-IDOR: B cancelled A's assignment: {resp.status_code} {resp.text!r}"
+
+
+@pytest.mark.asyncio
+async def test_tenant_b_cannot_move_own_assignment_onto_a_project(http_client, two_tenants):
+    """PATCH move-guard: B owns this assignment but must not re-home it onto A's project.
+
+    Exercises the *second* guard branch in ``update_assignment`` - the caller
+    clears the current-project check (B owns b_project) but the body-supplied
+    ``project_id`` points at A's project, which B cannot access.
+    """
+    a = two_tenants["a"]
+    b = two_tenants["b"]
+
+    resp = await http_client.patch(
+        f"/api/v1/resources/assignments/{b['assignment_id']}",
+        json={"project_id": a["project_id"]},
+        headers=b["headers"],
+    )
+    assert resp.status_code in (403, 404), (
+        f"WRITE-IDOR: B moved own assignment onto A's project: {resp.status_code} {resp.text!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_tenant_b_can_update_own_assignment(http_client, two_tenants):
+    """Positive control: the new guard must NOT block legitimate owner access."""
+    b = two_tenants["b"]
+
+    resp = await http_client.patch(
+        f"/api/v1/resources/assignments/{b['assignment_id']}",
+        json={"notes": "B edits own assignment"},
+        headers=b["headers"],
+    )
+    assert resp.status_code == 200, f"REGRESSION: B blocked from own assignment: {resp.status_code} {resp.text!r}"

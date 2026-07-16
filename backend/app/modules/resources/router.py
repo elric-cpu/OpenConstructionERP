@@ -440,10 +440,17 @@ async def propose_assignment(
 @router.get("/assignments/{assignment_id}", response_model=AssignmentResponse)
 async def get_assignment(
     assignment_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("resources.read")),
     service: ResourcesService = Depends(_get_service),
 ) -> AssignmentResponse:
     assignment = await service.get_assignment(assignment_id)
+    # Cross-tenant guard: the assignment carries the project it belongs to, so
+    # only owners / admins / team-members of that project may read it. Pre-fix
+    # the by-id assignment endpoints trusted the UUID alone (IDOR).
+    if assignment.project_id is not None:
+        await verify_project_access(assignment.project_id, user_id, session)
     return AssignmentResponse.model_validate(assignment)
 
 
@@ -451,9 +458,19 @@ async def get_assignment(
 async def update_assignment(
     assignment_id: uuid.UUID,
     data: AssignmentUpdate,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("resources.assign")),
     service: ResourcesService = Depends(_get_service),
 ) -> AssignmentResponse:
+    assignment = await service.get_assignment(assignment_id)
+    # Cross-tenant guard on the assignment's CURRENT project ...
+    if assignment.project_id is not None:
+        await verify_project_access(assignment.project_id, user_id, session)
+    # ... and on any attempt to MOVE it onto another project the caller cannot
+    # access (data.project_id is caller-supplied - must not become a back door).
+    if data.project_id is not None:
+        await verify_project_access(data.project_id, user_id, session)
     try:
         assignment = await service.update_assignment(assignment_id, data)
     except ResourceConflictError as exc:
@@ -470,18 +487,28 @@ async def update_assignment(
 @router.delete("/assignments/{assignment_id}", status_code=204)
 async def delete_assignment(
     assignment_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("resources.delete")),
     service: ResourcesService = Depends(_get_service),
 ) -> None:
+    assignment = await service.get_assignment(assignment_id)
+    if assignment.project_id is not None:
+        await verify_project_access(assignment.project_id, user_id, session)
     await service.delete_assignment(assignment_id)
 
 
 @router.post("/assignments/{assignment_id}/confirm", response_model=AssignmentResponse)
 async def confirm_assignment(
     assignment_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("resources.confirm_assignment")),
     service: ResourcesService = Depends(_get_service),
 ) -> AssignmentResponse:
+    assignment = await service.get_assignment(assignment_id)
+    if assignment.project_id is not None:
+        await verify_project_access(assignment.project_id, user_id, session)
     assignment = await service.confirm_assignment(assignment_id)
     return AssignmentResponse.model_validate(assignment)
 
@@ -489,10 +516,15 @@ async def confirm_assignment(
 @router.post("/assignments/{assignment_id}/complete", response_model=AssignmentResponse)
 async def complete_assignment(
     assignment_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
     actual_end: datetime | None = Query(default=None),
     _perm: None = Depends(RequirePermission("resources.assign")),
     service: ResourcesService = Depends(_get_service),
 ) -> AssignmentResponse:
+    assignment = await service.get_assignment(assignment_id)
+    if assignment.project_id is not None:
+        await verify_project_access(assignment.project_id, user_id, session)
     assignment = await service.complete_assignment(assignment_id, actual_end=actual_end)
     return AssignmentResponse.model_validate(assignment)
 
@@ -500,10 +532,15 @@ async def complete_assignment(
 @router.post("/assignments/{assignment_id}/cancel", response_model=AssignmentResponse)
 async def cancel_assignment(
     assignment_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
     reason: str = Query(default=""),
     _perm: None = Depends(RequirePermission("resources.assign")),
     service: ResourcesService = Depends(_get_service),
 ) -> AssignmentResponse:
+    assignment = await service.get_assignment(assignment_id)
+    if assignment.project_id is not None:
+        await verify_project_access(assignment.project_id, user_id, session)
     assignment = await service.cancel_assignment(assignment_id, reason=reason)
     return AssignmentResponse.model_validate(assignment)
 

@@ -1731,10 +1731,15 @@ async def list_jurisdictions(
 )
 async def get_handover_bundle(
     h_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> HandoverBundleResponse:
     """Return the full handover-doc bundle with compliance status."""
+    # IDOR closure: caller must own the parent handover (handover → plot →
+    # development → project) before reading its document bundle.
+    await _verify_owner_via_handover(session, h_id, user_payload)
     payload = await service.handover_bundle(h_id)
     return HandoverBundleResponse(
         handover_id=payload["handover_id"],
@@ -1753,9 +1758,14 @@ async def get_handover_bundle(
 )
 async def create_handover_doc(
     data: HandoverDocCreate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.handover")),
 ) -> HandoverDocResponse:
+    # IDOR closure: must own the parent handover before attaching a doc to it
+    # (body-supplied handover_id was previously trusted raw).
+    await _verify_owner_via_handover(session, data.handover_id, user_payload)
     return HandoverDocResponse.model_validate(await service.create_handover_doc(data))
 
 
