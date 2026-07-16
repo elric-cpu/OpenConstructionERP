@@ -19,13 +19,22 @@
  * manager exposes no cross-kind move endpoint.
  */
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
-import { Trash2, X, Loader2, Tag, Send, Download } from 'lucide-react';
+import { Trash2, X, Loader2, Tag, Send, Download, Star, ChevronDown, ListChecks } from 'lucide-react';
+import clsx from 'clsx';
 import { useToastStore } from '@/stores/useToastStore';
 import { fileManagerKeys } from '../hooks';
-import { bulkDeleteDocuments, deleteByKind, downloadProtectedFile } from '../api';
+import {
+  bulkDeleteDocuments,
+  deleteByKind,
+  downloadProtectedFile,
+  setDocumentCdeState,
+  starFile,
+  type CdeState,
+} from '../api';
+import { CDE_BADGE } from './CDEBadge';
 import type { FileKind, FileRow } from '../types';
 import { softDelete } from '@/features/file-trash/api';
 import { useRestoreFromTrash } from '@/features/file-trash/hooks';
@@ -229,6 +238,57 @@ export async function dispatchBulkDownload(
   return { dispatched, skipped: skipped + (downloadable.length - dispatched) };
 }
 
+/* ── Bulk CDE state + favourite dispatchers ──────────────────────────── */
+
+/** Ordered CDE lifecycle states surfaced in the bulk "Set status" menu. */
+export const CDE_STATES: CdeState[] = ['wip', 'shared', 'published', 'archived'];
+
+export interface BulkCdeSummary {
+  /** Document rows the transition was attempted on. */
+  total: number;
+  updated: number;
+  failed: number;
+  /** Non-document rows in the selection - CDE only exists for documents. */
+  skipped: number;
+}
+
+/** Set the CDE lifecycle state across a selection. Only ``document`` rows
+ * carry a CDE state, so every other kind is skipped and reported back. Loops
+ * ``setDocumentCdeState`` with ``Promise.allSettled`` so one rejected
+ * transition (forward-only lifecycle / role gate) never aborts the batch. */
+export async function dispatchBulkCde(
+  rows: FileRow[],
+  state: CdeState,
+): Promise<BulkCdeSummary> {
+  const docs = rows.filter((r) => r.kind === 'document');
+  const skipped = rows.length - docs.length;
+  const settled = await Promise.allSettled(
+    docs.map((r) => setDocumentCdeState(r.id, state)),
+  );
+  const failed = settled.filter((s) => s.status === 'rejected').length;
+  return { total: docs.length, updated: docs.length - failed, failed, skipped };
+}
+
+export interface BulkFavoriteSummary {
+  total: number;
+  starred: number;
+  failed: number;
+}
+
+/** Star every selected row for the current user. Favourites exist for all
+ * file kinds, so the whole selection is eligible. Idempotent per
+ * ``(kind, id)`` - re-starring an already-favourite row is a no-op. */
+export async function dispatchBulkFavorite(
+  rows: FileRow[],
+  projectId: string,
+): Promise<BulkFavoriteSummary> {
+  const settled = await Promise.allSettled(
+    rows.map((r) => starFile(projectId, r.kind, r.id)),
+  );
+  const failed = settled.filter((s) => s.status === 'rejected').length;
+  return { total: rows.length, starred: rows.length - failed, failed };
+}
+
 export function BulkActionsBar({ selectedRows, projectId, onClear }: BulkActionsBarProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -237,9 +297,101 @@ export function BulkActionsBar({ selectedRows, projectId, onClear }: BulkActions
   const [tagDrawerOpen, setTagDrawerOpen] = useState(false);
   const [transmittalOpen, setTransmittalOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [cdeMenuOpen, setCdeMenuOpen] = useState(false);
+  const cdeMenuRef = useRef<HTMLDivElement>(null);
 
   // Restore-from-trash mutation feeds the Undo toast.
   const restoreMutation = useRestoreFromTrash(projectId);
+
+  // Close the CDE "Set status" menu on any outside click.
+  useEffect(() => {
+    if (!cdeMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (cdeMenuRef.current && !cdeMenuRef.current.contains(e.target as Node)) {
+        setCdeMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [cdeMenuOpen]);
+
+  // How many of the selected rows are documents (the only kind with a CDE
+  // state) — gates the "Set status" control.
+  const documentCount = selectedRows.filter((r) => r.kind === 'document').length;
+
+  // Bulk CDE transition. Rejections (forward-only lifecycle, role gate) are
+  // common on a mixed selection, so we suppress the global error toast and
+  // report a per-selection tally instead.
+  const cdeMutation = useMutation({
+    meta: { suppressGlobalErrorToast: true },
+    mutationFn: (state: CdeState) => dispatchBulkCde(selectedRows, state),
+    onSuccess: (summary: BulkCdeSummary) => {
+      queryClient.invalidateQueries({ queryKey: [fileManagerKeys.list, projectId] });
+      queryClient.invalidateQueries({ queryKey: [fileManagerKeys.tree, projectId] });
+      if (summary.updated > 0) {
+        addToast({
+          type: summary.failed > 0 ? 'warning' : 'success',
+          title: t('files.bulk.cde_done', {
+            defaultValue: 'Status set on {{count}} document(s)',
+            count: summary.updated,
+          }),
+          message:
+            summary.failed > 0
+              ? t('files.bulk.cde_partial', {
+                  defaultValue: '{{count}} could not be changed (lifecycle or permission).',
+                  count: summary.failed,
+                })
+              : undefined,
+        });
+      } else {
+        addToast({
+          type: 'error',
+          title: t('files.bulk.cde_failed', {
+            defaultValue: 'No document status was changed',
+          }),
+          message: t('files.bulk.cde_failed_hint', {
+            defaultValue: 'The transition may not be allowed from the current state.',
+          }),
+        });
+      }
+    },
+    onError: (err: Error) => {
+      addToast({
+        type: 'error',
+        title: t('files.bulk.cde_failed', { defaultValue: 'No document status was changed' }),
+        message: err.message,
+      });
+    },
+  });
+
+  // Bulk favourite — stars every selected row for the current user.
+  const favoriteMutation = useMutation({
+    mutationFn: () => dispatchBulkFavorite(selectedRows, projectId),
+    onSuccess: (summary: BulkFavoriteSummary) => {
+      queryClient.invalidateQueries({ queryKey: [fileManagerKeys.favorites, projectId] });
+      addToast({
+        type: summary.failed > 0 ? 'warning' : 'success',
+        title: t('files.bulk.favorite_done', {
+          defaultValue: '{{count}} file(s) added to favourites',
+          count: summary.starred,
+        }),
+        message:
+          summary.failed > 0
+            ? t('files.bulk.favorite_partial', {
+                defaultValue: '{{count}} could not be starred.',
+                count: summary.failed,
+              })
+            : undefined,
+      });
+    },
+    onError: (err: Error) => {
+      addToast({
+        type: 'error',
+        title: t('files.bulk.favorite_failed', { defaultValue: 'Could not update favourites' }),
+        message: err.message,
+      });
+    },
+  });
 
   // All 8 file kinds now have a delete endpoint — nothing is filtered out.
   const deletableRows = selectedRows;
@@ -373,6 +525,82 @@ export function BulkActionsBar({ selectedRows, projectId, onClear }: BulkActions
       </button>
 
       <div className="ms-auto flex items-center gap-2">
+        {/* Bulk favourite — stars every selected file for the current user. */}
+        <button
+          type="button"
+          onClick={() => favoriteMutation.mutate()}
+          disabled={favoriteMutation.isPending}
+          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium border border-border-light text-content-secondary hover:bg-surface-secondary disabled:opacity-50"
+          title={t('files.bulk.favorite', { defaultValue: 'Add to favourites' })}
+        >
+          {favoriteMutation.isPending ? (
+            <Loader2 size={13} className="animate-spin" />
+          ) : (
+            <Star size={13} />
+          )}
+          {t('files.bulk.favorite', { defaultValue: 'Add to favourites' })}
+        </button>
+
+        {/* Bulk CDE state — documents only. Loops setDocumentCdeState with a
+            per-selection tally; the menu is disabled when no document is in
+            the selection. */}
+        <div ref={cdeMenuRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setCdeMenuOpen((p) => !p)}
+            disabled={documentCount === 0 || cdeMutation.isPending}
+            aria-haspopup="listbox"
+            aria-expanded={cdeMenuOpen}
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium border border-border-light text-content-secondary hover:bg-surface-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+            title={
+              documentCount === 0
+                ? t('files.bulk.cde_docs_only', {
+                    defaultValue: 'Status applies to documents only',
+                  })
+                : t('files.bulk.set_status', { defaultValue: 'Set status' })
+            }
+          >
+            {cdeMutation.isPending ? (
+              <Loader2 size={13} className="animate-spin" />
+            ) : (
+              <ListChecks size={13} />
+            )}
+            {t('files.bulk.set_status', { defaultValue: 'Set status' })}
+            {documentCount > 0 && documentCount !== selectedRows.length && (
+              <span className="tabular-nums opacity-70">{documentCount}</span>
+            )}
+            <ChevronDown size={12} className={clsx('transition-transform', cdeMenuOpen && 'rotate-180')} />
+          </button>
+          {cdeMenuOpen && (
+            <div
+              role="listbox"
+              className="absolute end-0 top-full mt-1 w-40 rounded-lg border border-border-light bg-surface-elevated shadow-lg z-20 overflow-hidden"
+            >
+              {CDE_STATES.map((state) => (
+                <button
+                  key={state}
+                  role="option"
+                  aria-selected={false}
+                  onClick={() => {
+                    setCdeMenuOpen(false);
+                    cdeMutation.mutate(state);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-content-secondary hover:bg-surface-secondary transition-colors"
+                >
+                  <span
+                    className={clsx(
+                      'inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider',
+                      CDE_BADGE[state]?.cls,
+                    )}
+                  >
+                    {CDE_BADGE[state]?.label ?? state}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Bulk download: fans each selected file's download URL out to the
             browser, staggered so the burst isn't throttled. */}
         <button

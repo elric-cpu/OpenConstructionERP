@@ -4,12 +4,14 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Search, X, ChevronDown, LayoutGrid, List, Download, Upload, MoreHorizontal, Star } from 'lucide-react';
+import { Search, X, ChevronDown, LayoutGrid, List, Download, Upload, MoreHorizontal, Star, Loader2, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 import type { FileFilters } from '../types';
 import { SaveViewButton } from '@/features/file-saved-views';
 import type { FilterSnapshot } from '@/features/file-saved-views';
 import { TagFilterFacet } from '@/features/file-tags/TagFilterFacet';
+import { SearchModeToggle } from '@/features/file-search/SearchModeToggle';
+import type { SearchMode } from '@/features/file-search/types';
 
 type SortKey = NonNullable<FileFilters['sort']>;
 export type ViewMode = 'grid' | 'list';
@@ -39,6 +41,13 @@ interface FileActionsBarProps {
   onFavoritesOnlyChange?: (on: boolean) => void;
   /** Number of favourites in this project — shown on the chip. */
   favoritesCount?: number;
+  /** W3 — filename vs content (OCR) search. Omitting ``onSearchModeChange``
+   *  hides the toggle and keeps the plain filename search behaviour. */
+  searchMode?: SearchMode;
+  onSearchModeChange?: (mode: SearchMode) => void;
+  /** Re-run OCR/index for the whole project (content search). */
+  onReindex?: () => void;
+  reindexing?: boolean;
 }
 
 /* Always-visible type pills — the high-traffic AECO formats. Each maps to one
@@ -84,6 +93,10 @@ export function FileActionsBar({
   favoritesOnly = false,
   onFavoritesOnlyChange,
   favoritesCount,
+  searchMode = 'filename',
+  onSearchModeChange,
+  onReindex,
+  reindexing = false,
 }: FileActionsBarProps) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState(query);
@@ -139,20 +152,50 @@ export function FileActionsBar({
           type="search"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder={t('files.search_placeholder', { defaultValue: 'Search files…' })}
-          className="w-full h-9 pl-8 pr-8 text-sm rounded-lg border border-border-light bg-surface-primary text-content-primary placeholder:text-content-tertiary focus:outline-none focus:border-oe-blue focus:ring-2 focus:ring-oe-blue/20"
+          placeholder={
+            searchMode === 'content'
+              ? t('files.search.inside', { defaultValue: 'Search inside files' })
+              : t('files.search_placeholder', { defaultValue: 'Search files…' })
+          }
+          className="w-full h-9 ps-8 pe-8 text-sm rounded-lg border border-border-light bg-surface-primary text-content-primary placeholder:text-content-tertiary focus:outline-none focus:border-oe-blue focus:ring-2 focus:ring-oe-blue/20"
         />
         {draft && (
           <button
             type="button"
             onClick={() => setDraft('')}
             aria-label={t('common.clear', { defaultValue: 'Clear' })}
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-content-tertiary hover:text-content-primary"
+            className="absolute end-2 top-1/2 -translate-y-1/2 p-0.5 text-content-tertiary hover:text-content-primary"
           >
             <X size={12} />
           </button>
         )}
       </div>
+
+      {/* W3 — filename vs content (OCR) search toggle, sitting right next to
+          the search box. Content mode searches inside the files' text. */}
+      {onSearchModeChange && (
+        <SearchModeToggle mode={searchMode} onChange={onSearchModeChange} />
+      )}
+      {onReindex && searchMode === 'content' && (
+        <button
+          type="button"
+          onClick={onReindex}
+          disabled={reindexing}
+          className="inline-flex items-center gap-1.5 h-7 px-2 rounded-full text-[11px] font-medium text-content-tertiary hover:text-content-primary hover:bg-surface-secondary transition-colors disabled:opacity-60"
+          title={t('files.search.reindex_hint', {
+            defaultValue: 'Re-scan every file so recent uploads become searchable by their text',
+          })}
+        >
+          {reindexing ? (
+            <Loader2 size={11} className="animate-spin" />
+          ) : (
+            <RefreshCw size={11} />
+          )}
+          <span className="hidden md:inline">
+            {t('files.search.reindex', { defaultValue: 'Update search index' })}
+          </span>
+        </button>
+      )}
 
       <span className="text-2xs text-content-tertiary tabular-nums">
         {totalCount} {t('files.count_files', { defaultValue: 'files' })}

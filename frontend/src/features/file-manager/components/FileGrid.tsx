@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /** Grid view of files — default right-pane layout. */
 
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { ExternalLink, FileText, Image as ImageIcon, Layout, Box, Pencil, File, PenTool, FileBarChart, Tag, Star } from 'lucide-react';
@@ -43,6 +44,8 @@ interface FileGridProps {
   favoriteKeys?: Set<string>;
   /** Toggle a tile's favourite state. Omit to hide the star control. */
   onToggleFavorite?: (row: FileRow, isFavorite: boolean) => void;
+  /** Right-click a tile — opens the shared FileContextMenu at the cursor. */
+  onContextMenu?: (row: FileRow, x: number, y: number) => void;
 }
 
 function fmtBytes(bytes: number): string {
@@ -61,8 +64,92 @@ export function FileGrid({
   isLoading,
   favoriteKeys,
   onToggleFavorite,
+  onContextMenu,
 }: FileGridProps) {
   const { t } = useTranslation();
+
+  // ── Keyboard roving navigation ──────────────────────────────────────
+  // Exactly one tile carries ``tabIndex={0}`` (the roving item); the rest
+  // are ``-1`` so Tab lands on the grid once and arrow keys move focus
+  // inside it. Enter opens, Space toggles selection, Shift+Arrow extends.
+  const [focusIndex, setFocusIndex] = useState(0);
+  const tileRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  // Keep the roving index in range as the list grows / shrinks / filters.
+  useEffect(() => {
+    if (focusIndex > items.length - 1) {
+      setFocusIndex(Math.max(0, items.length - 1));
+    }
+  }, [items.length, focusIndex]);
+
+  // How many tiles sit on the first visual row — derived from the DOM so it
+  // tracks the responsive column count (2 → 5) without hard-coding it.
+  const columnCount = (): number => {
+    const els = tileRefs.current;
+    const first = els[0]?.getBoundingClientRect().top;
+    if (first == null) return 1;
+    let cols = 1;
+    for (let i = 1; i < els.length; i += 1) {
+      const top = els[i]?.getBoundingClientRect().top;
+      if (top == null || Math.abs(top - first) > 1) break;
+      cols += 1;
+    }
+    return cols;
+  };
+
+  const step = (nextIndex: number, shift: boolean) => {
+    const clamped = Math.max(0, Math.min(items.length - 1, nextIndex));
+    const targetRow = items[clamped];
+    if (shift && targetRow) onSelect(targetRow.id, true, true);
+    setFocusIndex(clamped);
+    tileRefs.current[clamped]?.focus();
+  };
+
+  const handleTileKeyDown = (e: React.KeyboardEvent, idx: number, row: FileRow) => {
+    // Only act on keys targeting the tile button itself, not anything that
+    // bubbles up from nested controls.
+    if (e.target !== e.currentTarget) return;
+    // ``dir`` on the document root flips the horizontal arrows so RTL users
+    // navigate in the reading direction they expect.
+    const rtl = typeof document !== 'undefined' && document.documentElement.dir === 'rtl';
+    switch (e.key) {
+      case 'ArrowRight':
+        e.preventDefault();
+        step(idx + (rtl ? -1 : 1), e.shiftKey);
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        step(idx + (rtl ? 1 : -1), e.shiftKey);
+        break;
+      case 'ArrowDown':
+        e.preventDefault();
+        step(idx + columnCount(), e.shiftKey);
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        step(idx - columnCount(), e.shiftKey);
+        break;
+      case 'Home':
+        e.preventDefault();
+        step(0, e.shiftKey);
+        break;
+      case 'End':
+        e.preventDefault();
+        step(items.length - 1, e.shiftKey);
+        break;
+      case 'Enter':
+        e.preventDefault();
+        onOpen(row);
+        break;
+      case ' ':
+      case 'Spacebar':
+        e.preventDefault();
+        onSelect(row.id, true);
+        break;
+      default:
+        break;
+    }
+  };
 
   if (isLoading && items.length === 0) {
     return (
@@ -88,7 +175,7 @@ export function FileGrid({
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3 p-4">
-      {items.map((row) => {
+      {items.map((row, idx) => {
         const Icon = KIND_ICON[row.kind] ?? File;
         const tint = KIND_TINT[row.kind] ?? 'bg-surface-secondary text-content-secondary';
         const isSelected = selectedIds.has(row.id);
@@ -113,6 +200,14 @@ export function FileGrid({
         return (
           <div
             key={row.id}
+            onContextMenu={
+              onContextMenu
+                ? (e) => {
+                    e.preventDefault();
+                    onContextMenu(row, e.clientX, e.clientY);
+                  }
+                : undefined
+            }
             className={clsx(
               'group relative flex flex-col rounded-xl border bg-surface-elevated text-left transition-all',
               'overflow-hidden',
@@ -135,8 +230,16 @@ export function FileGrid({
           >
             <button
               type="button"
-              onClick={(e) => onSelect(row.id, e.metaKey || e.ctrlKey, e.shiftKey)}
+              ref={(el) => {
+                tileRefs.current[idx] = el;
+              }}
+              tabIndex={idx === focusIndex ? 0 : -1}
+              onClick={(e) => {
+                setFocusIndex(idx);
+                onSelect(row.id, e.metaKey || e.ctrlKey, e.shiftKey);
+              }}
               onDoubleClick={() => onOpen(row)}
+              onKeyDown={(e) => handleTileKeyDown(e, idx, row)}
               className="flex flex-col text-left w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
             >
               <div className={clsx('relative aspect-[4/3] flex items-center justify-center', tint)}>

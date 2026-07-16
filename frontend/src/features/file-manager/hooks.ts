@@ -4,6 +4,7 @@
 
 import { useMemo } from 'react';
 import {
+  useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
@@ -17,11 +18,13 @@ import {
   fetchFileTree,
   fetchStorageLocations,
   listFolderPermissions,
+  renameDocument,
   setDocumentCdeState,
   starFile,
   unstarFile,
   type CdeState,
 } from './api';
+import type { FileListResponse } from './types';
 import {
   favoriteKey,
   type FileFavorite,
@@ -56,6 +59,43 @@ export function useFileList(
   return useQuery({
     queryKey: [KEY_LIST, projectId, filters],
     queryFn: () => fetchFileList(projectId as string, filters),
+    enabled: Boolean(projectId),
+    staleTime: 10_000,
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** Default page size for the infinite file list. Large enough that most
+ * categories fit in one page, small enough that a 10k-file category paints
+ * the first screen quickly and streams the rest on scroll. */
+export const FILE_LIST_PAGE_SIZE = 60;
+
+/**
+ * Infinite (offset-paged) variant of {@link useFileList} used by the main
+ * File Manager grid/list. Pages the existing ``limit``/``offset`` list
+ * endpoint and stops when the accumulated item count reaches
+ * ``FileListResponse.total``. The caller flattens ``data.pages`` into a
+ * single array and drives an IntersectionObserver sentinel off
+ * ``fetchNextPage`` / ``hasNextPage``.
+ */
+export function useInfiniteFileList(
+  projectId: string | null | undefined,
+  filters: FileFilters,
+  pageSize: number = FILE_LIST_PAGE_SIZE,
+) {
+  return useInfiniteQuery<FileListResponse, Error>({
+    queryKey: [KEY_LIST, projectId, filters, 'infinite', pageSize],
+    queryFn: ({ pageParam }) =>
+      fetchFileList(projectId as string, {
+        ...filters,
+        limit: pageSize,
+        offset: (pageParam as number) ?? 0,
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((sum, page) => sum + page.items.length, 0);
+      return loaded < lastPage.total ? loaded : undefined;
+    },
     enabled: Boolean(projectId),
     staleTime: 10_000,
     placeholderData: keepPreviousData,
@@ -197,6 +237,25 @@ export function useSetDocumentCdeState(projectId: string | null | undefined) {
     meta: { suppressGlobalErrorToast: true },
     mutationFn: (vars: { documentId: string; cdeState: CdeState }) =>
       setDocumentCdeState(vars.documentId, vars.cdeState),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [KEY_LIST, projectId] });
+      qc.invalidateQueries({ queryKey: [KEY_TREE, projectId] });
+    },
+  });
+}
+
+/**
+ * Rename a document via ``PATCH /v1/documents/{id}``. On success we
+ * invalidate the file list + tree for the project so the new name
+ * re-renders everywhere (grid tiles, list rows, tree labels, preview
+ * pane). The caller must guard on ``kind === 'document'`` - only that
+ * kind is backed by the documents table that owns the ``name`` column.
+ */
+export function useRenameDocument(projectId: string | null | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { documentId: string; name: string }) =>
+      renameDocument(vars.documentId, vars.name),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [KEY_LIST, projectId] });
       qc.invalidateQueries({ queryKey: [KEY_TREE, projectId] });

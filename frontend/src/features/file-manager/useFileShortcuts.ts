@@ -94,6 +94,12 @@ export const FILE_SHORTCUTS: ShortcutEntry[] = [
   { keys: ['/'], label: 'Focus search' },
   { keys: ['g'], label: 'Grid view' },
   { keys: ['l'], label: 'List view' },
+  // Roving keyboard navigation lives in FileGrid / FileList (they own the
+  // focus geometry); documented here so the cheatsheet advertises it.
+  { keys: ['↑', '↓', '←', '→'], label: 'Move focus' },
+  { keys: ['Enter'], label: 'Open focused file' },
+  { keys: ['Space'], label: 'Select or deselect' },
+  { keys: ['Shift', '↑'], label: 'Extend selection' },
   { keys: ['Delete'], label: 'Delete selection' },
   { keys: ['Esc'], label: 'Clear selection / close preview' },
   { keys: ['?'], label: 'Show this cheatsheet' },
