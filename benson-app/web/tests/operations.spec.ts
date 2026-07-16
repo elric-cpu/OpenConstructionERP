@@ -276,6 +276,16 @@ test("staff can operate a lead and create a fact-scoped AI draft", async ({ page
       },
     }),
   );
+  await page.route("**/api/benson/v1/staff", (route) =>
+    route.fulfill({
+      json: {
+        staff: [
+          { email: "elric@bensonhomesolutions.com", display_name: "Elric", role: "owner" },
+          { email: "office@bensonhomesolutions.com", display_name: "Benson Office", role: "office" },
+        ],
+      },
+    }),
+  );
   await page.route("**/api/benson/v1/ai/runs", async (route) => {
     const request = route.request().postDataJSON();
     expect(request.lead_id).toBe("lead-1");
@@ -287,6 +297,13 @@ test("staff can operate a lead and create a fact-scoped AI draft", async ({ page
   await expect(page.getByRole("heading", { name: "Harney County homeowner" })).toBeVisible();
   await expect(page.getByText("Two windows need review.")).toBeVisible();
   await expect(page.getByRole("button", { name: /window.jpg/ })).toBeVisible();
+  await expect(page.getByLabel("Assigned to")).toHaveValue("");
+  await expect(page.getByLabel("Assigned to").getByRole("option", { name: "Elric" })).toHaveValue(
+    "elric@bensonhomesolutions.com",
+  );
+  await page.getByLabel("Assigned to").selectOption("elric@bensonhomesolutions.com");
+  await page.getByRole("button", { name: "Save assignment" }).click();
+  await expect(page.getByLabel("Assigned to")).toHaveValue("elric@bensonhomesolutions.com");
   await page.getByLabel("New lead note").fill("Called and left a voicemail.");
   await page.getByRole("button", { name: "Add note" }).click();
   await expect(page.getByText("Called and left a voicemail.")).toBeVisible();

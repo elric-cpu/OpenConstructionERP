@@ -39,6 +39,7 @@ type LeadDetail = Lead & {
 };
 
 type Skill = { id: string; label: string; description: string; risk: string };
+type StaffMember = { email: string; display_name: string; role: string };
 
 const transitions: Record<string, string[]> = {
   new: ["contacted", "closed"],
@@ -74,6 +75,7 @@ export function LeadWorkspace({
 }) {
   const [lead, setLead] = useState<LeadDetail | null>(null);
   const [skills, setSkills] = useState<Skill[]>([]);
+  const [staff, setStaff] = useState<StaffMember[]>([]);
   const [skillId, setSkillId] = useState("historical-cost-analyzer");
   const [note, setNote] = useState("");
   const [assignee, setAssignee] = useState("");
@@ -90,12 +92,14 @@ export function LeadWorkspace({
     Promise.all([
       api<LeadDetail>(`/api/benson/v1/leads/${leadId}`, credential, { signal: controller.signal }),
       api<{ skills: Skill[] }>("/api/benson/v1/ai/skills", credential, { signal: controller.signal }),
+      api<{ staff: StaffMember[] }>("/api/benson/v1/staff", credential, { signal: controller.signal }),
     ])
-      .then(([detail, catalog]) => {
+      .then(([detail, catalog, directory]) => {
         if (!active) return;
         setLead(detail);
         setAssignee(detail.assigned_to ?? "");
         setSkills(catalog.skills);
+        setStaff(directory.staff);
         setSkillId((current) =>
           catalog.skills.some((skill) => skill.id === current) ? current : (catalog.skills[0]?.id ?? ""),
         );
@@ -315,12 +319,21 @@ export function LeadWorkspace({
             </label>
             <label>
               Assigned to
-              <input
-                type="email"
+              <select
+                aria-label="Assigned to"
                 value={assignee}
                 onChange={(event) => setAssignee(event.target.value)}
-                placeholder="staff@bensonhomesolutions.com"
-              />
+              >
+                <option value="">Unassigned</option>
+                {lead.assigned_to && !staff.some((member) => member.email === lead.assigned_to) && (
+                  <option value={lead.assigned_to}>{lead.assigned_to}</option>
+                )}
+                {staff.map((member) => (
+                  <option key={member.email} value={member.email}>
+                    {member.display_name}
+                  </option>
+                ))}
+              </select>
             </label>
             <button
               className="secondary"

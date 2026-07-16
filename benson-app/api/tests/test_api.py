@@ -422,6 +422,33 @@ def test_staff_endpoints_require_auth_and_scope_modules() -> None:
     assert "finance" not in groups
 
 
+def test_authenticated_staff_directory_uses_names_and_roles(isolated_settings: Settings) -> None:
+    isolated_settings.owner_emails = "elric@bensonhomesolutions.com"
+    isolated_settings.office_emails = "office@bensonhomesolutions.com"
+    isolated_settings.staff_display_names = (
+        "elric@bensonhomesolutions.com=Elric,office@bensonhomesolutions.com=Benson Office"
+    )
+
+    response = client.get("/api/benson/v1/staff", headers=STAFF_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "staff": [
+            {
+                "email": "elric@bensonhomesolutions.com",
+                "display_name": "Elric",
+                "role": "owner",
+            },
+            {
+                "email": "office@bensonhomesolutions.com",
+                "display_name": "Benson Office",
+                "role": "office",
+            },
+        ]
+    }
+    assert client.get("/api/benson/v1/staff").status_code == 503
+
+
 def test_production_google_auth_and_owner_scope(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = production_settings(
         owner_emails="owner@bensonhomesolutions.com",
@@ -498,6 +525,7 @@ def test_staff_can_list_persisted_leads(isolated_settings: Settings) -> None:
 
 
 def test_staff_can_filter_open_update_and_audit_lead(isolated_settings: Settings) -> None:
+    isolated_settings.estimator_pm_emails = "estimator@bensonhomesolutions.com"
     created = post_signed_lead(
         isolated_settings, canonical_lead(name="Filter Homeowner", urgency="emergency"), key="ops-1"
     ).json()
@@ -530,6 +558,15 @@ def test_staff_can_filter_open_update_and_audit_lead(isolated_settings: Settings
     assert (
         client.patch(f"/api/benson/v1/leads/{lead_id}", headers=STAFF_HEADERS, json={}).status_code
         == 400
+    )
+    unauthorized_assignee = client.patch(
+        f"/api/benson/v1/leads/{lead_id}",
+        headers=STAFF_HEADERS,
+        json={"assigned_to": "outsider@example.com"},
+    )
+    assert unauthorized_assignee.status_code == 422
+    assert (
+        unauthorized_assignee.json()["detail"] == "Lead assignee must be an authorized staff member"
     )
     invalid = client.patch(
         f"/api/benson/v1/leads/{lead_id}",

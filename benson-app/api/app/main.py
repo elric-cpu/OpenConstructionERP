@@ -193,6 +193,14 @@ async def modules(principal: Principal = Depends(require_staff)) -> dict[str, An
     return {"role": principal.role, "groups": grouped}
 
 
+@app.get("/api/benson/v1/staff")
+async def staff_directory(
+    _principal: Principal = Depends(require_operations_staff),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    return {"staff": settings.assignable_staff()}
+
+
 @app.get("/api/v1/dashboard")
 def dashboard(
     principal: Principal = Depends(require_staff), settings: Settings = Depends(get_settings)
@@ -286,6 +294,12 @@ def update_lead(
 ) -> dict[str, Any]:
     if change.status is None and change.assigned_to is None and change.note is None:
         raise HTTPException(status_code=400, detail="At least one lead change is required")
+    if change.assigned_to is not None:
+        assignable_emails = {member["email"] for member in settings.assignable_staff()}
+        if str(change.assigned_to).lower() not in assignable_emails:
+            raise HTTPException(
+                status_code=422, detail="Lead assignee must be an authorized staff member"
+            )
     try:
         lead = store(settings).update_lead(lead_id, change, actor=principal.email)
     except InvalidLeadTransition as error:

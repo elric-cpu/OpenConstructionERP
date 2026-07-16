@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     estimator_pm_emails: str = ""
     accounting_emails: str = ""
     field_emails: str = ""
+    staff_display_names: str = ""
     fcc_base_url: AnyHttpUrl = AnyHttpUrl("http://127.0.0.1:8082")
     fcc_auth_token: str = Field(default="freecc", min_length=1)
     fcc_model: str = "nvidia_nim/nvidia/nemotron-3-super-120b-a12b"
@@ -102,6 +103,33 @@ class Settings(BaseSettings):
     def role_emails(self, role: str) -> set[str]:
         raw = getattr(self, f"{role}_emails", "")
         return {email.strip().lower() for email in raw.split(",") if email.strip()}
+
+    def staff_name_map(self) -> dict[str, str]:
+        names: dict[str, str] = {}
+        for entry in self.staff_display_names.split(","):
+            email, separator, display_name = entry.partition("=")
+            if separator and email.strip() and display_name.strip():
+                names[email.strip().lower()] = display_name.strip()
+        return names
+
+    def assignable_staff(self) -> list[dict[str, str]]:
+        names = self.staff_name_map()
+        members: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for role in ("owner", "admin", "office", "estimator_pm", "field"):
+            for email in sorted(self.role_emails(role)):
+                if email in seen:
+                    continue
+                seen.add(email)
+                fallback_name = email.split("@", 1)[0].replace(".", " ").replace("_", " ").title()
+                members.append(
+                    {
+                        "email": email,
+                        "display_name": names.get(email, fallback_name),
+                        "role": role,
+                    }
+                )
+        return members
 
     def twilio_is_configured(self) -> bool:
         return all(
