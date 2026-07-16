@@ -1943,6 +1943,37 @@ class BidManagementService:
             mixed_currency=summary["mixed_currency"],
         )
 
+    async def bid_parity_analytics(
+        self,
+        package_id: uuid.UUID,
+        *,
+        unit_price_threshold_pct: Decimal = Decimal("20"),
+        high_dispersion_cv_pct: Decimal = Decimal("30"),
+        sigma_threshold: Decimal = Decimal("2"),
+        top_drivers: int = 5,
+    ) -> dict[str, Any]:
+        """Line-level parity and per-bid fairness analytics for a package.
+
+        Builds the leveling matrix once and runs the pure analytics over its
+        cells (no re-query), so the parity numbers can never drift from the
+        leveling view. The reporting currency is the dominant one across the
+        package's priced bids (money is never blended across currencies).
+        """
+        # Local import keeps ``analytics`` -> ``service`` acyclic.
+        from app.modules.bid_management.analytics import compute_bid_parity_analytics
+
+        matrix = await self.leveling_matrix(package_id)
+        submissions = await self.submission_repo.submissions_for_package(package_id)
+        report_currency, _kept, _excluded = _dominant_currency(_group_totals_by_currency(submissions))
+        return compute_bid_parity_analytics(
+            matrix,
+            unit_price_threshold_pct=unit_price_threshold_pct,
+            high_dispersion_cv_pct=high_dispersion_cv_pct,
+            sigma_threshold=sigma_threshold,
+            top_drivers=top_drivers,
+            currency=report_currency,
+        )
+
     # ── Leveling matrix (line-level side-by-side) ─────────────────────
 
     async def leveling_matrix(self, package_id: uuid.UUID) -> dict[str, Any]:

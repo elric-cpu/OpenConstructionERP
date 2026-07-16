@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -67,6 +68,7 @@ from app.modules.bid_management.schemas import (
     BidPackageLineItemUpdate,
     BidPackageResponse,
     BidPackageUpdate,
+    BidParityAnalyticsResponse,
     BidQAAnswer,
     BidQACreate,
     BidQAResponse,
@@ -327,6 +329,38 @@ async def package_leveling_matrix(
     svc = BidManagementService(session)
     matrix = await svc.leveling_matrix(package_id)
     return LevelingMatrixResponse.model_validate(matrix)
+
+
+@router.get(
+    "/bid-packages/{package_id}/parity-analytics",
+    response_model=BidParityAnalyticsResponse,
+)
+async def package_parity_analytics(
+    package_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    unit_price_threshold_pct: Decimal = Query(default=Decimal("20"), ge=0),
+    high_dispersion_cv_pct: Decimal = Query(default=Decimal("30"), ge=0),
+    sigma_threshold: Decimal = Query(default=Decimal("2"), ge=0),
+    top_drivers: int = Query(default=5, ge=1, le=100),
+    _perm: None = Depends(RequirePermission("bid_management.read")),
+) -> BidParityAnalyticsResponse:
+    """Line-level bid parity and fairness analytics for a package.
+
+    Per line: median / mean / min / max / spread of the competing unit prices,
+    with a per-cell outlier flag. Per bid: cost-driver ranking plus a soft
+    health verdict. Overall: dispersion count and the most-consistent bid.
+    """
+    await _verify_package_access(session, package_id, user_id)
+    svc = BidManagementService(session)
+    result = await svc.bid_parity_analytics(
+        package_id,
+        unit_price_threshold_pct=unit_price_threshold_pct,
+        high_dispersion_cv_pct=high_dispersion_cv_pct,
+        sigma_threshold=sigma_threshold,
+        top_drivers=top_drivers,
+    )
+    return BidParityAnalyticsResponse.model_validate(result)
 
 
 @router.get(

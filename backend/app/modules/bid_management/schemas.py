@@ -693,6 +693,114 @@ class LevelingMatrixResponse(BaseModel):
     rows: list[LevelingMatrixRow] = Field(default_factory=list)
 
 
+# ── Bid parity and fairness analytics (line-level) ──────────────────────
+
+
+class BidParityLineCell(BaseModel):
+    """One bidder's unit price on a line, with its deviation from the median."""
+
+    bidder_id: UUID
+    company_name: str = ""
+    unit_price: Decimal = Decimal("0")
+    # Absolute deviation of this unit price from the line median, in percent.
+    deviation_pct: Decimal = Decimal("0")
+    # "above" / "below" / "at" the line median.
+    direction: str = "at"
+    is_outlier: bool = False
+
+
+class BidParityLine(BaseModel):
+    """Parity statistics for one package line across all competing bids."""
+
+    line_item_id: UUID
+    line_item_code: str = ""
+    description: str = ""
+    unit: str = ""
+    is_mandatory: bool = True
+    # Number of competitive bids priced on this line (the median sample size).
+    bid_count: int = 0
+    median_unit_price: Decimal | None = None
+    mean_unit_price: Decimal | None = None
+    min_unit_price: Decimal | None = None
+    max_unit_price: Decimal | None = None
+    spread: Decimal | None = None
+    spread_pct: Decimal | None = None
+    # Coefficient of variation (std dev / mean) in percent.
+    cv_pct: Decimal | None = None
+    max_over_median: Decimal | None = None
+    high_dispersion: bool = False
+    outlier_count: int = 0
+    cells: list[BidParityLineCell] = Field(default_factory=list)
+
+
+class BidCostDriver(BaseModel):
+    """One line's contribution to a single bid's total."""
+
+    line_item_id: UUID
+    line_item_code: str = ""
+    description: str = ""
+    total_price: Decimal = Decimal("0")
+    contribution_pct: Decimal = Decimal("0")
+
+
+class BidHealthCheck(BaseModel):
+    """Soft structural verdict for a single bid (never a hard reject)."""
+
+    outlier_line_count: int = 0
+    outlier_high_count: int = 0
+    outlier_low_count: int = 0
+    missing_mandatory_count: int = 0
+    missing_mandatory_codes: list[str] = Field(default_factory=list)
+    # "low" / "high" / "normal" against the sigma band of bid totals.
+    abnormal_total: str = "normal"
+    consistency_score: Decimal = Decimal("0")
+    # "clean" / "review" / "attention".
+    verdict: str = "clean"
+    flags: list[str] = Field(default_factory=list)
+
+
+class BidParityBid(BaseModel):
+    """Per-bid cost drivers and structural health check."""
+
+    bidder_id: UUID
+    company_name: str = ""
+    bid_total: Decimal = Decimal("0")
+    priced_line_count: int = 0
+    cost_drivers: list[BidCostDriver] = Field(default_factory=list)
+    health: BidHealthCheck
+
+
+class BidParitySummary(BaseModel):
+    """Field-wide parity summary and the most-consistent recommendation."""
+
+    bid_count: int = 0
+    line_count: int = 0
+    priced_line_count: int = 0
+    high_dispersion_line_count: int = 0
+    high_dispersion_line_codes: list[str] = Field(default_factory=list)
+    outlier_cell_count: int = 0
+    total_mean: Decimal | None = None
+    total_std_dev: Decimal | None = None
+    low_total_threshold: Decimal | None = None
+    high_total_threshold: Decimal | None = None
+    recommended_bidder_id: UUID | None = None
+    recommended_company_name: str = ""
+    recommendation_reason: str = ""
+
+
+class BidParityAnalyticsResponse(BaseModel):
+    """Line-level bid parity and fairness analytics for a package."""
+
+    package_id: UUID
+    currency: str = ""
+    unit_price_threshold_pct: Decimal = Decimal("20")
+    high_dispersion_cv_pct: Decimal = Decimal("30")
+    sigma_threshold: Decimal = Decimal("2")
+    lines: list[BidParityLine] = Field(default_factory=list)
+    bids: list[BidParityBid] = Field(default_factory=list)
+    summary: BidParitySummary
+
+
 # ── Q&A board (bidder-portal view) ──────────────────────────────────────
 
 
