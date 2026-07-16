@@ -1,5 +1,5 @@
 export type RequestStatus = "loading" | "ready" | "auth-required" | "offline";
-export type ActiveView = "overview" | "leads" | "customers" | "employees" | "tasks" | "activate";
+export type ActiveView = "overview" | "leads" | "customers" | "estimates" | "employees" | "tasks" | "activate";
 export type SpamFilter = "active" | "spam" | "all";
 export type BusyState = "lead" | "save" | "draft" | "";
 
@@ -46,6 +46,33 @@ export type Customer = {
   notes: string;
   status: "active" | "archived";
   source_lead_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type EstimateLine = {
+  id?: string;
+  position?: number;
+  description: string;
+  quantity: string;
+  unit: string;
+  unit_price_cents: number;
+  line_total_cents?: number;
+};
+
+export type Estimate = {
+  id: string;
+  number: string;
+  customer_id: string;
+  customer_name: string;
+  title: string;
+  scope_notes: string;
+  valid_until: string;
+  status: "draft" | "ready" | "sent" | "accepted" | "declined" | "void";
+  version: number;
+  subtotal_cents: number;
+  total_cents: number;
+  lines: EstimateLine[];
   created_at: string;
   updated_at: string;
 };

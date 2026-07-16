@@ -134,6 +134,87 @@ test("staff can create and edit a persisted customer", async ({ page }) => {
   expect(results.violations.filter((item) => ["serious", "critical"].includes(item.impact ?? ""))).toEqual([]);
 });
 
+test("staff create a server-totaled estimate and confirm delivery", async ({ page }) => {
+  await mockEmptyWorkspace(page);
+  const customer = {
+    id: "customer-estimate",
+    name: "Estimate Customer",
+    company: "",
+    phone: "541-555-0122",
+    email: "estimate@example.com",
+    billing_address: "",
+    service_address: "10 Main Street",
+    city: "Burns",
+    state: "OR",
+    zip_code: "97720",
+    notes: "",
+    status: "active",
+    source_lead_id: null,
+    created_at: "2026-07-16T00:00:00Z",
+    updated_at: "2026-07-16T00:00:00Z",
+  };
+  let estimate = {
+    id: "estimate-1",
+    number: "EST-2026-TEST0001",
+    customer_id: customer.id,
+    customer_name: customer.name,
+    title: "Window replacement",
+    scope_notes: "",
+    valid_until: "2026-08-31",
+    status: "draft",
+    version: 1,
+    subtotal_cents: 125000,
+    total_cents: 125000,
+    lines: [],
+    created_at: "2026-07-16T00:00:00Z",
+    updated_at: "2026-07-16T00:00:00Z",
+  };
+  await page.route("**/api/benson/v1/customers?query=*", (route) => route.fulfill({ json: [customer] }));
+  await page.route("**/api/benson/v1/estimates", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ json: [] });
+      return;
+    }
+    const payload = route.request().postDataJSON() as { title: string; lines: unknown[] };
+    estimate = { ...estimate, title: payload.title, lines: payload.lines };
+    await route.fulfill({ status: 201, json: estimate });
+  });
+  await page.route("**/api/benson/v1/estimates/estimate-1/transition", async (route) => {
+    const payload = route.request().postDataJSON() as { status: string; external_delivery_confirmed: boolean };
+    if (payload.status === "sent") expect(payload.external_delivery_confirmed).toBe(true);
+    estimate = { ...estimate, status: payload.status };
+    await route.fulfill({ json: estimate });
+  });
+  await page.route("**/api/benson/v1/estimates/estimate-1", async (route) => {
+    expect(route.request().method()).toBe("PATCH");
+    const payload = route.request().postDataJSON() as { title: string };
+    estimate = { ...estimate, title: payload.title, version: 2 };
+    await route.fulfill({ json: estimate });
+  });
+
+  await page.goto("/#estimates");
+  await expect(page.getByRole("heading", { name: "Estimates", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "+ New estimate" }).click();
+  await page.getByLabel("Estimate title").fill(estimate.title);
+  await page.getByLabel("Valid until").fill(estimate.valid_until);
+  await page.getByLabel("Description").fill("High-desert rated window");
+  await page.getByLabel("Unit price").fill("1250.00");
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByRole("heading", { name: estimate.title })).toBeVisible();
+  await expect(page.getByText("$1,250.00")).toBeVisible();
+  await page.getByRole("button", { name: "Edit" }).click();
+  await page.getByLabel("Estimate title").fill("Revised window replacement");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("heading", { name: "Revised window replacement" })).toBeVisible();
+  await page.getByRole("button", { name: "Mark ready" }).click();
+  await expect(page.getByText("ready", { exact: true })).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Mark delivered" }).click();
+  await expect(page.getByText("sent", { exact: true })).toBeVisible();
+  const results = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
+  expect(results.violations.filter((item) => ["serious", "critical"].includes(item.impact ?? ""))).toEqual([]);
+});
+
 test("unsupported legacy hashes normalize to the overview", async ({ page }) => {
   await mockEmptyWorkspace(page);
   await page.goto("/#jobs");

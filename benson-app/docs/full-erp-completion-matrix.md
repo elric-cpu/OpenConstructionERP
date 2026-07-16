@@ -10,7 +10,7 @@ rollback, and approved production smoke evidence all exist.
 | Leads | Production lead queue, signed intake, private attachments, audit | Include in end-to-end lead-to-cash UAT |
 | Customers | Persisted guarded workflow and automated tests | Candidate deploy, synthetic UAT, backup/restore proof |
 | Employees/onboarding | Invite, Tasks, encrypted evidence, conditional rules | Full rejection/resubmission/offboarding UAT and HR/legal approvals |
-| Estimates | Not implemented in Benson overlay | Full vertical slice |
+| Estimates | Persisted guarded workflow and automated tests | Candidate deploy, synthetic delivery/decision UAT, backup/restore proof |
 | Jobs | Not implemented in Benson overlay | Full vertical slice |
 | Schedule | Not implemented in Benson overlay | Full vertical slice |
 | Field records | Not implemented in Benson overlay | Full vertical slice |
