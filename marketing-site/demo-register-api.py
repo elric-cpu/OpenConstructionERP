@@ -792,8 +792,15 @@ class Handler(BaseHTTPRequestHandler):
             return None
 
     def _honeypot_triggered(self, data: dict) -> bool:
-        """Common bot-trap field names. Quietly drop on match."""
-        for trap in ("_honey", "honeypot", "website", "url", "bot_field"):
+        """Common bot-trap field names. Quietly drop on match.
+
+        Only genuinely hidden fields belong here. Do NOT add "website" or
+        "url": the partner application form collects a real, visible website
+        field, so trapping that name silently dropped every legitimate
+        application that filled it in. The hidden "_honey" input off screen
+        stays the actual trap.
+        """
+        for trap in ("_honey", "honeypot", "bot_field"):
             v = data.get(trap)
             if isinstance(v, str) and v.strip():
                 print(
