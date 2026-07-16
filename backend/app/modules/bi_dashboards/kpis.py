@@ -2548,6 +2548,551 @@ async def milestone_slippage_days_kpi(
     )
 
 
+# ── Cost-composition KPIs (feature: cost dashboard) ─────────────────────
+# Six cost-composition tiles that reuse the EVM/cost primitives the snapshot
+# already computes (BAC, PV, EV, AC) plus a few project facts (elapsed days,
+# gross floor area, the categorized Cost Breakdown Structure). The arithmetic
+# lives in small pure helpers so it is unit-testable with fixture inputs and
+# never divides by zero: each helper returns ``None`` (the "not computable"
+# sentinel) when its denominator is absent, and the async KPI wrapper renders
+# that as a zero value with ``source_record_count == 0`` (the dashboard's
+# "no data" state) rather than a misleading 0. Money stays Decimal throughout.
+
+
+def _pct_over_budget(bac: Decimal, forecast: Decimal) -> Decimal | None:
+    """Percent a forecast final cost runs over (+) or under (-) budget.
+
+    ``(forecast - BAC) / BAC * 100``. A positive result means the project is
+    tracking over its budget baseline, negative means under. Returns ``None``
+    when ``BAC <= 0`` (no baseline to measure against - the guarded case).
+    """
+    if bac <= 0:
+        return None
+    return (forecast - bac) / bac * Decimal("100")
+
+
+def _budget_consumed_pct(bac: Decimal, ac: Decimal) -> Decimal | None:
+    """Percent of the budget baseline already spent: ``AC / BAC * 100``.
+
+    Can exceed 100 once actual cost overruns the baseline. Returns ``None``
+    when ``BAC <= 0`` (nothing to consume against - the guarded case).
+    """
+    if bac <= 0:
+        return None
+    return ac / bac * Decimal("100")
+
+
+def _cost_per_period(actual_cost: Decimal, elapsed: Decimal) -> Decimal | None:
+    """Cost velocity: actual cost spread over elapsed periods (``AC / elapsed``).
+
+    ``elapsed`` is elapsed calendar days for the cost-per-day / burn-rate
+    reading. Returns ``None`` when ``elapsed <= 0`` (the project has not
+    started, or its start date is unknown / in the future - guarded).
+    """
+    if elapsed <= 0:
+        return None
+    return actual_cost / elapsed
+
+
+def _cost_per_unit(actual_cost: Decimal, quantity: Decimal) -> Decimal | None:
+    """Unit cost: actual cost per unit of installed quantity (``AC / quantity``).
+
+    ``quantity`` is a single well-defined denominator (gross floor area in
+    m2). Returns ``None`` when ``quantity <= 0`` (area not recorded - guarded).
+    """
+    if quantity <= 0:
+        return None
+    return actual_cost / quantity
+
+
+def _composition_percentages(by_category: dict[str, Decimal]) -> dict[str, Decimal]:
+    """Turn a ``{category: amount}`` map into ``{category: percent}``.
+
+    Each percent is ``amount / total * 100`` where ``total`` is the sum of
+    all amounts. Negative category amounts are kept (a credit note can push a
+    category negative) but a non-positive ``total`` is treated as no data and
+    yields an empty dict (the guarded divide-by-zero case), so the caller can
+    grey the composition tile instead of dividing by zero.
+    """
+    total = sum(by_category.values(), Decimal("0"))
+    if total <= 0:
+        return {}
+    return {category: amount / total * Decimal("100") for category, amount in by_category.items()}
+
+
+@dataclass
+class _ProjectCostFacts:
+    """Per-project facts the cost-velocity / unit-cost KPIs divide by."""
+
+    currency: str = ""
+    actual_cost: Decimal = Decimal("0")
+    elapsed_days: int | None = None
+    gross_floor_area: Decimal = Decimal("0")
+    record_count: int = 0
+
+
+async def _project_cost_facts(
+    session: AsyncSession,
+    project_id: uuid.UUID,
+) -> _ProjectCostFacts:
+    """Actual cost (base currency) plus the elapsed-days and GFA denominators.
+
+    ``actual_cost`` is the AC from the shared EVM snapshot (settled payments
+    plus committed purchase orders, FX-converted into the project base
+    currency), so the velocity / unit-cost KPIs never re-sum actuals. Elapsed
+    days run from the actual start date (falling back to the planned start) to
+    today; ``None`` when no start date is recorded. ``gross_floor_area`` is the
+    project GFA in m2 (Decimal), 0 when unrecorded. Degrades gracefully - a
+    missing projects module leaves the denominators at their empty defaults.
+    """
+    snap = await _evm_snapshot_for_project(session, project_id)
+    facts = _ProjectCostFacts(
+        currency=(snap.currency or "").strip().upper(),
+        actual_cost=snap.ac,
+        record_count=snap.record_count,
+    )
+    try:
+        from app.modules.projects.models import Project  # type: ignore
+
+        proj = await session.get(Project, project_id)
+    except ImportError:
+        return facts
+    except Exception:
+        logger.debug("cost facts: project probe failed", exc_info=True)
+        return facts
+    if proj is None:
+        return facts
+    start = _parse_date(getattr(proj, "actual_start_date", None)) or _parse_date(
+        getattr(proj, "planned_start_date", None),
+    )
+    if start is not None:
+        facts.elapsed_days = (datetime.now(UTC).date() - start).days
+    facts.gross_floor_area = _to_decimal(getattr(proj, "gross_floor_area", None))
+    return facts
+
+
+async def _cost_portfolio_project_ids(
+    session: AsyncSession,
+    allowed_project_ids: set[uuid.UUID] | None,
+) -> list[uuid.UUID]:
+    """Project ids a portfolio cost-velocity / unit-cost KPI fans out over.
+
+    Mirrors the EVM portfolio fan-out scoping (IDOR defence): an empty
+    ``allowed_project_ids`` yields nothing (the caller can reach no project),
+    a non-empty set restricts to it, and ``None`` returns every project
+    (admin / unrestricted).
+    """
+    if allowed_project_ids is not None and not allowed_project_ids:
+        return []
+    try:
+        from app.modules.projects.models import Project  # type: ignore
+
+        stmt = select(Project.id)
+        if allowed_project_ids is not None:
+            stmt = stmt.where(Project.id.in_(allowed_project_ids))
+        return list((await session.execute(stmt)).scalars().all())
+    except ImportError:
+        return []
+    except Exception:
+        logger.debug("cost portfolio: project list failed", exc_info=True)
+        return []
+
+
+async def _cost_breakdown_by_category(
+    session: AsyncSession,
+    project_id: uuid.UUID | None,
+    allowed_project_ids: set[uuid.UUID] | None,
+) -> tuple[dict[str, Decimal], str, int, bool]:
+    """Sum the categorized Cost Breakdown Structure by cost category.
+
+    Reads ``costmodel.BudgetLine`` and returns
+    ``(by_category, basis, record_count, multi_currency)`` where:
+
+        * ``by_category`` maps a cost category (labor, material, equipment,
+          subcontractor, overhead, contingency, ...) to its amount converted
+          into the owning project's base currency;
+        * ``basis`` records which amount column fed the map ("actual",
+          "committed" or "planned" - the first with a positive grand total,
+          so the tile is alive as soon as any of the three is populated);
+        * ``record_count`` is the number of budget lines read;
+        * ``multi_currency`` is True when the scope mixed more than one base
+          currency, in which case the portfolio composition is a blended
+          ratio (percentages are dimensionless, so this matches how the
+          portfolio CPI/SPI blend same-shaped sums across currencies).
+
+    Each amount is converted via ``Project.fx_rates`` before summing. Degrades
+    to ``({}, "", 0, False)`` when the cost-model module is absent or a query
+    fails - this is purely a read-side aggregation.
+    """
+    actual: dict[str, Decimal] = {}
+    committed: dict[str, Decimal] = {}
+    planned: dict[str, Decimal] = {}
+    total_actual = Decimal("0")
+    total_committed = Decimal("0")
+    total_planned = Decimal("0")
+    count = 0
+    bases_seen: set[str] = set()
+    base_currency, fx_map = await _project_currency_and_fx(session, project_id)
+    fx_cache: dict[uuid.UUID, tuple[str, dict[str, str]]] = {}
+    try:
+        from app.modules.costmodel.models import BudgetLine  # type: ignore
+
+        stmt = select(BudgetLine)
+        if project_id is not None:
+            stmt = stmt.where(BudgetLine.project_id == project_id)
+        stmt = _scope_portfolio(stmt, BudgetLine.project_id, project_id, allowed_project_ids)
+        rows = (await session.execute(stmt)).scalars().all()
+        for row in rows:
+            category = (getattr(row, "category", "") or "uncategorized").strip().lower() or "uncategorized"
+            code = str(getattr(row, "currency", "") or "").strip().upper()
+            row_base, row_fx = base_currency, fx_map
+            if project_id is None:
+                pid = getattr(row, "project_id", None)
+                if pid is not None:
+                    if pid not in fx_cache:
+                        fx_cache[pid] = await _project_currency_and_fx(session, pid)
+                    row_base, row_fx = fx_cache[pid]
+            bases_seen.add(row_base or code or "UNKNOWN")
+            amt_a = _amount_in_base(_to_decimal(getattr(row, "actual_amount", 0)), code, row_fx, row_base)
+            amt_c = _amount_in_base(_to_decimal(getattr(row, "committed_amount", 0)), code, row_fx, row_base)
+            amt_p = _amount_in_base(_to_decimal(getattr(row, "planned_amount", 0)), code, row_fx, row_base)
+            actual[category] = actual.get(category, Decimal("0")) + amt_a
+            committed[category] = committed.get(category, Decimal("0")) + amt_c
+            planned[category] = planned.get(category, Decimal("0")) + amt_p
+            total_actual += amt_a
+            total_committed += amt_c
+            total_planned += amt_p
+            count += 1
+    except ImportError:
+        return {}, "", 0, False
+    except Exception:
+        logger.debug("cost_split_by_category: probe failed", exc_info=True)
+        return {}, "", 0, False
+
+    multi_currency = len(bases_seen) > 1
+    if total_actual > 0:
+        return actual, "actual", count, multi_currency
+    if total_committed > 0:
+        return committed, "committed", count, multi_currency
+    if total_planned > 0:
+        return planned, "planned", count, multi_currency
+    return {}, "", count, multi_currency
+
+
+@register_kpi(
+    "forecast_final_cost",
+    name="Forecast Final Cost",
+    unit="currency",
+    category="cost",
+    source_modules=["finance", "tasks", "projects", "procurement"],
+    description="Projected total cost at completion (EAC), stated plainly for the cost dashboard.",
+)
+async def forecast_final_cost_kpi(
+    session: AsyncSession,
+    project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
+    **_: Any,
+) -> KPIComputation:
+    """Forecast final cost = EAC = AC + (BAC - EV) / (CPI * SPI).
+
+    A plain-language restatement of the EVM ``eac`` KPI for the cost
+    dashboard - what the project is now expected to cost in total. Reuses the
+    same EVM primitives and per-currency handling as ``eac`` so the two tiles
+    always agree; portfolio mode forecasts each currency bucket from its own
+    primitives rather than the blended scalars (EAC is non-linear).
+    """
+    snap = await _evm_snapshot(session, project_id, allowed_project_ids)
+    scalar_eac = _eac_from_primitives(snap.bac, snap.pv, snap.ev, snap.ac)
+    per_currency = {
+        code: _eac_from_primitives(
+            snap.bac_by_currency.get(code, Decimal("0")),
+            snap.pv_by_currency.get(code, Decimal("0")),
+            snap.ev_by_currency.get(code, Decimal("0")),
+            snap.ac_by_currency.get(code, Decimal("0")),
+        )
+        for code in (
+            set(snap.bac_by_currency) | set(snap.pv_by_currency) | set(snap.ev_by_currency) | set(snap.ac_by_currency)
+        )
+    }
+    return _evm_currency_result(
+        snap,
+        scalar_value=scalar_eac,
+        per_currency=per_currency,
+    )
+
+
+@register_kpi(
+    "pct_over_budget",
+    name="Percent Over Budget",
+    unit="percent",
+    category="cost",
+    source_modules=["finance", "tasks", "projects", "procurement"],
+    target_default=Decimal("0"),
+    description="Forecast vs budget: (EAC - BAC) / BAC. Positive = heading over budget.",
+)
+async def pct_over_budget_kpi(
+    session: AsyncSession,
+    project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
+    **_: Any,
+) -> KPIComputation:
+    """Percent the forecast final cost runs over (+) or under (-) budget.
+
+    ``(EAC - BAC) / BAC * 100``, a currency-neutral ratio, so portfolio mode
+    reads the blended scalar sums like the other index KPIs. The actual-cost
+    variant ``(AC - BAC) / BAC`` rides in the breakdown. Greys out (no data)
+    when no budget baseline exists, so the tile never shows a misleading 0%.
+    """
+    snap = await _evm_snapshot(session, project_id, allowed_project_ids)
+    forecast = _eac_from_primitives(snap.bac, snap.pv, snap.ev, snap.ac)
+    value = _pct_over_budget(snap.bac, forecast)
+    if value is None:
+        return KPIComputation(
+            value=Decimal("0"),
+            unit="percent",
+            source_record_count=0,
+            breakdown={**snap.breakdown, "reason": "no_budget_baseline"},
+        )
+    breakdown = {**snap.breakdown, "forecast_final_cost": str(forecast)}
+    actual_pct = _pct_over_budget(snap.bac, snap.ac)
+    if actual_pct is not None:
+        breakdown["actual_vs_budget_pct"] = str(actual_pct)
+    return KPIComputation(
+        value=value,
+        unit="percent",
+        source_record_count=snap.record_count,
+        breakdown=breakdown,
+    )
+
+
+@register_kpi(
+    "budget_consumed_pct",
+    name="Budget Consumed",
+    unit="percent",
+    category="cost",
+    source_modules=["finance", "projects", "procurement"],
+    target_default=Decimal("100"),
+    description="Actual cost as a percent of the budget baseline: AC / BAC.",
+)
+async def budget_consumed_pct_kpi(
+    session: AsyncSession,
+    project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
+    **_: Any,
+) -> KPIComputation:
+    """Percent of the budget baseline already spent: ``AC / BAC * 100``.
+
+    Pairs with percent-complete to expose a project burning budget faster
+    than it earns value. Currency-neutral ratio, so portfolio mode uses the
+    blended scalar sums. Greys out (no data) when no budget baseline exists.
+    """
+    snap = await _evm_snapshot(session, project_id, allowed_project_ids)
+    value = _budget_consumed_pct(snap.bac, snap.ac)
+    if value is None:
+        return KPIComputation(
+            value=Decimal("0"),
+            unit="percent",
+            source_record_count=0,
+            breakdown={**snap.breakdown, "reason": "no_budget_baseline"},
+        )
+    return KPIComputation(
+        value=value,
+        unit="percent",
+        source_record_count=snap.record_count,
+        breakdown=snap.breakdown,
+    )
+
+
+@register_kpi(
+    "cost_per_day",
+    name="Cost per Day",
+    unit="currency",
+    category="cost",
+    source_modules=["finance", "procurement", "projects"],
+    description="Cost velocity: actual cost to date over elapsed calendar days (burn rate).",
+)
+async def cost_per_day_kpi(
+    session: AsyncSession,
+    project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
+    **_: Any,
+) -> KPIComputation:
+    """Average daily burn: cumulative actual cost / elapsed calendar days.
+
+    Single project: AC (base currency) over the days since the project
+    started. Portfolio: each project's daily burn is bucketed by its base
+    currency and the dominant currency's total daily burn is the headline
+    (never a blended cross-currency scalar), so the tile reads as total
+    money-per-day across the accessible portfolio. Greys out (no data) when
+    no start date is recorded or the project has not started yet.
+
+    This single velocity tile is both the "cost per day" and the "burn rate"
+    reading; a distinct windowed burn rate would need dated payment / PO rows
+    the shared EVM snapshot deliberately does not expose.
+    """
+    if project_id is not None:
+        facts = await _project_cost_facts(session, project_id)
+        days = facts.elapsed_days
+        value = _cost_per_period(facts.actual_cost, Decimal(days)) if days is not None else None
+        if value is None:
+            return KPIComputation(
+                value=Decimal("0"),
+                unit="currency",
+                source_record_count=0,
+                breakdown={"currency": facts.currency, "reason": "no_elapsed_time"},
+            )
+        return KPIComputation(
+            value=value,
+            unit="currency",
+            source_record_count=facts.record_count,
+            breakdown={
+                "currency": facts.currency,
+                "actual_cost": str(facts.actual_cost),
+                "elapsed_days": days,
+            },
+        )
+    # Portfolio: sum each project's daily burn, grouped by base currency.
+    by_currency: dict[str, Decimal] = {}
+    count = 0
+    for pid in await _cost_portfolio_project_ids(session, allowed_project_ids):
+        facts = await _project_cost_facts(session, pid)
+        if facts.elapsed_days is None:
+            continue
+        velocity = _cost_per_period(facts.actual_cost, Decimal(facts.elapsed_days))
+        if velocity is None:
+            continue
+        _add_currency_bucket(by_currency, velocity, facts.currency, "")
+        count += facts.record_count
+    value, breakdown = _portfolio_money_breakdown(by_currency)
+    return KPIComputation(
+        value=value,
+        unit="currency",
+        source_record_count=count,
+        breakdown=breakdown,
+    )
+
+
+@register_kpi(
+    "cost_per_m2",
+    name="Cost per m2 (GFA)",
+    unit="currency",
+    category="cost",
+    source_modules=["finance", "procurement", "projects"],
+    description="Actual cost per m2 of gross floor area - the canonical construction unit cost.",
+)
+async def cost_per_m2_kpi(
+    session: AsyncSession,
+    project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
+    **_: Any,
+) -> KPIComputation:
+    """Unit cost: actual cost divided by gross floor area (m2 GFA).
+
+    GFA is the one well-defined quantity every project shares, so unlike a
+    mixed-unit sum of BOQ quantities (m + m2 + kg + pcs, which cannot be
+    added) it yields a meaningful, guarded unit cost. Single project: AC
+    (base currency) / GFA. Portfolio: projects are grouped by base currency
+    and each group's Sigma AC / Sigma GFA is a real blended unit cost, the
+    dominant currency's figure being the headline. Greys out (no data) when
+    no floor area is recorded.
+    """
+    if project_id is not None:
+        facts = await _project_cost_facts(session, project_id)
+        value = _cost_per_unit(facts.actual_cost, facts.gross_floor_area)
+        if value is None:
+            return KPIComputation(
+                value=Decimal("0"),
+                unit="currency",
+                source_record_count=0,
+                breakdown={"currency": facts.currency, "reason": "no_floor_area"},
+            )
+        return KPIComputation(
+            value=value,
+            unit="currency",
+            source_record_count=facts.record_count,
+            breakdown={
+                "currency": facts.currency,
+                "actual_cost": str(facts.actual_cost),
+                "gross_floor_area_m2": str(facts.gross_floor_area),
+            },
+        )
+    # Portfolio: per base currency, Sigma AC / Sigma GFA is a real unit cost.
+    ac_by_currency: dict[str, Decimal] = {}
+    area_by_currency: dict[str, Decimal] = {}
+    count = 0
+    for pid in await _cost_portfolio_project_ids(session, allowed_project_ids):
+        facts = await _project_cost_facts(session, pid)
+        if facts.gross_floor_area <= 0:
+            continue
+        ac_by_currency[facts.currency] = ac_by_currency.get(facts.currency, Decimal("0")) + facts.actual_cost
+        area_by_currency[facts.currency] = area_by_currency.get(facts.currency, Decimal("0")) + facts.gross_floor_area
+        count += facts.record_count
+    unit_by_currency = {
+        code: _cost_per_unit(ac_by_currency[code], area_by_currency[code]) or Decimal("0") for code in ac_by_currency
+    }
+    value, breakdown = _portfolio_money_breakdown(unit_by_currency)
+    return KPIComputation(
+        value=value,
+        unit="currency",
+        source_record_count=count,
+        breakdown=breakdown,
+    )
+
+
+@register_kpi(
+    "cost_split_by_category",
+    name="Cost Split by Category",
+    unit="percent",
+    category="cost",
+    source_modules=["costmodel"],
+    description="Labor / material / equipment / subcontractor cost composition as percentages.",
+)
+async def cost_split_by_category_kpi(
+    session: AsyncSession,
+    project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
+    **_: Any,
+) -> KPIComputation:
+    """Cost composition: each cost category's share of the categorized total.
+
+    Reads the project Cost Breakdown Structure (``costmodel.BudgetLine``),
+    summing the actual amount per category (falling back to committed, then
+    planned, so the tile is alive before invoices land) and expressing each
+    category as a percentage of the total. The headline value is the labor
+    share when the project tracks it (the most scrutinized cost driver),
+    else the largest category's share; the full per-category percentage map
+    and the underlying amounts ride in the breakdown for the composition
+    chart, keyed so the UI can drill into labor / material / equipment.
+    """
+    by_category, basis, count, multi_currency = await _cost_breakdown_by_category(
+        session,
+        project_id,
+        allowed_project_ids,
+    )
+    percentages = _composition_percentages(by_category)
+    if not percentages:
+        return KPIComputation(
+            value=Decimal("0"),
+            unit="percent",
+            source_record_count=0,
+            breakdown={"basis": basis, "reason": "no_categorized_cost"},
+        )
+    headline_category = "labor" if "labor" in percentages else max(sorted(percentages), key=percentages.__getitem__)
+    breakdown = {
+        "basis": basis,
+        "headline_category": headline_category,
+        "multi_currency": multi_currency,
+        "percentages": {c: str(v) for c, v in sorted(percentages.items())},
+        "amounts": {c: str(v) for c, v in sorted(by_category.items())},
+    }
+    return KPIComputation(
+        value=percentages[headline_category],
+        unit="percent",
+        source_record_count=count,
+        breakdown=breakdown,
+    )
+
+
 # ── Bootstrap ──────────────────────────────────────────────────────────
 
 
@@ -2669,6 +3214,50 @@ async def _evm_drilldown_records(
 
 for _evm_code in ("cpi", "spi", "cv", "sv", "eac", "etc", "vac", "tcpi"):
     KPI_RECORD_PROVIDERS[_evm_code] = _evm_drilldown_records
+
+# The cost-composition tiles that derive from actual cost (AC) share the EVM
+# drill-down: their aggregate is built from the same tasks / payments /
+# purchase orders, so the drawer lists exactly those rows.
+for _cost_code in ("forecast_final_cost", "pct_over_budget", "budget_consumed_pct", "cost_per_day", "cost_per_m2"):
+    KPI_RECORD_PROVIDERS[_cost_code] = _evm_drilldown_records
+
+
+@register_kpi_records("cost_split_by_category")
+async def _cost_split_records(
+    session: AsyncSession,
+    project_id: uuid.UUID | None,
+    limit: int,
+    allowed_project_ids: set[uuid.UUID] | None = None,
+) -> list[dict[str, Any]]:
+    """Budget lines behind ``cost_split_by_category`` (the categorized cost rows)."""
+    records: list[dict[str, Any]] = []
+    try:
+        from app.modules.costmodel.models import BudgetLine  # type: ignore
+
+        stmt = select(BudgetLine)
+        if project_id is not None:
+            stmt = stmt.where(BudgetLine.project_id == project_id)
+        stmt = _scope_portfolio(stmt, BudgetLine.project_id, project_id, allowed_project_ids).limit(limit)
+        rows = (await session.execute(stmt)).scalars().all()
+        for row in rows:
+            records.append(
+                {
+                    "kind": "budget_line",
+                    "id": str(row.id),
+                    "category": getattr(row, "category", "") or "",
+                    "description": (getattr(row, "description", "") or "")[:200],
+                    "planned_amount": str(_to_decimal(getattr(row, "planned_amount", 0))),
+                    "committed_amount": str(_to_decimal(getattr(row, "committed_amount", 0))),
+                    "actual_amount": str(_to_decimal(getattr(row, "actual_amount", 0))),
+                    "currency": getattr(row, "currency", "") or "",
+                    "project_id": str(getattr(row, "project_id", "") or ""),
+                },
+            )
+    except ImportError:
+        pass
+    except Exception:
+        logger.debug("cost_split_by_category drilldown: probe failed", exc_info=True)
+    return records
 
 
 @register_kpi_records("safety_trir")
