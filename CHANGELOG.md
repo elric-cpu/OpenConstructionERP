@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [11.10.0] - 2026-07-16
+
+Onboarding no longer makes a new user wait. Importing a regional cost base or installing a sample project can take a while on a small server, and the first-run wizard used to sit and wait for it. Now it hands that work to the server, moves you straight on to the next step, and shows a live progress bar while the base and the samples load in the background. If a base is slow or unavailable the wizard carries on regardless, so nothing blocks the start.
+
+The team-size step now shows what each size actually gets. Alongside a plain size hint, from just you up to fifty plus people, picking or hovering a size previews the modules it switches on and the ones it grows into at the next size up, with the always-on essentials called out. It stays a single step, so it is clear at a glance what a small firm starts with and what is there to grow into later.
+
+Model Review became a place to run a coordination review, not just a list of issues next to a model. Zoom to issue flies the 3D view back to where an issue was raised and highlights the elements it concerns, from either the list or the issue detail. Coordination mode walks the open issues one at a time for a review meeting, flying to each, changing status and dropping notes as you go, paged with the arrow keys. A review dashboard sums the backlog up by status, priority, assignee, overdue and ageing, and the issue list prints to a clean report for a meeting hand-out.
+
+The Windows installer now speaks the platform's languages, so the setup screens follow the language the rest of the app is in instead of always defaulting to English.
+
 ## [11.9.0] - 2026-07-16
 
 The files area grew into a proper document workspace. A right-click menu now opens rename, download, move, status and delete right where you are working, search looks inside document contents and not just file names, and long folders load a page at a time instead of all at once. You can drag files straight in from your desktop to upload them, move between files with the keyboard, and set the review status on a whole selection at once.

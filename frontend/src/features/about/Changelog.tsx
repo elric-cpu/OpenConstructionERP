@@ -38,6 +38,13 @@ interface ChangelogEntry {
 // date, title and meaning intact; trim the prose, not the facts.
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '11.10.0',
+    date: '2026-07-16',
+    tag: 'NEW',
+    summary:
+      'Onboarding no longer waits on a slow cost-base or sample download, moving you straight on with a live background progress bar, and the team-size step now previews the modules each size switches on and grows into. Model Review gains coordination tools: zoom to issue flies the 3D view to where an issue was raised, coordination mode walks the open issues for a meeting, a dashboard sums the backlog up, and the list prints to a clean report.',
+  },
+  {
     version: '11.9.0',
     date: '2026-07-16',
     tag: 'NEW',
