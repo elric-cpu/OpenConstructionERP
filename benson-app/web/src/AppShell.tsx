@@ -21,7 +21,7 @@ const nav = [
   [BriefcaseBusiness, "Jobs", null],
   [CalendarDays, "Schedule", null],
   [ClipboardCheck, "Estimates", null],
-  [Users, "Customers", null],
+  [Users, "Customers", "customers"],
 ] as const;
 
 export function AppShell({

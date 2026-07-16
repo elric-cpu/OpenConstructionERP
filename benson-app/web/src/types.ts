@@ -1,5 +1,5 @@
 export type RequestStatus = "loading" | "ready" | "auth-required" | "offline";
-export type ActiveView = "overview" | "leads" | "employees" | "tasks" | "activate";
+export type ActiveView = "overview" | "leads" | "customers" | "employees" | "tasks" | "activate";
 export type SpamFilter = "active" | "spam" | "all";
 export type BusyState = "lead" | "save" | "draft" | "";
 
@@ -30,6 +30,24 @@ export type Lead = {
   source: string;
   is_spam: boolean;
   spam_reason: string | null;
+};
+
+export type Customer = {
+  id: string;
+  name: string;
+  company: string;
+  phone: string;
+  email: string | null;
+  billing_address: string;
+  service_address: string;
+  city: string;
+  state: string;
+  zip_code: string;
+  notes: string;
+  status: "active" | "archived";
+  source_lead_id: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type Attachment = {

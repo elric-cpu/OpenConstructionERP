@@ -13,6 +13,7 @@ test.beforeEach(async ({ page }) => {
       },
     }),
   );
+  await page.route("**/api/benson/v1/customers?query=*", (route) => route.fulfill({ json: [] }));
 });
 
 async function mockEmptyWorkspace(page: import("@playwright/test").Page) {
@@ -82,6 +83,55 @@ test("sidebar navigation switches launch views and does not route to deferred mo
   await expect(page.getByRole("link", { name: "Jobs" })).toHaveCount(0);
   await expect(page).toHaveURL(/#leads$/);
   await expect(leads).toHaveAttribute("aria-current", "page");
+});
+
+test("staff can create and edit a persisted customer", async ({ page }) => {
+  await mockEmptyWorkspace(page);
+  let customer = {
+    id: "customer-1",
+    name: "Fields Property Owner",
+    company: "",
+    phone: "541-555-0105",
+    email: "fields@example.com",
+    billing_address: "",
+    service_address: "1 Fields Highway",
+    city: "Fields",
+    state: "OR",
+    zip_code: "97710",
+    notes: "",
+    status: "active",
+    source_lead_id: null,
+    created_at: "2026-07-16T00:00:00Z",
+    updated_at: "2026-07-16T00:00:00Z",
+  };
+  await page.route("**/api/benson/v1/customers", async (route) => {
+    expect(route.request().method()).toBe("POST");
+    customer = { ...customer, ...(route.request().postDataJSON() as typeof customer) };
+    await route.fulfill({ status: 201, json: customer });
+  });
+  await page.route("**/api/benson/v1/customers/customer-1", async (route) => {
+    expect(route.request().method()).toBe("PATCH");
+    customer = { ...customer, ...(route.request().postDataJSON() as typeof customer) };
+    await route.fulfill({ json: customer });
+  });
+
+  await page.goto("/#customers");
+  await expect(page.getByRole("link", { name: "Customers" })).toHaveAttribute("aria-current", "page");
+  await page.getByRole("button", { name: "+ Add customer" }).click();
+  await page.getByLabel("Customer name").fill(customer.name);
+  await page.getByLabel("Phone").fill(customer.phone);
+  await page.getByLabel("Email").fill(customer.email);
+  await page.getByLabel("Service address").fill(customer.service_address);
+  await page.getByLabel("City").fill(customer.city);
+  await page.getByLabel("ZIP code").fill(customer.zip_code);
+  await page.getByRole("button", { name: "Save customer" }).click();
+  await expect(page.getByRole("heading", { name: customer.name })).toBeVisible();
+  await page.getByRole("button", { name: "Edit" }).click();
+  await page.getByLabel("Company").fill("Fields Station LLC");
+  await page.getByRole("button", { name: "Save customer" }).click();
+  await expect(page.getByText("Fields Station LLC")).toBeVisible();
+  const results = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
+  expect(results.violations.filter((item) => ["serious", "critical"].includes(item.impact ?? ""))).toEqual([]);
 });
 
 test("unsupported legacy hashes normalize to the overview", async ({ page }) => {

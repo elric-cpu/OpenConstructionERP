@@ -1,6 +1,7 @@
 import { leadQuery, requestHeaders } from "./api";
 import type {
   Dashboard,
+  Customer,
   EmployeeDocument,
   EmployeeTask,
   Lead,
@@ -20,6 +21,7 @@ type StaffPortalData = {
   session: PortalSession;
   dashboard: Dashboard;
   leads: Lead[];
+  customers: Customer[];
   notificationSettings: NotificationSettings | null;
 };
 type UnauthorizedPortalData = { kind: "unauthorized" };
@@ -58,18 +60,21 @@ export async function loadPortalData({
     ]);
     return { kind: "employee", session, tasks: tasksPayload.tasks, documents };
   }
-  const [dashboardResponse, leadsResponse, settingsResponse] = await Promise.all([
+  const [dashboardResponse, leadsResponse, customersResponse, settingsResponse] = await Promise.all([
     fetch("/api/v1/dashboard", { headers, signal }),
     fetch(`/api/benson/v1/leads?${leadQuery(status, source, spam, query)}`, { headers, signal }),
+    fetch(`/api/benson/v1/customers?query=${encodeURIComponent(query)}`, { headers, signal }),
     fetch("/api/benson/v1/settings/notifications", { headers, signal }),
   ]);
   if ([dashboardResponse, leadsResponse].some((response) => [401, 403].includes(response.status))) {
     return { kind: "unauthorized" };
   }
-  if (!dashboardResponse.ok || !leadsResponse.ok) throw new Error("Operations API unavailable");
-  const [dashboard, leadsPayload, notificationSettings] = await Promise.all([
+  if (!dashboardResponse.ok || !leadsResponse.ok || !customersResponse.ok)
+    throw new Error("Operations API unavailable");
+  const [dashboard, leadsPayload, customers, notificationSettings] = await Promise.all([
     dashboardResponse.json() as Promise<Dashboard>,
     leadsResponse.json() as Promise<{ leads: Lead[] }>,
+    customersResponse.json() as Promise<Customer[]>,
     settingsResponse.ok ? (settingsResponse.json() as Promise<NotificationSettings>) : Promise.resolve(null),
   ]);
   return {
@@ -77,6 +82,7 @@ export async function loadPortalData({
     session: session ?? { kind: "staff", email: "", role: "office", default_view: "overview", employee: null },
     dashboard,
     leads: leadsPayload.leads,
+    customers,
     notificationSettings,
   };
 }

@@ -3,6 +3,7 @@ import { requestHeaders } from "./api";
 import { loadPortalData } from "./portalData";
 import type {
   Dashboard,
+  Customer,
   EmployeeDocument,
   EmployeeTask,
   Lead,
@@ -24,6 +25,7 @@ export function useOperationsData(status: string, source: string, spam: SpamFilt
   const [credential, setCredential] = useState(() => sessionStorage.getItem(tokenKey) ?? "");
   const [data, setData] = useState(emptyDashboard);
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [requestStatus, setRequestStatus] = useState<RequestStatus>("loading");
   const [portalSession, setPortalSession] = useState<PortalSession | null>(null);
   const [employeeTasks, setEmployeeTasks] = useState<EmployeeTask[]>([]);
@@ -35,6 +37,7 @@ export function useOperationsData(status: string, source: string, spam: SpamFilt
     if (!credential) {
       setData(emptyDashboard);
       setLeads([]);
+      setCustomers([]);
       setNotificationSettings(null);
       setPortalSession(null);
       setEmployeeTasks([]);
@@ -50,6 +53,7 @@ export function useOperationsData(status: string, source: string, spam: SpamFilt
         if (next.kind === "unauthorized") {
           setData(emptyDashboard);
           setLeads([]);
+          setCustomers([]);
           setNotificationSettings(null);
           setPortalSession(null);
           setRequestStatus("auth-required");
@@ -61,6 +65,7 @@ export function useOperationsData(status: string, source: string, spam: SpamFilt
           setEmployeeDocuments(next.documents);
           setData(emptyDashboard);
           setLeads([]);
+          setCustomers([]);
           setNotificationSettings(null);
           setRequestStatus("ready");
           return;
@@ -69,6 +74,7 @@ export function useOperationsData(status: string, source: string, spam: SpamFilt
         setEmployeeDocuments([]);
         setData(next.dashboard);
         setLeads(next.leads);
+        setCustomers(next.customers);
         setNotificationSettings(next.notificationSettings);
         setRequestStatus("ready");
       })
@@ -90,6 +96,7 @@ export function useOperationsData(status: string, source: string, spam: SpamFilt
     setCredential("");
     setData(emptyDashboard);
     setLeads([]);
+    setCustomers([]);
     setNotificationSettings(null);
     setPortalSession(null);
     setEmployeeTasks([]);
@@ -120,6 +127,7 @@ export function useOperationsData(status: string, source: string, spam: SpamFilt
     credential,
     data,
     leads,
+    customers,
     notificationSettings,
     portalSession,
     employeeTasks,
@@ -127,6 +135,7 @@ export function useOperationsData(status: string, source: string, spam: SpamFilt
     requestStatus,
     settingsStatus,
     setLeads,
+    setCustomers,
     setEmployeeTasks,
     setEmployeeDocuments,
     authenticate,

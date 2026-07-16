@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from .ai_routes import router as ai_router
 from .asset_routes import router as asset_router
 from .config import get_settings
+from .customer_routes import router as customer_router
 from .lead_routes import router as lead_router
 from .onboarding_routes import router as onboarding_router
 from .storage import operations_store
@@ -30,6 +31,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(system_router)
+app.include_router(customer_router)
 app.include_router(onboarding_router)
 app.include_router(lead_router)
 app.include_router(ai_router)

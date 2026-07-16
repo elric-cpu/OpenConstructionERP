@@ -183,6 +183,27 @@ employees = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False),
 )
 
+customers = Table(
+    "customers",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("name", String(200), nullable=False),
+    Column("company", String(200), nullable=False, default=""),
+    Column("phone", String(40), nullable=False),
+    Column("email", String(320)),
+    Column("billing_address", String(500), nullable=False, default=""),
+    Column("service_address", String(500), nullable=False, default=""),
+    Column("city", String(120), nullable=False, default=""),
+    Column("state", String(2), nullable=False, default="OR"),
+    Column("zip_code", String(5), nullable=False, default=""),
+    Column("notes", Text, nullable=False, default=""),
+    Column("status", String(40), nullable=False, default="active"),
+    Column("source_lead_id", String(36), unique=True),
+    Column("created_by", String(320), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
 employee_invites = Table(
     "employee_invites",
     metadata,
