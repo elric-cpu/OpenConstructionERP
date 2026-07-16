@@ -2112,6 +2112,7 @@ export function TenderingPage() {
                 icon={<Plus size={16} />}
                 disabled={!selectedProjectId}
                 onClick={() => setShowCreateDialog(true)}
+                data-guide="tendering-new"
               >
                 {t('tendering.new_package', 'New Tender Package')}
               </Button>
@@ -2198,7 +2199,7 @@ export function TenderingPage() {
 
       {/* Packages list */}
       {packages && packages.length > 0 && (
-        <div>
+        <div data-guide="tendering-packages">
           <h2 className="mb-3 text-sm font-semibold text-content-primary">
             {t('tendering.packages', 'Packages')}
           </h2>

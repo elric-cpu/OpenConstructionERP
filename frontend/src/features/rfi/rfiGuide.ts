@@ -24,6 +24,7 @@ export const rfiGuide: ModuleGuideContent = {
       bodyKey: 'guide.rfi.raise.body',
       bodyDefault:
         'Click New RFI and write a clear subject and the question you need answered. Set a priority and discipline, name who owns the next move with Ball in Court, and give it a response due date so the clock is visible to everyone.',
+      spotlightSelector: '[data-guide="rfi-new"]',
     },
     {
       icon: 'FileSearch',
@@ -40,6 +41,7 @@ export const rfiGuide: ModuleGuideContent = {
       bodyKey: 'guide.rfi.track.body',
       bodyDefault:
         'Each RFI moves from Open to Answered to Closed. The ball-in-court badge shows whether it is with you or with them, and the days-open counter turns red once an RFI passes its due date so nothing stalls unnoticed.',
+      spotlightSelector: '[data-guide="rfi-stats"]',
     },
     {
       icon: 'ListChecks',
@@ -56,6 +58,7 @@ export const rfiGuide: ModuleGuideContent = {
       bodyKey: 'guide.rfi.filter.body',
       bodyDefault:
         'The stat cards summarise total, open, overdue and average days open. Use the quick views for Awaiting me, Raised by me and Overdue, and narrow further by status, priority or discipline, or search across every RFI.',
+      spotlightSelector: '[data-guide="rfi-quickviews"]',
     },
     {
       icon: 'Rocket',
@@ -64,6 +67,7 @@ export const rfiGuide: ModuleGuideContent = {
       bodyKey: 'guide.rfi.impact.body',
       bodyDefault:
         'Flag cost or schedule impact on the RFI so it is never lost. When an answer carries cost, Create Variation spins it straight into a change order, and Export RFI Log produces the full register for records and reporting.',
+      spotlightSelector: '[data-guide="rfi-export"]',
     },
   ],
   ctaKey: 'guide.rfi.cta',

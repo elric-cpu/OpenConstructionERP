@@ -166,6 +166,28 @@ export type {
 export { ModuleGuideButton } from './ModuleGuideButton';
 export type { ModuleGuideButtonProps } from './ModuleGuideButton';
 
+// Shared spotlight primitives behind the anchored coach-marks.
+export {
+  useSpotlightTarget,
+  SpotlightScrim,
+  placeTooltip,
+  centerOfViewport,
+  measureSpotlight,
+  SPOTLIGHT_REVEAL_EVENT,
+  TOOLTIP_W,
+  TOOLTIP_H,
+} from './spotlight';
+export type {
+  SpotlightRect,
+  TooltipCoords,
+  TooltipPosition,
+  SpotlightStatus,
+  SpotlightTarget,
+  SpotlightAccent,
+  SpotlightScrimProps,
+  UseSpotlightTargetOptions,
+} from './spotlight';
+
 export { GlobalProgress, useProgressStore } from './GlobalProgress';
 
 export { MoneyDisplay } from './MoneyDisplay';

@@ -1449,6 +1449,7 @@ function ScheduleDetail({
             variant="secondary"
             icon={<FileBarChart size={16} />}
             onClick={() => setShowGenerateBOQ(true)}
+            data-guide="schedule-generate"
           >
             {t('schedule.generate_from_boq', 'Generate from BOQ')}
           </Button>
@@ -1516,6 +1517,7 @@ function ScheduleDetail({
                 onClick={() => calculateCPM.mutate()}
                 loading={calculateCPM.isPending}
                 title={t('schedule.cpm_tooltip', { defaultValue: 'Critical Path Method calculates the longest path through the project and identifies activities that cannot be delayed' })}
+                data-guide="schedule-cpm"
               >
                 {t('schedule.calculate_cpm', 'Critical Path')}
               </Button>
@@ -1524,6 +1526,7 @@ function ScheduleDetail({
                 icon={<ShieldAlert size={16} />}
                 onClick={() => fetchRiskAnalysis.mutate()}
                 loading={fetchRiskAnalysis.isPending}
+                data-guide="schedule-risk"
               >
                 {t('schedule.risk_analysis_btn', 'Risk Analysis')}
               </Button>

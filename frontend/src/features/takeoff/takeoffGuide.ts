@@ -48,6 +48,8 @@ export const takeoffGuide: ModuleGuideContent = {
       bodyKey: 'guide.takeoff.organize.body',
       bodyDefault:
         'Give each measurement a clear description and drop it into a group such as Structural or Finishes. Good names keep the ledger readable and make the BOQ items that follow easy to recognise.',
+      spotlightSelector: '[data-testid="measurement-ledger"]',
+      spotlightPosition: 'left',
     },
     {
       icon: 'ListChecks',
