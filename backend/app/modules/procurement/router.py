@@ -47,6 +47,7 @@ from app.modules.procurement.schemas import (
     PORetainageReleaseResponse,
     POUpdate,
     ProcurementStatsResponse,
+    ProjectDeliveryPerformanceResponse,
     SupplierScorecardResponse,
 )
 from app.modules.procurement.service import ProcurementService, _validate_3way_match
@@ -177,6 +178,38 @@ async def procurement_stats(
     """
     await verify_project_access(project_id, str(user_id), session)
     return await service.get_stats(project_id)
+
+
+# -- Supplier delivery performance / OTIF (fixed path - before /{po_id}) -----
+
+
+@router.get(
+    "/delivery-performance/",
+    response_model=ProjectDeliveryPerformanceResponse,
+    dependencies=[Depends(RequirePermission("procurement.read"))],
+)
+async def get_delivery_performance(
+    user_id: CurrentUserId,
+    session: SessionDep,
+    project_id: uuid.UUID = Query(...),
+    service: ProcurementService = Depends(_get_service),
+) -> ProjectDeliveryPerformanceResponse:
+    """Supplier on-time-in-full (OTIF) delivery performance for a project.
+
+    Per supplier, and rolled up across the project: on-time rate, in-full rate,
+    combined OTIF rate, average days late and the underlying receipt counts -
+    all computed from stored PO promised dates and confirmed goods receipts.
+    Read-only; scoped to the caller's project.
+    """
+    await verify_project_access(project_id, str(user_id), session)
+    result = await service.get_delivery_performance(project_id)
+    # Best-effort vendor display names - the same lookup the PO list uses so the
+    # per-supplier rows can be labelled without a second round trip.
+    vendor_names = await _fetch_vendor_names(session, [s.supplier_contact_id for s in result.suppliers])
+    for supplier in result.suppliers:
+        if supplier.supplier_contact_id:
+            supplier.supplier_name = vendor_names.get(supplier.supplier_contact_id)
+    return result
 
 
 # ── Goods Receipts (MUST be before /{po_id}) ────────────────────────────────

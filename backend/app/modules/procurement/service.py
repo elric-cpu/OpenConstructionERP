@@ -33,6 +33,11 @@ from app.modules.procurement.models import (
     PurchaseOrder,
     PurchaseOrderItem,
 )
+from app.modules.procurement.otif import (
+    DeliveryPerformance,
+    ReceiptRecord,
+    compute_project_delivery_performance,
+)
 from app.modules.procurement.repository import (
     GoodsReceiptRepository,
     GRItemRepository,
@@ -45,6 +50,8 @@ from app.modules.procurement.schemas import (
     POCreate,
     POUpdate,
     ProcurementStatsResponse,
+    ProjectDeliveryPerformanceResponse,
+    SupplierDeliveryPerformance,
 )
 
 # ── Material Requisition FSM (R7) ─────────────────────────────────────────────
@@ -313,6 +320,49 @@ def _fmt_qty(value: object) -> str:
     scientific notation (normalize alone yields ``1E+2``).
     """
     return format(_to_decimal(value).normalize(), "f")
+
+
+def _parse_iso_date(value: str | None) -> date | None:
+    """Parse a YYYY-MM-DD string to a date, or None when absent/malformed.
+
+    PO delivery_date and GR receipt_date are stored as free-form strings; this
+    turns them into real ``date`` objects so the OTIF helper compares dates and
+    subtracts durations directly (rather than lexicographically).
+    """
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _rate_str(value: Decimal | None) -> str | None:
+    """Render a guarded rate/duration Decimal as a canonical string, or None."""
+    return None if value is None else str(value)
+
+
+def _perf_to_schema(perf: DeliveryPerformance) -> SupplierDeliveryPerformance:
+    """Map a pure-helper DeliveryPerformance onto its response schema.
+
+    Rates come across as Decimal-or-None from the helper and are serialised as
+    strings so they never leak onto the wire as JSON floats.
+    """
+    return SupplierDeliveryPerformance(
+        supplier_contact_id=perf.supplier_id,
+        supplier_name=perf.supplier_name,
+        total_receipts=perf.total_receipts,
+        scheduled_receipts=perf.scheduled_receipts,
+        unscheduled_receipts=perf.unscheduled_receipts,
+        on_time_count=perf.on_time_count,
+        late_count=perf.late_count,
+        in_full_count=perf.in_full_count,
+        otif_count=perf.otif_count,
+        on_time_rate=_rate_str(perf.on_time_rate),
+        in_full_rate=_rate_str(perf.in_full_rate),
+        otif_rate=_rate_str(perf.otif_rate),
+        avg_days_late=_rate_str(perf.avg_days_late),
+    )
 
 
 class ProcurementService:
@@ -1727,6 +1777,98 @@ class ProcurementService:
             "on_time_count": on_time_count,
             "unscheduled_count": unscheduled_count,
         }
+
+    # -- Supplier delivery performance / OTIF (project view) --------------
+
+    async def get_delivery_performance(
+        self,
+        project_id: uuid.UUID,
+    ) -> ProjectDeliveryPerformanceResponse:
+        """Compute the project OTIF (on-time-in-full) delivery-performance view.
+
+        Loads every purchase order in the project, its CONFIRMED goods receipts,
+        and their line items, then hands the arithmetic to the pure
+        :func:`app.modules.procurement.otif.compute_project_delivery_performance`
+        helper. Promised date is the PO ``delivery_date``; received date is the
+        goods-receipt ``receipt_date``; ordered and received quantities are
+        summed per receipt from its line items. Only confirmed receipts count -
+        a draft receipt is not yet an accepted delivery. Vendor display names
+        are left to the router (the same lookup the PO list uses).
+        """
+        from sqlalchemy import select as _select
+
+        # -- POs in the project: promised date + vendor, in one scan ---------
+        po_rows = (
+            await self.session.execute(
+                _select(
+                    PurchaseOrder.id,
+                    PurchaseOrder.vendor_contact_id,
+                    PurchaseOrder.delivery_date,
+                ).where(PurchaseOrder.project_id == project_id)
+            )
+        ).all()
+        po_meta: dict[uuid.UUID, tuple[str | None, str | None]] = {
+            po_id: (vendor, delivery) for po_id, vendor, delivery in po_rows
+        }
+
+        records: list[ReceiptRecord] = []
+        po_ids = list(po_meta.keys())
+        if po_ids:
+            # -- Confirmed goods receipts against those POs ------------------
+            gr_rows = (
+                await self.session.execute(
+                    _select(
+                        GoodsReceipt.id,
+                        GoodsReceipt.po_id,
+                        GoodsReceipt.receipt_date,
+                    )
+                    .where(GoodsReceipt.po_id.in_(po_ids))
+                    .where(GoodsReceipt.status == "confirmed")
+                )
+            ).all()
+            gr_ids = [gr_id for gr_id, _po_id, _rd in gr_rows]
+
+            # -- Sum ordered / received per receipt from its line items ------
+            ordered_by_gr: dict[uuid.UUID, Decimal] = {}
+            received_by_gr: dict[uuid.UUID, Decimal] = {}
+            if gr_ids:
+                item_rows = (
+                    await self.session.execute(
+                        _select(
+                            GoodsReceiptItem.receipt_id,
+                            GoodsReceiptItem.quantity_ordered,
+                            GoodsReceiptItem.quantity_received,
+                        ).where(GoodsReceiptItem.receipt_id.in_(gr_ids))
+                    )
+                ).all()
+                for receipt_id, ordered_raw, received_raw in item_rows:
+                    ordered_by_gr[receipt_id] = ordered_by_gr.get(receipt_id, Decimal("0")) + _to_decimal(ordered_raw)
+                    received_by_gr[receipt_id] = received_by_gr.get(receipt_id, Decimal("0")) + _to_decimal(
+                        received_raw
+                    )
+
+            for gr_id, gr_po_id, receipt_date in gr_rows:
+                received = _parse_iso_date(receipt_date)
+                if received is None:
+                    # No usable receipt date - cannot place the delivery in time.
+                    continue
+                vendor, delivery = po_meta.get(gr_po_id, (None, None))
+                records.append(
+                    ReceiptRecord(
+                        supplier_id=vendor,
+                        received_date=received,
+                        promised_date=_parse_iso_date(delivery),
+                        ordered_qty=ordered_by_gr.get(gr_id, Decimal("0")),
+                        received_qty=received_by_gr.get(gr_id, Decimal("0")),
+                    )
+                )
+
+        perf = compute_project_delivery_performance(records)
+        return ProjectDeliveryPerformanceResponse(
+            project_id=project_id,
+            overall=_perf_to_schema(perf.overall),
+            suppliers=[_perf_to_schema(s) for s in perf.suppliers],
+        )
 
     @staticmethod
     def _check_po_fully_received(po: PurchaseOrder) -> bool:

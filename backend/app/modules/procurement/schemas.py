@@ -536,3 +536,46 @@ class SupplierScorecardResponse(BaseModel):
     # GRs whose parent PO had no delivery_date - excluded from on-time
     # denominator so unscheduled POs do not inflate the score (P0-2).
     unscheduled_count: int = 0
+
+
+# -- Supplier delivery performance / OTIF (project view) --------------------
+
+
+class SupplierDeliveryPerformance(BaseModel):
+    """On-time-in-full KPIs for one supplier, or the project-wide rollup.
+
+    Rates are 0.0-1.0 Decimals rendered as STRINGS (never floats), or null when
+    their denominator is zero (no receipts to measure) so the UI can tell "no
+    data" apart from a real zero. ``on_time_rate`` / ``otif_rate`` are measured
+    over the SCHEDULED receipts (those whose PO carries a promised date);
+    ``in_full_rate`` is measured over ALL receipts. ``avg_days_late`` is a
+    Decimal-string number of days averaged over only the late receipts, or null
+    when none were late. Counts are plain integers. ``supplier_contact_id`` is
+    null on the overall rollup row.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    supplier_contact_id: str | None = None
+    supplier_name: str | None = None
+    total_receipts: int = 0
+    scheduled_receipts: int = 0
+    unscheduled_receipts: int = 0
+    on_time_count: int = 0
+    late_count: int = 0
+    in_full_count: int = 0
+    otif_count: int = 0
+    on_time_rate: str | None = None
+    in_full_rate: str | None = None
+    otif_rate: str | None = None
+    avg_days_late: str | None = None
+
+
+class ProjectDeliveryPerformanceResponse(BaseModel):
+    """Project OTIF delivery-performance view: an overall rollup plus one row
+    per supplier, computed from stored PO promised dates and confirmed goods
+    receipts."""
+
+    project_id: UUID
+    overall: SupplierDeliveryPerformance
+    suppliers: list[SupplierDeliveryPerformance] = Field(default_factory=list)
