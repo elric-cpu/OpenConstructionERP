@@ -30,6 +30,30 @@ from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from typing import Any
 
+# Branching logic lives in the sibling ``conditional`` module. Prefer the normal
+# package import; fall back to loading it from disk when this module is itself
+# loaded by file path in the isolated unit tests (no package context), so the
+# pure layer stays testable on a bare interpreter - just like the rest of it.
+try:
+    from .conditional import collect_rule_issues, evaluate_visibility, sanitize_expr
+except ImportError:  # pragma: no cover - exercised only under path-based loading
+    import importlib.util as _importlib_util
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    if "forms_conditional" in _sys.modules:
+        _conditional = _sys.modules["forms_conditional"]
+    else:
+        _conditional_path = _Path(__file__).resolve().parent / "conditional.py"
+        _spec = _importlib_util.spec_from_file_location("forms_conditional", _conditional_path)
+        assert _spec and _spec.loader
+        _conditional = _importlib_util.module_from_spec(_spec)
+        _sys.modules["forms_conditional"] = _conditional
+        _spec.loader.exec_module(_conditional)
+    collect_rule_issues = _conditional.collect_rule_issues
+    evaluate_visibility = _conditional.evaluate_visibility
+    sanitize_expr = _conditional.sanitize_expr
+
 # ── Field vocabulary ─────────────────────────────────────────────────────────
 
 # Every field type a template may compose. Ordered as they appear in the
@@ -170,6 +194,16 @@ def normalize_fields(raw_fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if ftype == "rating":
             field["max_rating"] = _coerce_rating_scale(src.get("max_rating"))
 
+        # Carry optional branching rules through, cleaned to a compact JSON-safe
+        # shape. Absent / empty rules are simply omitted (the field is
+        # unconditionally shown / uses its static ``required`` flag).
+        visible_if = sanitize_expr(src.get("visible_if"))
+        if visible_if is not None:
+            field["visible_if"] = visible_if
+        required_if = sanitize_expr(src.get("required_if"))
+        if required_if is not None:
+            field["required_if"] = required_if
+
         cleaned.append(field)
     return cleaned
 
@@ -212,7 +246,10 @@ def validate_template_fields(fields: list[dict[str, Any]]) -> list[FieldIssue]:
     * each field: known type, non-empty label, non-empty unique key;
     * a choice field carries at least two distinct options;
     * a rating field's scale is within [:data:`RATING_MIN_SCALE`,
-      :data:`RATING_MAX_SCALE`].
+      :data:`RATING_MAX_SCALE`];
+    * every ``visible_if`` / ``required_if`` branching rule is well formed - a
+      whitelisted operator, a field that exists, no self reference (see
+      :func:`conditional.collect_rule_issues`).
     """
     issues: list[FieldIssue] = []
 
@@ -285,6 +322,10 @@ def validate_template_fields(fields: list[dict[str, Any]]) -> list[FieldIssue]:
             )
         )
 
+    # Branching rules: a bad operator / dangling reference is a template bug,
+    # rejected here so it never reaches storage or a submission snapshot.
+    issues.extend(FieldIssue(ri.field_index, ri.field_key, ri.code, ri.message) for ri in collect_rule_issues(fields))
+
     return issues
 
 
@@ -321,10 +362,17 @@ def validate_submission_answers(
       choice value must be one of the options, a number must parse, a rating
       must sit inside the scale, a pass/fail/na must be one of those three.
 
-    Absent answers to optional fields are fine and never reported.
+    Branching logic is honoured first (see :func:`conditional.evaluate_visibility`):
+    a field hidden by a ``visible_if`` rule is skipped entirely - neither required
+    nor consistency-checked, so a value left over from an untaken branch never
+    blocks completion - and a field a ``required_if`` rule switches on is enforced
+    exactly like a statically required one.
+
+    Absent answers to optional (or hidden) fields are fine and never reported.
     """
     check = SubmissionCheck()
     answers = answers or {}
+    visibility = evaluate_visibility(fields, answers)
 
     for idx, field in enumerate(fields):
         ftype = str(field.get("type", "")).strip()
@@ -332,7 +380,11 @@ def validate_submission_answers(
             continue
 
         key = str(field.get("key", "")).strip()
-        required = bool(field.get("required", False))
+        state = visibility.get(key)
+        if state is not None and not state["visible"]:
+            # Hidden by a branching rule: not required, value ignored.
+            continue
+        required = state["required"] if state is not None else bool(field.get("required", False))
         value = answers.get(key)
         empty = _is_empty_answer(ftype, value)
 
