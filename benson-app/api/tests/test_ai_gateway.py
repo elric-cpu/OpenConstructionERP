@@ -1,3 +1,5 @@
+import base64
+
 import httpx
 import pytest
 
@@ -45,6 +47,7 @@ async def test_production_agent_gateway_uses_cloud_run_identity(
         environment="production",
         website_signing_secret="x" * 32,
         employee_invite_signing_secret="i" * 32,
+        employee_document_encryption_key=base64.b64encode(b"p" * 32).decode(),
         staff_google_audience="client.apps.googleusercontent.com",
         database_url="postgresql://user:pass@db/operations",
         upload_bucket="private-uploads",

@@ -260,6 +260,26 @@ class EmployeeTaskSummary(BaseModel):
     updated_at: datetime
 
 
+class EmployeeDocumentSummary(BaseModel):
+    id: UUID
+    employee_id: UUID
+    task_id: UUID
+    version: int
+    original_name: str
+    content_type: str
+    size_bytes: int
+    sha256: str
+    data_classification: Literal["restricted", "highly_restricted"]
+    status: Literal["active", "superseded"]
+    uploaded_by: str
+    created_at: datetime
+
+
+class EmployeeTaskReview(BaseModel):
+    decision: Literal["complete", "reject", "not_applicable"]
+    comment: str = Field(min_length=1, max_length=2_000)
+
+
 class ComplianceRequirement(BaseModel):
     id: str
     label: str

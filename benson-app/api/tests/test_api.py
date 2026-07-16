@@ -1,3 +1,4 @@
+import base64
 import json
 from collections.abc import Iterator
 from datetime import UTC, datetime
@@ -36,6 +37,7 @@ STAFF_HEADERS = {"X-Dev-Staff-Email": "office@bensonhomesolutions.com"}
 def isolated_settings(tmp_path: Path) -> Iterator[Settings]:
     settings = Settings(
         environment="test",
+        employee_document_encryption_key=base64.b64encode(b"t" * 32).decode(),
         database_path=tmp_path / "operations.sqlite3",
         upload_storage_path=tmp_path / "uploads",
         ddc_registry_path=Path(__file__).resolve().parents[2] / "skills" / "registry.json",
@@ -83,6 +85,7 @@ def production_settings(**overrides: object) -> Settings:
         "environment": "production",
         "website_signing_secret": "x" * 32,
         "employee_invite_signing_secret": "i" * 32,
+        "employee_document_encryption_key": base64.b64encode(b"p" * 32).decode(),
         "staff_google_audience": "client.apps.googleusercontent.com",
         "database_url": "postgresql://user:pass@db/operations",
         "upload_bucket": "private-uploads",
@@ -828,6 +831,163 @@ def test_activated_employee_tasks_are_the_default_view(
     assert response.json()["default_view"] == "tasks"
     assert response.json()["progress"] == {"completed": 0, "total": 8}
     assert response.json()["employee"]["id"] == employee["id"]
+
+
+def test_employee_evidence_is_encrypted_versioned_and_reviewed(
+    isolated_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    isolated_settings.staff_google_audience = "client.apps.googleusercontent.com"
+    email = "evidence.employee@bensonhomesolutions.com"
+    employee = client.post(
+        "/api/benson/v1/employees",
+        headers=STAFF_HEADERS,
+        json={
+            "name": "Evidence Employee",
+            "email": email,
+            "start_date": "2026-08-03",
+            "work_location": "Burns, Oregon",
+            "classification": "employee",
+            "role": "field",
+            "federal_contract_applicability": "not_applicable",
+        },
+    ).json()
+    invitation = client.post(
+        f"/api/benson/v1/employees/{employee['id']}/invite", headers=STAFF_HEADERS
+    ).json()
+    token = employee_invite_token(
+        isolated_settings.employee_invite_signing_secret, invitation["id"]
+    )
+    monkeypatch.setattr(
+        "app.auth.id_token.verify_oauth2_token",
+        MagicMock(return_value={"email": email, "email_verified": True, "sub": "evidence-subject"}),
+    )
+    credential_headers = {"Authorization": "Bearer employee-google-credential"}
+    assert (
+        client.post(
+            "/api/benson/v1/onboarding/activate",
+            json={"token": token, "credential": "employee-google-credential"},
+        ).status_code
+        == 200
+    )
+    tasks = client.get("/api/benson/v1/onboarding/tasks", headers=credential_headers).json()[
+        "tasks"
+    ]
+    task = next(item for item in tasks if item["requirement_id"] == "federal-w4")
+    plaintext = b"%PDF-1.7\nconfidential withholding values\n%%EOF"
+
+    uploaded = client.post(
+        f"/api/benson/v1/onboarding/tasks/{task['id']}/evidence",
+        headers=credential_headers,
+        files={"file": ("w4.pdf", plaintext, "application/pdf")},
+    )
+
+    assert uploaded.status_code == 201
+    document = uploaded.json()
+    assert document["version"] == 1
+    assert document["data_classification"] == "highly_restricted"
+    internal = operations_store(isolated_settings.resolved_database_url()).get_employee_document(
+        document["id"]
+    )
+    assert internal is not None
+    stored = Path(internal["storage_key"]).read_bytes()
+    assert plaintext not in stored
+    assert b"confidential withholding values" not in stored
+    downloaded = client.get(
+        f"/api/benson/v1/onboarding/documents/{document['id']}", headers=credential_headers
+    )
+    assert downloaded.status_code == 200
+    assert downloaded.content == plaintext
+
+    completed = client.patch(
+        f"/api/benson/v1/employees/{employee['id']}/tasks/{task['id']}",
+        headers=STAFF_HEADERS,
+        json={"decision": "complete", "comment": "Reviewed signed withholding form."},
+    )
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "completed"
+
+
+def test_rejected_evidence_preserves_versions_and_blocks_cross_task_actions(
+    isolated_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    isolated_settings.staff_google_audience = "client.apps.googleusercontent.com"
+    email = "revision.employee@bensonhomesolutions.com"
+    employee = client.post(
+        "/api/benson/v1/employees",
+        headers=STAFF_HEADERS,
+        json={
+            "name": "Revision Employee",
+            "email": email,
+            "start_date": "2026-08-03",
+            "work_location": "Burns, Oregon",
+            "classification": "employee",
+            "role": "field",
+            "federal_contract_applicability": "unknown",
+        },
+    ).json()
+    invitation = client.post(
+        f"/api/benson/v1/employees/{employee['id']}/invite", headers=STAFF_HEADERS
+    ).json()
+    token = employee_invite_token(
+        isolated_settings.employee_invite_signing_secret, invitation["id"]
+    )
+    monkeypatch.setattr(
+        "app.auth.id_token.verify_oauth2_token",
+        MagicMock(return_value={"email": email, "email_verified": True, "sub": "revision-subject"}),
+    )
+    employee_headers = {"Authorization": "Bearer revision-google-credential"}
+    client.post(
+        "/api/benson/v1/onboarding/activate",
+        json={"token": token, "credential": "revision-google-credential"},
+    )
+    tasks = client.get("/api/benson/v1/onboarding/tasks", headers=employee_headers).json()["tasks"]
+    w4 = next(item for item in tasks if item["requirement_id"] == "federal-w4")
+    blocked = next(item for item in tasks if item["requirement_id"] == "e-verify")
+    assert (
+        client.post(
+            f"/api/benson/v1/onboarding/tasks/{blocked['id']}/evidence",
+            headers=employee_headers,
+            files={"file": ("blocked.pdf", b"%PDF-blocked", "application/pdf")},
+        ).status_code
+        == 409
+    )
+    first = client.post(
+        f"/api/benson/v1/onboarding/tasks/{w4['id']}/evidence",
+        headers=employee_headers,
+        files={"file": ("w4-v1.pdf", b"%PDF-first", "application/pdf")},
+    ).json()
+    rejected = client.patch(
+        f"/api/benson/v1/employees/{employee['id']}/tasks/{w4['id']}",
+        headers=STAFF_HEADERS,
+        json={"decision": "reject", "comment": "Signature is missing."},
+    )
+    assert rejected.status_code == 200
+    assert rejected.json()["status"] == "rejected"
+    second = client.post(
+        f"/api/benson/v1/onboarding/tasks/{w4['id']}/evidence",
+        headers=employee_headers,
+        files={"file": ("w4-v2.pdf", b"%PDF-second", "application/pdf")},
+    ).json()
+    assert second["version"] == 2
+    documents = client.get("/api/benson/v1/onboarding/documents", headers=employee_headers).json()
+    by_id = {item["id"]: item for item in documents}
+    assert by_id[first["id"]]["status"] == "superseded"
+    assert by_id[second["id"]]["status"] == "active"
+    assert (
+        client.patch(
+            f"/api/benson/v1/employees/{employee['id']}/tasks/{blocked['id']}",
+            headers=STAFF_HEADERS,
+            json={"decision": "complete", "comment": "Attempt without applicability."},
+        ).status_code
+        == 409
+    )
+    not_applicable = client.patch(
+        f"/api/benson/v1/employees/{employee['id']}/tasks/{blocked['id']}",
+        headers=STAFF_HEADERS,
+        json={"decision": "not_applicable", "comment": "Contract clause does not apply."},
+    )
+    assert not_applicable.status_code == 200
+    assert not_applicable.json()["status"] == "not_applicable"
 
 
 def test_compliance_matrix_is_explicitly_pending_review() -> None:

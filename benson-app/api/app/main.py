@@ -40,10 +40,12 @@ from .domain import (
     AgentRunRequest,
     BENSON_MODULES,
     EmployeeCreate,
+    EmployeeDocumentSummary,
     EmployeeInviteActivation,
     EmployeeInviteReceipt,
     EmployeeSummary,
     EmployeeTaskSummary,
+    EmployeeTaskReview,
     LeadCreate,
     LeadReceipt,
     LeadUpdate,
@@ -51,7 +53,14 @@ from .domain import (
     NotificationSettingsUpdate,
     ProposalDecision,
 )
-from .object_storage import delete_upload, detect_upload_type, read_upload, store_upload
+from .object_storage import (
+    delete_upload,
+    detect_upload_type,
+    read_employee_document,
+    read_upload,
+    store_employee_document,
+    store_upload,
+)
 from .notifications import NotificationDeliveryError, deliver_notification
 from .policy import ActionRisk
 from .signing import verify_website_signature
@@ -59,6 +68,7 @@ from .skill_registry import SkillDefinition, load_registry
 from .storage import (
     IdempotencyConflict,
     InvalidEmployeeInvite,
+    InvalidEmployeeTaskTransition,
     InvalidLeadTransition,
     OperationsStore,
     operations_store,
@@ -344,6 +354,169 @@ def employee_tasks(
     if employee_id not in employees:
         raise HTTPException(status_code=404, detail="Employee not found")
     return store(settings).list_employee_tasks(employee_id)
+
+
+@app.post(
+    "/api/benson/v1/onboarding/tasks/{task_id}/evidence",
+    response_model=EmployeeDocumentSummary,
+    status_code=201,
+)
+async def upload_onboarding_evidence(
+    task_id: str,
+    file: Annotated[UploadFile, File()],
+    principal: Principal = Depends(require_employee),
+    settings: Settings = Depends(get_settings),
+) -> EmployeeDocumentSummary:
+    operations = store(settings)
+    employee = operations.get_employee_by_identity(principal.email, principal.subject)
+    if not employee:
+        raise HTTPException(status_code=403, detail="Active employee account required")
+    context = operations.employee_document_upload_context(str(employee.id), task_id)
+    if not context:
+        raise HTTPException(status_code=404, detail="Onboarding task not found")
+    task = context["task"]
+    if task["responsible_party"] not in {"employee", "contractor"}:
+        raise HTTPException(status_code=409, detail="This task is completed by Benson staff")
+    if task["status"] not in {"pending", "rejected"}:
+        raise HTTPException(
+            status_code=409, detail=f"Evidence cannot be uploaded while task is {task['status']}"
+        )
+    content = await file.read(settings.upload_max_bytes + 1)
+    if not content or len(content) > settings.upload_max_bytes:
+        raise HTTPException(status_code=413, detail="Evidence file is empty or too large")
+    content_type = detect_upload_type(content)
+    if not content_type or content_type not in _allowed_upload_types:
+        raise HTTPException(status_code=415, detail="Evidence must be PDF, JPEG, PNG, or WebP")
+    safe_name = Path(file.filename or "evidence").name[:500]
+    try:
+        storage_key, digest, nonce, key_version = await run_in_threadpool(
+            store_employee_document,
+            settings,
+            employee_id=str(employee.id),
+            task_id=task_id,
+            version=context["version"],
+            data_classification=context["data_classification"],
+            original_name=safe_name,
+            content_type=content_type,
+            content=content,
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=503, detail="Employee document encryption is unavailable"
+        ) from error
+    try:
+        return operations.add_employee_document(
+            employee_id=str(employee.id),
+            task_id=task_id,
+            version=context["version"],
+            original_name=safe_name,
+            storage_key=storage_key,
+            content_type=content_type,
+            size_bytes=len(content),
+            sha256=digest,
+            data_classification=context["data_classification"],
+            nonce_base64=nonce,
+            key_version=key_version,
+            actor=principal.email,
+        )
+    except InvalidEmployeeTaskTransition as error:
+        await run_in_threadpool(delete_upload, settings, storage_key)
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.get("/api/benson/v1/onboarding/documents", response_model=list[EmployeeDocumentSummary])
+def onboarding_documents(
+    principal: Principal = Depends(require_employee),
+    settings: Settings = Depends(get_settings),
+) -> list[EmployeeDocumentSummary]:
+    employee = store(settings).get_employee_by_identity(principal.email, principal.subject)
+    if not employee:
+        raise HTTPException(status_code=403, detail="Active employee account required")
+    return store(settings).list_employee_documents(str(employee.id))
+
+
+async def employee_document_response(
+    document_id: str, *, employee_id: str, actor: str, settings: Settings
+) -> BinaryResponse:
+    operations = store(settings)
+    document = operations.get_employee_document(document_id)
+    if not document or document["employee_id"] != employee_id:
+        raise HTTPException(status_code=404, detail="Employee document not found")
+    try:
+        content = await run_in_threadpool(
+            read_employee_document,
+            settings,
+            storage_key=document["storage_key"],
+            employee_id=document["employee_id"],
+            task_id=document["task_id"],
+            version=document["version"],
+            data_classification=document["data_classification"],
+            nonce_base64=document["nonce_base64"],
+            key_version=document["key_version"],
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=503, detail="Employee document cannot be decrypted"
+        ) from error
+    operations.audit_employee_document_access(document_id, employee_id=employee_id, actor=actor)
+    safe_name = Path(str(document["original_name"])).name.replace('"', "")
+    return BinaryResponse(
+        content,
+        media_type=str(document["content_type"]),
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
+    )
+
+
+@app.get("/api/benson/v1/onboarding/documents/{document_id}")
+async def download_onboarding_document(
+    document_id: str,
+    principal: Principal = Depends(require_employee),
+    settings: Settings = Depends(get_settings),
+) -> BinaryResponse:
+    employee = store(settings).get_employee_by_identity(principal.email, principal.subject)
+    if not employee:
+        raise HTTPException(status_code=403, detail="Active employee account required")
+    return await employee_document_response(
+        document_id, employee_id=str(employee.id), actor=principal.email, settings=settings
+    )
+
+
+@app.get("/api/benson/v1/employees/{employee_id}/documents/{document_id}")
+async def download_employee_document(
+    employee_id: str,
+    document_id: str,
+    principal: Principal = Depends(require_owner),
+    settings: Settings = Depends(get_settings),
+) -> BinaryResponse:
+    return await employee_document_response(
+        document_id, employee_id=employee_id, actor=principal.email, settings=settings
+    )
+
+
+@app.patch(
+    "/api/benson/v1/employees/{employee_id}/tasks/{task_id}",
+    response_model=EmployeeTaskSummary,
+)
+def review_employee_task(
+    employee_id: str,
+    task_id: str,
+    review: EmployeeTaskReview,
+    principal: Principal = Depends(require_owner),
+    settings: Settings = Depends(get_settings),
+) -> EmployeeTaskSummary:
+    try:
+        task = store(settings).review_employee_task(
+            employee_id,
+            task_id,
+            decision=review.decision,
+            comment=review.comment,
+            actor=principal.email,
+        )
+    except InvalidEmployeeTaskTransition as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    if not task:
+        raise HTTPException(status_code=404, detail="Onboarding task not found")
+    return task
 
 
 @app.get("/api/v1/dashboard")

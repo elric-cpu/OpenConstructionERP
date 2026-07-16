@@ -1,3 +1,4 @@
+import base64
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -22,6 +23,8 @@ class Settings(BaseSettings):
     employee_invite_signing_secret: str = Field(
         default="development-invite-signing-secret", min_length=16
     )
+    employee_document_encryption_key: SecretStr = SecretStr("")
+    employee_document_key_version: str = "v1"
     website_signature_max_age_seconds: int = Field(default=300, ge=30, le=900)
     staff_google_audience: str = ""
     staff_google_domain: str = "bensonhomesolutions.com"
@@ -76,6 +79,10 @@ class Settings(BaseSettings):
             missing.append("BENSON_WEBSITE_SIGNING_SECRET")
         if self.employee_invite_signing_secret == "development-invite-signing-secret":
             missing.append("BENSON_EMPLOYEE_INVITE_SIGNING_SECRET")
+        try:
+            self.employee_document_key_bytes()
+        except ValueError:
+            missing.append("BENSON_EMPLOYEE_DOCUMENT_ENCRYPTION_KEY (base64 32-byte key)")
         if not self.staff_google_audience:
             missing.append("BENSON_STAFF_GOOGLE_AUDIENCE")
         if not self.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
@@ -104,6 +111,16 @@ class Settings(BaseSettings):
                 return self.database_url.replace("postgresql://", "postgresql+psycopg://", 1)
             return self.database_url
         return f"sqlite+pysqlite:///{self.database_path.resolve()}"
+
+    def employee_document_key_bytes(self) -> bytes:
+        raw = self.employee_document_encryption_key.get_secret_value()
+        try:
+            key = base64.b64decode(raw, validate=True)
+        except ValueError as error:
+            raise ValueError("Employee document encryption key must be valid base64") from error
+        if len(key) != 32:
+            raise ValueError("Employee document encryption key must decode to 32 bytes")
+        return key
 
     def role_emails(self, role: str) -> set[str]:
         raw = getattr(self, f"{role}_emails", "")
