@@ -1237,6 +1237,7 @@ const resource = {
     "sidebar.video_news.title": "Uberization of Construction",
     "sidebar.video_news.subtitle": "Open data, transparency, and the idea behind the platform",
     "sidebar.video_news.watch": "Watch",
+    "sidebar.video_news.read": "Read the article",
     "journey.button.default": "Project journey",
     "journey.button.title": "Project journey - see where you are and what comes next",
     "journey.button.prefix": "Step",
