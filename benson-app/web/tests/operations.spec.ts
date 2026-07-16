@@ -34,17 +34,45 @@ test("mobile rail opens and exposes operations navigation", async ({ page }, tes
   test.skip(!testInfo.project.name.startsWith("mobile"), "mobile-only interaction");
   await page.goto("/");
   await page.getByRole("button", { name: "Open menu" }).click();
-  await expect(page.getByRole("link", { name: "Jobs", exact: true })).toBeVisible();
+  await expect(page.getByText("Jobs", { exact: true })).toBeVisible();
+  await expect(page.getByText("Later", { exact: true }).first()).toBeVisible();
   await page.getByRole("button", { name: "Close menu" }).click();
   await expect(page.locator("aside")).not.toHaveClass(/open/);
+});
+
+test("sidebar navigation switches launch views and does not route to deferred modules", async ({ page }) => {
+  await mockEmptyWorkspace(page);
+  await page.goto("/#overview");
+  const overview = page.getByRole("link", { name: "Overview" });
+  const leads = page.getByRole("link", { name: "Leads" });
+
+  await expect(overview).toHaveAttribute("aria-current", "page");
+  await leads.click();
+  await expect(page).toHaveURL(/#leads$/);
+  await expect(leads).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "Leads" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Good morning." })).not.toBeVisible();
+
+  const jobs = page.getByText("Jobs", { exact: true });
+  await expect(jobs).toBeVisible();
+  await jobs.click({ force: true });
+  await expect(page).toHaveURL(/#leads$/);
+  await expect(leads).toHaveAttribute("aria-current", "page");
+});
+
+test("unsupported legacy hashes normalize to the overview", async ({ page }) => {
+  await mockEmptyWorkspace(page);
+  await page.goto("/#jobs");
+  await expect(page).toHaveURL(/#overview$/);
+  await expect(page.getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");
 });
 
 test("empty states never fabricate operational records", async ({ page }) => {
   await mockEmptyWorkspace(page);
   await page.goto("/");
   await expect(page.getByText("You’re caught up")).toBeVisible();
-  await expect(page.getByText("No active jobs yet")).toBeVisible();
-  await expect(page.getByText("No visits scheduled")).toBeVisible();
+  await expect(page.getByText("Jobs are outside launch scope")).toBeVisible();
+  await expect(page.getByText("Schedule is outside launch scope")).toBeVisible();
 });
 
 test("authenticated staff see persisted website leads", async ({ page }) => {

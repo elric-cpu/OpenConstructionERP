@@ -41,12 +41,12 @@ const empty: Dashboard = {
   jobs: [],
 };
 const nav = [
-  [Home, "Overview"],
-  [Inbox, "Leads"],
-  [BriefcaseBusiness, "Jobs"],
-  [CalendarDays, "Schedule"],
-  [ClipboardCheck, "Estimates"],
-  [Users, "Customers"],
+  [Home, "Overview", "overview"],
+  [Inbox, "Leads", "leads"],
+  [BriefcaseBusiness, "Jobs", null],
+  [CalendarDays, "Schedule", null],
+  [ClipboardCheck, "Estimates", null],
+  [Users, "Customers", null],
 ] as const;
 const tokenKey = "benson-google-credential";
 
@@ -65,7 +65,25 @@ export function App() {
   const [statusFilter, setStatusFilter] = useState("");
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings | null>(null);
   const [settingsStatus, setSettingsStatus] = useState<"" | "saving" | "saved" | "error">("");
+  const [activeView, setActiveView] = useState<"overview" | "leads">(() =>
+    window.location.hash === "#leads" ? "leads" : "overview",
+  );
   const googleButton = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const syncView = () => {
+      const requestedView = window.location.hash;
+      const nextView = requestedView === "#leads" ? "leads" : "overview";
+      if (requestedView !== "#overview" && requestedView !== "#leads") {
+        window.history.replaceState(null, "", "#overview");
+      }
+      setActiveView(nextView);
+      setSelectedLead("");
+    };
+    syncView();
+    window.addEventListener("hashchange", syncView);
+    return () => window.removeEventListener("hashchange", syncView);
+  }, []);
 
   useEffect(() => {
     if (!credential) {
@@ -211,12 +229,26 @@ export function App() {
           </button>
         </div>
         <nav>
-          {nav.map(([Icon, label], index) => (
-            <a className={index === 0 ? "active" : ""} href={`#${label.toLowerCase()}`} key={label}>
-              <Icon />
-              {label}
-            </a>
-          ))}
+          {nav.map(([Icon, label, route]) =>
+            route ? (
+              <a
+                aria-current={activeView === route ? "page" : undefined}
+                className={activeView === route ? "active" : ""}
+                href={`#${route}`}
+                key={label}
+                onClick={() => setMenu(false)}
+              >
+                <Icon />
+                {label}
+              </a>
+            ) : (
+              <span className="nav-disabled" key={label} title={`${label} is outside the lead-foundation launch scope`}>
+                <Icon />
+                <span>{label}</span>
+                <small>Later</small>
+              </span>
+            ),
+          )}
         </nav>
         <div className="rail-foot">
           <div className="avatar">BH</div>
@@ -273,24 +305,30 @@ export function App() {
             <>
               <div className="headline">
                 <div>
-                  <p>{today}</p>
-                  <h1>Good morning.</h1>
-                  <span>Here’s what needs your attention today.</span>
+                  <p>{activeView === "overview" ? today : "LEAD WORKSPACE"}</p>
+                  <h1>{activeView === "overview" ? "Good morning." : "Leads"}</h1>
+                  <span>
+                    {activeView === "overview"
+                      ? "Here’s what needs your attention today."
+                      : "Review website requests, ownership, notes, and follow-up."}
+                  </span>
                 </div>
                 <a className="primary" href="https://bensonhomesolutions.com/contact">
                   + New lead
                 </a>
               </div>
-              <section className="metrics">
-                {metrics.map(([label, value]) => (
-                  <article key={label}>
-                    <small>{label}</small>
-                    <strong>{value}</strong>
-                    <em>Live workspace total</em>
-                  </article>
-                ))}
-              </section>
-              {notificationSettings && (
+              {activeView === "overview" && (
+                <section className="metrics">
+                  {metrics.map(([label, value]) => (
+                    <article key={label}>
+                      <small>{label}</small>
+                      <strong>{value}</strong>
+                      <em>Live workspace total</em>
+                    </article>
+                  ))}
+                </section>
+              )}
+              {activeView === "overview" && notificationSettings && (
                 <section
                   className="notification-settings"
                   id="notification-settings"
@@ -349,7 +387,15 @@ export function App() {
                   {leads.length ? (
                     <div className="lead-list">
                       {leads.map((lead) => (
-                        <button className="lead-row" key={lead.id} onClick={() => setSelectedLead(lead.id)}>
+                        <button
+                          className="lead-row"
+                          key={lead.id}
+                          onClick={() => {
+                            setActiveView("leads");
+                            window.history.replaceState(null, "", "#leads");
+                            setSelectedLead(lead.id);
+                          }}
+                        >
                           <span className={lead.priority === "urgent" ? "priority urgent" : "priority"}>
                             {lead.priority}
                           </span>
@@ -403,22 +449,26 @@ export function App() {
                     </button>
                   </div>
                 </section>
-                <Panel title="Today’s schedule" subtitle="Field visits and committed work." link="Open calendar">
-                  <Empty
-                    icon={<CalendarDays />}
-                    title="No visits scheduled"
-                    body="Add work from a job or estimate."
-                    compact
-                  />
-                </Panel>
-                <Panel title="Active jobs" subtitle="Current residential work." link="View jobs">
-                  <Empty
-                    icon={<Hammer />}
-                    title="No active jobs yet"
-                    body="Accepted estimates will appear here."
-                    compact
-                  />
-                </Panel>
+                {activeView === "overview" && (
+                  <>
+                    <Panel title="Today’s schedule" subtitle="Field visits and committed work." link="Coming later">
+                      <Empty
+                        icon={<CalendarDays />}
+                        title="Schedule is outside launch scope"
+                        body="The lead foundation does not schedule field work yet."
+                        compact
+                      />
+                    </Panel>
+                    <Panel title="Active jobs" subtitle="Current residential work." link="Coming later">
+                      <Empty
+                        icon={<Hammer />}
+                        title="Jobs are outside launch scope"
+                        body="Qualified leads stay in the lead queue for this release."
+                        compact
+                      />
+                    </Panel>
+                  </>
+                )}
               </div>
             </>
           ) : null}
