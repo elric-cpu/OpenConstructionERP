@@ -1,9 +1,9 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from enum import StrEnum
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class Role(StrEnum):
@@ -197,6 +197,48 @@ class NotificationSettings(BaseModel):
     email_enabled: Literal[True] = True
     sms_enabled: bool
     sms_configured: bool
+
+
+class EmployeeCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    email: EmailStr
+    start_date: date
+    work_location: str = Field(min_length=1, max_length=200)
+    classification: Literal["employee", "independent_contractor"]
+    role: Role
+    federal_contract_applicability: Literal["unknown", "not_applicable", "applicable"] = "unknown"
+
+    @model_validator(mode="after")
+    def classification_matches_role(self) -> "EmployeeCreate":
+        if self.classification == "independent_contractor" and self.role is not Role.SUBCONTRACTOR:
+            raise ValueError("Independent contractors must use the subcontractor role")
+        if self.classification == "employee" and self.role in {Role.SUBCONTRACTOR, Role.CUSTOMER}:
+            raise ValueError("Employees must use a staff role")
+        return self
+
+
+class EmployeeSummary(BaseModel):
+    id: UUID
+    name: str
+    email: EmailStr
+    start_date: date
+    work_location: str
+    classification: Literal["employee", "independent_contractor"]
+    role: Role
+    federal_contract_applicability: Literal["unknown", "not_applicable", "applicable"]
+    status: Literal["draft", "invited", "active", "onboarding_complete", "inactive"]
+    created_at: datetime
+
+
+class ComplianceRequirement(BaseModel):
+    id: str
+    label: str
+    responsible_party: Literal["employee", "employer", "contractor"]
+    applicability: str
+    retention_rule: str
+    data_classification: Literal["internal", "confidential", "restricted"]
+    official_source: str
+    legal_review_status: Literal["pending", "approved"] = "pending"
 
 
 class AgentRunRequest(BaseModel):

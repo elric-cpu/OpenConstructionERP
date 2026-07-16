@@ -12,6 +12,7 @@ from sqlalchemy import (
     Table,
     Text,
     Column,
+    Date,
     create_engine,
     func,
     inspect,
@@ -23,7 +24,14 @@ from sqlalchemy import (
 from sqlalchemy.engine import Engine, RowMapping
 from sqlalchemy.exc import IntegrityError
 
-from .domain import LeadCreate, LeadReceipt, LeadSummary, LeadUpdate
+from .domain import (
+    EmployeeCreate,
+    EmployeeSummary,
+    LeadCreate,
+    LeadReceipt,
+    LeadSummary,
+    LeadUpdate,
+)
 
 metadata = MetaData()
 
@@ -170,6 +178,23 @@ operations_settings = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False),
 )
 
+employees = Table(
+    "employees",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("name", String(200), nullable=False),
+    Column("email", String(320), nullable=False, unique=True),
+    Column("start_date", Date, nullable=False),
+    Column("work_location", String(200), nullable=False),
+    Column("classification", String(40), nullable=False),
+    Column("role", String(40), nullable=False),
+    Column("federal_contract_applicability", String(40), nullable=False),
+    Column("status", String(40), nullable=False),
+    Column("created_by", String(320), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
 
 def lead_source(payload: dict[str, Any]) -> str:
     utm_source = str(payload.get("utm_source", "")).strip()
@@ -243,6 +268,48 @@ class OperationsStore:
     def readiness_probe(self) -> None:
         with self.engine.connect() as db:
             db.execute(select(1)).scalar_one()
+
+    def create_employee(self, employee: EmployeeCreate, *, actor: str) -> EmployeeSummary:
+        now = datetime.now(UTC)
+        employee_id = str(uuid4())
+        values = {
+            "id": employee_id,
+            "name": employee.name.strip(),
+            "email": str(employee.email).lower(),
+            "start_date": employee.start_date,
+            "work_location": employee.work_location.strip(),
+            "classification": employee.classification,
+            "role": employee.role.value,
+            "federal_contract_applicability": employee.federal_contract_applicability,
+            "status": "draft",
+            "created_by": actor,
+            "created_at": now,
+            "updated_at": now,
+        }
+        try:
+            with self.engine.begin() as db:
+                db.execute(employees.insert().values(**values))
+                self._audit(
+                    db,
+                    event="employee.created",
+                    actor=actor,
+                    subject_type="employee",
+                    subject_id=employee_id,
+                    payload={
+                        "name": values["name"],
+                        "email": values["email"],
+                        "classification": values["classification"],
+                        "role": values["role"],
+                    },
+                )
+        except IntegrityError as error:
+            raise ValueError("An employee record already exists for this email") from error
+        return EmployeeSummary.model_validate(values)
+
+    def list_employees(self) -> list[EmployeeSummary]:
+        with self.engine.connect() as db:
+            rows = db.execute(select(employees).order_by(employees.c.name)).mappings().all()
+        return [EmployeeSummary.model_validate(dict(row)) for row in rows]
 
     def _audit(
         self,

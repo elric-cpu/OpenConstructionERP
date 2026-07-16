@@ -33,9 +33,12 @@ from .auth import (
     require_staff,
 )
 from .config import Settings, get_settings
+from .compliance import ONBOARDING_REQUIREMENTS
 from .domain import (
     AgentRunRequest,
     BENSON_MODULES,
+    EmployeeCreate,
+    EmployeeSummary,
     LeadCreate,
     LeadReceipt,
     LeadUpdate,
@@ -199,6 +202,36 @@ async def staff_directory(
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     return {"staff": settings.assignable_staff()}
+
+
+@app.get("/api/benson/v1/onboarding/requirements")
+async def onboarding_requirements(
+    _principal: Principal = Depends(require_owner),
+) -> dict[str, Any]:
+    return {
+        "review_status": "pending_qualified_hr_legal_review",
+        "requirements": [item.model_dump(mode="json") for item in ONBOARDING_REQUIREMENTS],
+    }
+
+
+@app.get("/api/benson/v1/employees", response_model=list[EmployeeSummary])
+def list_employees(
+    _principal: Principal = Depends(require_owner),
+    settings: Settings = Depends(get_settings),
+) -> list[EmployeeSummary]:
+    return store(settings).list_employees()
+
+
+@app.post("/api/benson/v1/employees", response_model=EmployeeSummary, status_code=201)
+def create_employee(
+    employee: EmployeeCreate,
+    principal: Principal = Depends(require_owner),
+    settings: Settings = Depends(get_settings),
+) -> EmployeeSummary:
+    try:
+        return store(settings).create_employee(employee, actor=principal.email)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 @app.get("/api/v1/dashboard")

@@ -449,6 +449,75 @@ def test_authenticated_staff_directory_uses_names_and_roles(isolated_settings: S
     assert client.get("/api/benson/v1/staff").status_code == 503
 
 
+def test_owner_can_create_and_list_employee_foundation(isolated_settings: Settings) -> None:
+    payload = {
+        "name": "New Employee",
+        "email": "new.employee@bensonhomesolutions.com",
+        "start_date": "2026-08-03",
+        "work_location": "Burns, Oregon",
+        "classification": "employee",
+        "role": "field",
+        "federal_contract_applicability": "unknown",
+    }
+
+    created = client.post("/api/benson/v1/employees", headers=STAFF_HEADERS, json=payload)
+
+    assert created.status_code == 201
+    assert created.json()["status"] == "draft"
+    assert created.json()["email"] == payload["email"]
+    listed = client.get("/api/benson/v1/employees", headers=STAFF_HEADERS)
+    assert listed.status_code == 200
+    assert [employee["id"] for employee in listed.json()] == [created.json()["id"]]
+    assert (
+        client.post("/api/benson/v1/employees", headers=STAFF_HEADERS, json=payload).status_code
+        == 409
+    )
+
+
+def test_employee_foundation_is_owner_scoped_and_classification_safe(
+    isolated_settings: Settings,
+) -> None:
+    isolated_settings.field_emails = "field@bensonhomesolutions.com"
+    field_headers = {"X-Dev-Staff-Email": "field@bensonhomesolutions.com"}
+    assert client.get("/api/benson/v1/employees", headers=field_headers).status_code == 403
+    assert (
+        client.get("/api/benson/v1/onboarding/requirements", headers=field_headers).status_code
+        == 403
+    )
+
+    invalid = client.post(
+        "/api/benson/v1/employees",
+        headers=STAFF_HEADERS,
+        json={
+            "name": "Misclassified Worker",
+            "email": "worker@example.com",
+            "start_date": "2026-08-03",
+            "work_location": "Burns, Oregon",
+            "classification": "independent_contractor",
+            "role": "field",
+        },
+    )
+    assert invalid.status_code == 422
+
+
+def test_compliance_matrix_is_explicitly_pending_review() -> None:
+    response = client.get("/api/benson/v1/onboarding/requirements", headers=STAFF_HEADERS)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["review_status"] == "pending_qualified_hr_legal_review"
+    requirements = {item["id"]: item for item in body["requirements"]}
+    assert {
+        "form-i9",
+        "e-verify",
+        "federal-w4",
+        "oregon-w4",
+        "davis-bacon",
+        "contractor-w9",
+    } <= requirements.keys()
+    assert all(item["legal_review_status"] == "pending" for item in requirements.values())
+
+
 def test_production_google_auth_and_owner_scope(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = production_settings(
         owner_emails="owner@bensonhomesolutions.com",
