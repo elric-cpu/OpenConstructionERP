@@ -7902,6 +7902,7 @@ const resource = {
     "common.name": "Name",
     "common.no_results": "No results found",
     "common.none": "None",
+    "common.offline_banner_desktop": "You're offline. Your work is saved on this computer - only live multi-user collaboration pauses until you reconnect.",
     "common.open_menu": "Open menu",
     "common.pin": "Pin",
     "common.previous": "Previous",

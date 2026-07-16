@@ -21077,6 +21077,7 @@ const resource = {
     "common.not_found": "لم يتم العثور عليه",
     "common.not_set": "لم يتم التعيين",
     "common.offline_banner": "أنت غير متصل - التغييرات لن تتزامن.",
+    "common.offline_banner_desktop": "أنت غير متصل بالإنترنت. عملك محفوظ على هذا الكمبيوتر - يتوقف مؤقتًا فقط التعاون المباشر بين عدة مستخدمين حتى تعيد الاتصال.",
     "common.optional": "اختياري",
     "common.prev": "الصفحة السابقة",
     "common.rename": "إعادة تسمية",

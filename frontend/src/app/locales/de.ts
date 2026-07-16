@@ -21191,6 +21191,7 @@ const resource = {
     "common.not_found": "Nicht gefunden",
     "common.not_set": "Nicht eingestellt",
     "common.offline_banner": "Sie sind offline - Änderungen werden nicht synchronisiert.",
+    "common.offline_banner_desktop": "Sie sind offline. Ihre Arbeit wird auf diesem Computer gespeichert - nur die Echtzeit-Zusammenarbeit mehrerer Benutzer pausiert, bis Sie wieder verbunden sind.",
     "common.optional": "optional",
     "common.prev": "Vorherige Seite",
     "common.rename": "Umbenennen",

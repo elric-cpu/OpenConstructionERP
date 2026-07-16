@@ -20999,6 +20999,7 @@ const resource = {
     "common.not_found": "Nie znaleziono",
     "common.not_set": "Nie ustawione",
     "common.offline_banner": "Jesteś w trybie offline - zmiany nie będą synchronizowane.",
+    "common.offline_banner_desktop": "Jesteś w trybie offline. Twoja praca jest zapisywana na tym komputerze - tylko współpraca wielu użytkowników w czasie rzeczywistym jest wstrzymana do momentu ponownego połączenia.",
     "common.optional": "opcjonalnie",
     "common.prev": "Poprzednia strona",
     "common.rename": "Zmień nazwę",

@@ -20986,6 +20986,7 @@ const resource = {
     "common.not_found": "Nu a fost găsit",
     "common.not_set": "Nesetat",
     "common.offline_banner": "Sunteți offline - modificările nu se vor sincroniza.",
+    "common.offline_banner_desktop": "Sunteți offline. Munca dvs. este salvată pe acest computer - doar colaborarea în timp real între mai mulți utilizatori este întreruptă până când vă reconectați.",
     "common.optional": "opțional",
     "common.prev": "Pagina anterioară",
     "common.rename": "Redenumire",

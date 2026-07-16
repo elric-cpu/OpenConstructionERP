@@ -20973,6 +20973,7 @@ const resource = {
     "common.not_found": "Ikke fundet",
     "common.not_set": "Ikke indstillet",
     "common.offline_banner": "Du er offline - ændringer synkroniseres ikke.",
+    "common.offline_banner_desktop": "Du er offline. Dit arbejde gemmes på denne computer - kun realtidssamarbejde mellem flere brugere sættes på pause, indtil du opretter forbindelse igen.",
     "common.optional": "valgfri",
     "common.prev": "Forrige side",
     "common.rename": "Omdøb",

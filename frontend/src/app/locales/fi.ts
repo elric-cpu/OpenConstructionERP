@@ -20983,6 +20983,7 @@ const resource = {
     "common.not_found": "Ei löydetty",
     "common.not_set": "Ei asetettu",
     "common.offline_banner": "Olet offline - muutokset eivät synkronoidu.",
+    "common.offline_banner_desktop": "Olet offline-tilassa. Työsi tallennetaan tähän tietokoneeseen - vain usean käyttäjän reaaliaikainen yhteistyö keskeytyy, kunnes muodostat yhteyden uudelleen.",
     "common.optional": "valinnainen",
     "common.prev": "Edellinen sivu",
     "common.rename": "Nimeä uudelleen",

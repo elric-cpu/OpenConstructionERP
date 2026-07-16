@@ -20984,6 +20984,7 @@ const resource = {
     "common.not_found": "찾을 수 없음",
     "common.not_set": "설정되지 않음",
     "common.offline_banner": "오프라인 상태입니다 - 변경 사항이 동기화되지 않습니다.",
+    "common.offline_banner_desktop": "오프라인 상태입니다. 작업 내용은 이 컴퓨터에 저장됩니다 - 다시 연결될 때까지 여러 사용자의 실시간 공동 작업만 일시 중지됩니다.",
     "common.optional": "선택 사항",
     "common.prev": "이전 페이지",
     "common.rename": "이름 바꾸기",

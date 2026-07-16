@@ -20983,6 +20983,7 @@ const resource = {
     "common.not_found": "Não encontrado",
     "common.not_set": "Não definido",
     "common.offline_banner": "Você está offline - as alterações não sincronizarão.",
+    "common.offline_banner_desktop": "Você está offline. Seu trabalho está salvo neste computador - apenas a colaboração multiusuário em tempo real fica pausada até você se reconectar.",
     "common.optional": "opcional",
     "common.prev": "Página anterior",
     "common.rename": "Renomear",

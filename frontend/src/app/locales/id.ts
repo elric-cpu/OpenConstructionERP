@@ -20979,6 +20979,7 @@ const resource = {
     "common.not_found": "Tidak ditemukan",
     "common.not_set": "Tidak diatur",
     "common.offline_banner": "Anda offline - perubahan tidak akan tersinkronisasi.",
+    "common.offline_banner_desktop": "Anda sedang offline. Pekerjaan Anda tersimpan di komputer ini - hanya kolaborasi multi-pengguna secara real-time yang dijeda hingga Anda terhubung kembali.",
     "common.optional": "opsional",
     "common.prev": "Halaman sebelumnya",
     "common.rename": "Ubah nama",

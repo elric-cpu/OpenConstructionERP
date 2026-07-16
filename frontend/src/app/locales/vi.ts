@@ -20990,6 +20990,7 @@ const resource = {
     "common.not_found": "Không tìm thấy",
     "common.not_set": "Chưa được đặt",
     "common.offline_banner": "Bạn đang ngoại tuyến - các thay đổi sẽ không đồng bộ.",
+    "common.offline_banner_desktop": "Bạn đang ngoại tuyến. Công việc của bạn được lưu trên máy tính này - chỉ có sự cộng tác thời gian thực của nhiều người dùng tạm dừng cho đến khi bạn kết nối lại.",
     "common.optional": "tùy chọn",
     "common.prev": "Trang trước",
     "common.rename": "Đổi tên",

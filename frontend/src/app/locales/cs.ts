@@ -20990,6 +20990,7 @@ const resource = {
     "common.not_found": "Nenalezeno",
     "common.not_set": "Nenastaveno",
     "common.offline_banner": "Jste offline - změny se nebudou synchronizovat.",
+    "common.offline_banner_desktop": "Jste offline. Vaše práce se ukládá do tohoto počítače - pozastaví se pouze spolupráce více uživatelů v reálném čase, dokud se znovu nepřipojíte.",
     "common.optional": "volitelné",
     "common.prev": "Předchozí strana",
     "common.rename": "Přejmenovat",

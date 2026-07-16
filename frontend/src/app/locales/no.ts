@@ -20975,6 +20975,7 @@ const resource = {
     "common.not_found": "Ikke funnet",
     "common.not_set": "Ikke angitt",
     "common.offline_banner": "Du er offline - endringer synkroniseres ikke.",
+    "common.offline_banner_desktop": "Du er offline. Arbeidet ditt lagres på denne datamaskinen - bare sanntidssamarbeid mellom flere brukere settes på pause til du kobler til igjen.",
     "common.optional": "valgfritt",
     "common.prev": "Forrige side",
     "common.rename": "Gi nytt navn",

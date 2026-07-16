@@ -20979,6 +20979,7 @@ const resource = {
     "common.not_found": "Niet gevonden",
     "common.not_set": "Niet ingesteld",
     "common.offline_banner": "U bent offline - wijzigingen worden niet gesynchroniseerd.",
+    "common.offline_banner_desktop": "U bent offline. Uw werk wordt op deze computer opgeslagen - alleen realtime samenwerking met meerdere gebruikers pauzeert totdat u opnieuw verbinding maakt.",
     "common.optional": "optioneel",
     "common.prev": "Vorige pagina",
     "common.rename": "Hernoemen",

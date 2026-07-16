@@ -20973,6 +20973,7 @@ const resource = {
     "common.not_found": "Inte funnen",
     "common.not_set": "Inte inställd",
     "common.offline_banner": "Du är offline - ändringar synkroniseras inte.",
+    "common.offline_banner_desktop": "Du är offline. Ditt arbete sparas på den här datorn - endast realtidssamarbete mellan flera användare pausas tills du återansluter.",
     "common.optional": "valfritt",
     "common.prev": "Föregående sida",
     "common.rename": "Byt namn",

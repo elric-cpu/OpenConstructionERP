@@ -20977,6 +20977,7 @@ const resource = {
     "common.not_found": "No encontrado",
     "common.not_set": "No configurado",
     "common.offline_banner": "Estás desconectado - los cambios no se sincronizarán.",
+    "common.offline_banner_desktop": "Estás sin conexión. Tu trabajo se guarda en esta computadora - solo se pausa la colaboración multiusuario en tiempo real hasta que vuelvas a conectarte.",
     "common.optional": "opcional",
     "common.prev": "Página anterior",
     "common.rename": "Renombrar",

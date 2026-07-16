@@ -20981,6 +20981,7 @@ const resource = {
     "common.not_found": "未找到",
     "common.not_set": "未设置",
     "common.offline_banner": "您已离线 - 更改不会同步。",
+    "common.offline_banner_desktop": "您已离线。您的工作已保存在这台计算机上 - 仅多用户实时协作会暂停，直到您重新连接。",
     "common.optional": "可选",
     "common.prev": "上一页",
     "common.rename": "重命名",

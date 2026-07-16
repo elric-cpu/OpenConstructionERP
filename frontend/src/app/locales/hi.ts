@@ -20725,6 +20725,7 @@ const resource = {
     "common.not_found": "नहीं मिला",
     "common.not_set": "सेट नहीं",
     "common.offline_banner": "आप ऑफ़लाइन हैं - परिवर्तन सिंक नहीं होंगे।",
+    "common.offline_banner_desktop": "आप ऑफ़लाइन हैं। आपका काम इस कंप्यूटर पर सहेजा गया है - केवल एकाधिक उपयोगकर्ताओं का रीयल-टाइम सहयोग तब तक रुका रहता है जब तक आप दोबारा कनेक्ट नहीं हो जाते।",
     "common.optional": "वैकल्पिक",
     "common.prev": "पिछला पृष्ठ",
     "common.rename": "नाम बदलें",

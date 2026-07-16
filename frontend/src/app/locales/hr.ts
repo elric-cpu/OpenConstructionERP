@@ -20984,6 +20984,7 @@ const resource = {
     "common.not_found": "Nije pronađeno",
     "common.not_set": "Nije postavljeno",
     "common.offline_banner": "Ste offline - promjene se neće sinhronizirati.",
+    "common.offline_banner_desktop": "Offline ste. Vaš rad sprema se na ovom računalu - samo se suradnja više korisnika u stvarnom vremenu pauzira dok se ponovno ne povežete.",
     "common.optional": "nije obavezno",
     "common.prev": "Prethodna stranica",
     "common.rename": "Preimenuj",

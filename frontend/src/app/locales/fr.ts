@@ -21028,6 +21028,7 @@ const resource = {
     "common.not_found": "Non trouvé",
     "common.not_set": "Non défini",
     "common.offline_banner": "Vous êtes hors ligne - les modifications ne se synchroniseront pas.",
+    "common.offline_banner_desktop": "Vous êtes hors ligne. Votre travail est enregistré sur cet ordinateur - seule la collaboration multi-utilisateurs en temps réel est suspendue jusqu'à votre reconnexion.",
     "common.optional": "facultatif",
     "common.prev": "Page précédente",
     "common.rename": "Renommer",

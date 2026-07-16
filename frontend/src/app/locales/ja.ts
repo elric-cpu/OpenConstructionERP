@@ -20983,6 +20983,7 @@ const resource = {
     "common.not_found": "見つかりません",
     "common.not_set": "未設定",
     "common.offline_banner": "オフラインです - 変更は同期されません。",
+    "common.offline_banner_desktop": "オフラインです。作業内容はこのコンピューターに保存されています - 再接続するまで、複数ユーザーによるリアルタイムの共同作業のみが一時停止します。",
     "common.optional": "オプション",
     "common.prev": "前のページ",
     "common.rename": "名前変更",

@@ -20988,6 +20988,7 @@ const resource = {
     "common.not_found": "Non trovato",
     "common.not_set": "Non impostato",
     "common.offline_banner": "Sei offline - le modifiche non verranno sincronizzate.",
+    "common.offline_banner_desktop": "Sei offline. Il tuo lavoro è salvato su questo computer - solo la collaborazione multiutente in tempo reale è in pausa finché non ti riconnetti.",
     "common.optional": "facoltativo",
     "common.prev": "Pagina precedente",
     "common.rename": "Rinomina",

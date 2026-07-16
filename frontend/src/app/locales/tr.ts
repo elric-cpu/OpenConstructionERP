@@ -20982,6 +20982,7 @@ const resource = {
     "common.not_found": "Bulunamadı",
     "common.not_set": "Ayarlanmamış",
     "common.offline_banner": "Çevrimdışısınız - değişiklikler senkronize olmayacaktır.",
+    "common.offline_banner_desktop": "Çevrimdışısınız. Çalışmanız bu bilgisayara kaydedilir - yalnızca birden fazla kullanıcının gerçek zamanlı iş birliği, yeniden bağlanana kadar duraklatılır.",
     "common.optional": "isteğe bağlı",
     "common.prev": "Önceki sayfa",
     "common.rename": "Yeniden adlandır",
