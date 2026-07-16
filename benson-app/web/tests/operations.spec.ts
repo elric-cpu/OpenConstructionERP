@@ -63,9 +63,12 @@ test("mobile rail opens and exposes operations navigation", async ({ page }, tes
 
 test("sidebar navigation switches launch views and does not route to deferred modules", async ({ page }) => {
   await mockEmptyWorkspace(page);
+  await page.route("**/api/benson/v1/jobs", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/benson/v1/estimates?status=accepted", (route) => route.fulfill({ json: [] }));
   await page.goto("/#overview");
   const overview = page.getByRole("link", { name: "Overview" });
   const leads = page.getByRole("link", { name: "Leads" });
+  const jobs = page.getByRole("link", { name: "Jobs" });
   const mobile = (page.viewportSize()?.width ?? 1_000) <= 900;
 
   await expect(overview).toHaveAttribute("aria-current", "page");
@@ -76,13 +79,19 @@ test("sidebar navigation switches launch views and does not route to deferred mo
   await expect(page.getByRole("heading", { name: "Leads" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Good morning." })).not.toBeVisible();
 
-  const jobs = page.getByText("Jobs", { exact: true });
   if (mobile) await page.getByRole("button", { name: "Open menu" }).click();
-  await expect(jobs).toBeVisible();
-  await expect(jobs.locator("..")).toHaveClass(/nav-disabled/);
-  await expect(page.getByRole("link", { name: "Jobs" })).toHaveCount(0);
-  await expect(page).toHaveURL(/#leads$/);
-  await expect(leads).toHaveAttribute("aria-current", "page");
+  await jobs.click();
+  await expect(page).toHaveURL(/#jobs$/);
+  await expect(jobs).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "Jobs", exact: true })).toBeVisible();
+
+  if (mobile) await page.getByRole("button", { name: "Open menu" }).click();
+  const schedule = page.getByText("Schedule", { exact: true });
+  await expect(schedule).toBeVisible();
+  await expect(schedule.locator("..")).toHaveClass(/nav-disabled/);
+  await expect(page.getByRole("link", { name: "Schedule" })).toHaveCount(0);
+  await expect(page).toHaveURL(/#jobs$/);
+  await expect(jobs).toHaveAttribute("aria-current", "page");
 });
 
 test("staff can create and edit a persisted customer", async ({ page }) => {
@@ -215,9 +224,155 @@ test("staff create a server-totaled estimate and confirm delivery", async ({ pag
   expect(results.violations.filter((item) => ["serious", "critical"].includes(item.impact ?? ""))).toEqual([]);
 });
 
+test("staff convert an accepted estimate and deliver the planned job", async ({ page }) => {
+  await mockEmptyWorkspace(page);
+  const estimate = {
+    id: "estimate-accepted",
+    number: "EST-2026-ACCEPTED",
+    customer_id: "customer-job",
+    customer_name: "Fields Property Owner",
+    title: "Frontier window installation",
+    scope_notes: "Install high-desert rated windows.",
+    valid_until: "2026-08-31",
+    status: "accepted",
+    version: 3,
+    subtotal_cents: 420000,
+    total_cents: 420000,
+    lines: [],
+    created_at: "2026-07-16T00:00:00Z",
+    updated_at: "2026-07-16T00:00:00Z",
+  };
+  let job = {
+    id: "job-1",
+    number: "JOB-2026-TEST0001",
+    estimate_id: estimate.id,
+    estimate_number: estimate.number,
+    customer_id: estimate.customer_id,
+    customer_name: estimate.customer_name,
+    title: estimate.title,
+    scope_snapshot: estimate.scope_notes,
+    contract_value_cents: estimate.total_cents,
+    status: "planned",
+    target_start: "2026-08-03",
+    target_completion: "2026-08-05",
+    assigned_to: "elric@bensonhomesolutions.com",
+    site_address: "1 Fields Highway, Fields, OR 97710",
+    created_at: "2026-07-16T00:00:00Z",
+    updated_at: "2026-07-16T00:00:00Z",
+  };
+  let jobs: (typeof job)[] = [];
+  await page.route("**/api/benson/v1/estimates?status=accepted", (route) =>
+    route.fulfill({ json: jobs.length ? [] : [estimate] }),
+  );
+  await page.route("**/api/benson/v1/jobs", (route) => route.fulfill({ json: jobs }));
+  await page.route(`**/api/benson/v1/jobs/from-estimate/${estimate.id}`, async (route) => {
+    expect(route.request().method()).toBe("POST");
+    const plan = route.request().postDataJSON() as Partial<typeof job>;
+    job = { ...job, ...plan };
+    jobs = [job];
+    await route.fulfill({ status: 201, json: job });
+  });
+  await page.route("**/api/benson/v1/jobs/job-1", async (route) => {
+    expect(route.request().method()).toBe("PATCH");
+    const plan = route.request().postDataJSON() as Partial<typeof job>;
+    job = { ...job, ...plan };
+    jobs = [job];
+    await route.fulfill({ json: job });
+  });
+  await page.route("**/api/benson/v1/jobs/job-1/transition", async (route) => {
+    expect(route.request().method()).toBe("POST");
+    const payload = route.request().postDataJSON() as { status: typeof job.status; note: string };
+    if (payload.status === "completed") expect(payload.note).toBe("Work verified complete");
+    job = { ...job, status: payload.status };
+    jobs = [job];
+    await route.fulfill({ json: job });
+  });
+
+  await page.goto("/#jobs");
+  await expect(page.getByRole("link", { name: "Jobs" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByText(estimate.title, { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Create job" }).click();
+  await page.getByLabel("Target start").fill(job.target_start);
+  await page.getByLabel("Target completion").fill(job.target_completion);
+  await page.getByLabel("Assigned staff email").fill(job.assigned_to);
+  await page.getByLabel("Site address").fill(job.site_address);
+  await page.getByRole("button", { name: "Create planned job" }).click();
+  await expect(page.getByText("planned", { exact: true })).toBeVisible();
+  await expect(page.getByText("$4,200.00")).toBeVisible();
+
+  await page.getByRole("button", { name: "Edit plan" }).click();
+  await page.getByLabel("Job title").fill("Revised frontier window installation");
+  await page.getByRole("button", { name: "Save job plan" }).click();
+  await expect(page.getByRole("heading", { name: "Revised frontier window installation" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Start job" }).click();
+  await expect(page.getByText("active", { exact: true })).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept("Work verified complete"));
+  await page.getByRole("button", { name: "Complete job" }).click();
+  await expect(page.getByText("completed", { exact: true })).toBeVisible();
+  const results = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
+  expect(results.violations.filter((item) => ["serious", "critical"].includes(item.impact ?? ""))).toEqual([]);
+});
+
+for (const role of ["field", "accounting"] as const) {
+  test(`${role} staff enter the scoped Jobs workspace without CRM access`, async ({ page }) => {
+    await page.addInitScript(() => sessionStorage.setItem("benson-google-credential", "role-token"));
+    await page.unroute("**/api/benson/v1/session");
+    await page.route("**/api/benson/v1/session", (route) =>
+      route.fulfill({
+        json: {
+          kind: "staff",
+          email: `${role}@bensonhomesolutions.com`,
+          role,
+          default_view: "overview",
+          employee: null,
+        },
+      }),
+    );
+    let requestedCrm = false;
+    page.on("request", (request) => {
+      if (/\/leads|\/customers|\/estimates/.test(new URL(request.url()).pathname)) requestedCrm = true;
+    });
+    await page.route("**/api/benson/v1/jobs", (route) =>
+      route.fulfill({
+        json: [
+          {
+            id: "role-job",
+            number: "JOB-2026-ROLE",
+            estimate_id: "estimate-role",
+            estimate_number: "EST-2026-ROLE",
+            customer_id: "customer-role",
+            customer_name: "Assigned Customer",
+            title: "Assigned field work",
+            scope_snapshot: "",
+            contract_value_cents: 100000,
+            status: "planned",
+            target_start: null,
+            target_completion: null,
+            assigned_to: role === "field" ? "field@bensonhomesolutions.com" : null,
+            site_address: "Burns, OR",
+            created_at: "2026-07-16T00:00:00Z",
+            updated_at: "2026-07-16T00:00:00Z",
+          },
+        ],
+      }),
+    );
+
+    await page.goto("/#overview");
+    await expect(page).toHaveURL(/#jobs$/);
+    await expect(page.getByRole("heading", { name: "Jobs", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Jobs" })).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("link", { name: "Leads" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Edit plan" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Create job" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Start job" })).toHaveCount(role === "field" ? 1 : 0);
+    expect(requestedCrm).toBe(false);
+  });
+}
+
 test("unsupported legacy hashes normalize to the overview", async ({ page }) => {
   await mockEmptyWorkspace(page);
-  await page.goto("/#jobs");
+  await page.goto("/#schedule");
   await expect(page).toHaveURL(/#overview$/);
   await expect(page.getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");
 });
@@ -226,7 +381,7 @@ test("empty states never fabricate operational records", async ({ page }) => {
   await mockEmptyWorkspace(page);
   await page.goto("/");
   await expect(page.getByText("You’re caught up")).toBeVisible();
-  await expect(page.getByText("Jobs are outside launch scope")).toBeVisible();
+  await expect(page.getByText("No active jobs yet")).toBeVisible();
   await expect(page.getByText("Schedule is outside launch scope")).toBeVisible();
 });
 

@@ -6,7 +6,7 @@ from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 
 from .config import Settings, get_settings
-from .domain import STAFF, Role
+from .domain import FIELD_STAFF, FINANCE_STAFF, STAFF, Role
 
 
 @dataclass(frozen=True)
@@ -195,6 +195,24 @@ def require_operations_staff(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Lead workspace access required",
+        )
+    return principal
+
+
+def require_job_staff(principal: Principal = Depends(require_staff)) -> Principal:
+    if principal.role not in FIELD_STAFF | FINANCE_STAFF:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Job workspace access required",
+        )
+    return principal
+
+
+def require_delivery_staff(principal: Principal = Depends(require_staff)) -> Principal:
+    if principal.role not in FIELD_STAFF:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Job delivery access required",
         )
     return principal
 

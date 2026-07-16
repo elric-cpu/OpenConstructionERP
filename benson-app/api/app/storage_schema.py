@@ -3,6 +3,8 @@ from sqlalchemy import (
     Column,
     Date,
     DateTime,
+    CheckConstraint,
+    ForeignKey,
     Integer,
     MetaData,
     String,
@@ -235,6 +237,48 @@ estimate_lines = Table(
     Column("unit_price_cents", Integer, nullable=False),
     Column("line_total_cents", BigInteger, nullable=False),
     UniqueConstraint("estimate_id", "position", name="uq_estimate_line_position"),
+)
+
+jobs = Table(
+    "jobs",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("number", String(40), nullable=False, unique=True),
+    Column(
+        "estimate_id",
+        String(36),
+        ForeignKey("estimates.id"),
+        nullable=False,
+        unique=True,
+    ),
+    Column(
+        "customer_id",
+        String(36),
+        ForeignKey("customers.id"),
+        nullable=False,
+        index=True,
+    ),
+    Column("title", String(300), nullable=False),
+    Column("scope_snapshot", Text, nullable=False),
+    Column("contract_value_cents", BigInteger, nullable=False),
+    Column("status", String(40), nullable=False),
+    Column("target_start", Date),
+    Column("target_completion", Date),
+    Column("assigned_to", String(320)),
+    Column("site_address", String(500), nullable=False, default=""),
+    Column("created_by", String(320), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    CheckConstraint("contract_value_cents >= 0", name="ck_jobs_contract_value"),
+    CheckConstraint(
+        "status IN ('planned', 'active', 'on_hold', 'completed', 'cancelled')",
+        name="ck_jobs_status",
+    ),
+    CheckConstraint(
+        "target_start IS NULL OR target_completion IS NULL "
+        "OR target_completion >= target_start",
+        name="ck_jobs_dates",
+    ),
 )
 
 employee_invites = Table(

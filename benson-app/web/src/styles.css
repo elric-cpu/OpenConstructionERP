@@ -2,6 +2,7 @@
 @import "./onboarding.css";
 @import "./customers.css";
 @import "./estimates.css";
+@import "./jobs.css";
 :root {
   --maroon: #722f37;
   --maroon-dark: #5c252c;

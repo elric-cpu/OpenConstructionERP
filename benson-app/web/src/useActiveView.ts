@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ActiveView } from "./types";
 
 function viewFromHash(): ActiveView | null {
   const route = window.location.hash.slice(1).split("?", 1)[0];
-  return ["overview", "leads", "customers", "estimates", "employees", "tasks", "activate"].includes(route)
+  return ["overview", "leads", "customers", "estimates", "jobs", "employees", "tasks", "activate"].includes(route)
     ? (route as ActiveView)
     : null;
 }
@@ -25,10 +25,14 @@ export function useActiveView(onNavigate: () => void) {
     return () => window.removeEventListener("hashchange", syncView);
   }, [onNavigate]);
 
-  const navigate = (view: Exclude<ActiveView, "activate">) => {
-    setActiveView(view);
-    window.history.replaceState(null, "", `#${view}`);
-    onNavigate();
-  };
-  return { activeView, navigate, openLeads: () => navigate("leads") };
+  const navigate = useCallback(
+    (view: Exclude<ActiveView, "activate">) => {
+      setActiveView(view);
+      window.history.replaceState(null, "", `#${view}`);
+      onNavigate();
+    },
+    [onNavigate],
+  );
+  const openLeads = useCallback(() => navigate("leads"), [navigate]);
+  return { activeView, navigate, openLeads };
 }

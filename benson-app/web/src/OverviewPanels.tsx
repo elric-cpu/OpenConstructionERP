@@ -44,11 +44,11 @@ export function DeferredPanels() {
           compact
         />
       </Panel>
-      <Panel title="Active jobs" subtitle="Current residential work." link="Coming later">
+      <Panel title="Active jobs" subtitle="Current residential work." link="Open Jobs">
         <Empty
           icon={<Hammer />}
-          title="Jobs are outside launch scope"
-          body="Qualified leads stay in the lead queue for this release."
+          title="No active jobs yet"
+          body="Accepted estimates become jobs in the delivery workspace."
           compact
         />
       </Panel>

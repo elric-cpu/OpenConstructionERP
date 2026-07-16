@@ -4,12 +4,33 @@ import { CustomerWorkspace } from "./CustomerWorkspace";
 import { EmployeeTasks } from "./EmployeeTasks";
 import { EstimateWorkspace } from "./EstimateWorkspace";
 import { LeadWorkspace } from "./LeadWorkspace";
+import { JobWorkspace } from "./JobWorkspace";
 import { NewHireWorkspace } from "./NewHireWorkspace";
 import { OperationsHome } from "./OperationsHome";
 import { useActiveView } from "./useActiveView";
 import { useGoogleIdentity } from "./useGoogleIdentity";
 import { useOperationsData } from "./useOperationsData";
-import type { SpamFilter } from "./types";
+import type { ActiveView, PortalSession, RequestStatus, SpamFilter } from "./types";
+
+function useRouteGuards(
+  activeView: ActiveView,
+  clearSelection: () => void,
+  navigate: (view: Exclude<ActiveView, "activate">) => void,
+  session: PortalSession | null,
+  requestStatus: RequestStatus,
+) {
+  useEffect(() => {
+    if (requestStatus === "auth-required") clearSelection();
+  }, [clearSelection, requestStatus]);
+  useEffect(() => {
+    if (requestStatus !== "ready" || !session) return;
+    if (session.kind === "employee" && activeView !== "tasks") navigate("tasks");
+    if (session.kind === "staff" && ["tasks", "activate"].includes(activeView)) navigate("overview");
+    if (session.kind === "staff" && ["field", "accounting"].includes(session.role) && activeView !== "jobs")
+      navigate("jobs");
+    if (activeView === "employees" && !["owner", "admin"].includes(session.role)) navigate("overview");
+  }, [activeView, navigate, requestStatus, session]);
+}
 
 export function App() {
   const [menu, setMenu] = useState(false);
@@ -50,16 +71,13 @@ export function App() {
     [operations.setRequestStatus],
   );
   const googleButton = useGoogleIdentity(operations.requestStatus, onCredential, onIdentityUnavailable);
+  const canApprove = ["owner", "admin"].includes(operations.portalSession?.role || "");
+  const canPlanJobs = ["owner", "admin", "office", "estimator_pm"].includes(operations.portalSession?.role || "");
+  const canDeliverJobs = ["owner", "admin", "office", "estimator_pm", "field"].includes(
+    operations.portalSession?.role || "",
+  );
 
-  useEffect(() => {
-    if (operations.requestStatus === "auth-required") clearSelection();
-  }, [clearSelection, operations.requestStatus]);
-  useEffect(() => {
-    if (operations.requestStatus !== "ready" || !operations.portalSession) return;
-    if (operations.portalSession.kind === "employee" && activeView !== "tasks") navigate("tasks");
-    if (operations.portalSession.kind === "staff" && ["tasks", "activate"].includes(activeView)) navigate("overview");
-    if (activeView === "employees" && !["owner", "admin"].includes(operations.portalSession.role)) navigate("overview");
-  }, [activeView, navigate, operations.portalSession, operations.requestStatus]);
+  useRouteGuards(activeView, clearSelection, navigate, operations.portalSession, operations.requestStatus);
 
   const openLead = (leadId: string) => {
     openLeads();
@@ -122,10 +140,13 @@ export function App() {
             setCustomers={operations.setCustomers}
           />
         ) : operations.requestStatus === "ready" && activeView === "estimates" ? (
-          <EstimateWorkspace
-            canVoid={["owner", "admin"].includes(operations.portalSession?.role || "")}
+          <EstimateWorkspace canVoid={canApprove} credential={operations.credential} customers={operations.customers} />
+        ) : operations.requestStatus === "ready" && activeView === "jobs" ? (
+          <JobWorkspace
+            canCancel={canApprove}
+            canDeliver={canDeliverJobs}
+            canPlan={canPlanJobs}
             credential={operations.credential}
-            customers={operations.customers}
           />
         ) : operations.requestStatus === "ready" && selectedLead ? (
           <LeadWorkspace
