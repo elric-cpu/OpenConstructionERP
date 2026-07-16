@@ -11,7 +11,7 @@ rollback, and approved production smoke evidence all exist.
 | Customers | Persisted guarded workflow and automated tests | Candidate deploy, synthetic UAT, backup/restore proof |
 | Employees/onboarding | Invite, Tasks, encrypted evidence, conditional rules | Full rejection/resubmission/offboarding UAT and HR/legal approvals |
 | Estimates | Persisted guarded workflow and automated tests | Candidate deploy, synthetic delivery/decision UAT, backup/restore proof |
-| Jobs | Not implemented in Benson overlay | Full vertical slice |
+| Jobs | Persisted accepted-estimate conversion, guarded delivery states, automated tests | Candidate deploy, synthetic delivery UAT, backup/restore proof |
 | Schedule | Not implemented in Benson overlay | Full vertical slice |
 | Field records | Not implemented in Benson overlay | Full vertical slice |
 | Change orders | Not implemented in Benson overlay | Full vertical slice |

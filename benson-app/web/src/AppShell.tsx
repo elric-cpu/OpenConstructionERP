@@ -18,7 +18,7 @@ import type { ActiveView, PortalSession, RequestStatus } from "./types";
 const nav = [
   [Home, "Overview", "overview"],
   [Inbox, "Leads", "leads"],
-  [BriefcaseBusiness, "Jobs", null],
+  [BriefcaseBusiness, "Jobs", "jobs"],
   [CalendarDays, "Schedule", null],
   [ClipboardCheck, "Estimates", "estimates"],
   [Users, "Customers", "customers"],
@@ -54,10 +54,12 @@ export function AppShell({
     offline: "Connection issue",
   }[requestStatus];
   const employeePortal = portalSession?.kind === "employee";
+  const role = portalSession?.role;
+  const roleNav = ["field", "accounting"].includes(role || "") ? [nav[2]] : nav;
   const staffNav =
-    portalSession && ["owner", "admin"].includes(portalSession.role)
-      ? [...nav.slice(0, 2), [UserPlus, "New hires", "employees"] as const, ...nav.slice(2)]
-      : nav;
+    role && ["owner", "admin"].includes(role)
+      ? [...roleNav.slice(0, 2), [UserPlus, "New hires", "employees"] as const, ...roleNav.slice(2)]
+      : roleNav;
   const visibleNav = employeePortal ? ([[ListChecks, "Tasks", "tasks"]] as const) : staffNav;
   const showSearch = ["overview", "leads", "customers"].includes(activeView);
   return (
@@ -117,7 +119,13 @@ export function AppShell({
             </div>
           ) : (
             <div className="header-context">
-              {employeePortal ? "Onboarding" : activeView === "estimates" ? "Sales" : "People operations"}
+              {employeePortal
+                ? "Onboarding"
+                : activeView === "estimates"
+                  ? "Sales"
+                  : activeView === "jobs"
+                    ? "Delivery"
+                    : "People operations"}
             </div>
           )}
           <div className="header-actions">

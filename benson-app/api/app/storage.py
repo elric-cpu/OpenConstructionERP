@@ -7,6 +7,7 @@ from .employee_store import EmployeeStoreMixin
 from .employee_task_store import EmployeeTaskStoreMixin
 from .estimate_store import EstimateStoreMixin
 from .lead_store import LeadStoreMixin
+from .job_store import JobStoreMixin
 from .logistics_store import LogisticsStoreMixin
 from .notification_store import NotificationStoreMixin
 from .storage_schema import (
@@ -20,6 +21,7 @@ from .storage_schema import (
 class OperationsStore(
     CustomerStoreMixin,
     EstimateStoreMixin,
+    JobStoreMixin,
     EmployeeStoreMixin,
     EmployeeTaskStoreMixin,
     EmployeeDocumentStoreMixin,

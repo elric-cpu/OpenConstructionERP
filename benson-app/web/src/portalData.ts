@@ -45,6 +45,7 @@ export async function loadPortalData({
   const headers = requestHeaders(credential);
   const sessionResponse = await fetch("/api/benson/v1/session", { headers, signal });
   const session: PortalSession | null = sessionResponse.ok ? await sessionResponse.json() : null;
+  if (!session) return { kind: "unauthorized" };
   if (session?.kind === "employee") {
     const [tasksResponse, documentsResponse] = await Promise.all([
       fetch("/api/benson/v1/onboarding/tasks", { headers, signal }),
@@ -59,6 +60,22 @@ export async function loadPortalData({
       documentsResponse.json() as Promise<EmployeeDocument[]>,
     ]);
     return { kind: "employee", session, tasks: tasksPayload.tasks, documents };
+  }
+  const crmRoles = ["owner", "admin", "office", "estimator_pm"];
+  if (!crmRoles.includes(session.role)) {
+    return {
+      kind: "staff",
+      session,
+      dashboard: {
+        metrics: { new_leads: 0, active_jobs: 0, open_tasks: 0, unbilled_work: 0 },
+        attention: [],
+        schedule: [],
+        jobs: [],
+      },
+      leads: [],
+      customers: [],
+      notificationSettings: null,
+    };
   }
   const [dashboardResponse, leadsResponse, customersResponse, settingsResponse] = await Promise.all([
     fetch("/api/v1/dashboard", { headers, signal }),
@@ -79,7 +96,7 @@ export async function loadPortalData({
   ]);
   return {
     kind: "staff",
-    session: session ?? { kind: "staff", email: "", role: "office", default_view: "overview", employee: null },
+    session,
     dashboard,
     leads: leadsPayload.leads,
     customers,

@@ -319,6 +319,74 @@ ESTIMATE_TRANSITIONS = {
 }
 
 
+class JobCreateFromEstimate(BaseModel):
+    target_start: date | None = None
+    target_completion: date | None = None
+    assigned_to: EmailStr | None = None
+    site_address: str = Field(default="", max_length=500)
+
+    @model_validator(mode="after")
+    def dates_are_ordered(self) -> "JobCreateFromEstimate":
+        if (
+            self.target_start
+            and self.target_completion
+            and self.target_completion < self.target_start
+        ):
+            raise ValueError("Target completion cannot precede target start")
+        return self
+
+
+class JobUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=300)
+    target_start: date | None = None
+    target_completion: date | None = None
+    assigned_to: EmailStr | None = None
+    site_address: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def dates_are_ordered(self) -> "JobUpdate":
+        if (
+            self.target_start
+            and self.target_completion
+            and self.target_completion < self.target_start
+        ):
+            raise ValueError("Target completion cannot precede target start")
+        return self
+
+
+class JobTransition(BaseModel):
+    status: Literal["planned", "active", "on_hold", "completed", "cancelled"]
+    note: str = Field(default="", max_length=2_000)
+
+
+class JobSummary(BaseModel):
+    id: UUID
+    number: str
+    estimate_id: UUID
+    estimate_number: str
+    customer_id: UUID
+    customer_name: str
+    title: str
+    scope_snapshot: str
+    contract_value_cents: int
+    status: Literal["planned", "active", "on_hold", "completed", "cancelled"]
+    target_start: date | None = None
+    target_completion: date | None = None
+    assigned_to: EmailStr | None = None
+    site_address: str
+    created_at: datetime
+    updated_at: datetime
+
+
+JOB_TRANSITIONS = {
+    "planned": {"active", "on_hold", "cancelled"},
+    "active": {"on_hold", "completed", "cancelled"},
+    "on_hold": {"planned", "active", "cancelled"},
+    "completed": set(),
+    "cancelled": set(),
+}
+
+
 class EmployeeCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     email: EmailStr
