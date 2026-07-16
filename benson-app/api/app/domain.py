@@ -369,6 +369,8 @@ class JobSummary(BaseModel):
     title: str
     scope_snapshot: str
     contract_value_cents: int
+    approved_change_order_cents: int
+    billing_eligible_cents: int
     status: Literal["planned", "active", "on_hold", "completed", "cancelled"]
     target_start: date | None = None
     target_completion: date | None = None

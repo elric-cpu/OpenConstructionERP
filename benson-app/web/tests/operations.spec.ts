@@ -95,6 +95,60 @@ test("sidebar navigation switches launch views and does not route to deferred mo
   await expect(page.getByRole("heading", { name: "Schedule", exact: true })).toBeVisible();
 });
 
+test("field records support an accessible desktop and mobile draft workflow", async ({ page }) => {
+  await mockEmptyWorkspace(page);
+  const job = {
+    id: "job-field-1",
+    number: "JOB-2026-FIELD",
+    estimate_id: "estimate-1",
+    estimate_number: "EST-1",
+    customer_id: "customer-1",
+    customer_name: "Test Homeowner",
+    title: "Window installation",
+    scope_snapshot: "Install windows",
+    contract_value_cents: 400000,
+    status: "active",
+    target_start: "2026-08-03",
+    target_completion: "2026-08-05",
+    assigned_to: "office@bensonhomesolutions.com",
+    site_address: "10 Main Street",
+    created_at: "2026-07-16T00:00:00Z",
+    updated_at: "2026-07-16T00:00:00Z",
+  };
+  await page.route("**/api/benson/v1/jobs", (route) => route.fulfill({ json: [job] }));
+  await page.route("**/api/benson/v1/field-records", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: [] });
+    const payload = route.request().postDataJSON() as Record<string, unknown>;
+    return route.fulfill({
+      status: 201,
+      json: {
+        ...payload,
+        id: "field-report-1",
+        job_number: job.number,
+        job_title: job.title,
+        revision: 1,
+        previous_revision_id: null,
+        status: "draft",
+        version: 1,
+        created_by: "office@bensonhomesolutions.com",
+        submitted_by: null,
+        submitted_at: null,
+        created_at: "2026-08-03T20:00:00Z",
+        updated_at: "2026-08-03T20:00:00Z",
+      },
+    });
+  });
+  await page.goto("/#field-records");
+  await expect(page.getByRole("heading", { name: "Field records" })).toBeVisible();
+  await page.getByRole("button", { name: "+ Daily report" }).click();
+  await page.getByLabel("Completed work").fill("Installed two windows.");
+  await page.getByLabel("Safety observations").fill("Ladder tie-offs checked.");
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByText("Installed two windows.")).toBeVisible();
+  const results = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
+  expect(results.violations.filter((item) => ["serious", "critical"].includes(item.impact ?? ""))).toEqual([]);
+});
+
 test("staff can create and edit a persisted customer", async ({ page }) => {
   await mockEmptyWorkspace(page);
   let customer = {

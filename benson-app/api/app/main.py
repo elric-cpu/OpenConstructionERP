@@ -7,9 +7,11 @@ from fastapi.staticfiles import StaticFiles
 
 from .ai_routes import router as ai_router
 from .asset_routes import router as asset_router
+from .change_order_routes import router as change_order_router
 from .config import get_settings
 from .customer_routes import router as customer_router
 from .estimate_routes import router as estimate_router
+from .field_record_routes import router as field_record_router
 from .lead_routes import router as lead_router
 from .job_routes import router as job_router
 from .onboarding_routes import router as onboarding_router
@@ -38,6 +40,8 @@ app.include_router(customer_router)
 app.include_router(estimate_router)
 app.include_router(job_router)
 app.include_router(schedule_router)
+app.include_router(field_record_router)
+app.include_router(change_order_router)
 app.include_router(onboarding_router)
 app.include_router(lead_router)
 app.include_router(ai_router)

@@ -261,6 +261,8 @@ jobs = Table(
     Column("title", String(300), nullable=False),
     Column("scope_snapshot", Text, nullable=False),
     Column("contract_value_cents", BigInteger, nullable=False),
+    Column("approved_change_order_cents", BigInteger, nullable=False, default=0),
+    Column("billing_eligible_cents", BigInteger, nullable=False, default=0),
     Column("status", String(40), nullable=False),
     Column("target_start", Date),
     Column("target_completion", Date),
@@ -270,6 +272,10 @@ jobs = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
     CheckConstraint("contract_value_cents >= 0", name="ck_jobs_contract_value"),
+    CheckConstraint(
+        "approved_change_order_cents >= 0", name="ck_jobs_approved_change_orders"
+    ),
+    CheckConstraint("billing_eligible_cents >= 0", name="ck_jobs_billing_eligible"),
     CheckConstraint(
         "status IN ('planned', 'active', 'on_hold', 'completed', 'cancelled')",
         name="ck_jobs_status",
@@ -324,6 +330,80 @@ schedule_status_history = Table(
     Column("note", Text, nullable=False),
     Column("actor", String(320), nullable=False),
     Column("occurred_at", DateTime(timezone=True), nullable=False),
+)
+
+field_reports = Table(
+    "field_reports",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("job_id", String(36), ForeignKey("jobs.id"), nullable=False, index=True),
+    Column("service_date", Date, nullable=False, index=True),
+    Column("revision", Integer, nullable=False),
+    Column("previous_revision_id", String(36), ForeignKey("field_reports.id")),
+    Column("status", String(40), nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("workforce_total", Integer, nullable=False),
+    Column("workforce_hours", String(40), nullable=False),
+    Column("weather", Text, nullable=False),
+    Column("completed_work", Text, nullable=False),
+    Column("materials", Text, nullable=False),
+    Column("equipment", Text, nullable=False),
+    Column("delays", Text, nullable=False),
+    Column("issues", Text, nullable=False),
+    Column("safety_observations", Text, nullable=False),
+    Column("created_by", String(320), nullable=False),
+    Column("submitted_by", String(320)),
+    Column("submitted_at", DateTime(timezone=True)),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    UniqueConstraint("job_id", "service_date", "revision", name="uq_field_revision"),
+    CheckConstraint("revision > 0", name="ck_field_reports_revision"),
+    CheckConstraint("version > 0", name="ck_field_reports_version"),
+    CheckConstraint("workforce_total >= 0", name="ck_field_reports_workforce"),
+    CheckConstraint(
+        "status IN ('draft', 'submitted', 'correction_required', 'corrected', 'superseded')",
+        name="ck_field_reports_status",
+    ),
+)
+
+field_report_corrections = Table(
+    "field_report_corrections",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column(
+        "field_report_id",
+        String(36),
+        ForeignKey("field_reports.id"),
+        nullable=False,
+        index=True,
+    ),
+    Column("reason", Text, nullable=False),
+    Column("requested_by", String(320), nullable=False),
+    Column("requested_at", DateTime(timezone=True), nullable=False),
+)
+
+field_report_photos = Table(
+    "field_report_photos",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column(
+        "field_report_id",
+        String(36),
+        ForeignKey("field_reports.id"),
+        nullable=False,
+        index=True,
+    ),
+    Column("stage", String(20), nullable=False),
+    Column("original_name", String(500), nullable=False),
+    Column("storage_key", String(1_000), nullable=False),
+    Column("content_type", String(120), nullable=False),
+    Column("size_bytes", Integer, nullable=False),
+    Column("sha256", String(64), nullable=False),
+    Column("uploaded_by", String(320), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    CheckConstraint(
+        "stage IN ('before', 'during', 'after')", name="ck_field_photo_stage"
+    ),
 )
 
 employee_invites = Table(

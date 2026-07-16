@@ -3,6 +3,7 @@ import { AppShell } from "./AppShell";
 import { CustomerWorkspace } from "./CustomerWorkspace";
 import { EmployeeTasks } from "./EmployeeTasks";
 import { EstimateWorkspace } from "./EstimateWorkspace";
+import { FieldRecordWorkspace } from "./FieldRecordWorkspace";
 import { LeadWorkspace } from "./LeadWorkspace";
 import { JobWorkspace } from "./JobWorkspace";
 import { NewHireWorkspace } from "./NewHireWorkspace";
@@ -27,7 +28,11 @@ function useRouteGuards(
     if (requestStatus !== "ready" || !session) return;
     if (session.kind === "employee" && activeView !== "tasks") navigate("tasks");
     if (session.kind === "staff" && ["tasks", "activate"].includes(activeView)) navigate("overview");
-    if (session.kind === "staff" && session.role === "field" && !["jobs", "schedule"].includes(activeView))
+    if (
+      session.kind === "staff" &&
+      session.role === "field" &&
+      !["jobs", "schedule", "field-records"].includes(activeView)
+    )
       navigate("jobs");
     if (session.kind === "staff" && session.role === "accounting" && activeView !== "jobs") navigate("jobs");
     if (activeView === "employees" && !["owner", "admin"].includes(session.role)) navigate("overview");
@@ -46,6 +51,9 @@ function DeliveryWorkspace({
   const role = session?.role || "";
   if (activeView === "schedule") {
     return <ScheduleWorkspace credential={credential} email={session?.email || ""} role={role} />;
+  }
+  if (activeView === "field-records") {
+    return <FieldRecordWorkspace credential={credential} role={role} />;
   }
   return (
     <JobWorkspace
@@ -162,7 +170,7 @@ export function App() {
           />
         ) : operations.requestStatus === "ready" && activeView === "estimates" ? (
           <EstimateWorkspace canVoid={canApprove} credential={operations.credential} customers={operations.customers} />
-        ) : operations.requestStatus === "ready" && ["jobs", "schedule"].includes(activeView) ? (
+        ) : operations.requestStatus === "ready" && ["jobs", "schedule", "field-records"].includes(activeView) ? (
           <DeliveryWorkspace
             activeView={activeView}
             credential={operations.credential}
