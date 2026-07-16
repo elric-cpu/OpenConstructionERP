@@ -3,6 +3,7 @@ from functools import lru_cache
 from .ai_store import AiStoreMixin
 from .employee_document_store import EmployeeDocumentStoreMixin
 from .employee_store import EmployeeStoreMixin
+from .employee_task_store import EmployeeTaskStoreMixin
 from .lead_store import LeadStoreMixin
 from .notification_store import NotificationStoreMixin
 from .storage_schema import (
@@ -15,6 +16,7 @@ from .storage_schema import (
 
 class OperationsStore(
     EmployeeStoreMixin,
+    EmployeeTaskStoreMixin,
     EmployeeDocumentStoreMixin,
     NotificationStoreMixin,
     LeadStoreMixin,

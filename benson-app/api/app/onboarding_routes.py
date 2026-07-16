@@ -14,7 +14,10 @@ from .domain import (
     EmployeeDocumentSummary,
     EmployeeInviteActivation,
     EmployeeInviteReceipt,
+    EmployeeSignatureCreate,
+    EmployeeSignatureSummary,
     EmployeeSummary,
+    EmployeeTaskApplicabilityReview,
     EmployeeTaskReview,
     EmployeeTaskSummary,
 )
@@ -156,12 +159,13 @@ def onboarding_tasks(
     if not employee:
         raise HTTPException(status_code=403, detail="Active employee account required")
     tasks = store(settings).list_employee_tasks(str(employee.id))
-    completed = sum(task.status in {"completed", "not_applicable"} for task in tasks)
+    applicable = [task for task in tasks if task.status != "not_applicable"]
+    completed = sum(task.status == "completed" for task in applicable)
     return {
         "default_view": "tasks",
         "employee": employee,
         "tasks": tasks,
-        "progress": {"completed": completed, "total": len(tasks)},
+        "progress": {"completed": completed, "total": len(applicable)},
     }
 
 
@@ -179,43 +183,33 @@ def employee_tasks_for_review(
     return store(settings).list_employee_tasks(employee_id)
 
 
-@router.get(
-    "/api/benson/v1/employees/{employee_id}/tasks",
-    response_model=list[EmployeeTaskSummary],
-)
-def employee_tasks(
+async def _upload_task_evidence(
+    *,
     employee_id: str,
-    _principal: Principal = Depends(require_owner),
-    settings: Settings = Depends(get_settings),
-) -> list[EmployeeTaskSummary]:
-    employees = {str(employee.id) for employee in store(settings).list_employees()}
-    if employee_id not in employees:
-        raise HTTPException(status_code=404, detail="Employee not found")
-    return store(settings).list_employee_tasks(employee_id)
-
-
-@router.post(
-    "/api/benson/v1/onboarding/tasks/{task_id}/evidence",
-    response_model=EmployeeDocumentSummary,
-    status_code=201,
-)
-async def upload_onboarding_evidence(
     task_id: str,
-    file: Annotated[UploadFile, File()],
-    principal: Principal = Depends(require_employee),
-    settings: Settings = Depends(get_settings),
+    file: UploadFile,
+    actor: str,
+    actor_party: str,
+    settings: Settings,
 ) -> EmployeeDocumentSummary:
     operations = store(settings)
-    employee = operations.get_employee_by_identity(principal.email, principal.subject)
-    if not employee:
-        raise HTTPException(status_code=403, detail="Active employee account required")
-    context = operations.employee_document_upload_context(str(employee.id), task_id)
+    context = operations.employee_document_upload_context(employee_id, task_id)
     if not context:
         raise HTTPException(status_code=404, detail="Onboarding task not found")
     task = context["task"]
-    if task["responsible_party"] not in {"employee", "contractor"}:
+    expected_parties = (
+        {"employee", "contractor"} if actor_party == "employee" else {"employer"}
+    )
+    expected_method = (
+        "document_upload" if actor_party == "employee" else "employer_evidence"
+    )
+    if (
+        task["responsible_party"] not in expected_parties
+        or task["completion_method"] != expected_method
+    ):
         raise HTTPException(
-            status_code=409, detail="This task is completed by Benson staff"
+            status_code=409,
+            detail="The signed-in role cannot submit evidence for this task",
         )
     if task["status"] not in {"pending", "rejected"}:
         raise HTTPException(
@@ -237,7 +231,7 @@ async def upload_onboarding_evidence(
         storage_key, digest, nonce, key_version = await run_in_threadpool(
             store_employee_document,
             settings,
-            employee_id=str(employee.id),
+            employee_id=employee_id,
             task_id=task_id,
             version=context["version"],
             data_classification=context["data_classification"],
@@ -251,7 +245,7 @@ async def upload_onboarding_evidence(
         ) from error
     try:
         return operations.add_employee_document(
-            employee_id=str(employee.id),
+            employee_id=employee_id,
             task_id=task_id,
             version=context["version"],
             original_name=safe_name,
@@ -262,11 +256,62 @@ async def upload_onboarding_evidence(
             data_classification=context["data_classification"],
             nonce_base64=nonce,
             key_version=key_version,
-            actor=principal.email,
+            actor=actor,
+            actor_party=actor_party,
         )
     except InvalidEmployeeTaskTransition as error:
         await run_in_threadpool(delete_upload, settings, storage_key)
         raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post(
+    "/api/benson/v1/onboarding/tasks/{task_id}/evidence",
+    response_model=EmployeeDocumentSummary,
+    status_code=201,
+)
+async def upload_onboarding_evidence(
+    task_id: str,
+    file: Annotated[UploadFile, File()],
+    principal: Principal = Depends(require_employee),
+    settings: Settings = Depends(get_settings),
+) -> EmployeeDocumentSummary:
+    employee = store(settings).get_employee_by_identity(
+        principal.email, principal.subject
+    )
+    if not employee:
+        raise HTTPException(status_code=403, detail="Active employee account required")
+    return await _upload_task_evidence(
+        employee_id=str(employee.id),
+        task_id=task_id,
+        file=file,
+        actor=principal.email,
+        actor_party="employee",
+        settings=settings,
+    )
+
+
+@router.post(
+    "/api/benson/v1/employees/{employee_id}/tasks/{task_id}/evidence",
+    response_model=EmployeeDocumentSummary,
+    status_code=201,
+)
+async def upload_employer_task_evidence(
+    employee_id: str,
+    task_id: str,
+    file: Annotated[UploadFile, File()],
+    principal: Principal = Depends(require_owner),
+    settings: Settings = Depends(get_settings),
+) -> EmployeeDocumentSummary:
+    if not store(settings).get_employee(employee_id):
+        raise HTTPException(status_code=404, detail="Employee not found")
+    return await _upload_task_evidence(
+        employee_id=employee_id,
+        task_id=task_id,
+        file=file,
+        actor=principal.email,
+        actor_party="employer",
+        settings=settings,
+    )
 
 
 @router.get(
@@ -285,6 +330,53 @@ def onboarding_documents(
 
 
 @router.get(
+    "/api/benson/v1/onboarding/signatures",
+    response_model=list[EmployeeSignatureSummary],
+)
+def onboarding_signatures(
+    principal: Principal = Depends(require_employee),
+    settings: Settings = Depends(get_settings),
+) -> list[EmployeeSignatureSummary]:
+    employee = store(settings).get_employee_by_identity(
+        principal.email, principal.subject
+    )
+    if not employee:
+        raise HTTPException(status_code=403, detail="Active employee account required")
+    return store(settings).list_employee_signatures(str(employee.id))
+
+
+@router.post(
+    "/api/benson/v1/onboarding/tasks/{task_id}/signature",
+    response_model=EmployeeSignatureSummary,
+    status_code=201,
+)
+def sign_onboarding_task(
+    task_id: str,
+    signature: EmployeeSignatureCreate,
+    principal: Principal = Depends(require_employee),
+    settings: Settings = Depends(get_settings),
+) -> EmployeeSignatureSummary:
+    employee = store(settings).get_employee_by_identity(
+        principal.email, principal.subject
+    )
+    if not employee or not principal.subject:
+        raise HTTPException(status_code=403, detail="Active employee account required")
+    try:
+        result = store(settings).submit_employee_signature(
+            str(employee.id),
+            task_id,
+            signer_email=principal.email,
+            signer_subject=principal.subject,
+            typed_name=signature.typed_name,
+        )
+    except InvalidEmployeeTaskTransition as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    if not result:
+        raise HTTPException(status_code=404, detail="Onboarding task not found")
+    return result
+
+
+@router.get(
     "/api/benson/v1/employees/{employee_id}/documents",
     response_model=list[EmployeeDocumentSummary],
 )
@@ -296,6 +388,20 @@ def employee_documents_for_review(
     if not store(settings).get_employee(employee_id):
         raise HTTPException(status_code=404, detail="Employee not found")
     return store(settings).list_employee_documents(employee_id)
+
+
+@router.get(
+    "/api/benson/v1/employees/{employee_id}/signatures",
+    response_model=list[EmployeeSignatureSummary],
+)
+def employee_signatures_for_review(
+    employee_id: str,
+    _principal: Principal = Depends(require_owner),
+    settings: Settings = Depends(get_settings),
+) -> list[EmployeeSignatureSummary]:
+    if not store(settings).get_employee(employee_id):
+        raise HTTPException(status_code=404, detail="Employee not found")
+    return store(settings).list_employee_signatures(employee_id)
 
 
 async def employee_document_response(
@@ -361,6 +467,34 @@ async def download_employee_document(
     return await employee_document_response(
         document_id, employee_id=employee_id, actor=principal.email, settings=settings
     )
+
+
+@router.patch(
+    "/api/benson/v1/employees/{employee_id}/tasks/{task_id}/applicability",
+    response_model=EmployeeTaskSummary,
+)
+def review_employee_task_applicability(
+    employee_id: str,
+    task_id: str,
+    review: EmployeeTaskApplicabilityReview,
+    principal: Principal = Depends(require_owner),
+    settings: Settings = Depends(get_settings),
+) -> EmployeeTaskSummary:
+    try:
+        task = store(settings).decide_employee_task_applicability(
+            employee_id,
+            task_id,
+            decision=review.decision,
+            comment=review.comment,
+            reviewer_name=review.reviewer_name,
+            reviewer_qualification=review.reviewer_qualification,
+            actor=principal.email,
+        )
+    except InvalidEmployeeTaskTransition as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    if not task:
+        raise HTTPException(status_code=404, detail="Onboarding task not found")
+    return task
 
 
 @router.patch(

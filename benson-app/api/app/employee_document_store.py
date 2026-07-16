@@ -5,13 +5,12 @@ from uuid import uuid4
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
-from .domain import EmployeeDocumentSummary, EmployeeTaskSummary
+from .domain import EmployeeDocumentSummary
 from .store_base import StoreBase
 from .storage_schema import (
     InvalidEmployeeTaskTransition,
     employee_documents,
     employee_tasks,
-    employees,
 )
 
 
@@ -37,22 +36,10 @@ class EmployeeDocumentStoreMixin(StoreBase):
                     employee_documents.c.task_id == task_id
                 )
             ).scalar_one()
-        highly_restricted = {
-            "form-i9",
-            "federal-w4",
-            "oregon-w4",
-            "payroll-enrollment",
-            "payment-election",
-            "contractor-w9",
-        }
         return {
             "task": dict(task),
             "version": int(latest_version or 0) + 1,
-            "data_classification": (
-                "highly_restricted"
-                if task["requirement_id"] in highly_restricted
-                else "restricted"
-            ),
+            "data_classification": task["data_classification"],
         }
 
     def add_employee_document(
@@ -70,6 +57,7 @@ class EmployeeDocumentStoreMixin(StoreBase):
         nonce_base64: str,
         key_version: str,
         actor: str,
+        actor_party: str,
     ) -> EmployeeDocumentSummary:
         now = datetime.now(UTC)
         document_id = str(uuid4())
@@ -86,9 +74,21 @@ class EmployeeDocumentStoreMixin(StoreBase):
             )
             if not task:
                 raise InvalidEmployeeTaskTransition("Onboarding task not found")
-            if task["responsible_party"] not in {"employee", "contractor"}:
+            allowed_parties = (
+                {"employee", "contractor"}
+                if actor_party == "employee"
+                else {"employer"}
+            )
+            if task["responsible_party"] not in allowed_parties:
                 raise InvalidEmployeeTaskTransition(
-                    "This task is completed by Benson staff"
+                    "The signed-in role cannot submit evidence for this task"
+                )
+            expected_method = (
+                "employer_evidence" if actor_party == "employer" else "document_upload"
+            )
+            if task["completion_method"] != expected_method:
+                raise InvalidEmployeeTaskTransition(
+                    "This task does not accept uploaded evidence from this role"
                 )
             if task["status"] not in {"pending", "rejected"}:
                 raise InvalidEmployeeTaskTransition(
@@ -199,87 +199,3 @@ class EmployeeDocumentStoreMixin(StoreBase):
                 subject_id=employee_id,
                 payload={"document_id": document_id},
             )
-
-    def review_employee_task(
-        self, employee_id: str, task_id: str, *, decision: str, comment: str, actor: str
-    ) -> EmployeeTaskSummary | None:
-        now = datetime.now(UTC)
-        with self.engine.begin() as db:
-            task = (
-                db.execute(
-                    select(employee_tasks).where(
-                        employee_tasks.c.id == task_id,
-                        employee_tasks.c.employee_id == employee_id,
-                    )
-                )
-                .mappings()
-                .first()
-            )
-            if not task:
-                return None
-            if decision == "complete":
-                if task["status"] == "blocked":
-                    raise InvalidEmployeeTaskTransition(
-                        "Blocked compliance tasks require applicability approval first"
-                    )
-                evidence_exists = db.execute(
-                    select(func.count())
-                    .select_from(employee_documents)
-                    .where(
-                        employee_documents.c.task_id == task_id,
-                        employee_documents.c.status == "active",
-                    )
-                ).scalar_one()
-                if task["evidence_required"] and not evidence_exists:
-                    raise InvalidEmployeeTaskTransition(
-                        "Required evidence has not been submitted"
-                    )
-                status_value = "completed"
-                completed_at = now
-                completed_by = actor
-            elif decision == "reject":
-                if task["status"] != "submitted":
-                    raise InvalidEmployeeTaskTransition(
-                        "Only submitted tasks can be rejected"
-                    )
-                status_value = "rejected"
-                completed_at = None
-                completed_by = None
-            else:
-                status_value = "not_applicable"
-                completed_at = now
-                completed_by = actor
-            db.execute(
-                update(employee_tasks)
-                .where(employee_tasks.c.id == task_id)
-                .values(
-                    status=status_value,
-                    completed_at=completed_at,
-                    completed_by=completed_by,
-                    updated_at=now,
-                )
-            )
-            self._audit(
-                db,
-                event=f"employee.task_{status_value}",
-                actor=actor,
-                subject_type="employee",
-                subject_id=employee_id,
-                payload={"task_id": task_id, "comment": comment},
-            )
-            remaining = db.execute(
-                select(func.count())
-                .select_from(employee_tasks)
-                .where(
-                    employee_tasks.c.employee_id == employee_id,
-                    employee_tasks.c.status.not_in(("completed", "not_applicable")),
-                )
-            ).scalar_one()
-            if remaining == 0:
-                db.execute(
-                    update(employees)
-                    .where(employees.c.id == employee_id)
-                    .values(status="onboarding_complete", updated_at=now)
-                )
-        tasks = {str(item.id): item for item in self.list_employee_tasks(employee_id)}
-        return tasks[task_id]

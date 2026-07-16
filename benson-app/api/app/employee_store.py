@@ -63,11 +63,33 @@ class EmployeeStoreMixin(StoreBase):
                             requirement_id=task["requirement_id"],
                             label=task["label"],
                             responsible_party=task["responsible_party"],
-                            status="blocked" if task["blocked"] else "pending",
-                            due_date=employee.start_date,
+                            status=task["status"],
+                            due_date=task["due_date"],
                             instructions=task["instructions"],
                             applicability_reason=task["applicability_reason"],
                             evidence_required=int(task["evidence_required"]),
+                            completion_method=task["completion_method"],
+                            applicability_review_required=int(
+                                task["applicability_review_required"]
+                            ),
+                            applicability_status=task["applicability_status"],
+                            retention_rule=task["retention_rule"],
+                            data_classification=task["data_classification"],
+                            official_source=task["official_source"],
+                            legal_review_status=task["legal_review_status"],
+                            signature_statement=task["signature_statement"],
+                            completed_at=(
+                                now if task["status"] == "not_applicable" else None
+                            ),
+                            completed_by=(
+                                actor if task["status"] == "not_applicable" else None
+                            ),
+                            applicability_decided_at=(
+                                now if task["status"] == "not_applicable" else None
+                            ),
+                            applicability_decided_by=(
+                                actor if task["status"] == "not_applicable" else None
+                            ),
                             rule_version=RULE_VERSION,
                             created_at=now,
                             updated_at=now,

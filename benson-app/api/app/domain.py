@@ -300,6 +300,23 @@ class EmployeeTaskSummary(BaseModel):
     instructions: str
     applicability_reason: str
     evidence_required: bool
+    completion_method: Literal[
+        "document_upload",
+        "employee_signature",
+        "employer_evidence",
+        "manual_review",
+    ]
+    applicability_review_required: bool
+    applicability_status: Literal["applied", "pending_review", "not_applicable"]
+    retention_rule: str
+    data_classification: Literal[
+        "internal", "confidential", "restricted", "highly_restricted"
+    ]
+    official_source: str
+    legal_review_status: Literal["pending", "approved"]
+    signature_statement: str | None = None
+    applicability_decided_at: datetime | None = None
+    applicability_decided_by: str | None = None
     rule_version: str
     completed_at: datetime | None = None
     completed_by: str | None = None
@@ -323,8 +340,34 @@ class EmployeeDocumentSummary(BaseModel):
 
 
 class EmployeeTaskReview(BaseModel):
-    decision: Literal["complete", "reject", "not_applicable"]
+    decision: Literal["complete", "reject"]
     comment: str = Field(min_length=1, max_length=2_000)
+
+
+class EmployeeTaskApplicabilityReview(BaseModel):
+    decision: Literal["applicable", "not_applicable"]
+    comment: str = Field(min_length=1, max_length=2_000)
+    reviewer_name: str = Field(min_length=1, max_length=200)
+    reviewer_qualification: str = Field(min_length=1, max_length=300)
+    legal_review_confirmed: Literal[True]
+
+
+class EmployeeSignatureCreate(BaseModel):
+    typed_name: str = Field(min_length=1, max_length=200)
+    accepted: Literal[True]
+
+
+class EmployeeSignatureSummary(BaseModel):
+    id: UUID
+    employee_id: UUID
+    task_id: UUID
+    version: int
+    signer_email: EmailStr
+    typed_name: str
+    statement_version: str
+    statement_hash: str
+    status: Literal["active", "superseded"]
+    signed_at: datetime
 
 
 class ComplianceRequirement(BaseModel):
@@ -333,7 +376,17 @@ class ComplianceRequirement(BaseModel):
     responsible_party: Literal["employee", "employer", "contractor"]
     applicability: str
     retention_rule: str
-    data_classification: Literal["internal", "confidential", "restricted"]
+    trigger: str
+    task_owner: Literal["employee", "employer", "contractor"]
+    completion_method: Literal[
+        "document_upload",
+        "employee_signature",
+        "employer_evidence",
+        "manual_review",
+    ]
+    data_classification: Literal[
+        "internal", "confidential", "restricted", "highly_restricted"
+    ]
     official_source: str
     legal_review_status: Literal["pending", "approved"] = "pending"
 

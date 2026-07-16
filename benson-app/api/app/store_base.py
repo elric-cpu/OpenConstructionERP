@@ -6,9 +6,10 @@ from uuid import uuid4
 from sqlalchemy import create_engine, inspect, select, text, update
 from sqlalchemy.engine import Engine
 
+from .compliance import REQUIREMENTS_BY_ID
 from .domain import EmployeeTaskSummary
 from .lead_rules import classify_spam, lead_source
-from .storage_schema import audit_events, leads, metadata
+from .storage_schema import audit_events, employee_tasks, leads, metadata
 
 
 class StoreBase:
@@ -64,6 +65,61 @@ class StoreBase:
                     db.execute(
                         text(f"ALTER TABLE employees ADD COLUMN {name} {definition}")
                     )
+        task_existing = {
+            column["name"]
+            for column in inspect(self.engine).get_columns("employee_tasks")
+        }
+        task_additions = {
+            "completion_method": "VARCHAR(40) NOT NULL DEFAULT 'document_upload'",
+            "applicability_review_required": "INTEGER NOT NULL DEFAULT 0",
+            "applicability_status": "VARCHAR(40) NOT NULL DEFAULT 'applied'",
+            "retention_rule": "TEXT NOT NULL DEFAULT ''",
+            "data_classification": "VARCHAR(40) NOT NULL DEFAULT 'restricted'",
+            "official_source": "TEXT NOT NULL DEFAULT ''",
+            "legal_review_status": "VARCHAR(20) NOT NULL DEFAULT 'pending'",
+            "signature_statement": "TEXT",
+            "applicability_decided_at": "TIMESTAMP WITH TIME ZONE",
+            "applicability_decided_by": "VARCHAR(320)",
+        }
+        schema_changed = any(name not in task_existing for name in task_additions)
+        with self.engine.begin() as db:
+            for name, definition in task_additions.items():
+                if name not in task_existing:
+                    db.execute(
+                        text(
+                            f"ALTER TABLE employee_tasks ADD COLUMN {name} {definition}"
+                        )
+                    )
+            if schema_changed:
+                for requirement_id, requirement in REQUIREMENTS_BY_ID.items():
+                    db.execute(
+                        update(employee_tasks)
+                        .where(employee_tasks.c.requirement_id == requirement_id)
+                        .values(
+                            completion_method=requirement.completion_method,
+                            retention_rule=requirement.retention_rule,
+                            data_classification=requirement.data_classification,
+                            official_source=requirement.official_source,
+                            legal_review_status=requirement.legal_review_status,
+                        )
+                    )
+                conditional_ids = {
+                    "e-verify",
+                    "davis-bacon",
+                    "section-503-self-id",
+                    "vevraa-self-id",
+                }
+                db.execute(
+                    update(employee_tasks)
+                    .where(
+                        employee_tasks.c.requirement_id.in_(conditional_ids),
+                        employee_tasks.c.status == "blocked",
+                    )
+                    .values(
+                        applicability_review_required=1,
+                        applicability_status="pending_review",
+                    )
+                )
 
     def readiness_probe(self) -> None:
         with self.engine.connect() as db:

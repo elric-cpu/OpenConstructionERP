@@ -112,7 +112,7 @@ def test_activated_employee_tasks_are_the_default_view(
 
     assert response.status_code == 200
     assert response.json()["default_view"] == "tasks"
-    assert response.json()["progress"] == {"completed": 0, "total": 8}
+    assert response.json()["progress"] == {"completed": 0, "total": 10}
     assert response.json()["employee"]["id"] == employee["id"]
 
 
@@ -286,15 +286,19 @@ def test_rejected_evidence_preserves_versions_and_blocks_cross_task_actions(
         == 409
     )
     not_applicable = client.patch(
-        f"/api/benson/v1/employees/{employee['id']}/tasks/{blocked['id']}",
+        f"/api/benson/v1/employees/{employee['id']}/tasks/{blocked['id']}/applicability",
         headers=STAFF_HEADERS,
         json={
             "decision": "not_applicable",
             "comment": "Contract clause does not apply.",
+            "reviewer_name": "Qualified HR Reviewer",
+            "reviewer_qualification": "External employment counsel",
+            "legal_review_confirmed": True,
         },
     )
     assert not_applicable.status_code == 200
     assert not_applicable.json()["status"] == "not_applicable"
+    assert not_applicable.json()["legal_review_status"] == "approved"
 
 
 def test_compliance_matrix_is_explicitly_pending_review() -> None:
