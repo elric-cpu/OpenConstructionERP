@@ -1,0 +1,7 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "-t", "${_IMAGE}", "."]
+images:
+  - "${_IMAGE}"
+substitutions:
+  _IMAGE: us-west1-docker.pkg.dev/civic-wall-494004-b3/cloud-run-source-deploy/benson-fcc-gateway:latest

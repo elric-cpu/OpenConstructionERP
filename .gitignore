@@ -107,6 +107,7 @@ frontend/debug-bim/
 
 # MCP artifacts
 .mcp.json
+.serena/
 
 # Internal-only files: planning, strategy, QA artifacts, audits and runbooks.
 # Kept local, never published. Enforced by scripts/check_repo_hygiene.py at

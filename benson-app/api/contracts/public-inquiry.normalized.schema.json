@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bensonhomesolutions.com/contracts/public-inquiry.normalized.schema.json",
+  "title": "Public inquiry normalized payload",
+  "type": "object",
+  "required": ["schema_version", "contact", "service", "location", "marketing"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "contact": {
+      "type": "object",
+      "required": ["name", "phone"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "phone": { "type": "string", "minLength": 7, "maxLength": 40 },
+        "email": { "type": ["string", "null"], "format": "email", "maxLength": 320 },
+        "organization": { "type": ["string", "null"], "maxLength": 240 },
+        "uei": { "type": ["string", "null"], "pattern": "^[A-Z0-9]{12}$" },
+        "cage_code": { "type": ["string", "null"], "pattern": "^[A-Z0-9]{5}$" }
+      },
+      "additionalProperties": false
+    },
+    "service": {
+      "type": "object",
+      "required": ["type", "description"],
+      "properties": {
+        "type": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 10000 },
+        "priority": { "enum": ["low", "normal", "urgent", "emergency"] }
+      },
+      "additionalProperties": false
+    },
+    "location": {
+      "type": "object",
+      "required": ["state"],
+      "properties": {
+        "street_address": { "type": ["string", "null"], "maxLength": 1000 },
+        "city": { "type": ["string", "null"], "maxLength": 120 },
+        "state": { "const": "OR" },
+        "postal_code": { "type": ["string", "null"], "maxLength": 20 },
+        "route_code": { "type": ["string", "null"], "maxLength": 80 }
+      },
+      "additionalProperties": false
+    },
+    "marketing": { "$ref": "marketing-attribution.schema.json" },
+    "consent": {
+      "type": "object",
+      "properties": {
+        "contact_allowed": { "type": "boolean" },
+        "recorded_at": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

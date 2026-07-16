@@ -24,3 +24,11 @@ And to every person who stars, opens an issue or sends a fix: thank you. We read
 Start with CONTRIBUTING.md and the documentation at https://openconstructionerp.com/docs. The project is modular, so you can pick a module, drop in your own, or replace ours. Tests live under backend/tests and the frontend suite, and please keep CI green before you propose changes.
 
 Questions are welcome at info@datadrivenconstruction.io
+
+## Benson Operations overlay
+
+- The active Benson application is `benson-app/`; frontend-specific instructions live in `benson-app/web/AGENTS.md`.
+- Preserve the lead-foundation launch boundaries, authenticated deny-by-default behavior, guarded mutations, audit history, and private attachment handling.
+- React/TypeScript source files must remain at or below 350 nonblank, noncomment lines. Functions and components should remain at or below 150 nonblank, noncomment lines.
+- Split by responsibility instead of creating cosmetic wrapper components. Keep API access, orchestration hooks, forms, filters, workflow panels, and presentation components independently testable.
+- Run `npm run verify` from `benson-app/` after cross-stack changes; run the narrow API or web gate first while iterating.

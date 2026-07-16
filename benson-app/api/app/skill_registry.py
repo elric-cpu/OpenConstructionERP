@@ -32,7 +32,9 @@ class SkillRegistry:
 
     def visible_to(self, role: Role) -> list[SkillDefinition]:
         return [
-            skill for skill in self.definitions if skill.enabled and role in skill.allowed_roles
+            skill
+            for skill in self.definitions
+            if skill.enabled and role in skill.allowed_roles
         ]
 
 

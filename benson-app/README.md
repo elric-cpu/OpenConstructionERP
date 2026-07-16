@@ -24,13 +24,19 @@ npm run dev -- --host 0.0.0.0
 
 Use `benson-ai` rather than `localhost` when sharing local URLs.
 
-Copy `api/.env.example` to `api/.env` and replace every placeholder before a shared deployment. Production starts fail closed unless PostgreSQL, a private Google Cloud Storage bucket, the website HMAC secret, and the Google Workspace OAuth client ID are configured. SQLite and local private-file storage remain development-only fallbacks.
+Copy `api/.env.example` to `api/.env` and replace every required placeholder before a shared deployment. Production starts fail closed unless PostgreSQL, a private Google Cloud Storage bucket, the website HMAC secret, the Google Workspace OAuth client ID, the notification worker identity, and Resend are configured. Twilio is optional while SMS is disabled. SQLite and local private-file storage remain development-only fallbacks.
 
 ## Website intake contract
 
 The public website sends leads to `POST /api/benson/v1/intake/leads`. Every request carries an independent idempotency key plus a timestamped HMAC-SHA256 signature over the exact JSON body. The ERP persists the lead before returning success and issues a durable, expiring upload session for customer photos and PDFs. Staff lead, dashboard, module, and AI routes require a verified `@bensonhomesolutions.com` Google identity; roles are assigned by server configuration, never by browser claims.
 
 The previous OpenConstructionERP webhook is not exposed by Benson Operations. New website code must use the signed intake route.
+
+## Durable lead notifications
+
+Lead acceptance and notification creation share one database transaction. Every newly accepted lead creates one Resend email job. Emergency Twilio SMS is disabled by default and can be enabled only from the authenticated owner settings after Twilio is configured. Disabling SMS prevents new SMS jobs and retires unsent SMS work without affecting email. Replayed idempotency keys return the existing lead and do not duplicate messages. A Cloud Scheduler request authenticated as the dedicated notification worker calls `POST /api/internal/v1/notifications/drain` every minute. Failed provider calls remain in PostgreSQL with bounded exponential retry state, stale processing locks are reclaimable, and exhausted jobs remain visible for monitoring and operator review.
+
+The worker route rejects missing, invalid, or unexpected Google service identities in production. Provider credentials belong in Secret Manager and must be granted only to the Benson Operations runtime identity. Never put them in the image or repository.
 
 ## Construction AI skills
 

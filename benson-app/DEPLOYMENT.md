@@ -32,4 +32,8 @@ gcloud run deploy benson-operations \
   --memory 1Gi --cpu 1 --timeout 300 --no-traffic
 ```
 
+Configure `BENSON_STAFF_DISPLAY_NAMES` as a comma-separated `email=Display Name` directory for
+authorized staff. Assignment controls show these names while persisting the corresponding email
+for authorization and audit history.
+
 Before shifting traffic, verify `/api/health`, Google sign-in, a signed synthetic lead, idempotent replay, the lead queue, an image upload, and audit rows. Only then update the website secret/config, deploy the website, submit every public form once, and confirm each record in Benson Operations. Retain the legacy service for rollback without sending new leads to it.

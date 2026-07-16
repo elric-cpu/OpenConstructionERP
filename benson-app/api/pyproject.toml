@@ -5,6 +5,7 @@ description = "Benson Home Solutions construction operations API"
 requires-python = ">=3.12"
 license = "AGPL-3.0-or-later"
 dependencies = [
+  "cryptography>=45,<47",
   "email-validator>=2.2,<3",
   "fastapi>=0.116,<1",
   "google-auth>=2.40,<3",
@@ -33,7 +34,7 @@ testpaths = ["tests"]
 addopts = "--cov=app --cov-report=term-missing --cov-fail-under=80"
 
 [tool.ruff]
-line-length = 100
+line-length = 88
 target-version = "py312"
 
 [tool.mypy]
