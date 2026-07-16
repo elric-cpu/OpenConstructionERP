@@ -1021,3 +1021,33 @@ class ContractMilestoneResponse(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
     created_at: datetime
     updated_at: datetime
+
+
+# Final-account readiness checklist (close-out conditions) ==================
+
+
+class FinalAccountCheckItemResponse(BaseModel):
+    """One close-out condition in the final-account readiness checklist."""
+
+    key: str
+    status: str
+    reason: str
+    based_on: dict[str, str] = Field(default_factory=dict)
+
+
+class FinalAccountChecklistResponse(BaseModel):
+    """Final-account (close-out) readiness checklist for a contract.
+
+    Each item is a close-out condition evaluated from data the contract already
+    stores. ``ready`` is true only when every applicable check passed and at
+    least one applies; ``completion_percent`` counts passed over applicable
+    checks (not-applicable checks excluded), guarded against a zero divisor.
+    """
+
+    contract_id: UUID
+    ready: bool
+    completion_percent: Decimal
+    passed_count: int
+    applicable_count: int
+    total_count: int
+    items: list[FinalAccountCheckItemResponse] = Field(default_factory=list)

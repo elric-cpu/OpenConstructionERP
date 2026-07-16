@@ -101,6 +101,7 @@ from app.modules.contracts.schemas import (
     FeeStructureCreate,
     FeeStructureResponse,
     FeeStructureUpdate,
+    FinalAccountChecklistResponse,
     FinalAccountCreate,
     FinalAccountResponse,
     FinalAccountUpdate,
@@ -1438,6 +1439,29 @@ async def close_contract(
     service = ContractsService(session)
     final = await service.close_contract(contract_id, payload, user_id)
     return FinalAccountResponse.model_validate(final)
+
+
+@router.get(
+    "/contracts/{contract_id}/final-account-checklist",
+    response_model=FinalAccountChecklistResponse,
+)
+async def contract_final_account_checklist(
+    contract_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.read")),
+) -> FinalAccountChecklistResponse:
+    """Final-account (close-out) readiness checklist for a contract.
+
+    Evaluates the close-out conditions (progress claims settled, extension-of-time
+    claims decided, financial securities released, retention released, final
+    account agreed / signed off and reconciled against the contract sum) from the
+    data the contract already stores. Read-only; adds no state.
+    """
+    await _verify_contract_access(session, contract_id, user_id)
+    service = ContractsService(session)
+    payload = await service.final_account_checklist(contract_id)
+    return FinalAccountChecklistResponse(**payload)
 
 
 # ── Dashboard / preview ──────────────────────────────────────────────────

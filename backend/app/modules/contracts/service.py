@@ -33,6 +33,10 @@ from app.modules.contracts.compliance_packs import (
     resolve_rule_sets,
 )
 from app.modules.contracts.events import CLAIM_POPULATED, EOT_DECIDED, EOT_SUBMITTED
+from app.modules.contracts.final_account import (
+    ClosureFacts,
+    evaluate_final_account_readiness,
+)
 from app.modules.contracts.models import (
     Contract,
     ContractDocument,
@@ -2312,6 +2316,105 @@ class ContractsService:
             "change_orders_count": change_orders_count,
             "gainshare_estimate": gainshare_estimate,
             "status": contract.status,
+        }
+
+    # -- Final-account (close-out) readiness checklist --------------------
+
+    async def _retention_position(
+        self,
+        contract: Contract,
+        final_account: FinalAccount | None,
+    ) -> tuple[Decimal, Decimal]:
+        """Retention held vs released for the checklist.
+
+        Prefers the final account's own figures as the authoritative close-out
+        record; before a final account exists it falls back to the retention
+        accrued on approved / certified / paid claims (``outstanding_retention``)
+        less anything already logged in ``metadata['retention_releases']``.
+        """
+        if final_account is not None:
+            return (
+                Decimal(str(final_account.retention_held or 0)),
+                Decimal(str(final_account.retention_released or 0)),
+            )
+        held = await self.claim_repo.outstanding_retention(contract.id)
+        meta = contract.metadata_ if isinstance(contract.metadata_, dict) else {}
+        releases = meta.get("retention_releases") or []
+        released = sum(
+            (Decimal(str(r.get("amount_released", 0) or 0)) for r in releases),
+            DEC_ZERO,
+        )
+        return held, released
+
+    async def final_account_checklist(self, contract_id: uuid.UUID) -> dict[str, Any]:
+        """Assemble the final-account readiness checklist for a contract.
+
+        Loads the contract's own stored rows - progress claims, extension-of-time
+        claims, financial securities, retention figures and the final account -
+        flattens them into a plain :class:`ClosureFacts` and defers to the pure
+        evaluator. No new storage: every close-out condition is computed from
+        data already persisted. Raises 404 when the contract does not exist.
+        """
+        contract = await self.get_contract(contract_id)
+
+        # Progress claims: open = not yet paid and not rejected.
+        _first, total_claims = await self.claim_repo.claims_for_contract(
+            contract_id,
+            offset=0,
+            limit=1,
+        )
+        claims, _ = await self.claim_repo.claims_for_contract(
+            contract_id,
+            offset=0,
+            limit=max(int(total_claims), 1),
+        )
+        open_claims = sum(1 for c in claims if c.status not in ("paid", "rejected"))
+
+        # Extension-of-time claims: pending = draft / submitted / under_review.
+        eots = await self.eot_repo.list_for_contract(contract_id)
+        pending_eot = sum(1 for e in eots if e.status in ("draft", "submitted", "under_review"))
+
+        # Financial securities: outstanding = required / received / active.
+        securities = await self.security_repo.list_for_contract(contract_id)
+        outstanding_security = sum(1 for s in securities if s.status in ("required", "received", "active"))
+
+        final_account = await self.final_account_repo.get_for_contract(contract_id)
+        retention_held, retention_released = await self._retention_position(contract, final_account)
+
+        facts = ClosureFacts(
+            contract_total_value=Decimal(str(contract.total_value or 0)),
+            open_progress_claim_count=open_claims,
+            total_progress_claim_count=int(total_claims),
+            pending_eot_count=pending_eot,
+            total_eot_count=len(eots),
+            outstanding_security_count=outstanding_security,
+            total_security_count=len(securities),
+            retention_held=retention_held,
+            retention_released=retention_released,
+            final_account_present=final_account is not None,
+            final_account_agreed=(final_account is not None and final_account.status in ("agreed", "closed")),
+            final_account_signed_off=bool(final_account is not None and final_account.sign_off_date),
+            final_account_value=(
+                Decimal(str(final_account.final_contract_value or 0)) if final_account is not None else DEC_ZERO
+            ),
+        )
+        result = evaluate_final_account_readiness(facts)
+        return {
+            "contract_id": contract_id,
+            "ready": result.ready,
+            "completion_percent": result.completion_percent,
+            "passed_count": result.passed_count,
+            "applicable_count": result.applicable_count,
+            "total_count": result.total_count,
+            "items": [
+                {
+                    "key": item.key,
+                    "status": item.status,
+                    "reason": item.reason,
+                    "based_on": item.based_on,
+                }
+                for item in result.items
+            ],
         }
 
     # ── AIA G702/G703 (US/CA/AU only) ────────────────────────────────────
