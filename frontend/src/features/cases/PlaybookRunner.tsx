@@ -68,6 +68,8 @@ import {
   runKey,
   toggleStep,
 } from "./progress";
+import { rolesForPlaybook, ROLE_BY_ID } from "./roles";
+import { stageForPlaybook, STAGE_BY_ID } from "./stages";
 
 /** Returns true for seeded sample projects (they carry `metadata.demo_id`). */
 function isDemoProject(p: Project): boolean {
@@ -124,40 +126,60 @@ function FlowSide({
   );
 }
 
-/** The connector between flow columns: points right on desktop (In -> Out reads
- *  left to right) and down when the columns stack on narrow screens. Pass
- *  `vertical` to force the down arrow, e.g. when the flow runs as a vertical
- *  In -> Action -> Out pipeline inside the step's right-hand visualisation
- *  column. */
+/** The arrowhead chip in the middle of a connector: a small ringed badge that
+ *  carries the direction glyph, so the hand-off between blocks reads as one
+ *  deliberate step rather than a stray floating arrow. */
+function ConnectorChip({ down = false }: { down?: boolean }): ReactElement {
+  const Glyph = down ? ArrowDown : ArrowRight;
+  return (
+    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-oe-blue/10 ring-1 ring-inset ring-oe-blue/25">
+      {/* rtl:rotate-180 keeps the horizontal arrow pointing from In to Out when
+          the whole flow mirrors under a right-to-left language. */}
+      <Glyph
+        size={14}
+        strokeWidth={2.2}
+        className={clsx("text-oe-blue", !down && "rtl:rotate-180")}
+        aria-hidden="true"
+      />
+    </span>
+  );
+}
+
+/** The connector between flow blocks. On desktop it is a full-width run of two
+ *  hairline `bg-border` rails that stretch to touch the cards on either side
+ *  with the arrowhead chip between them, so In -> Action -> Out reads as one
+ *  connected line. When the blocks stack on narrow screens (or a caller passes
+ *  `vertical`) it becomes a short vertical rail with a down chip instead. */
 function FlowConnector({ vertical = false }: { vertical?: boolean }): ReactElement {
+  const down = (
+    <span className="flex flex-col items-center">
+      <span className="h-3 w-px bg-border" />
+      <span className="my-1">
+        <ConnectorChip down />
+      </span>
+      <span className="h-3 w-px bg-border" />
+    </span>
+  );
   if (vertical) {
     return (
-      <div
-        className="flex shrink-0 flex-col items-center justify-center"
-        aria-hidden="true"
-      >
-        <span className="h-3 w-px bg-oe-blue/20" />
-        <ArrowDown size={26} strokeWidth={1.75} className="text-oe-blue/40" />
-        <span className="h-3 w-px bg-oe-blue/20" />
+      <div className="flex items-center justify-center" aria-hidden="true">
+        {down}
       </div>
     );
   }
   return (
-    <div className="flex shrink-0 items-center justify-center" aria-hidden="true">
-      {/* Desktop: a large, quiet arrow between a pair of soft rails, so the
-          hand-off between blocks reads as a deliberate step without a heavy
-          badge crowding the two data columns. */}
-      <div className="hidden items-center lg:flex">
-        <span className="h-px w-3 bg-gradient-to-r from-transparent to-oe-blue/25" />
-        <ArrowRight size={28} strokeWidth={1.75} className="text-oe-blue/40" />
-        <span className="h-px w-3 bg-gradient-to-r from-oe-blue/25 to-transparent" />
-      </div>
-      {/* Mobile: the same quiet arrow, stacked between rows. */}
-      <div className="flex flex-col items-center lg:hidden">
-        <span className="h-3 w-px bg-oe-blue/20" />
-        <ArrowDown size={26} strokeWidth={1.75} className="text-oe-blue/40" />
-        <span className="h-3 w-px bg-oe-blue/20" />
-      </div>
+    <div className="flex items-center justify-center" aria-hidden="true">
+      {/* Stacked (mobile): a down chip between the stacked rows. */}
+      <span className="flex lg:hidden">{down}</span>
+      {/* Row (desktop): hairline rails flex to fill the connector, touching the
+          neighbouring cards, with the arrowhead chip riding the middle. */}
+      <span className="hidden w-20 items-center lg:flex">
+        <span className="h-px flex-1 bg-border" />
+        <span className="mx-1">
+          <ConnectorChip />
+        </span>
+        <span className="h-px flex-1 bg-border" />
+      </span>
     </div>
   );
 }
@@ -391,6 +413,42 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
   const curOutputs = resolveFlow(currentStep, "outputs");
   const hasFlow = curInputs.length > 0 || curOutputs.length > 0;
 
+  /* ── Hero "at a glance" context, derived from the steps + case metadata ── */
+  // The distinct modules this case touches, in the order the steps use them, so
+  // the reader sees the whole tool chain before starting.
+  const modules = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const s of playbook.steps) {
+      const label = s.moduleLabelKey
+        ? t(s.moduleLabelKey, { defaultValue: s.moduleLabel })
+        : s.moduleLabel;
+      if (!seen.has(label)) {
+        seen.add(label);
+        out.push(label);
+      }
+    }
+    return out;
+  }, [playbook.steps, t]);
+  const roleLabels = useMemo(
+    () =>
+      rolesForPlaybook(playbook).map((r) =>
+        t(ROLE_BY_ID[r].labelKey, { defaultValue: ROLE_BY_ID[r].labelDefault }),
+      ),
+    [playbook, t],
+  );
+  const stageMeta = STAGE_BY_ID[stageForPlaybook(playbook)];
+  const stageLabel = t(stageMeta.labelKey, {
+    defaultValue: stageMeta.labelDefault,
+  });
+  // What the case needs to begin (first step inputs) and what it leaves you with
+  // (last step outputs), so the payoff is clear up front.
+  const startInputs = resolveFlow(playbook.steps[0], "inputs");
+  const endOutputs = resolveFlow(
+    playbook.steps[playbook.steps.length - 1],
+    "outputs",
+  );
+
   // The hero primary reads as Start / Continue / Review depending on where the
   // run stands, so returning to a half-finished case is obvious.
   const hasStarted = doneCount > 0 || currentIndex > 0;
@@ -501,6 +559,100 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                 {longDesc}
               </p>
             )}
+
+            {/* At-a-glance context: which modules the case touches, who it is
+                for and where it sits in the lifecycle, plus what you need before
+                you start and what you walk away with. All derived from the steps
+                and case metadata, so it stays true with no per-case authoring. */}
+            <div className="mt-4 grid max-w-2xl gap-3 rounded-xl border border-border-light bg-surface-primary/60 p-3.5 sm:grid-cols-3">
+              <div className="min-w-0">
+                <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
+                  {t("cases.at_a_glance", { defaultValue: "At a glance" })}
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {modules.map((m) => (
+                    <span
+                      key={m}
+                      className="inline-flex items-center rounded border border-border-light bg-surface-secondary px-1.5 py-px text-2xs font-medium text-content-secondary"
+                    >
+                      {m}
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5 text-2xs text-content-tertiary">
+                  <span className="font-medium text-content-secondary">
+                    {stageLabel}
+                  </span>
+                  {roleLabels.length > 0 && (
+                    <>
+                      <span
+                        className="h-1 w-1 rounded-full bg-content-quaternary"
+                        aria-hidden="true"
+                      />
+                      <span className="min-w-0">{roleLabels.join(", ")}</span>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="min-w-0">
+                <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
+                  {t("cases.before_you_start", {
+                    defaultValue: "Before you start",
+                  })}
+                </p>
+                {startInputs.length > 0 ? (
+                  <ul className="space-y-1">
+                    {startInputs.map((x, i) => (
+                      <li
+                        key={i}
+                        className="flex items-start gap-1.5 text-2xs leading-snug text-content-secondary"
+                      >
+                        <span
+                          className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-content-quaternary"
+                          aria-hidden="true"
+                        />
+                        <span className="min-w-0">{x}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-2xs leading-snug text-content-tertiary">
+                    {t("cases.before_you_start_none", {
+                      defaultValue: "Nothing - just open the first module.",
+                    })}
+                  </p>
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
+                  {t("cases.what_you_will_have", {
+                    defaultValue: "What you will have at the end",
+                  })}
+                </p>
+                {endOutputs.length > 0 ? (
+                  <ul className="space-y-1">
+                    {endOutputs.map((x, i) => (
+                      <li
+                        key={i}
+                        className="flex items-start gap-1.5 text-2xs leading-snug text-content-secondary"
+                      >
+                        <span
+                          className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-semantic-success"
+                          aria-hidden="true"
+                        />
+                        <span className="min-w-0">{x}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-2xs leading-snug text-content-tertiary">
+                    {t("cases.what_you_will_have_none", {
+                      defaultValue: "A completed run across the modules.",
+                    })}
+                  </p>
+                )}
+              </div>
+            </div>
 
             {/* Primary action + sample-project context + reset, one command row */}
             <div className="mt-4 flex flex-wrap items-center gap-2.5">
@@ -633,7 +785,21 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                 ? t(step.moduleLabelKey, { defaultValue: step.moduleLabel })
                 : step.moduleLabel;
               return (
-                <li key={step.id} className="min-w-0">
+                <li
+                  key={step.id}
+                  className={clsx(
+                    "relative min-w-0",
+                    // xl rail only: a 1px spine segment in the gap above each
+                    // step after the first, sitting under the numbered-badge
+                    // column (logical `start-6` so it stays under the badge in
+                    // both LTR and RTL) so the vertical rail reads as one
+                    // connected sequence. It draws nothing below xl, where the
+                    // rail is a multi-column grid and a vertical spine would
+                    // point at the wrong card.
+                    i > 0 &&
+                      "xl:before:absolute xl:before:-top-1.5 xl:before:start-6 xl:before:h-1.5 xl:before:w-px xl:before:bg-border xl:before:content-['']",
+                  )}
+                >
                   <button
                     type="button"
                     ref={(el) => {
@@ -690,19 +856,6 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                       </span>
                     </span>
                   </button>
-                  {/* Transition arrow between steps: a bold, blue downward
-                      arrow makes the ordered flow obvious in the vertical rail
-                      (mobile single column + the xl sidebar). Hidden in the
-                      mid-width multi-column grid where a between-arrow reads
-                      wrong. */}
-                  {i < playbook.steps.length - 1 && (
-                    <span
-                      aria-hidden="true"
-                      className="my-0.5 flex justify-center text-oe-blue/40 sm:hidden xl:flex"
-                    >
-                      <ArrowDown size={15} strokeWidth={2.25} />
-                    </span>
-                  )}
                 </li>
               );
             })}
@@ -805,7 +958,11 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                   obvious where the work happens. Stacks on narrow screens. */}
               <div className="mt-6 border-t border-border-light pt-5">
                 {hasFlow ? (
-                  <div className="flex flex-col items-stretch gap-2.5 lg:flex-row lg:items-stretch lg:gap-1">
+                  // A 5-track row on wide screens: In | -> | Action | -> | Out.
+                  // The connector columns are auto-width and the row centres on
+                  // the action, so each hairline connector lines up with the
+                  // module button. Stacks to a single column on narrow screens.
+                  <div className="flex flex-col items-stretch gap-2.5 lg:grid lg:grid-cols-[1fr_auto_minmax(0,32%)_auto_1fr] lg:items-center lg:gap-x-0">
                     <FlowSide
                       label={t("cases.flow.in", { defaultValue: "Goes in" })}
                       hint={t("cases.flow.in_hint", {
@@ -815,7 +972,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
                       tone="in"
                     />
                     <FlowConnector />
-                    <div className="flex shrink-0 flex-col items-center justify-center lg:w-[32%]">
+                    <div className="flex flex-col items-center justify-center">
                       {openModuleButton}
                     </div>
                     <FlowConnector />

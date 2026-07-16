@@ -14,12 +14,17 @@ const playbook: Playbook = {
   order: 344,
   category: "handover",
   companyTypes: ["owner-operator", "developer-client"],
+  roles: ["site-manager", "project-manager"],
+  stage: "operate",
   icon: "HardHat",
   titleKey: "cases.run_reactive_fm_service_after_handover.title",
   titleDefault: "Run reactive FM service after handover",
   descKey: "cases.run_reactive_fm_service_after_handover.desc",
   descDefault:
     "Handle a fault the way a building operator should: log the reactive request against the asset, work it with the warranty and O&M data to hand, and close it out with a verification check.",
+  longDescKey: "cases.run_reactive_fm_service_after_handover.longdesc",
+  longDescDefault:
+    "Reactive maintenance lives or dies on traceability, so this case ties every fault straight to the asset that failed and works it with the warranty and O&M data already on file. Log the request, open the asset to see who pays and how the maker says to fix it, then close the job only after a verified check so closed always means fixed.",
   estMinutes: 8,
   steps: [
     {
