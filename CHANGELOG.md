@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [11.12.0] - 2026-07-17
+
+Assemblies become parametric. An assembly can now carry named parameters, an input the estimator enters with a default, a fixed constant, or a value calculated from the others, and each component can set its quantity from a formula over those parameters. Write the reinforcement as the wall area times a ratio, enter the wall area when you apply the assembly, and the quantity and its cost follow. The editor gains a parameters panel that checks the graph as you type and flags a cycle, a missing reference or a bad formula inline, a per-line formula field with an fx marker on any line whose quantity is computed, and a preview that shows the exact before and after quantity for each line and the rolled-up rate the server will write, so what you preview is what lands on the bill. The parameter graph is validated on every create, update and import, and a formula stays exact to the cent because it runs on the same decimal engine as a per-element quantity.
+
+The five delivery registers added in 11.11 now have their own pages in the app. Site inventory, site preparation, temporary works, the interface register and the defects liability period are reachable from the sidebar with full create, edit and close flows, not only through the API.
+
+On housekeeping, the desktop lockfile moves serde_with past a known advisory, and the linter pin is aligned across the pre-commit hook, the continuous integration gate and the project config so a format check run locally matches the one that runs on a push.
+
 ## [11.11.1] - 2026-07-16
 
 A packaging fix for 11.11.0. A type annotation in the bill of quantities Excel export test tripped the strict frontend build inside the release pipeline, so the 11.11.0 installers and Python wheel never published. The build is corrected and the full 11.11.0 feature set ships here unchanged.

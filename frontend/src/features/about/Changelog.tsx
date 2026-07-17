@@ -38,6 +38,13 @@ interface ChangelogEntry {
 // date, title and meaning intact; trim the prose, not the facts.
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '11.12.0',
+    date: '2026-07-17',
+    tag: 'NEW',
+    summary:
+      'Assemblies become parametric: name the values that drive a recipe (an input, a constant, or one calculated from the others), give any component a quantity formula over them, and a preview shows the exact per-line quantities and rate the bill will get before you apply it. The five delivery registers from 11.11 now have their own pages in the app, and a desktop security advisory is cleared.',
+  },
+  {
     version: '11.11.1',
     date: '2026-07-16',
     tag: 'FIX',
