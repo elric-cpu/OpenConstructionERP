@@ -28,6 +28,10 @@ import {
   Link2,
   Network,
   ArrowRight,
+  Pencil,
+  Undo2,
+  Ban,
+  Save,
 } from 'lucide-react';
 import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, RecoveryCard, SkeletonTable, IntroRichText, ModuleGuideButton, MoneyDisplay } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
@@ -42,12 +46,15 @@ import {
   fetchNCRs,
   createNCR,
   closeNCR,
+  updateNCR,
   type NCR,
   type NCRType,
   type NCRSeverity,
   type NCRStatus,
   type CreateNCRPayload,
+  type UpdateNCRPayload,
 } from './api';
+import { NCR_STAGES, ncrStageIndex, ncrNextMoves } from './ncrFsm';
 import { ncrGuide } from './ncrGuide';
 
 /* -- Constants ------------------------------------------------------------- */
@@ -422,6 +429,9 @@ const NCRRow = React.memo(function NCRRow({
   currency,
   onClose,
   onCreateVariation,
+  onUpdate,
+  onVoid,
+  busy,
   highlight,
 }: {
   ncr: NCR;
@@ -430,6 +440,15 @@ const NCRRow = React.memo(function NCRRow({
   currency?: string;
   onClose: (id: string) => void;
   onCreateVariation: (id: string) => void;
+  /** Patch descriptive fields or move the NCR one legal step along its
+   *  lifecycle (any transition except the final close, which routes through
+   *  onClose so the corrective-action guard fires). */
+  onUpdate: (id: string, data: UpdateNCRPayload) => void;
+  /** Void the NCR (confirmed at the page level). */
+  onVoid: (id: string) => void;
+  /** True while any NCR mutation is in flight, so the row disables its actions
+   *  instead of firing overlapping transitions. */
+  busy?: boolean;
   /** When set (from a ?highlight deep-link) the row auto-expands, scrolls into
    *  view and flashes a highlight ring. */
   highlight?: boolean;
@@ -439,6 +458,31 @@ const NCRRow = React.memo(function NCRRow({
   const [expanded, setExpanded] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
   const [flash, setFlash] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<UpdateNCRPayload>({});
+
+  // Terminal NCRs are read-only; only draft/in-flight ones can be edited or
+  // moved. Mirrors the backend guard (update_ncr rejects closed/void).
+  const isTerminal = ncr.status === 'closed' || ncr.status === 'void';
+  const moves = ncrNextMoves(ncr.status);
+  const stageIdx = ncrStageIndex(ncr.status);
+
+  const beginEdit = useCallback(() => {
+    setDraft({
+      severity: ncr.severity,
+      root_cause: ncr.root_cause ?? '',
+      root_cause_category: ncr.root_cause_category ?? '',
+      corrective_action: ncr.corrective_action ?? '',
+      preventive_action: ncr.preventive_action ?? '',
+      cost_impact: ncr.cost_impact != null ? String(ncr.cost_impact) : '',
+    });
+    setEditing(true);
+  }, [ncr]);
+
+  const saveEdit = useCallback(() => {
+    onUpdate(ncr.id, draft);
+    setEditing(false);
+  }, [draft, ncr.id, onUpdate]);
 
   useEffect(() => {
     if (!highlight) return;
@@ -666,35 +710,261 @@ const NCRRow = React.memo(function NCRRow({
             )}
           </div>
 
-          {/* Actions */}
-          <div className="flex items-center gap-2 pt-1">
-            {ncr.status !== 'closed' && ncr.status !== 'void' && (
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onClose(ncr.id);
-                }}
-              >
-                <CheckCircle2 size={14} className="mr-1.5" />
-                {t('ncr.action_close', { defaultValue: 'Close NCR' })}
-              </Button>
-            )}
-            {ncr.cost_impact != null && ncr.cost_impact > 0 && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onCreateVariation(ncr.id);
-                }}
-              >
-                <DollarSign size={14} className="mr-1" />
-                {t('ncr.create_variation', { defaultValue: 'Create Variation' })}
-              </Button>
+          {/* Lifecycle stepper - the current stage plus every stage already
+              passed, so the reviewer can see at a glance where the NCR sits on
+              its path to closure. Voided NCRs leave the linear track. */}
+          <div className="rounded-lg bg-surface-secondary p-3">
+            <p className="text-xs text-content-tertiary mb-2 font-medium uppercase tracking-wide">
+              {t('ncr.lifecycle', { defaultValue: 'Lifecycle' })}
+            </p>
+            {ncr.status === 'void' ? (
+              <div className="flex items-center gap-1.5">
+                <Ban size={14} className="text-red-500" />
+                <span className="text-sm font-medium text-red-600 dark:text-red-400">
+                  {t('ncr.status_void', { defaultValue: 'Void' })}
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center flex-wrap gap-1">
+                {NCR_STAGES.map((stage, i) => {
+                  const done = i < stageIdx;
+                  const current = i === stageIdx;
+                  return (
+                    <React.Fragment key={stage}>
+                      {i > 0 && (
+                        <ChevronRight size={12} className="text-content-quaternary shrink-0" />
+                      )}
+                      <span
+                        className={clsx(
+                          'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-2xs font-medium whitespace-nowrap',
+                          current && 'bg-oe-blue/15 text-oe-blue-text ring-1 ring-inset ring-oe-blue/30',
+                          done && 'text-emerald-600 dark:text-emerald-400',
+                          !done && !current && 'text-content-quaternary',
+                        )}
+                      >
+                        {done && <CheckCircle2 size={11} />}
+                        {t(`ncr.status_${stage}`, { defaultValue: stage.replace(/_/g, ' ') })}
+                      </span>
+                    </React.Fragment>
+                  );
+                })}
+              </div>
             )}
           </div>
+
+          {/* Inline edit form - lets the reviewer record the analysis (root
+              cause, corrective and preventive action) that closure requires,
+              without a separate modal. Open/void NCRs only. */}
+          {editing && !isTerminal && (
+            <div
+              className="rounded-lg border border-border-light bg-surface-primary p-3 space-y-3"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div>
+                <label className="block text-xs font-medium text-content-tertiary mb-1 uppercase tracking-wide">
+                  {t('ncr.label_severity', { defaultValue: 'Severity' })}
+                </label>
+                <select
+                  value={draft.severity ?? ncr.severity}
+                  onChange={(e) =>
+                    setDraft((d) => ({ ...d, severity: e.target.value as NCRSeverity }))
+                  }
+                  className={inputCls}
+                >
+                  {(['critical', 'major', 'minor', 'observation'] as NCRSeverity[]).map((s) => (
+                    <option key={s} value={s}>
+                      {t(`ncr.severity_${s}`, { defaultValue: s.charAt(0).toUpperCase() + s.slice(1) })}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-content-tertiary mb-1 uppercase tracking-wide">
+                  {t('ncr.label_root_cause', { defaultValue: 'Root Cause' })}
+                </label>
+                <textarea
+                  value={draft.root_cause ?? ''}
+                  onChange={(e) => setDraft((d) => ({ ...d, root_cause: e.target.value }))}
+                  rows={2}
+                  className={textareaCls}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-content-tertiary mb-1 uppercase tracking-wide">
+                  {t('ncr.label_root_cause_category', { defaultValue: 'Root cause category' })}
+                </label>
+                <input
+                  value={draft.root_cause_category ?? ''}
+                  onChange={(e) => setDraft((d) => ({ ...d, root_cause_category: e.target.value }))}
+                  className={inputCls}
+                  placeholder={t('ncr.root_cause_category_placeholder', {
+                    defaultValue: 'e.g. workmanship, material, supervision',
+                  })}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-content-tertiary mb-1 uppercase tracking-wide">
+                  {t('ncr.label_corrective_action', { defaultValue: 'Corrective Action' })}
+                </label>
+                <textarea
+                  value={draft.corrective_action ?? ''}
+                  onChange={(e) => setDraft((d) => ({ ...d, corrective_action: e.target.value }))}
+                  rows={2}
+                  className={textareaCls}
+                  placeholder={t('ncr.corrective_action_placeholder', {
+                    defaultValue: 'What was done to correct the non-conformance...',
+                  })}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-content-tertiary mb-1 uppercase tracking-wide">
+                  {t('ncr.label_preventive_action', { defaultValue: 'Preventive Action' })}
+                </label>
+                <textarea
+                  value={draft.preventive_action ?? ''}
+                  onChange={(e) => setDraft((d) => ({ ...d, preventive_action: e.target.value }))}
+                  rows={2}
+                  className={textareaCls}
+                  placeholder={t('ncr.preventive_action_placeholder', {
+                    defaultValue: 'How recurrence will be prevented...',
+                  })}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-content-tertiary mb-1 uppercase tracking-wide">
+                  {t('ncr.label_cost_impact', { defaultValue: 'Cost impact' })}
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={draft.cost_impact ?? ''}
+                  onChange={(e) => setDraft((d) => ({ ...d, cost_impact: e.target.value }))}
+                  className={inputCls}
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="primary" size="sm" onClick={saveEdit} disabled={busy}>
+                  <Save size={14} className="mr-1.5" />
+                  {t('ncr.save_details', { defaultValue: 'Save changes' })}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setEditing(false)} disabled={busy}>
+                  {t('common.cancel', { defaultValue: 'Cancel' })}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Actions - edit toggle plus the legal lifecycle moves. Forward moves
+              (except the final close) PATCH the status; closing routes through
+              the dedicated endpoint so the corrective-action guard fires. Every
+              move offered here is one ncrFsm reports the backend will accept. */}
+          {!isTerminal && (
+            <div className="flex items-center flex-wrap gap-2 pt-1">
+              {!editing && (
+                <Button variant="secondary" size="sm" onClick={beginEdit} disabled={busy}>
+                  <Pencil size={14} className="mr-1.5" />
+                  {t('ncr.edit_details', { defaultValue: 'Edit details' })}
+                </Button>
+              )}
+              {moves.forward.map((next) =>
+                next === 'closed' ? (
+                  <Button
+                    key={next}
+                    variant="primary"
+                    size="sm"
+                    disabled={busy || !ncr.corrective_action}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onClose(ncr.id);
+                    }}
+                    title={
+                      ncr.corrective_action
+                        ? undefined
+                        : t('ncr.corrective_action_required_hint', {
+                            defaultValue:
+                              'Record a corrective action before this NCR can be closed.',
+                          })
+                    }
+                  >
+                    <CheckCircle2 size={14} className="mr-1.5" />
+                    {t('ncr.action_close', { defaultValue: 'Close NCR' })}
+                  </Button>
+                ) : (
+                  <Button
+                    key={next}
+                    variant="primary"
+                    size="sm"
+                    disabled={busy}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUpdate(ncr.id, { status: next });
+                    }}
+                  >
+                    <ArrowRight size={14} className="mr-1.5" />
+                    {t('ncr.action_advance', { defaultValue: 'Advance' })}:{' '}
+                    {t(`ncr.status_${next}`, { defaultValue: next.replace(/_/g, ' ') })}
+                  </Button>
+                ),
+              )}
+              {moves.backward.map((prev) => (
+                <Button
+                  key={prev}
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUpdate(ncr.id, { status: prev });
+                  }}
+                >
+                  <Undo2 size={14} className="mr-1.5" />
+                  {t('ncr.action_send_back', { defaultValue: 'Send back' })}:{' '}
+                  {t(`ncr.status_${prev}`, { defaultValue: prev.replace(/_/g, ' ') })}
+                </Button>
+              ))}
+              {moves.canVoid && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  className="text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onVoid(ncr.id);
+                  }}
+                >
+                  <Ban size={14} className="mr-1.5" />
+                  {t('ncr.action_void', { defaultValue: 'Void' })}
+                </Button>
+              )}
+              {ncr.cost_impact != null && ncr.cost_impact > 0 && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCreateVariation(ncr.id);
+                  }}
+                >
+                  <DollarSign size={14} className="mr-1" />
+                  {t('ncr.create_variation', { defaultValue: 'Create Variation' })}
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* Closure gate hint - the Close button above is disabled until a
+              corrective action exists; spell out why. */}
+          {!isTerminal && ncr.status === 'verification' && !ncr.corrective_action && (
+            <p className="text-2xs text-amber-600 dark:text-amber-400">
+              {t('ncr.corrective_action_required_hint', {
+                defaultValue: 'Record a corrective action before this NCR can be closed.',
+              })}
+            </p>
+          )}
 
           {/* Related cross-links */}
           <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-border-light">
@@ -983,6 +1253,29 @@ export function NCRPage() {
       }),
   });
 
+  // Edit descriptive fields or walk the NCR one legal step along its lifecycle.
+  // The backend validates each status transition against its FSM, so an illegal
+  // move surfaces as a plain error toast rather than a silent no-op.
+  const updateMut = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateNCRPayload }) => updateNCR(id, data),
+    onSuccess: (_res, vars) => {
+      invalidateAll();
+      addToast({
+        type: 'success',
+        title:
+          vars.data.status === 'void'
+            ? t('ncr.voided', { defaultValue: 'NCR voided' })
+            : t('ncr.updated', { defaultValue: 'NCR updated' }),
+      });
+    },
+    onError: (e: Error) =>
+      addToast({
+        type: 'error',
+        title: t('common.error', { defaultValue: 'Error' }),
+        message: e.message,
+      }),
+  });
+
   const createVariationMut = useMutation({
     mutationFn: (ncrId: string) =>
       apiPost<{ change_order_id: string; code: string; title: string }>(
@@ -1045,6 +1338,31 @@ export function NCRPage() {
     },
     [createVariationMut],
   );
+
+  const handleUpdate = useCallback(
+    (id: string, data: UpdateNCRPayload) => {
+      updateMut.mutate({ id, data });
+    },
+    [updateMut],
+  );
+
+  const handleVoid = useCallback(
+    async (id: string) => {
+      const ok = await confirm({
+        title: t('ncr.confirm_void_title', { defaultValue: 'Void this NCR?' }),
+        message: t('ncr.confirm_void_msg', {
+          defaultValue:
+            'A voided NCR is closed without a corrective action and cannot be reopened.',
+        }),
+        confirmLabel: t('ncr.action_void', { defaultValue: 'Void' }),
+        variant: 'warning',
+      });
+      if (ok) updateMut.mutate({ id, data: { status: 'void' } });
+    },
+    [updateMut, confirm, t],
+  );
+
+  const rowBusy = updateMut.isPending || closeMut.isPending || createVariationMut.isPending;
 
   // The ?sub seed has been copied into searchQuery on first render; drop the
   // param (replace, preserving other params) so the search becomes a normal,
@@ -1304,6 +1622,9 @@ export function NCRPage() {
                   currency={projectCurrency}
                   onClose={handleClose}
                   onCreateVariation={handleCreateVariation}
+                  onUpdate={handleUpdate}
+                  onVoid={handleVoid}
+                  busy={rowBusy}
                   highlight={highlightId === ncr.id}
                 />
               ))}

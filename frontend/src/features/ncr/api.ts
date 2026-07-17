@@ -6,7 +6,7 @@
  * All endpoints are prefixed with /v1/ncr/.
  */
 
-import { apiGet, apiPost } from '@/shared/lib/api';
+import { apiGet, apiPatch, apiPost } from '@/shared/lib/api';
 
 /* -- Types ----------------------------------------------------------------- */
 
@@ -26,6 +26,7 @@ export interface NCR {
   status: NCRStatus;
   description: string;
   root_cause: string;
+  root_cause_category: string | null;
   corrective_action: string;
   preventive_action: string;
   cost_impact: number | null;
@@ -56,6 +57,25 @@ export interface CreateNCRPayload {
   description: string;
   location_description?: string;
   root_cause?: string;
+}
+
+/** Partial edit for an existing NCR. Every field is optional; only the keys
+ *  present are sent (PATCH semantics). `status` drives the lifecycle stepper -
+ *  the backend validates each transition against its FSM and rejects illegal
+ *  moves with a 400, so the UI only ever offers moves ncrFsm reports as legal.
+ *  `cost_impact` is a decimal string on the wire (Decimal-as-string). */
+export interface UpdateNCRPayload {
+  title?: string;
+  description?: string;
+  ncr_type?: NCRType;
+  severity?: NCRSeverity;
+  status?: NCRStatus;
+  root_cause?: string;
+  root_cause_category?: string;
+  corrective_action?: string;
+  preventive_action?: string;
+  cost_impact?: string | null;
+  location_description?: string;
 }
 
 /* -- Wire <-> UI normaliser ----------------------------------------------- */
@@ -120,6 +140,11 @@ export async function fetchNCRs(filters?: NCRFilters): Promise<NCR[]> {
 
 export async function createNCR(data: CreateNCRPayload): Promise<NCR> {
   const row = await apiPost<NCRWire>('/v1/ncr/', data);
+  return normaliseNCR(row);
+}
+
+export async function updateNCR(id: string, data: UpdateNCRPayload): Promise<NCR> {
+  const row = await apiPatch<NCRWire, UpdateNCRPayload>(`/v1/ncr/${id}`, data);
   return normaliseNCR(row);
 }
 
