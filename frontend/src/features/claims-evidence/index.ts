@@ -4,7 +4,13 @@ export { ProvabilityGauge } from './ProvabilityGauge';
 export type { ProvabilityGaugeProps } from './ProvabilityGauge';
 export { EvidenceThreadPanel } from './EvidenceThreadPanel';
 export type { EvidenceThreadPanelProps } from './EvidenceThreadPanel';
-export { getChangeProvability, reconstructChange, reconstructTypeForKind } from './api';
+export { ClaimsEvidencePage } from './ClaimsEvidencePage';
+export {
+  getChangeProvability,
+  getEvidencePack,
+  reconstructChange,
+  reconstructTypeForKind,
+} from './api';
 export type { SubjectKind, ReconstructSubjectType } from './api';
 export type {
   ProvabilityBand,

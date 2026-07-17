@@ -63,6 +63,7 @@ import {
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { SectionIntro } from '@/features/validation';
+import { ProvabilityGauge, EvidenceThreadPanel } from '@/features/claims-evidence';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { apiGet } from '@/shared/lib/api';
@@ -1170,6 +1171,14 @@ const MoCRow = React.memo(function MoCRow({
               )}
             </div>
           )}
+
+          {/* Claims evidence: how provable this change is from the record, and
+              the reconciled evidence thread around it (deferred behind a button).
+              Both self-fetch and degrade to their own empty states. */}
+          <div className="grid gap-3 lg:grid-cols-2" onClick={(e) => e.stopPropagation()}>
+            <ProvabilityGauge projectId={entry.project_id} subjectKind="moc_entry" subjectId={entry.id} />
+            <EvidenceThreadPanel projectId={entry.project_id} subjectType="moc" subjectId={entry.id} />
+          </div>
 
           {/* Audit trail dates */}
           <div className="flex items-center gap-4 text-2xs text-content-quaternary flex-wrap pt-1">

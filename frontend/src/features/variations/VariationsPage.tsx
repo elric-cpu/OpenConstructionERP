@@ -36,6 +36,12 @@ import {
   IntroRichText,
   ModuleGuideButton,
 } from '@/shared/ui';
+import {
+  ProvabilityGauge,
+  EvidenceThreadPanel,
+  reconstructTypeForKind,
+  type SubjectKind,
+} from '@/features/claims-evidence';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import {
   WideModal,
@@ -866,6 +872,7 @@ export function VariationsPage() {
       {selected && (
         <DetailDrawer
           selected={selected}
+          projectId={projectId}
           notices={noticesQ.data ?? []}
           requests={requestsQ.data ?? []}
           orders={ordersQ.data ?? []}
@@ -1429,6 +1436,7 @@ function WorkflowStepper({
 
 function DetailDrawer({
   selected,
+  projectId,
   notices,
   requests,
   orders,
@@ -1443,6 +1451,7 @@ function DetailDrawer({
     | { kind: 'orders'; id: string }
     | { kind: 'daywork'; id: string }
     | { kind: 'eot'; id: string };
+  projectId: string;
   notices: Notice[];
   requests: VariationRequest[];
   orders: VariationOrder[];
@@ -1660,6 +1669,35 @@ function DetailDrawer({
               order={chainOrder ?? null}
             />
           )}
+
+          {/* Claims evidence: how provable this variation is from the record,
+              and the reconciled evidence thread around it, ready to export for
+              a claim. Only for the contractual chain (notice / request / order);
+              day-works and EOT claims have no provability mapping. */}
+          {(selected.kind === 'notices' ||
+            selected.kind === 'requests' ||
+            selected.kind === 'orders') &&
+            (() => {
+              const provKind: SubjectKind =
+                selected.kind === 'notices'
+                  ? 'variation_notice'
+                  : selected.kind === 'requests'
+                    ? 'variation_request'
+                    : 'variation_order';
+              const reconstructType = reconstructTypeForKind(provKind);
+              return (
+                <div className="space-y-3">
+                  <ProvabilityGauge projectId={projectId} subjectKind={provKind} subjectId={selected.id} />
+                  {reconstructType ? (
+                    <EvidenceThreadPanel
+                      projectId={projectId}
+                      subjectType={reconstructType}
+                      subjectId={selected.id}
+                    />
+                  ) : null}
+                </div>
+              );
+            })()}
 
           {notice && (
             <>

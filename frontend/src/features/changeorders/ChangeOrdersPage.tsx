@@ -43,6 +43,7 @@ import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { listContracts } from '@/features/contracts/api';
+import { ProvabilityGauge, EvidenceThreadPanel } from '@/features/claims-evidence';
 import { ApprovalTimeline } from './ApprovalTimeline';
 import { ImpactSimulator, type SavedScenario } from './ImpactSimulator';
 import { AIDraftModal } from './AIDraftModal';
@@ -1595,6 +1596,14 @@ function DetailView({
           </p>
           <p className="mt-1 text-sm font-medium text-content-primary">{formatDate(order.created_at)}</p>
         </Card>
+      </div>
+
+      {/* Claims evidence: how provable this change is from the contemporaneous
+          record, and the reconciled evidence thread assembled around it, ready
+          to export for a claim. Both self-fetch and degrade to empty states. */}
+      <div className="grid gap-4 lg:grid-cols-2 mb-6">
+        <ProvabilityGauge projectId={order.project_id} subjectKind="change_order" subjectId={orderId} />
+        <EvidenceThreadPanel projectId={order.project_id} subjectType="change_order" subjectId={orderId} />
       </div>
 
       {/* What-If impact simulator (TOP-30 #11). Hidden once a CO is rejected:

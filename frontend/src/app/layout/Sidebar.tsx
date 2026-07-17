@@ -458,6 +458,7 @@ const navGroups: NavGroup[] = [
       { labelKey: 'moc.title', to: '/moc', icon: Replace, advancedOnly: true },
       { labelKey: 'nav.change_orders', to: '/changeorders', icon: FileEdit, advancedOnly: true },
       { labelKey: 'nav.change_intelligence', to: '/change-intelligence', icon: BrainCircuit, advancedOnly: true },
+      { labelKey: 'nav.claims_evidence', to: '/claims-evidence', icon: ShieldCheck, advancedOnly: true },
       { labelKey: 'nav.value', to: '/value', icon: TrendingUp, advancedOnly: true },
     ],
   },

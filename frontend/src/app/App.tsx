@@ -446,6 +446,9 @@ const ProjectControlsPage = lazy(() =>
 const ChangeIntelligencePage = lazy(() =>
   import('@/features/change-intelligence').then((m) => ({ default: m.ChangeIntelligencePage }))
 );
+const ClaimsEvidencePage = lazy(() =>
+  import('@/features/claims-evidence').then((m) => ({ default: m.ClaimsEvidencePage }))
+);
 const ValueDashboardPage = lazy(() =>
   import('@/features/value').then((m) => ({ default: m.ValueDashboardPage }))
 );
@@ -1356,6 +1359,8 @@ export default function App() {
         <Route path="/projects/:projectId/variations" element={<P title="Variations"><VariationsPage /></P>} />
         <Route path="/change-intelligence" element={<P title="Change Intelligence"><ChangeIntelligencePage /></P>} />
         <Route path="/projects/:projectId/change-intelligence" element={<P title="Change Intelligence"><ChangeIntelligencePage /></P>} />
+        <Route path="/claims-evidence" element={<P title="Claims Evidence"><ClaimsEvidencePage /></P>} />
+        <Route path="/projects/:projectId/claims-evidence" element={<P title="Claims Evidence"><ClaimsEvidencePage /></P>} />
         <Route path="/value" element={<P title="Value Realized"><ValueDashboardPage /></P>} />
         <Route path="/projects/:projectId/value" element={<P title="Value Realized"><ValueDashboardPage /></P>} />
         <Route path="/phone-log" element={<P title="Phone Log"><PhoneLogPage /></P>} />

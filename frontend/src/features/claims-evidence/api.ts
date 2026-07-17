@@ -31,6 +31,24 @@ export function getChangeProvability(
   );
 }
 
+/**
+ * Assemble the project-wide evidence pack: every change-family record plus the
+ * recent cross-module activity, ordered, sectioned and SHA-256 digested by the
+ * engine so the same project state always yields the same pack. `subjectRef` is
+ * only the label the pack is filed under (it does not filter the contents) and
+ * `basis` names why it is being assembled. Read-only; nothing is persisted.
+ */
+export function getEvidencePack(
+  projectId: string,
+  subjectRef: string,
+  basis = 'dispute',
+): Promise<EvidencePack> {
+  const query = new URLSearchParams({ subject_ref: subjectRef || 'project', basis });
+  return apiGet<EvidencePack>(
+    `${BASE}/projects/${encodeURIComponent(projectId)}/pack?${query.toString()}`,
+  );
+}
+
 // The reconcilable record types a change thread can be grown from (mirrors the
 // backend _RECONSTRUCT_KINDS). Deliberately distinct from SubjectKind: the
 // reconciliation engine names these "notice" / "moc" where the provability
