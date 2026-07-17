@@ -10,15 +10,14 @@ denominator, division-by-zero safety on an empty system, the commission gate
 the traffic-light level, and a strict no-typographic-punctuation rule on every
 shipped blocking-reason string.
 
-testpaths in ``backend/pyproject.toml`` is ``["tests"]``, so this module-local
-test is not auto-collected by a bare ``pytest`` run; run it explicitly with
-``pytest app/modules/commissioning/tests/`` or fold the module tests dir into
-testpaths during integration.
+The suite lives under ``backend/tests`` (the ``testpaths`` root in
+``backend/pyproject.toml``) so a bare ``pytest`` run collects it. It imports
+only the pure validator and touches no database.
 """
 
 from app.modules.commissioning.validators import compute_readiness
 
-# ── Banned characters, built from code points (never a literal string) ─────
+# -- Banned characters, built from code points (never a literal string) -----
 #
 # em dash, en dash, curly single/double quotes, and the zero-width family.
 # Assembled from chr() so this source file itself stays free of them.
