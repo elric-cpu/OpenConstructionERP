@@ -24,6 +24,7 @@ import {
   Boxes,
   ChevronDown,
   Info,
+  Play,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { Button, Badge, Card, Input, Breadcrumb, ConfirmDialog, DismissibleInfo } from '@/shared/ui';
@@ -35,10 +36,13 @@ import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import {
   assembliesApi,
   type AssemblyComponent,
+  type AssemblyParameter,
   type ComponentMetadata,
   type CreateComponentData,
   type ResourceType,
 } from './api';
+import { ParametersPanel } from './ParametersPanel';
+import { ExpandPreviewModal } from './ExpandPreviewModal';
 
 /* -- Constants ------------------------------------------------------------ */
 
@@ -53,6 +57,7 @@ export function AssemblyEditorPage() {
   const queryClient = useQueryClient();
 
   const [applyModalOpen, setApplyModalOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [costDbModalOpen, setCostDbModalOpen] = useState(false);
   const [catalogPickerOpen, setCatalogPickerOpen] = useState(false);
   const [catalogPickerType, setCatalogPickerType] = useState<ResourceType | null>(null);
@@ -284,6 +289,11 @@ export function AssemblyEditorPage() {
   }
 
   const components = assembly.components ?? [];
+  // Parametric assembly state (Issue #365) — the parameter graph plus whether
+  // any line drives its quantity from a formula. Gates the Preview button.
+  const parameters = assembly.parameters ?? [];
+  const hasParametrics =
+    parameters.length > 0 || components.some((c) => !!c.quantity_formula);
   const computedTotal = components.reduce((sum, c) => sum + (Number(c.total) || 0), 0);
   // Prefer the server-persisted total_rate for the headline figure: it already
   // reflects the bid factor AND any per-type typed-formula adjustments
@@ -365,6 +375,20 @@ export function AssemblyEditorPage() {
           >
             {t('assemblies.tags', { defaultValue: 'Tags' })}
           </Button>
+          {hasParametrics && (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<Play size={15} />}
+              onClick={() => setPreviewOpen(true)}
+              className="border-oe-blue/30 text-oe-blue hover:bg-oe-blue-subtle"
+              title={t('assembly.preview.button_title', {
+                defaultValue: 'Preview how the parameters expand each line quantity and the rate',
+              })}
+            >
+              {t('assembly.preview.button', { defaultValue: 'Preview' })}
+            </Button>
+          )}
           <Button
             variant="secondary"
             size="sm"
@@ -523,6 +547,10 @@ export function AssemblyEditorPage() {
           </div>
         </Card>
       )}
+
+      {/* Parameters editor (Issue #365) — name the values that drive the
+          recipe, then reference them from each line's quantity formula. */}
+      <ParametersPanel assemblyId={assemblyId!} parameters={parameters} />
 
       {/* Two-column workspace: components table on the left, M/L/E
           breakdown summary on the right. The summary is sticky so it
@@ -687,12 +715,24 @@ export function AssemblyEditorPage() {
         />
       )}
 
+      {/* Expansion Preview Modal (Issue #365) */}
+      {previewOpen && assemblyId && (
+        <ExpandPreviewModal
+          assemblyId={assemblyId}
+          parameters={parameters}
+          unit={assembly.unit}
+          currency={assembly.currency || 'EUR'}
+          onClose={() => setPreviewOpen(false)}
+        />
+      )}
+
       {/* Apply to BOQ Modal */}
       {applyModalOpen && (
         <ApplyToBOQModal
           assemblyId={assemblyId!}
           assemblyName={assembly.name}
           regionalFactors={assembly.regional_factors}
+          parameters={parameters}
           onClose={() => setApplyModalOpen(false)}
         />
       )}
@@ -1060,17 +1100,32 @@ function ComponentRow({
         />
       </td>
 
-      {/* Quantity */}
+      {/* Quantity — an "fx" badge flags a line whose quantity is computed
+          from a parameter formula (Issue #365). The static value below stays
+          editable and is the fallback when no parameters are supplied. */}
       <td className={`${cellClass} text-right`}>
-        <EditableCell
-          value={String(component.quantity)}
-          field="quantity"
-          editing={editing}
-          setEditing={setEditing}
-          onBlur={handleBlur}
-          className={`${inputClass} text-right`}
-          type="number"
-        />
+        <div className="flex items-center justify-end gap-1">
+          {component.quantity_formula ? (
+            <span
+              title={t('assemblies.qty_formula_badge_title', {
+                defaultValue: 'Quantity is computed from a formula: {{formula}}',
+                formula: component.quantity_formula,
+              })}
+              className="text-[9px] font-mono font-bold text-oe-blue bg-oe-blue/10 rounded px-1 py-0.5 leading-none cursor-help shrink-0"
+            >
+              fx
+            </span>
+          ) : null}
+          <EditableCell
+            value={String(component.quantity)}
+            field="quantity"
+            editing={editing}
+            setEditing={setEditing}
+            onBlur={handleBlur}
+            className={`${inputClass} text-right`}
+            type="number"
+          />
+        </div>
       </td>
 
       {/* Unit */}
@@ -1160,6 +1215,25 @@ function ComponentRow({
       <tr className="bg-surface-secondary/40 dark:bg-surface-secondary/30">
         <td colSpan={9} className="px-4 py-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Quantity formula (Issue #365) — available for every line type.
+                An arithmetic expression over the assembly's parameters drives
+                the computed quantity; empty keeps the static Qty above. */}
+            <DetailField
+              label={t('assemblies.field_quantity_formula', {
+                defaultValue: 'Quantity formula (fx)',
+              })}
+              hint={t('assemblies.field_quantity_formula_hint', {
+                defaultValue:
+                  'Compute this line from the assembly parameters, e.g. wall_area * 0.12. Leave empty to use the static quantity.',
+              })}
+              type="text"
+              value={component.quantity_formula ?? ''}
+              onCommit={(v) => {
+                const trimmed = v.trim();
+                onUpdate({ quantity_formula: trimmed === '' ? null : trimmed });
+              }}
+              span="sm:col-span-2 lg:col-span-4"
+            />
             {resType === 'material' && (
               <>
                 <DetailField
@@ -1374,11 +1448,13 @@ function ApplyToBOQModal({
   assemblyId,
   assemblyName,
   regionalFactors,
+  parameters,
   onClose,
 }: {
   assemblyId: string;
   assemblyName: string;
   regionalFactors?: Record<string, string>;
+  parameters?: AssemblyParameter[];
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -1391,6 +1467,13 @@ function ApplyToBOQModal({
   const [boqId, setBoqId] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [region, setRegion] = useState('');
+  // Issue #365 — values for the assembly's `input` parameters. Seeded from
+  // each parameter's stored default; the component quantity formulas are then
+  // computed against the resolved values server-side at apply time.
+  const inputParams = (parameters ?? []).filter((p) => p.kind === 'input');
+  const [paramValues, setParamValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries(inputParams.map((p) => [p.name, p.value ?? ''])),
+  );
 
   const { data: projects } = useQuery({
     queryKey: ['projects'],
@@ -1408,8 +1491,22 @@ function ApplyToBOQModal({
   });
 
   const applyMutation = useMutation({
-    mutationFn: () =>
-      assembliesApi.applyToBoq(assemblyId, boqId, parseFloat(quantity) || 1),
+    mutationFn: () => {
+      const parameterValues =
+        inputParams.length > 0
+          ? Object.fromEntries(
+              inputParams.map((p) => {
+                const raw = paramValues[p.name];
+                const n =
+                  raw === undefined || raw.trim() === ''
+                    ? Number(p.value ?? 0)
+                    : Number(raw);
+                return [p.name, Number.isFinite(n) ? n : 0];
+              }),
+            )
+          : undefined;
+      return assembliesApi.applyToBoq(assemblyId, boqId, parseFloat(quantity) || 1, parameterValues);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['boq'] });
       queryClient.invalidateQueries({ queryKey: ['boqs'] });
@@ -1544,6 +1641,37 @@ function ApplyToBOQModal({
               placeholder="1"
               hint={t('assemblies.quantity_hint', { defaultValue: 'Number of times to apply this assembly' })}
             />
+
+            {/* Input parameters (Issue #365) — drive each line's quantity
+                formula. Empty falls back to the stored default. */}
+            {inputParams.length > 0 && (
+              <div className="space-y-2 rounded-lg border border-border-light bg-surface-secondary/40 px-3 py-2.5">
+                <div className="text-xs font-medium text-content-primary">
+                  {t('assembly.apply.params_title', { defaultValue: 'Parameter values' })}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {inputParams.map((p) => (
+                    <label key={p.name} className="block">
+                      <div className="text-[11px] text-content-secondary mb-1 flex items-center gap-1">
+                        <span className="font-mono">{p.name}</span>
+                        {p.unit && <span className="text-content-tertiary">({p.unit})</span>}
+                      </div>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        step="any"
+                        value={paramValues[p.name] ?? ''}
+                        onChange={(e) =>
+                          setParamValues((prev) => ({ ...prev, [p.name]: e.target.value }))
+                        }
+                        placeholder={p.value ?? '0'}
+                        className="w-full h-9 px-2.5 rounded-lg border border-border-light bg-surface-primary text-sm text-content-primary text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-oe-blue/40"
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {applyMutation.error && (
               <div className="rounded-lg bg-semantic-error-bg px-3 py-2 text-sm text-semantic-error">

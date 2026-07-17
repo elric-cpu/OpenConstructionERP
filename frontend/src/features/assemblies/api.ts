@@ -43,6 +43,77 @@ export interface ComponentMetadata {
   [k: string]: unknown;
 }
 
+/**
+ * Parametric assemblies (Issue #365). An assembly can carry named
+ * parameters and let each component drive its quantity from a formula over
+ * them, so one recipe expands to many priced positions.
+ *
+ * Three kinds:
+ * - `input`      — a value the estimator enters (with a stored default).
+ * - `constant`   — a fixed value baked into the recipe.
+ * - `calculated` — a formula over the other parameters.
+ *
+ * `value` is Decimal-in / Decimal-as-string out: it ARRIVES as a numeric
+ * string (e.g. "0.5") for input/constant, and is `null` for calculated.
+ * When sending back (create/update) it stays a numeric string for
+ * input/constant (kept exact), and calculated carries a non-empty `formula`
+ * string with a null value.
+ */
+export type ParameterKind = 'input' | 'calculated' | 'constant';
+
+export interface AssemblyParameter {
+  name: string;
+  kind: ParameterKind;
+  value: string | null;
+  formula: string | null;
+  unit: string;
+  description: string;
+}
+
+/**
+ * One structured problem with a parameter graph or a component formula.
+ * `code` is one of: empty_name | duplicate | invalid_value | missing_formula
+ * | syntax | invalid_ref | cycle | div_by_zero. `scope` is "parameter" or
+ * "component".
+ */
+export interface ParameterError {
+  scope: string;
+  name: string;
+  code: string;
+  message: string;
+}
+
+/** Response of POST /v1/assemblies/{id}/validate-parameters/. */
+export interface ParameterValidationResponse {
+  ok: boolean;
+  errors: ParameterError[];
+  resolved: Record<string, string>;
+}
+
+/**
+ * One expanded component line in an expansion preview. All numeric fields are
+ * Decimal-exact strings — display them verbatim; only coerce with Number()
+ * when arithmetic is unavoidable.
+ */
+export interface ExpandLine {
+  component_id: string | null;
+  description: string;
+  unit: string;
+  resource_type: string | null;
+  static_quantity: string;
+  computed_quantity: string;
+  unit_cost: string;
+  total: string;
+}
+
+/** Response of POST /v1/assemblies/{id}/expand-preview/. */
+export interface ExpandPreviewResponse {
+  resolved_parameters: Record<string, string>;
+  lines: ExpandLine[];
+  total_rate: string;
+  errors: ParameterError[];
+}
+
 export interface AssemblyComponent {
   id: string;
   assembly_id: string;
@@ -52,6 +123,10 @@ export interface AssemblyComponent {
   resource_type: ResourceType | null;
   factor: number;
   quantity: number;
+  // Parametric quantity (Issue #365): an arithmetic formula over the parent
+  // assembly's parameters. When set it drives the computed quantity at
+  // preview / apply time; null keeps the static `quantity` above.
+  quantity_formula: string | null;
   unit: string;
   unit_cost: number;
   total: number;
@@ -78,6 +153,10 @@ export interface Assembly {
   component_count: number;
   usage_count: number;
   tags: string[];
+  // Parametric assembly parameters (Issue #365). Empty for classic recipes.
+  // Flows into AssemblyWithComponents (extends Assembly) so the editor can
+  // read the parameter graph alongside the components.
+  parameters: AssemblyParameter[];
   created_at: string;
   updated_at: string;
 }
@@ -131,6 +210,9 @@ export interface CreateAssemblyData {
   currency?: string;
   bid_factor?: number;
   project_id?: string;
+  // Issue #365 — create/update carry the parameter graph. For input/constant
+  // send a numeric `value`; for calculated send a non-empty `formula`.
+  parameters?: AssemblyParameter[];
 }
 
 export interface CreateComponentData {
@@ -140,6 +222,9 @@ export interface CreateComponentData {
   resource_type?: ResourceType;
   factor: number;
   quantity: number;
+  // Issue #365 — a formula over the assembly's parameters. Send "" or null to
+  // clear it back to the static `quantity`.
+  quantity_formula?: string | null;
   unit: string;
   unit_cost: number;
   metadata?: ComponentMetadata;
@@ -276,12 +361,17 @@ const normalizeComponent = (c: AssemblyComponent): AssemblyComponent => ({
   quantity: toNum(c.quantity),
   unit_cost: toNum(c.unit_cost),
   total: toNum(c.total),
+  // Keep the Decimal-as-string formula as-is; null when the line is static.
+  quantity_formula: c.quantity_formula ?? null,
 });
 
 const normalizeAssembly = <T extends Assembly>(a: T): T => ({
   ...a,
   total_rate: toNum(a.total_rate),
   bid_factor: toNum(a.bid_factor),
+  // Parameter `value`s stay Decimal-as-string; only default to [] when the
+  // server omits the field (classic non-parametric assemblies).
+  parameters: a.parameters ?? [],
 });
 
 const normalizeWithComponents = (a: AssemblyWithComponents): AssemblyWithComponents => ({
@@ -313,8 +403,30 @@ export const assembliesApi = {
     ).then(normalizeComponent),
   deleteComponent: (assemblyId: string, componentId: string) =>
     apiDelete(`/v1/assemblies/${assemblyId}/components/${componentId}`),
-  applyToBoq: (assemblyId: string, boqId: string, quantity: number) =>
-    apiPost(`/v1/assemblies/${assemblyId}/apply-to-boq/`, { boq_id: boqId, quantity }),
+  applyToBoq: (
+    assemblyId: string,
+    boqId: string,
+    quantity: number,
+    parameterValues?: Record<string, number>,
+  ) =>
+    apiPost(`/v1/assemblies/${assemblyId}/apply-to-boq/`, {
+      boq_id: boqId,
+      quantity,
+      // Only send parameter_values when the caller supplies them (Issue #365)
+      // so the existing 3-arg call sites keep sending the classic body.
+      ...(parameterValues ? { parameter_values: parameterValues } : {}),
+    }),
+  // Issue #365 — structural check of the parameter graph (no body). Reports
+  // cycles / bad references / duplicates / syntax errors plus the resolved
+  // default values.
+  validateParameters: (id: string) =>
+    apiPost<ParameterValidationResponse>(`/v1/assemblies/${id}/validate-parameters/`, {}),
+  // Issue #365 — server-authoritative (Decimal-exact) expansion at the given
+  // `input` parameter values.
+  expandPreview: (id: string, parameterValues: Record<string, number>) =>
+    apiPost<ExpandPreviewResponse>(`/v1/assemblies/${id}/expand-preview/`, {
+      parameter_values: parameterValues,
+    }),
   aiGenerate: (data: AIGenerateRequest) =>
     apiPost<AIGeneratedAssembly>('/v1/assemblies/ai-generate/', data),
   reorderComponents: (assemblyId: string, componentIds: string[]) =>
