@@ -351,6 +351,18 @@ class Settings(BaseSettings):
     # registration can set ``OE_REGISTRATION_MODE=open`` in their .env.
     registration_mode: Literal["open", "email-verify", "admin-approve", "closed"] = "admin-approve"
 
+    # ── Multi-tenant row-level security ──────────────────────────────────
+    # When True, each request sets a transaction-local ``app.current_tenant``
+    # GUC from the caller's tenant, and - once the non-superuser runtime role
+    # and per-table policies are in place - PostgreSQL row-level security fails
+    # closed on every tenant-scoped table, so one tenant can never read or write
+    # another's rows even if an app-layer filter is missed. Default False: the
+    # GUC is not set and behaviour is byte-for-byte unchanged, so turning RLS on
+    # is an explicit, reversible operator decision made only after the isolation
+    # tests pass on the target database. Global reference data (cost items,
+    # regional indices, catalogs) is never tenant-scoped. Env: ``OE_RLS_ENFORCE``.
+    rls_enforce: bool = False
+
     # ── AI / Vector ──────────────────────────────────────────────────────
     # Default: Qdrant (CWICR v3 pipeline - BAAI/bge-m3 + 30 per-language
     # collections + parquet lookup). LanceDB remains as a legacy fallback

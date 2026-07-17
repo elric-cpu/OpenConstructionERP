@@ -16,6 +16,7 @@ Usage in routers:
 
 import logging
 import uuid as _uuid
+from collections.abc import AsyncGenerator
 from datetime import UTC
 from typing import TYPE_CHECKING, Annotated, Any
 
@@ -853,3 +854,29 @@ async def audit_context_dep(
 
 
 AuditContextDep = Annotated[None, Depends(audit_context_dep)]
+
+
+# ── Row-level-security request context ──────────────────────────────────────
+
+
+async def rls_request_context(
+    tenant_id: CurrentTenantId = None,
+) -> AsyncGenerator[None, None]:
+    """Bind the caller's tenant to the RLS context for the whole request.
+
+    Generator dependency: it sets the tenant ContextVar that the ``after_begin``
+    GUC listener in :mod:`app.core.rls` reads when a transaction starts, then
+    clears it when the request ends so the binding never leaks to the next
+    request served on the same worker task. Mounted as a global dependency in
+    :mod:`app.main`, so every request session is tenant-scoped once
+    ``OE_RLS_ENFORCE`` is enabled. An anonymous caller resolves to ``None`` (no
+    tenant); a fail-closed policy then denies tenant-scoped rows. Inert while the
+    flag is off - the listener ignores the bound value.
+    """
+    from app.core import rls
+
+    token = rls.set_request_tenant(tenant_id)
+    try:
+        yield
+    finally:
+        rls.reset_request_tenant(token)

@@ -304,6 +304,19 @@ except Exception as _pg_opt_exc:  # noqa: BLE001
 engine = create_engine_from_settings()
 async_session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
+# Register the row-level-security tenant GUC listener on the sync Session class
+# that AsyncSession drives. It is a no-op until OE_RLS_ENFORCE is enabled AND a
+# request binds a tenant, so this changes nothing on a default install. Guarded
+# so an RLS import problem can never break engine/session creation.
+try:
+    from sqlalchemy.orm import Session as _SyncSession
+
+    from app.core import rls as _rls
+
+    _rls.install(_SyncSession)
+except Exception as _rls_exc:  # noqa: BLE001
+    logging.getLogger(__name__).warning("RLS tenant listener not registered: %r", _rls_exc)
+
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """Dependency: yields an async database session."""
