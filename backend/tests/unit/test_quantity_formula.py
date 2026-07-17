@@ -93,9 +93,13 @@ def test_formula_error_vectors() -> None:
 @pytest.mark.parametrize(
     "formula",
     [
-        "min(a, b)",  # function call
-        "max(1, 2)",
-        "sqrt(4)",
+        "sqrt(4)",  # non-allow-listed function call
+        "abs(-1)",
+        "pow(2, 3)",
+        "floor(1.5)",
+        "min(a, b, c=1)",  # keyword argument to an allow-listed function
+        "round(1, 2, 3)",  # wrong arity for round
+        "round()",  # too few arguments
         "2 ** 3",  # power
         "5 % 2",  # modulo
         "a.b",  # attribute access
@@ -115,6 +119,25 @@ def test_rejects_constructs_outside_minimal_grammar(formula: str) -> None:
         validate_formula(formula)
     with pytest.raises(FormulaSyntaxError):
         evaluate_formula(formula, {"a": 1, "b": 2, "c": 3})
+
+
+@pytest.mark.parametrize(
+    ("formula", "variables", "expected"),
+    [
+        ("round(2.5)", {}, "3"),  # half-up on the non-negative quantity domain
+        ("round(2.4)", {}, "2"),
+        ("round(3.14159, 2)", {}, "3.14"),
+        ("min(3, 7)", {}, "3"),
+        ("max(a, b, 5)", {"a": 2, "b": 9}, "9"),
+        ("max(0, min(qty, cap))", {"qty": 15, "cap": 10}, "10"),
+        ("round(wall_area * ratio, 1)", {"wall_area": 12.5, "ratio": 0.83}, "10.4"),
+    ],
+)
+def test_allow_listed_functions_round_min_max(formula: str, variables: dict[str, float], expected: str) -> None:
+    # round / min / max are the only accepted calls; they stay Decimal-exact and
+    # mirror the frontend grid engine for these three.
+    validate_formula(formula)
+    assert evaluate_formula(formula, variables) == Decimal(expected)
 
 
 def test_rejects_non_finite_literal() -> None:

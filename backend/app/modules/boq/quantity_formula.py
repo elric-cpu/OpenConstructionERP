@@ -19,11 +19,16 @@ allow-listed-AST + Decimal approach ``measurement.formula`` uses, but with
 an intentionally MINIMAL grammar for v1:
 
     number literals, bare variable names, unary + / -, binary + - * /,
-    and parentheses.
+    parentheses, and the allow-listed pure functions ``round`` / ``min`` /
+    ``max`` (``round(x)``, ``round(x, n)``, ``min(a, b, ...)``,
+    ``max(a, b, ...)``). These three mirror the frontend grid engine
+    (``engine.ts``), so a per-element or assembly formula using them resolves
+    on both sides; ``round`` uses banker-free half-up rounding on the
+    non-negative quantity domain.
 
-There are NO function calls, NO attribute/subscript access, NO comparisons,
-NO power/modulo, and NO names beyond the element variables supplied by the
-caller. Anything else is rejected at parse time by walking the AST and
+There are NO other function calls, NO attribute/subscript access, NO
+comparisons, NO power/modulo, and NO names beyond the variables supplied by
+the caller. Anything else is rejected at parse time by walking the AST and
 whitelisting node types - never ``eval``/``exec``. All arithmetic is
 ``Decimal`` so quantities stay exact; division by zero and unknown
 variables raise explicitly (never a silent zero).
@@ -41,7 +46,7 @@ import ast
 import math
 import re
 from collections.abc import Mapping
-from decimal import Decimal, DivisionByZero, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, DivisionByZero, InvalidOperation
 from typing import Any
 
 # Guardrails - a BOQ formula is a short arithmetic expression, never a program.
@@ -149,6 +154,11 @@ def build_element_vars(
 _ALLOWED_BINOPS = (ast.Add, ast.Sub, ast.Mult, ast.Div)
 _ALLOWED_UNARYOPS = (ast.UAdd, ast.USub)
 
+# The only function calls a formula may contain. All are pure, total (given a
+# valid argument count) and Decimal-safe. Kept in lock-step with the frontend
+# grid engine so the same formula resolves identically on both sides.
+_ALLOWED_FUNCS = frozenset({"round", "min", "max"})
+
 
 def _strip_lead(expr: str) -> str:
     text = (expr or "").strip()
@@ -200,6 +210,22 @@ def _check_safe(tree: ast.Expression) -> None:
                 raise FormulaSyntaxError("only unary + / - are allowed")
             walk(node.operand, depth + 1)
             return
+        if isinstance(node, ast.Call):
+            if not isinstance(node.func, ast.Name) or node.func.id not in _ALLOWED_FUNCS:
+                raise FormulaSyntaxError("only round / min / max function calls are allowed")
+            if node.keywords:
+                raise FormulaSyntaxError("function keyword arguments are not allowed")
+            name = node.func.id
+            n_args = len(node.args)
+            if name == "round" and n_args not in (1, 2):
+                raise FormulaSyntaxError("round takes 1 or 2 arguments")
+            if name in ("min", "max") and n_args < 1:
+                raise FormulaSyntaxError(f"{name} needs at least one argument")
+            for arg in node.args:
+                if isinstance(arg, ast.Starred):
+                    raise FormulaSyntaxError("star-arguments are not allowed")
+                walk(arg, depth + 1)
+            return
         raise FormulaSyntaxError(f"unsupported expression: {type(node).__name__}")
 
     walk(tree, 0)
@@ -215,11 +241,17 @@ def validate_formula(formula: str) -> None:
 
 
 def list_formula_vars(formula: str) -> list[str]:
-    """Return the variable names a formula references, in first-seen order."""
+    """Return the variable names a formula references, in first-seen order.
+
+    Function-position names (the ``round`` in ``round(x)``) are NOT variables
+    and are excluded, so an allow-listed call never looks like an undeclared
+    reference to the caller.
+    """
     tree = _parse(formula)
     _check_safe(tree)
+    func_names = {id(n.func) for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
     ordered = sorted(
-        ((n.lineno, n.col_offset, n.id) for n in ast.walk(tree) if isinstance(n, ast.Name)),
+        ((n.lineno, n.col_offset, n.id) for n in ast.walk(tree) if isinstance(n, ast.Name) and id(n) not in func_names),
         key=lambda item: (item[0], item[1]),
     )
     seen: list[str] = []
@@ -258,6 +290,22 @@ def _eval(node: ast.AST, variables: Mapping[str, Decimal], depth: int) -> Decima
             if right == 0:
                 raise FormulaMathError("division by zero")
             return left / right
+        except (InvalidOperation, DivisionByZero, ArithmeticError) as exc:
+            raise FormulaMathError(f"arithmetic error: {exc}") from exc
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+        name = node.func.id
+        args = [_eval(arg, variables, depth + 1) for arg in node.args]
+        try:
+            if name == "min":
+                return min(args)
+            if name == "max":
+                return max(args)
+            if name == "round":
+                ndigits = int(args[1]) if len(args) == 2 else 0
+                if ndigits < 0:
+                    raise FormulaMathError("round digits must be >= 0")
+                quantum = Decimal(1).scaleb(-ndigits)
+                return args[0].quantize(quantum, rounding=ROUND_HALF_UP)
         except (InvalidOperation, DivisionByZero, ArithmeticError) as exc:
             raise FormulaMathError(f"arithmetic error: {exc}") from exc
     # Should be unreachable after _check_safe, but never fall through to eval.
