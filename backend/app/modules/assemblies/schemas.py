@@ -13,10 +13,10 @@ compatibility. v3 §10 money fields (``unit_cost``, ``unit_rate``,
 import math
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
 
 # ── v3 §10 money serialisation helper ─────────────────────────────────────
@@ -94,6 +94,60 @@ RESOURCE_TYPES: tuple[str, ...] = (
 )
 
 
+# ── Parametric assembly parameters (Issue #365) ──────────────────────────────
+
+
+class AssemblyParameter(BaseModel):
+    """One named parameter that drives an assembly's component quantities.
+
+    Three kinds:
+
+    * ``input``      - a value the estimator enters (with a stored default).
+    * ``constant``   - a fixed value baked into the template.
+    * ``calculated`` - a formula over the other parameters (evaluated by the
+      shared #347 allow-listed-AST + Decimal engine).
+
+    ``value`` is Decimal-in / Decimal-as-string out (money-neutral but stored
+    exactly so ``0.1 + 0.2`` stays exact). Cross-parameter checks (unique
+    names, resolvable references, no cycles) are the parameter graph's job and
+    run in the service layer via ``parametric.validate_parameter_graph``; this
+    model only enforces the per-parameter shape.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str = Field(..., min_length=1, max_length=64)
+    kind: Literal["input", "calculated", "constant"] = "input"
+    value: Decimal | None = Field(default=None, le=_NUM_MAX, ge=-_NUM_MAX)
+    formula: str | None = Field(default=None, max_length=512)
+    unit: str = Field(default="", max_length=32)
+    description: str = Field(default="", max_length=255)
+
+    @field_validator("value", mode="after")
+    @classmethod
+    def _reject_non_finite(cls, v: Decimal | None) -> Decimal | None:
+        if v is None:
+            return None
+        if not v.is_finite():
+            raise ValueError("parameter value must be finite (no NaN / Infinity)")
+        return v
+
+    @model_validator(mode="after")
+    def _check_kind_requirements(self) -> "AssemblyParameter":
+        # input / constant carry a concrete numeric value; calculated carries a
+        # non-empty formula instead. Mirrors the parametric engine's contract.
+        if self.kind in ("input", "constant"):
+            if self.value is None:
+                raise ValueError(f"a {self.kind} parameter needs a numeric value")
+        elif self.kind == "calculated" and not (self.formula and self.formula.strip()):
+            raise ValueError("a calculated parameter needs a formula")
+        return self
+
+    @field_serializer("value", when_used="json")
+    def _ser_value(self, v: Decimal | None) -> str | None:
+        return _serialise_money(v)
+
+
 class ComponentCreate(BaseModel):
     """Create a new assembly component.
 
@@ -124,6 +178,10 @@ class ComponentCreate(BaseModel):
     name: str | None = Field(default=None, max_length=500, exclude=True)
     factor: float = Field(default=1.0, ge=0.0, le=_NUM_MAX, allow_inf_nan=False)
     quantity: float = Field(default=1.0, ge=0.0, le=_NUM_MAX, allow_inf_nan=False)
+    # Parametric quantity (Issue #365): an arithmetic formula over the parent
+    # assembly's parameters. When set it drives the component quantity at
+    # apply/preview time; NULL keeps the static ``quantity`` above.
+    quantity_formula: str | None = Field(default=None, max_length=512)
     unit: str = Field(..., min_length=1, max_length=20)
     # v3 §10 - money is Decimal-in / Decimal-as-string out.
     unit_cost: Decimal = Field(default=Decimal("0"), ge=0, le=_NUM_MAX)
@@ -163,6 +221,9 @@ class ComponentUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=500)
     factor: float | None = Field(default=None, ge=0.0, le=_NUM_MAX, allow_inf_nan=False)
     quantity: float | None = Field(default=None, ge=0.0, le=_NUM_MAX, allow_inf_nan=False)
+    # Issue #365 - a formula over the assembly's parameters. Send an empty
+    # string to clear it back to the static quantity.
+    quantity_formula: str | None = Field(default=None, max_length=512)
     unit: str | None = Field(default=None, min_length=1, max_length=20)
     unit_cost: Decimal | None = Field(default=None, ge=0, le=_NUM_MAX)
     resource_type: str | None = Field(default=None, max_length=20)
@@ -192,6 +253,8 @@ class ComponentResponse(BaseModel):
     resource_type: str | None = None
     factor: float
     quantity: float
+    # Issue #365 - the per-component quantity formula (NULL for a static line).
+    quantity_formula: str | None = None
     unit: str
     unit_cost: Decimal = Decimal("0")
     # Decimal (not float) so JSON serialises an exact string like "90.0"
@@ -240,6 +303,8 @@ class AssemblyCreate(BaseModel):
     # total_rate can never serialise as null / Infinity.
     bid_factor: float = Field(default=1.0, ge=0.0, le=_NUM_MAX, allow_inf_nan=False)
     regional_factors: dict[str, Any] = Field(default_factory=dict)
+    # Issue #365 - ordered parameter definitions (empty = non-parametric).
+    parameters: list[AssemblyParameter] = Field(default_factory=list, max_length=200)
     is_template: bool = True
     project_id: UUID | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -269,6 +334,9 @@ class AssemblyUpdate(BaseModel):
     # markup that would poison the recalculated total_rate.
     bid_factor: float | None = Field(default=None, ge=0.0, le=_NUM_MAX, allow_inf_nan=False)
     regional_factors: dict[str, Any] | None = None
+    # Issue #365 - when present, REPLACES the whole parameter set (the graph is
+    # re-validated in the service before it is persisted).
+    parameters: list[AssemblyParameter] | None = None
     is_template: bool | None = None
     project_id: UUID | None = None
     is_active: bool | None = None
@@ -312,6 +380,8 @@ class AssemblyResponse(BaseModel):
     currency: str
     bid_factor: float
     regional_factors: dict[str, Any]
+    # Issue #365 - the recipe's parameter definitions (empty = non-parametric).
+    parameters: list[AssemblyParameter] = Field(default_factory=list)
     is_template: bool
     project_id: UUID | None
     owner_id: UUID | None
@@ -366,6 +436,62 @@ class ApplyToBOQRequest(BaseModel):
     quantity: float = Field(..., gt=0.0, le=_NUM_MAX, allow_inf_nan=False)
     ordinal: str = Field(default="", max_length=50, description="Position ordinal; auto-generated if empty")
     region: str | None = Field(default=None, description="Region key for regional factor lookup")
+    # Issue #365 - values for the assembly's ``input`` parameters (by name).
+    # Empty = use each parameter's stored default. Component ``quantity_formula``
+    # lines are then computed against the resolved parameter values.
+    parameter_values: dict[str, float] = Field(default_factory=dict)
+
+
+# ── Parametric validation & expand preview (Issue #365) ──────────────────────
+
+
+class ParameterValidationResponse(BaseModel):
+    """Result of validating an assembly's parameter graph.
+
+    ``ok`` is True only when the graph has no structural problems (unique
+    names, resolvable references, no cycles) AND resolves cleanly at the
+    stored defaults. ``errors`` is the flat list of structured problems
+    (``{scope, name, code, message}``) and ``resolved`` maps each parameter
+    name to its Decimal-as-string value at the defaults.
+    """
+
+    ok: bool
+    errors: list[dict[str, str]] = Field(default_factory=list)
+    resolved: dict[str, str] = Field(default_factory=dict)
+
+
+class ExpandPreviewRequest(BaseModel):
+    """Request body for previewing an assembly expansion at given inputs."""
+
+    parameter_values: dict[str, float] = Field(default_factory=dict)
+
+
+class ExpandLine(BaseModel):
+    """One expanded component line: its static vs formula-computed quantity.
+
+    Money / quantity fields are Decimal-as-string (the module's money rule).
+    ``static_quantity`` is the "before" (the stored per-unit quantity);
+    ``computed_quantity`` is the "after" (the formula result at the supplied
+    parameter values, or the static quantity when the line has no formula).
+    """
+
+    component_id: str | None = None
+    description: str = ""
+    unit: str = ""
+    resource_type: str | None = None
+    static_quantity: str = "0"
+    computed_quantity: str = "0"
+    unit_cost: str = "0"
+    total: str = "0"
+
+
+class ExpandPreviewResponse(BaseModel):
+    """Server-authoritative expansion preview (Decimal-exact)."""
+
+    resolved_parameters: dict[str, str] = Field(default_factory=dict)
+    lines: list[ExpandLine] = Field(default_factory=list)
+    total_rate: str = "0"
+    errors: list[dict[str, str]] = Field(default_factory=list)
 
 
 class CloneAssemblyRequest(BaseModel):
@@ -396,6 +522,9 @@ class AssemblyExport(BaseModel):
     bid_factor: float = Field(default=1.0, ge=0.0, le=1e6, allow_inf_nan=False)
     regional_factors: dict[str, Any] = Field(default_factory=dict)
     tags: list[str] = Field(default_factory=list, max_length=100)
+    # Issue #365 - carried through the export/import round-trip so a
+    # parametric recipe stays parametric (validated on import).
+    parameters: list[dict[str, Any]] = Field(default_factory=list, max_length=200)
     components: list[dict[str, Any]] = Field(default_factory=list, max_length=1000)
 
 

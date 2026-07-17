@@ -42,6 +42,13 @@ class Assembly(Base):
     regional_factors: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         JSON, nullable=False, default=dict, server_default="{}"
     )
+    # Parametric assemblies (Issue #365): an ordered list of parameter
+    # definitions ({name, kind: input|calculated|constant, value, formula,
+    # unit, description}) that drive each component's ``quantity_formula``.
+    # Empty list = a plain, non-parametric recipe (the legacy behaviour).
+    parameters: Mapped[list] = mapped_column(  # type: ignore[assignment]
+        JSON, nullable=False, default=list, server_default="[]"
+    )
     is_template: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     project_id: Mapped[uuid.UUID | None] = mapped_column(
         GUID(),
@@ -103,6 +110,11 @@ class Component(Base):
     resource_type: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
     factor: Mapped[str] = mapped_column(String(50), nullable=False, default="1.0")
     quantity: Mapped[str] = mapped_column(String(50), nullable=False, default="1.0")
+    # Parametric quantity (Issue #365): an arithmetic formula over the parent
+    # assembly's parameters (``wall_area * rebar_ratio``) evaluated at
+    # apply/preview time. NULL keeps the static ``quantity`` (legacy rows).
+    # Mirrors ``QuantityLink.formula`` (Text, nullable) from #347.
+    quantity_formula: Mapped[str | None] = mapped_column(Text, nullable=True)
     unit: Mapped[str] = mapped_column(String(20), nullable=False)
     unit_cost: Mapped[str] = mapped_column(String(50), nullable=False, default="0")
     total: Mapped[str] = mapped_column(String(50), nullable=False, default="0")

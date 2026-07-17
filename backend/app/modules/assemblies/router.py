@@ -44,6 +44,9 @@ from app.modules.assemblies.schemas import (
     ComponentCreate,
     ComponentResponse,
     ComponentUpdate,
+    ExpandPreviewRequest,
+    ExpandPreviewResponse,
+    ParameterValidationResponse,
     ReorderComponentsRequest,
 )
 from app.modules.assemblies.service import AssemblyService, _str_to_float
@@ -161,6 +164,7 @@ def _assembly_to_response(
         currency=assembly.currency,  # type: ignore[attr-defined]
         bid_factor=_str_to_float(assembly.bid_factor),  # type: ignore[attr-defined]
         regional_factors=assembly.regional_factors,  # type: ignore[attr-defined]
+        parameters=getattr(assembly, "parameters", None) or [],
         is_template=assembly.is_template,  # type: ignore[attr-defined]
         project_id=assembly.project_id,  # type: ignore[attr-defined]
         owner_id=assembly.owner_id,  # type: ignore[attr-defined]
@@ -185,6 +189,7 @@ def _component_to_response(comp: object) -> ComponentResponse:
         resource_type=getattr(comp, "resource_type", None),  # type: ignore[attr-defined]
         factor=_str_to_float(comp.factor),  # type: ignore[attr-defined]
         quantity=_str_to_float(comp.quantity),  # type: ignore[attr-defined]
+        quantity_formula=getattr(comp, "quantity_formula", None),  # type: ignore[attr-defined]
         unit=comp.unit,  # type: ignore[attr-defined]
         unit_cost=_str_to_float(comp.unit_cost),  # type: ignore[attr-defined]
         # v3 §10 - money as Decimal so the field_serializer emits an exact
@@ -425,6 +430,7 @@ async def add_component(
             description=data.description,
             factor=data.factor,
             quantity=data.quantity,
+            quantity_formula=data.quantity_formula,
             unit=data.unit,
             unit_cost=data.unit_cost,
             total=round(total, 2),
@@ -506,6 +512,52 @@ async def apply_to_boq(
         "assembly_id": str(assembly_id),
         "message": "Assembly applied to BOQ successfully",
     }
+
+
+# ── Parametric assemblies (Issue #365) ───────────────────────────────────────
+
+
+@router.post(
+    "/{assembly_id}/validate-parameters/",
+    response_model=ParameterValidationResponse,
+    dependencies=[Depends(RequirePermission("assemblies.read"))],
+)
+async def validate_parameters(
+    assembly_id: uuid.UUID,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: AssemblyService = Depends(_get_service),
+) -> ParameterValidationResponse:
+    """Validate an assembly's parameter graph and resolve it at defaults.
+
+    Returns the structured problems (unique names, resolvable references, no
+    cycles) plus the resolved values so the editor can flag issues inline.
+    """
+    await _verify_assembly_owner(session, assembly_id, user_id, payload)
+    return await service.validate_parameters(assembly_id)
+
+
+@router.post(
+    "/{assembly_id}/expand-preview/",
+    response_model=ExpandPreviewResponse,
+    dependencies=[Depends(RequirePermission("assemblies.read"))],
+)
+async def expand_preview(
+    assembly_id: uuid.UUID,
+    data: ExpandPreviewRequest,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: AssemblyService = Depends(_get_service),
+) -> ExpandPreviewResponse:
+    """Preview an assembly expansion at the supplied parameter values.
+
+    Server-authoritative (Decimal-exact): returns each line's before (static)
+    and after (computed) quantity plus the rolled-up rate, without persisting.
+    """
+    await _verify_assembly_owner(session, assembly_id, user_id, payload)
+    return await service.expand_preview(assembly_id, data.parameter_values)
 
 
 @router.post(
