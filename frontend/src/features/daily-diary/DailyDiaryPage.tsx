@@ -24,6 +24,7 @@ import {
   Trash2,
   Globe2,
   FileDown,
+  Send,
   Upload,
   Users,
   Package,
@@ -120,6 +121,7 @@ import {
   type PhotoItem as SitePhoto,
   type DocumentItem,
 } from '@/features/documents/api';
+import { PublishRecordModal } from '@/features/record-publishing/PublishRecordModal';
 
 type Tab = 'diaries' | 'today' | 'archive';
 
@@ -931,6 +933,7 @@ function TodayTab({
   const [realityOpen, setRealityOpen] = useState(false);
   const [sclOpen, setSclOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
 
   // All asset panels are scoped to the diary's OWN date - not todayIso().
   // A diary opened from the calendar can be any past day; previously the
@@ -1227,6 +1230,24 @@ function TodayTab({
             {t('daily_diary.export_pdf', { defaultValue: 'Export PDF' })}
           </Button>
           <Button
+            variant="secondary"
+            size="sm"
+            icon={<Send size={14} />}
+            onClick={() => setPublishOpen(true)}
+            data-testid="daily-diary-publish"
+            aria-label={t('record_publishing.publish_action', {
+              defaultValue: 'Publish and distribute',
+            })}
+            title={t('daily_diary.publish_hint', {
+              defaultValue:
+                'Publish this diary as a signed PDF and send it to named recipients who acknowledge receipt, in one step.',
+            })}
+          >
+            {t('record_publishing.publish_action', {
+              defaultValue: 'Publish and distribute',
+            })}
+          </Button>
+          <Button
             variant="ghost"
             size="sm"
             icon={<Package size={14} />}
@@ -1496,6 +1517,21 @@ function TodayTab({
       )}
       {editOpen && (
         <EditDiaryModal diary={diary} onClose={() => setEditOpen(false)} />
+      )}
+      {publishOpen && diaryId && (
+        <PublishRecordModal
+          sourceKind="daily_diary"
+          sourceId={diaryId}
+          projectId={projectId}
+          subjectHint={`${t('daily_diary.title', { defaultValue: 'Daily Site Diary' })} ${diary.diary_date}`}
+          onClose={() => setPublishOpen(false)}
+          onPublished={() => {
+            // Publishing stamps the diary's pdf_export_ref with the new
+            // transmittal id, turning the previously dead export soft-link
+            // live, so refresh the diary views.
+            qc.invalidateQueries({ queryKey: ['daily-diary'] });
+          }}
+        />
       )}
     </div>
   );
