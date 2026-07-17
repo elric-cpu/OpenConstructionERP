@@ -14,9 +14,13 @@ repos:
         args: ['--maxkb=1024']
       - id: detect-private-key
 
-  # Python linting & formatting
+  # Python linting & formatting. Pinned to the same ruff the CI gate and
+  # backend/pyproject.toml dev extra use (ruff==0.15.20): the "ruff format
+  # --check" gate compares against the formatter's exact output, so a hook on
+  # an older ruff would reformat differently and fail CI on code that passed
+  # locally. Bump this in lockstep with the pyproject pin.
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.0
+    rev: v0.15.20
     hooks:
       - id: ruff
         args: [--fix]
