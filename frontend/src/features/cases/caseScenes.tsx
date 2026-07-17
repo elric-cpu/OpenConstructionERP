@@ -25,7 +25,6 @@ import {
   Cylinder,
   HeaderBand,
   Magnifier,
-  Pill,
   RowBar,
   Sheet,
   Shield,
@@ -466,7 +465,7 @@ export const CASE_SCENES: Record<string, Scene> = {
 
   // Coordinate models and resolve clashes: federate, magnify to detect, triage
   // the real ones in a status list.
-  'coordinate-models-and-clashes': (accent) => (
+  'coordinate-models-and-clashes': () => (
     <>
       <Cube cx={38} ty={24} w={18} hh={9} depth={20} top={C.blueLight} left={C.blue} right={C.blueDeep} />
       <circle cx={40} cy={40} r={2} fill={C.red} stroke="none" />
@@ -484,7 +483,7 @@ export const CASE_SCENES: Record<string, Scene> = {
 
   // Raise a design query from BIM coordination: a conflict in the model becomes
   // a question, answered and fed back.
-  'design-query-from-bim-coordination': (accent) => (
+  'design-query-from-bim-coordination': () => (
     <>
       <Cube cx={34} ty={28} w={15} hh={7.5} depth={17} top={C.grey3} left={C.grey2} right={C.grey1} />
       <circle cx={40} cy={44} r={2} fill={C.red} stroke="none" />
@@ -507,7 +506,7 @@ export const CASE_SCENES: Record<string, Scene> = {
 
   // Audit a model before it goes out: magnify the model against a checklist of
   // coordinate base, clashes and classification.
-  'model-quality-audit-before-issue': (accent) => (
+  'model-quality-audit-before-issue': () => (
     <>
       <Cube cx={34} ty={24} w={16} hh={8} depth={18} top={C.blueLight} left={C.blue} right={C.blueDeep} />
       <Magnifier cx={42} cy={38} r={9} />
