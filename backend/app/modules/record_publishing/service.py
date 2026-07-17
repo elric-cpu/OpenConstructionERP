@@ -203,15 +203,64 @@ async def _on_daily_diary_published(
         logger.debug("Could not set diary %s pdf_export_ref after publish", source_id, exc_info=True)
 
 
-# Registry of publishable record kinds. Adding a kind (meetings, inspections)
-# is one entry here plus a renderer - the router, storage and distribution flow
-# are all kind-agnostic.
+async def _render_meeting_minutes(session: AsyncSession, source_id: uuid.UUID) -> RenderedRecord:
+    """Render a meeting's confirmed minutes into a distributable record PDF.
+
+    Publishes the human-confirmed minutes document, not the raw meeting row, so
+    a caller cannot distribute a meeting that has not had its minutes drafted
+    yet (422). Reuses the same ``build_minutes_pdf`` renderer as the meetings
+    export endpoint, so the distributed PDF is byte-for-byte the export.
+    """
+    from app.modules.meetings.pdf import build_minutes_pdf, minutes_pdf_filename
+    from app.modules.meetings.service import MeetingService
+    from app.modules.projects.models import Project
+
+    meeting = await MeetingService(session).get_meeting(source_id)  # raises 404 when missing
+    minutes = await MeetingService(session).get_minutes_row(source_id)
+    if minutes is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="This meeting has no confirmed minutes to publish yet",
+        )
+
+    proj_name = (
+        await session.execute(select(Project.name).where(Project.id == meeting.project_id))
+    ).scalar_one_or_none() or "Unknown Project"
+    content = minutes.content if isinstance(minutes.content, dict) else {}
+    pdf_bytes = build_minutes_pdf(meeting, minutes, proj_name)
+
+    number = str(content.get("meeting_number") or meeting.meeting_number or "").strip()
+    title = str(content.get("title") or meeting.title or "").strip()
+    subject = "Meeting Minutes"
+    if number:
+        subject = f"{subject} - #{number}"
+    if title:
+        subject = f"{subject}: {title}"
+    return RenderedRecord(
+        project_id=meeting.project_id,
+        subject=subject[:255],
+        canonical_name=safe_filename(minutes_pdf_filename(meeting, content)),
+        pdf_bytes=pdf_bytes,
+        source_kind="meeting",
+        source_id=str(source_id),
+    )
+
+
+# Registry of publishable record kinds. Adding a kind (inspections next) is one
+# entry here plus a renderer - the router, storage and distribution flow are all
+# kind-agnostic.
 _RECORD_SOURCES: dict[str, RecordSource] = {
     "daily_diary": RecordSource(
         kind="daily_diary",
         label="Daily Site Diary",
         render=_render_daily_diary,
         on_published=_on_daily_diary_published,
+    ),
+    "meeting": RecordSource(
+        kind="meeting",
+        label="Meeting Minutes",
+        render=_render_meeting_minutes,
+        on_published=None,
     ),
 }
 

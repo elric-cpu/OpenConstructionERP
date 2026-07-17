@@ -76,6 +76,56 @@ def test_registry_wires_renderer_and_after_hook() -> None:
     assert callable(source.on_published)
 
 
+def test_supported_kinds_includes_meeting() -> None:
+    kinds = supported_kinds()
+    assert "daily_diary" in kinds
+    assert "meeting" in kinds
+    # Sorted + no duplicates so the surface is stable for the UI.
+    assert kinds == sorted(set(kinds))
+
+
+def test_meeting_source_wires_renderer() -> None:
+    source = _RECORD_SOURCES["meeting"]
+    assert source.kind == "meeting"
+    assert callable(source.render)
+    # Publishing minutes does not mutate the meeting, so there is no after-hook.
+    assert source.on_published is None
+
+
+def test_build_minutes_pdf_returns_pdf_bytes() -> None:
+    # The minutes renderer is shared with the meetings export endpoint; exercise
+    # it directly with stand-in rows so a regression in the extracted helper is
+    # caught without a database or the full request stack.
+    from types import SimpleNamespace
+
+    from app.modules.meetings.pdf import build_minutes_pdf, minutes_pdf_filename
+
+    meeting = SimpleNamespace(
+        title="Weekly site coordination",
+        meeting_number="007",
+        meeting_date="2026-07-17",
+        project_id=uuid.uuid4(),
+    )
+    minutes = SimpleNamespace(
+        content={
+            "title": "Weekly site coordination",
+            "attendees_present": [{"name": "A. Boiko"}],
+            "attendees_absent": [],
+            "agenda": [{"number": 1, "topic": "Foundations", "decision": "Proceed"}],
+            "action_items": [{"description": "Order rebar", "owner": "GC", "status": "open"}],
+            "summary": "All on track.",
+        },
+        status="issued",
+        issued_at=None,
+    )
+    pdf = build_minutes_pdf(meeting, minutes, "Demo Project")
+    assert pdf.startswith(b"%PDF")
+    assert len(pdf) > 500
+    fname = minutes_pdf_filename(meeting, minutes.content)
+    assert fname.startswith("minutes_007_")
+    assert fname.endswith(".pdf")
+
+
 def test_rendered_record_is_frozen() -> None:
     rendered = RenderedRecord(
         project_id=uuid.uuid4(),

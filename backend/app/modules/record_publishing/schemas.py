@@ -12,8 +12,8 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from app.modules.file_transmittals.schemas import TransmittalReason
 
 # The record kinds this module can publish. Extended as renderers are added
-# (meetings, inspections); the string values match the service registry keys.
-RecordKind = Literal["daily_diary"]
+# (inspections next); the string values match the service registry keys.
+RecordKind = Literal["daily_diary", "meeting"]
 
 
 class PublishRecipientInput(BaseModel):

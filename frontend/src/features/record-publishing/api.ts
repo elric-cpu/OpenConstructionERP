@@ -21,7 +21,7 @@ import {
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
 /** Record kinds that can currently be published (extends over time). */
-export type RecordKind = 'daily_diary';
+export type RecordKind = 'daily_diary' | 'meeting';
 
 export interface PublishRecipientInput {
   email: string;

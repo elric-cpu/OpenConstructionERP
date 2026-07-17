@@ -1972,6 +1972,7 @@ const MeetingRow = React.memo(function MeetingRow({
           {showMinutes && (
             <MinutesDialog
               meetingId={meeting.id}
+              projectId={meeting.project_id}
               meetingTitle={meeting.title}
               onClose={() => setShowMinutes(false)}
             />

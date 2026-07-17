@@ -20,6 +20,7 @@ import {
   RefreshCw,
   Save,
   Send,
+  Share2,
   Sparkles,
 } from 'lucide-react';
 import {
@@ -43,9 +44,11 @@ import {
   type MinutesAgendaLine,
   type MinutesContent,
 } from './api';
+import { PublishRecordModal } from '@/features/record-publishing/PublishRecordModal';
 
 interface MinutesDialogProps {
   meetingId: string;
+  projectId: string;
   meetingTitle: string;
   onClose: () => void;
 }
@@ -68,9 +71,10 @@ async function downloadMinutesPdf(meetingId: string): Promise<void> {
   triggerDownload(blob, filename);
 }
 
-export function MinutesDialog({ meetingId, meetingTitle, onClose }: MinutesDialogProps) {
+export function MinutesDialog({ meetingId, projectId, meetingTitle, onClose }: MinutesDialogProps) {
   const { t } = useTranslation();
   const qc = useQueryClient();
+  const [publishOpen, setPublishOpen] = useState(false);
   const addToast = useToastStore((s) => s.addToast);
 
   const minutesQ = useQuery<Minutes | null>({
@@ -224,6 +228,20 @@ export function MinutesDialog({ meetingId, meetingTitle, onClose }: MinutesDialo
               <FileDown size={14} className="mr-1.5" />
             )}
             {t('meetings.export_pdf', { defaultValue: 'Export PDF' })}
+          </Button>
+        )}
+        {minutes && issued && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setPublishOpen(true)}
+            title={t('meetings.publish_record_hint', {
+              defaultValue:
+                'Issue the minutes as a signed PDF transmittal that recipients acknowledge, with a no-login download link.',
+            })}
+          >
+            <Share2 size={14} className="mr-1.5" />
+            {t('record_publishing.publish_action', { defaultValue: 'Publish and distribute' })}
           </Button>
         )}
       </div>
@@ -508,6 +526,18 @@ export function MinutesDialog({ meetingId, meetingTitle, onClose }: MinutesDialo
             </WideModalField>
           </WideModalSection>
         </div>
+      )}
+      {publishOpen && (
+        <PublishRecordModal
+          sourceKind="meeting"
+          sourceId={meetingId}
+          projectId={projectId}
+          subjectHint={meetingTitle}
+          onClose={() => setPublishOpen(false)}
+          onPublished={() =>
+            void qc.invalidateQueries({ queryKey: ['meeting-minutes', meetingId] })
+          }
+        />
       )}
     </WideModal>
   );
