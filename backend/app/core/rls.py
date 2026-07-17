@@ -5,27 +5,31 @@
 PostgreSQL row-level security is the backstop under the app-layer tenant
 guards: even if a query forgets its ``tenant_id`` filter, the database refuses
 to return or change another tenant's rows. It is enforced only when
-``settings.rls_enforce`` is True AND the request connects through a
-non-superuser role, because a superuser (and, without ``FORCE``, a table owner)
-bypasses every policy. Both conditions are opt-in, so this module is inert on a
-default install: the flag is False and the app connects as the cluster
-superuser, exactly as before.
+``settings.rls_enforce`` is True, because the app otherwise connects as the
+cluster superuser, and a superuser bypasses every policy. The flag is opt-in,
+so this module is inert on a default install.
 
-Mechanism, when enabled:
+Mechanism, when enabled (single connection, no second engine):
 
-* A per-request :class:`~contextvars.ContextVar` carries the caller's tenant id.
-  It is bound at the top of a request by ``rls_request_context`` (wired in
-  ``app.dependencies``) and cleared when the request ends.
-* An ``after_begin`` listener on the request session stamps a transaction-local
-  ``app.current_tenant`` GUC from that ContextVar every time a transaction
-  starts, so it survives mid-request commits. The policies read it via
-  ``current_setting('app.current_tenant', true)``.
-* A session with no tenant in context (a background job, the event bus, a seed)
-  leaves the GUC unset; a fail-closed policy then matches no rows, which is why
-  such out-of-request sessions must run under the BYPASSRLS system role.
+* A per-request :class:`~contextvars.ContextVar` carries the caller's tenant.
+  ``rls_request_context`` (in ``app.dependencies``) binds it at the top of a
+  request and clears it at the end. The default is a private ``_UNSET`` sentinel
+  so a background/out-of-request session (which never binds it) is
+  distinguishable from an anonymous request (which binds ``None``).
+* An ``after_begin`` listener runs on every transaction of the request session:
+    - background session (``_UNSET``): do nothing, so the transaction keeps the
+      connecting superuser role and bypasses RLS, exactly as before;
+    - request session: ``SET LOCAL ROLE`` to the non-superuser runtime role so
+      policies apply, then stamp a transaction-local ``app.current_tenant`` GUC.
+      ``SET LOCAL`` is transaction-scoped, so it resets on commit and never
+      contaminates the pooled connection; the listener re-applies it on the next
+      transaction, so it survives mid-request commits.
+* An anonymous request binds ``None`` -> empty GUC -> a fail-closed policy
+  (``tenant_id = current_setting('app.current_tenant', true)``) matches no
+  tenant rows, while global reference tables (never policied) stay readable.
 
-This module is deliberately import-light (only SQLAlchemy + settings) so it can
-be imported from the database layer without a dependency cycle.
+Import-light (SQLAlchemy + settings only) so the database layer can import it
+without a dependency cycle.
 """
 
 from __future__ import annotations
@@ -33,7 +37,7 @@ from __future__ import annotations
 import contextlib
 import logging
 from contextvars import ContextVar, Token
-from typing import Final
+from typing import Any, Final
 
 from sqlalchemy import event, text
 from sqlalchemy.orm import Session
@@ -47,10 +51,22 @@ logger = logging.getLogger(__name__)
 # PostgreSQL as an unrecognised configuration parameter).
 GUC_NAME: Final[str] = "app.current_tenant"
 
-# Per-request tenant id, bound at request entry and read when a transaction
-# begins. Default None => "no tenant" => a fail-closed policy denies the
-# session, so background/out-of-request work must use the BYPASSRLS role.
-_request_tenant: ContextVar[str | None] = ContextVar("rls_request_tenant", default=None)
+# Non-superuser runtime role that request transactions run as, so policies
+# apply. Created idempotently by the migrator (see app.core.rls_setup). A
+# hardcoded identifier - never interpolate user input into a SET ROLE.
+APP_ROLE: Final[str] = "oe_app"
+
+# BYPASSRLS role available for background work that must span tenants. Not used
+# by the request path; documented here as the companion to APP_ROLE.
+SYSTEM_ROLE: Final[str] = "oe_system"
+
+# Distinguishes "no request bound this context" (background/system session ->
+# keep the superuser role, bypass RLS) from "request bound an anonymous caller"
+# (None -> downgrade role, empty tenant, fail closed).
+_UNSET: Final = object()
+
+# Per-request tenant, bound at request entry and read when a transaction begins.
+_request_tenant: ContextVar[Any] = ContextVar("rls_request_tenant", default=_UNSET)
 
 # Guards one-time listener registration so a re-import (or a test that rebuilds
 # the engine) does not stack duplicate listeners on the same Session class.
@@ -69,47 +85,35 @@ def rls_enabled() -> bool:
         return False
 
 
-def set_request_tenant(tenant_id: str | None) -> Token[str | None]:
-    """Bind ``tenant_id`` to the current async context.
+def set_request_tenant(tenant_id: str | None) -> Token[Any]:
+    """Bind ``tenant_id`` (or ``None`` for anonymous) to the current context.
 
-    Returns the reset token; pass it to :func:`reset_request_tenant` in a
-    ``finally`` so the binding never leaks to the next request served on the
-    same worker task.
+    Marks this context as a request context, so the ``after_begin`` listener
+    downgrades to the runtime role. Returns the reset token; pass it to
+    :func:`reset_request_tenant` in a ``finally`` so it never leaks to the next
+    request served on the same worker task.
     """
     return _request_tenant.set(tenant_id)
 
 
-def reset_request_tenant(token: Token[str | None]) -> None:
+def reset_request_tenant(token: Token[Any]) -> None:
     """Undo a :func:`set_request_tenant`, tolerating a stale/foreign token."""
     with contextlib.suppress(ValueError, LookupError):
         _request_tenant.reset(token)
 
 
 def current_request_tenant() -> str | None:
-    """Return the tenant id bound to this context, or None."""
-    return _request_tenant.get()
-
-
-def _apply_tenant_guc(connection, tenant_id: str) -> None:  # noqa: ANN001 - SA connection
-    """Set the transaction-local tenant GUC on a live connection.
-
-    Uses ``set_config(name, value, is_local => true)`` so the value is scoped
-    to the current transaction and reset on commit/rollback; the
-    ``after_begin`` listener re-applies it on the next transaction.
-    """
-    connection.execute(
-        text("SELECT set_config(:name, :val, true)"),
-        {"name": GUC_NAME, "val": tenant_id},
-    )
+    """Return the tenant bound to this context, or None (anonymous/unbound)."""
+    value = _request_tenant.get()
+    return None if value is _UNSET else value
 
 
 def install(session_class: type[Session]) -> None:
-    """Register the ``after_begin`` GUC-stamping listener on ``session_class``.
+    """Register the ``after_begin`` role/GUC listener on ``session_class``.
 
     Attach to the sync ``Session`` class underlying the async session factory.
     The listener is a no-op while the flag is off (one function call + a cached
-    bool read), so the default path is effectively free. Idempotent: registering
-    the same class twice is ignored.
+    bool read), so the default path is effectively free. Idempotent.
     """
     key = id(session_class)
     if key in _installed:
@@ -117,15 +121,21 @@ def install(session_class: type[Session]) -> None:
     _installed.add(key)
 
     @event.listens_for(session_class, "after_begin")
-    def _stamp_tenant_guc(session, transaction, connection) -> None:  # noqa: ANN001, ARG001
+    def _scope_transaction(session, transaction, connection) -> None:  # noqa: ANN001, ARG001
         if not rls_enabled():
             return
-        tenant_id = _request_tenant.get()
-        if tenant_id is None:
-            # Background/system session: leave the GUC unset. A fail-closed
-            # policy denies it; it must run under the BYPASSRLS system role.
+        value = _request_tenant.get()
+        if value is _UNSET:
+            # Background/system session: keep the connecting (superuser) role so
+            # jobs, the event bus and seeds keep working. Such work is trusted
+            # system code; to scope it, run it under the BYPASSRLS system role.
             return
-        # If stamping the GUC fails we must NOT proceed - running the query
-        # without the tenant scope would either leak or, under a fail-closed
-        # policy, silently return nothing. Raise so the request fails loudly.
-        _apply_tenant_guc(connection, tenant_id)
+        # Request context (authenticated tenant string, or None for anonymous).
+        # Downgrade to the non-superuser role so policies bite, then scope to the
+        # tenant. A failure here MUST propagate: running the rest of the
+        # transaction as the superuser would silently bypass the policies.
+        connection.exec_driver_sql(f'SET LOCAL ROLE "{APP_ROLE}"')
+        connection.execute(
+            text("SELECT set_config(:name, :val, true)"),
+            {"name": GUC_NAME, "val": value or ""},
+        )

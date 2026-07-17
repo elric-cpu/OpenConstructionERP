@@ -863,6 +863,14 @@ def cmd_init_db(args: argparse.Namespace) -> None:
             await postgres_auto_migrate(engine, Base)
         except Exception as exc:  # noqa: BLE001
             logger.warning("init-db: postgres_auto_migrate skipped: %s", exc)
+        # Provision row-level-security roles + policies when enabled. No-op
+        # while settings.rls_enforce is off, so a default init-db is unchanged.
+        try:
+            from app.core.rls_setup import provision_rls
+
+            await provision_rls(engine, Base)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("init-db: RLS provisioning skipped: %s", exc)
 
     try:
         asyncio.run(_create())

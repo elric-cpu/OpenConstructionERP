@@ -2646,6 +2646,19 @@ def create_app() -> FastAPI:
                     logger.info("Alembic version stamped to head %s on fresh DB", stamped)
             except Exception:
                 logger.debug("Alembic head stamp skipped (non-fatal)", exc_info=True)
+
+            # Provision multi-tenant row-level security (opt-in). Runs after
+            # create_all so every tenant table exists on both fresh and upgraded
+            # databases; a no-op that never touches the database while
+            # settings.rls_enforce is off, so it is inert on a default install.
+            try:
+                from app.core.rls_setup import provision_rls
+
+                rls_stats = await provision_rls(engine, Base)
+                if rls_stats.get("tables"):
+                    logger.info("RLS enforcement active: %d tenant tables policied", rls_stats["tables"])
+            except Exception:
+                logger.warning("RLS provisioning skipped (non-fatal)", exc_info=True)
         else:
             logger.info("Using external database (Alembic manages schema)")
 
