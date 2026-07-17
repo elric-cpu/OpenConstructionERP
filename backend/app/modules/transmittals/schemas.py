@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.modules.transmittals.logic import PURPOSE_CODES, response_due_error
 
@@ -25,11 +25,33 @@ _PURPOSE_HELP = (
 
 
 class RecipientCreate(BaseModel):
-    """Add a recipient to a transmittal."""
+    """Add a recipient to a transmittal.
+
+    A recipient can be named by free text (``recipient_name`` / ``recipient_email``
+    for an external party), by a stored contact (``recipient_org_id``) or by a
+    system user (``recipient_user_id``). Any combination is accepted, including a
+    bare row, so a draft can be built up incrementally.
+    """
 
     recipient_org_id: UUID | None = None
     recipient_user_id: UUID | None = None
+    recipient_name: str | None = Field(default=None, max_length=200)
+    recipient_email: str | None = Field(default=None, max_length=320)
     action_required: str | None = Field(default=None, max_length=100)
+
+    @field_validator("recipient_name", "recipient_email", "action_required")
+    @classmethod
+    def _sanitise_text(cls, value: str | None) -> str | None:
+        """Strip control characters and surrounding whitespace.
+
+        A recipient name or email may later be printed on a cover sheet or used
+        in a notification, so a newline or other control character must never
+        survive to enable header injection. An empty result collapses to None.
+        """
+        if value is None:
+            return None
+        cleaned = "".join(ch for ch in value if ch == " " or ch.isprintable()).strip()
+        return cleaned or None
 
 
 class RecipientResponse(BaseModel):
@@ -41,6 +63,8 @@ class RecipientResponse(BaseModel):
     transmittal_id: UUID
     recipient_org_id: UUID | None = None
     recipient_user_id: UUID | None = None
+    recipient_name: str | None = None
+    recipient_email: str | None = None
     action_required: str | None = None
     acknowledged_at: datetime | None = None
     response: str | None = None

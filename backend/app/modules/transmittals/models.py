@@ -92,6 +92,14 @@ class TransmittalRecipient(Base):
     )
     recipient_org_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
     recipient_user_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
+    # Free-text identity for a recipient who is not a system user or a stored
+    # contact - the common case for a transmittal, which is often sent to an
+    # external party by name and email. Either or both may be set; a recipient
+    # can also carry only recipient_org_id / recipient_user_id when picked from
+    # contacts. At least one of these four is expected, but none is enforced so
+    # a bare "to be filled in" row can still be created on a draft.
+    recipient_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    recipient_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     action_required: Mapped[str | None] = mapped_column(String(100), nullable=True)
     acknowledged_at: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
     response: Mapped[str | None] = mapped_column(Text, nullable=True)

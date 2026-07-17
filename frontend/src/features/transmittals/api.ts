@@ -28,6 +28,7 @@ export interface TransmittalRecipient {
   id: string;
   name: string;
   company: string | null;
+  email: string | null;
   acknowledged: boolean;
   acknowledged_at: string | null;
   response: string | null;
@@ -44,6 +45,10 @@ interface RecipientWire {
   id: string;
   name?: string | null;
   company?: string | null;
+  // Free-text identity columns the backend now stores directly (a recipient is
+  // usually an external party, not a system user or a stored contact).
+  recipient_name?: string | null;
+  recipient_email?: string | null;
   acknowledged?: boolean | null;
   acknowledged_at?: string | null;
   recipient_org_id?: string | null;
@@ -110,6 +115,17 @@ export interface CreateItemPayload {
   notes?: string;
 }
 
+// One recipient on create or on a post-hoc add. A recipient is usually named
+// by free text (an external party); org/user ids are for recipients picked
+// from contacts or system users.
+export interface CreateRecipientPayload {
+  recipient_name?: string;
+  recipient_email?: string;
+  recipient_org_id?: string;
+  recipient_user_id?: string;
+  action_required?: string;
+}
+
 export interface CreateTransmittalPayload {
   project_id: string;
   subject: string;
@@ -117,11 +133,11 @@ export interface CreateTransmittalPayload {
   cover_note?: string;
   response_due_date?: string;
   items?: CreateItemPayload[];
-  // dead_button fix: the create modal collected a free-text "Recipients" field
-  // (names/emails) that handleCreateSubmit silently dropped on submit. The
-  // backend has no free-text recipient column (only org/user UUIDs), so the
-  // typed names are preserved in the transmittal's free-form `metadata` dict
-  // (persisted server-side as metadata_ and echoed back in TransmittalResponse).
+  // The create form's "Recipients" field is split into structured recipient
+  // rows here so the transmittal has real recipients and can actually be issued
+  // (issuing requires at least one recipient). Free-text names/emails land in
+  // recipient_name / recipient_email.
+  recipients?: CreateRecipientPayload[];
   metadata?: Record<string, unknown>;
 }
 
@@ -163,13 +179,16 @@ function normaliseItem(i: ItemWire): TransmittalItem {
 // Short, stable label for a recipient when the backend has not (yet) hydrated
 // a human-readable name. We never want the UI to print `undefined`.
 function recipientFallbackLabel(r: RecipientWire): string {
+  const named = r.recipient_name?.trim() || r.recipient_email?.trim();
+  if (named) return named;
   const id = r.recipient_user_id ?? r.recipient_org_id;
   if (id) return `#${id.slice(0, 8)}`;
   return r.action_required ?? 'Recipient';
 }
 
 function normaliseRecipient(r: RecipientWire): TransmittalRecipient {
-  const name = r.name?.trim() || recipientFallbackLabel(r);
+  const name = r.name?.trim() || r.recipient_name?.trim() || recipientFallbackLabel(r);
+  const email = r.recipient_email?.trim() || null;
   // Derive the acknowledged flag from `acknowledged_at` when the backend does
   // not send an explicit boolean, so the "{ack}/{total} acknowledged" header
   // and the per-row check icon reflect reality instead of always reading 0.
@@ -178,6 +197,7 @@ function normaliseRecipient(r: RecipientWire): TransmittalRecipient {
     id: r.id,
     name,
     company: r.company ?? null,
+    email,
     acknowledged,
     acknowledged_at: r.acknowledged_at ?? null,
     response: r.response ?? null,
@@ -237,4 +257,15 @@ export async function updateTransmittal(
 
 export async function deleteTransmittal(id: string): Promise<void> {
   await apiDelete(`/v1/transmittals/${id}`);
+}
+
+export async function addRecipient(
+  transmittalId: string,
+  data: CreateRecipientPayload,
+): Promise<void> {
+  await apiPost(`/v1/transmittals/${transmittalId}/recipients/`, data);
+}
+
+export async function deleteRecipient(transmittalId: string, recipientId: string): Promise<void> {
+  await apiDelete(`/v1/transmittals/${transmittalId}/recipients/${recipientId}`);
 }

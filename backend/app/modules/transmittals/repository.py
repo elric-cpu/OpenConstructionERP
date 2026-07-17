@@ -130,6 +130,22 @@ class TransmittalRepository:
         await self.session.execute(stmt)
         await self.session.flush()
 
+    async def delete_recipient(self, transmittal_id: uuid.UUID, recipient_id: uuid.UUID) -> int:
+        """Delete a single recipient, scoped to its transmittal.
+
+        Returns the number of rows deleted (0 when the recipient does not exist
+        or belongs to another transmittal) so the service can answer 404.
+        """
+        from sqlalchemy import delete
+
+        stmt = delete(TransmittalRecipient).where(
+            TransmittalRecipient.id == recipient_id,
+            TransmittalRecipient.transmittal_id == transmittal_id,
+        )
+        result = await self.session.execute(stmt)
+        await self.session.flush()
+        return result.rowcount or 0
+
     # ── Item operations ──────────────────────────────────────────────────
 
     async def add_item(self, item: TransmittalItem) -> TransmittalItem:

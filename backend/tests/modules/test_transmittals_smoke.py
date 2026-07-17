@@ -251,3 +251,94 @@ async def test_transmittals_rbac_viewer_denied(client: AsyncClient):
         headers=viewer_hdr,
     )
     assert forbidden_create.status_code == 403, forbidden_create.text
+
+
+@pytest.mark.asyncio
+async def test_transmittals_named_recipients_and_issue(client: AsyncClient):
+    """Create with a free-text recipient, add/remove one, then issue.
+
+    Mirrors exactly what the UI now sends. The create form used to drop the
+    typed recipients into metadata, so a UI-created transmittal had zero
+    recipients and issuing always failed with 422. This proves the whole flow:
+    a named recipient is stored with its name and email, recipients can be
+    added and removed on the draft, and the transmittal issues once it has a
+    recipient and an item.
+    """
+    _, header = await _login_as(client, "admin")
+
+    proj = await client.post(
+        "/api/v1/projects/",
+        json={"name": "Transmittals Recipients", "description": "recipients regression"},
+        headers=header,
+    )
+    assert proj.status_code in (200, 201), proj.text
+    project_id = proj.json()["id"]
+
+    # Create with a free-text recipient (name + email), exactly like the form.
+    create_resp = await client.post(
+        "/api/v1/transmittals/",
+        json={
+            "project_id": project_id,
+            "subject": "For review - structural set",
+            "purpose_code": "for_review",
+            "recipients": [
+                {"recipient_name": "Jane Site", "recipient_email": "jane@builder.example"},
+            ],
+            "items": [
+                {"item_number": 1, "description": "S-101 General Arrangement"},
+            ],
+        },
+        headers=header,
+    )
+    assert create_resp.status_code == 201, create_resp.text
+    created = create_resp.json()
+    transmittal_id = created["id"]
+    assert len(created["recipients"]) == 1
+    assert created["recipients"][0]["recipient_name"] == "Jane Site"
+    assert created["recipients"][0]["recipient_email"] == "jane@builder.example"
+
+    # Add a second recipient through the post-hoc endpoint.
+    add_resp = await client.post(
+        f"/api/v1/transmittals/{transmittal_id}/recipients/",
+        json={"recipient_name": "Sam Client"},
+        headers=header,
+    )
+    assert add_resp.status_code == 201, add_resp.text
+    added_recipient_id = add_resp.json()["id"]
+
+    listed = await client.get(f"/api/v1/transmittals/{transmittal_id}", headers=header)
+    assert listed.status_code == 200, listed.text
+    assert len(listed.json()["recipients"]) == 2
+
+    # Remove the second recipient again.
+    remove_resp = await client.delete(
+        f"/api/v1/transmittals/{transmittal_id}/recipients/{added_recipient_id}",
+        headers=header,
+    )
+    assert remove_resp.status_code == 204, remove_resp.text
+
+    after_remove = await client.get(f"/api/v1/transmittals/{transmittal_id}", headers=header)
+    assert len(after_remove.json()["recipients"]) == 1
+
+    # Removing a recipient that does not exist is a clean 404.
+    missing_remove = await client.delete(
+        f"/api/v1/transmittals/{transmittal_id}/recipients/{uuid.uuid4()}",
+        headers=header,
+    )
+    assert missing_remove.status_code == 404, missing_remove.text
+
+    # The remaining named recipient plus the item are enough to issue.
+    issued = await client.post(
+        f"/api/v1/transmittals/{transmittal_id}/issue/",
+        headers=header,
+    )
+    assert issued.status_code == 200, issued.text
+    assert issued.json()["status"] == "issued"
+
+    # Once issued, recipients are frozen: adding one returns 409.
+    frozen_add = await client.post(
+        f"/api/v1/transmittals/{transmittal_id}/recipients/",
+        json={"recipient_name": "Too Late"},
+        headers=header,
+    )
+    assert frozen_add.status_code == 409, frozen_add.text

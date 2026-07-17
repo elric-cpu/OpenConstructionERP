@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, Query
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
 from app.modules.transmittals.schemas import (
     AcknowledgeRequest,
+    RecipientCreate,
     RecipientResponse,
     RespondRequest,
     TransmittalCreate,
@@ -177,6 +178,47 @@ async def issue_transmittal(
     await verify_project_access(existing.project_id, str(user_id), session)
     transmittal = await service.issue_transmittal(transmittal_id)
     return TransmittalResponse.model_validate(transmittal)
+
+
+# ── Recipients (add / remove on a draft) ─────────────────────────────────────
+
+
+@router.post(
+    "/{transmittal_id}/recipients/",
+    response_model=RecipientResponse,
+    status_code=201,
+    dependencies=[Depends(RequirePermission("transmittals.update"))],
+)
+async def add_recipient(
+    transmittal_id: uuid.UUID,
+    data: RecipientCreate,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    service: TransmittalService = Depends(_get_service),
+) -> RecipientResponse:
+    """Add one recipient to a draft transmittal (blocked once issued)."""
+    existing = await service.get_transmittal(transmittal_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
+    recipient = await service.add_recipient(transmittal_id, data)
+    return RecipientResponse.model_validate(recipient)
+
+
+@router.delete(
+    "/{transmittal_id}/recipients/{recipient_id}",
+    status_code=204,
+    dependencies=[Depends(RequirePermission("transmittals.update"))],
+)
+async def remove_recipient(
+    transmittal_id: uuid.UUID,
+    recipient_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    service: TransmittalService = Depends(_get_service),
+) -> None:
+    """Remove a recipient from a draft transmittal (blocked once issued)."""
+    existing = await service.get_transmittal(transmittal_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
+    await service.remove_recipient(transmittal_id, recipient_id)
 
 
 # ── Acknowledge ─────────────────────────────────────────────────────────────

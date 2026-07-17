@@ -33,6 +33,7 @@ from app.modules.transmittals.models import (
 )
 from app.modules.transmittals.repository import TransmittalRepository
 from app.modules.transmittals.schemas import (
+    RecipientCreate,
     TransmittalCreate,
     TransmittalUpdate,
 )
@@ -182,6 +183,8 @@ class TransmittalService:
                 transmittal_id=transmittal.id,
                 recipient_org_id=r.recipient_org_id,
                 recipient_user_id=r.recipient_user_id,
+                recipient_name=r.recipient_name,
+                recipient_email=r.recipient_email,
                 action_required=r.action_required,
             )
             await self.repo.add_recipient(recipient)
@@ -299,6 +302,61 @@ class TransmittalService:
         updated = await self.repo.get(transmittal_id)
         logger.info("Transmittal updated: %s", transmittal_id)
         return updated  # type: ignore[return-value]
+
+    # ── Recipients (post-hoc edit on a draft) ──────────────────────────────
+
+    async def add_recipient(
+        self,
+        transmittal_id: uuid.UUID,
+        data: "RecipientCreate",
+    ) -> TransmittalRecipient:
+        """Add a single recipient to a draft transmittal.
+
+        Lets the detail view grow the recipient list one row at a time without
+        resending the whole transmittal. Blocked once the transmittal is issued,
+        since an issued transmittal is a locked audit record.
+        """
+        transmittal = await self.get_transmittal(transmittal_id)
+        if transmittal.is_locked:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This transmittal has been issued and its recipients can no longer be changed.",
+            )
+        recipient = TransmittalRecipient(
+            transmittal_id=transmittal_id,
+            recipient_org_id=data.recipient_org_id,
+            recipient_user_id=data.recipient_user_id,
+            recipient_name=data.recipient_name,
+            recipient_email=data.recipient_email,
+            action_required=data.action_required,
+        )
+        created = await self.repo.add_recipient(recipient)
+        logger.info("Transmittal recipient added: %s", transmittal_id)
+        return created
+
+    async def remove_recipient(
+        self,
+        transmittal_id: uuid.UUID,
+        recipient_id: uuid.UUID,
+    ) -> None:
+        """Remove a recipient from a draft transmittal.
+
+        Blocked once the transmittal is issued. Raises 404 when the recipient
+        does not exist or belongs to another transmittal.
+        """
+        transmittal = await self.get_transmittal(transmittal_id)
+        if transmittal.is_locked:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This transmittal has been issued and its recipients can no longer be changed.",
+            )
+        deleted = await self.repo.delete_recipient(transmittal_id, recipient_id)
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Recipient not found on this transmittal",
+            )
+        logger.info("Transmittal recipient removed: %s from %s", recipient_id, transmittal_id)
 
     # ── Delete ────────────────────────────────────────────────────────────
 

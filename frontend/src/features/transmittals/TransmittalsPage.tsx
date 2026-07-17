@@ -48,10 +48,13 @@ import {
   issueTransmittal,
   updateTransmittal,
   deleteTransmittal,
+  addRecipient,
+  deleteRecipient,
   type Transmittal,
   type TransmittalStatus,
   type TransmittalPurpose,
   type CreateTransmittalPayload,
+  type CreateRecipientPayload,
   type CreateItemPayload,
   type UpdateTransmittalPayload,
 } from './api';
@@ -453,14 +456,19 @@ const TransmittalRow = React.memo(function TransmittalRow({
   onIssue,
   onEdit,
   onDelete,
+  onAddRecipient,
+  onRemoveRecipient,
 }: {
   transmittal: Transmittal;
   onIssue: (id: string) => void;
   onEdit: (tr: Transmittal) => void;
   onDelete: (tr: Transmittal) => void;
+  onAddRecipient: (transmittalId: string, data: CreateRecipientPayload) => void;
+  onRemoveRecipient: (transmittalId: string, recipientId: string) => void;
 }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
+  const [newRecipient, setNewRecipient] = useState('');
   const statusCfg = STATUS_CONFIG[transmittal.status] ?? STATUS_CONFIG.draft;
   const purposeCls = PURPOSE_COLORS[transmittal.purpose] ?? PURPOSE_COLORS.for_information;
 
@@ -597,6 +605,9 @@ const TransmittalRow = React.memo(function TransmittalRow({
                       <div className="h-3.5 w-3.5 rounded-full border border-border shrink-0" />
                     )}
                     <span className="text-content-primary">{r.name}</span>
+                    {r.email && r.email !== r.name && (
+                      <span className="text-xs text-content-tertiary">{r.email}</span>
+                    )}
                     {r.company && (
                       <span className="text-xs text-content-tertiary">({r.company})</span>
                     )}
@@ -611,10 +622,64 @@ const TransmittalRow = React.memo(function TransmittalRow({
                         {r.response}
                       </span>
                     )}
+                    {!transmittal.locked && (
+                      <button
+                        type="button"
+                        onClick={() => onRemoveRecipient(transmittal.id, r.id)}
+                        className="ml-auto shrink-0 text-content-tertiary hover:text-semantic-error"
+                        aria-label={t('transmittals.remove_recipient', {
+                          defaultValue: 'Remove recipient',
+                        })}
+                        title={t('transmittals.remove_recipient', {
+                          defaultValue: 'Remove recipient',
+                        })}
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
             </div>
+          )}
+
+          {/* Add a recipient (draft only) - lets the list grow after create so
+              a transmittal that was saved without recipients can still be
+              issued. */}
+          {!transmittal.locked && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const value = newRecipient.trim();
+                if (!value) return;
+                const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+                onAddRecipient(
+                  transmittal.id,
+                  isEmail
+                    ? { recipient_name: value, recipient_email: value }
+                    : { recipient_name: value },
+                );
+                setNewRecipient('');
+              }}
+              className="flex items-center gap-2"
+            >
+              <input
+                type="text"
+                value={newRecipient}
+                onChange={(e) => setNewRecipient(e.target.value)}
+                placeholder={t('transmittals.add_recipient_placeholder', {
+                  defaultValue: 'Name or email',
+                })}
+                className="flex-1 rounded-lg border border-border bg-surface-primary px-2 py-1 text-sm"
+              />
+              <button
+                type="submit"
+                disabled={!newRecipient.trim()}
+                className="shrink-0 rounded-lg border border-border px-2 py-1 text-sm text-content-secondary hover:bg-surface-secondary disabled:opacity-50"
+              >
+                {t('transmittals.add_recipient', { defaultValue: 'Add recipient' })}
+              </button>
+            </form>
           )}
 
           {/* Free-text recipients (no structured org/user rows) */}
@@ -1143,6 +1208,36 @@ export function TransmittalsPage() {
       }),
   });
 
+  const addRecipientMut = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: CreateRecipientPayload }) =>
+      addRecipient(id, data),
+    onSuccess: () => {
+      invalidateAll();
+      addToast({
+        type: 'success',
+        title: t('transmittals.recipient_added', { defaultValue: 'Recipient added' }),
+      });
+    },
+    onError: (e: Error) =>
+      addToast({
+        type: 'error',
+        title: t('common.error', { defaultValue: 'Error' }),
+        message: e.message,
+      }),
+  });
+
+  const removeRecipientMut = useMutation({
+    mutationFn: ({ id, recipientId }: { id: string; recipientId: string }) =>
+      deleteRecipient(id, recipientId),
+    onSuccess: () => invalidateAll(),
+    onError: (e: Error) =>
+      addToast({
+        type: 'error',
+        title: t('common.error', { defaultValue: 'Error' }),
+        message: e.message,
+      }),
+  });
+
   const handleCreateSubmit = useCallback(
     (formData: TransmittalFormData) => {
       if (!projectId) {
@@ -1169,11 +1264,21 @@ export function TransmittalsPage() {
             description: title,
           });
         });
-      // The free-text "Recipients" field has no dedicated backend column (the
-      // recipients table keys on org/user UUIDs), so the typed names were being
-      // silently dropped on submit. Persist them in the transmittal's free-form
-      // `metadata` dict instead, where the backend echoes them back verbatim.
-      const recipientsText = formData.recipients.trim();
+      // Split the comma-separated "Recipients" field into structured recipient
+      // rows. Previously the typed names were dropped into metadata and never
+      // became real recipients, so issuing (which requires at least one
+      // recipient) always failed from the UI. A token that looks like an email
+      // is stored as recipient_email; every token is kept as recipient_name for
+      // display.
+      const recipients: CreateRecipientPayload[] = formData.recipients
+        .split(',')
+        .map((token) => token.trim())
+        .filter((token) => token.length > 0)
+        .map((token) =>
+          /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(token)
+            ? { recipient_name: token, recipient_email: token }
+            : { recipient_name: token },
+        );
       createMut.mutate({
         project_id: projectId,
         subject: formData.subject,
@@ -1181,7 +1286,7 @@ export function TransmittalsPage() {
         cover_note: formData.cover_note || undefined,
         response_due_date: formData.response_due || undefined,
         items: items.length > 0 ? items : undefined,
-        metadata: recipientsText ? { recipients_text: recipientsText } : undefined,
+        recipients: recipients.length > 0 ? recipients : undefined,
       });
     },
     [createMut, projectId, addToast, t],
@@ -1205,6 +1310,18 @@ export function TransmittalsPage() {
   const handleEdit = useCallback((tr: Transmittal) => {
     setEditTarget(tr);
   }, []);
+
+  const handleAddRecipient = useCallback(
+    (transmittalId: string, data: CreateRecipientPayload) =>
+      addRecipientMut.mutate({ id: transmittalId, data }),
+    [addRecipientMut],
+  );
+
+  const handleRemoveRecipient = useCallback(
+    (transmittalId: string, recipientId: string) =>
+      removeRecipientMut.mutate({ id: transmittalId, recipientId }),
+    [removeRecipientMut],
+  );
 
   const handleDelete = useCallback(
     async (tr: Transmittal) => {
@@ -1490,6 +1607,8 @@ export function TransmittalsPage() {
                   onIssue={handleIssue}
                   onEdit={handleEdit}
                   onDelete={handleDelete}
+                  onAddRecipient={handleAddRecipient}
+                  onRemoveRecipient={handleRemoveRecipient}
                 />
               ))}
             </Card>
