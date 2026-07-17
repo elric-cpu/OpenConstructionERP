@@ -95,6 +95,12 @@ import {
   PackageCheck,
   Loader2,
   ScanEye,
+  // Delivery-lifecycle register icons.
+  Flag,
+  Warehouse,
+  Construction,
+  Handshake,
+  FileWarning,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -510,8 +516,10 @@ const navGroups: NavGroup[] = [
     defaultOpen: true,
     hideInSimple: true,
     items: [
+      { labelKey: 'site_prep.title', to: '/site-prep', icon: Flag },
       { labelKey: 'nav.service', to: '/service', icon: Wrench },
       { labelKey: 'nav.site_logistics', to: '/site-logistics', icon: Truck },
+      { labelKey: 'site_inventory.title', to: '/site-inventory', icon: Warehouse },
       { labelKey: 'nav.portal', to: '/portal', icon: Globe },
     ],
   },
@@ -564,6 +572,7 @@ const navGroups: NavGroup[] = [
     items: [
       { labelKey: 'nav.commissioning', to: '/commissioning', icon: ClipboardCheck },
       { labelKey: 'closeout.title', to: '/closeout', icon: PackageCheck },
+      { labelKey: 'defects_liability.title', to: '/defects-liability', icon: FileWarning },
       { labelKey: 'nav.forms', to: '/forms', icon: ClipboardList },
     ],
   },
@@ -579,6 +588,7 @@ const navGroups: NavGroup[] = [
     items: [
       { labelKey: 'safety.title', to: '/safety', icon: HardHat },
       { labelKey: 'nav.hse_advanced', to: '/hse-advanced', icon: Shield, advancedOnly: true },
+      { labelKey: 'temporary_works.title', to: '/temporary-works', icon: Construction },
       { labelKey: 'nav.qms', to: '/qms', icon: BadgeCheck, advancedOnly: true },
     ],
   },
@@ -610,6 +620,7 @@ const navGroups: NavGroup[] = [
       { labelKey: 'contacts.title', to: '/contacts', icon: Users },
       { labelKey: 'meetings.title', to: '/meetings', icon: CalendarDays },
       { labelKey: 'rfi.title', to: '/rfi', icon: HelpCircle, advancedOnly: true },
+      { labelKey: 'interface_management.title', to: '/interface-management', icon: Handshake },
       { labelKey: 'correspondence.title', to: '/correspondence', icon: Mail, advancedOnly: true },
       { labelKey: 'nav.collaboration', to: '/collaboration', icon: Users, moduleKey: 'collaboration', advancedOnly: true },
     ],
@@ -932,6 +943,12 @@ const ROUTE_BACKEND_MODULE: Record<string, string> = {
   '/commissioning': 'oe_commissioning',
   '/esg': 'oe_esg',
   '/forms': 'oe_forms',
+  // Delivery-lifecycle registers (v11.11 backend, surfaced in this wave).
+  '/site-prep': 'oe_site_prep',
+  '/site-inventory': 'oe_site_inventory',
+  '/temporary-works': 'oe_temporary_works',
+  '/interface-management': 'oe_interface_management',
+  '/defects-liability': 'oe_defects_liability',
 };
 
 // localStorage key for collapsed state

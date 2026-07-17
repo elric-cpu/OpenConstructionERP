@@ -174,6 +174,27 @@ const InspectionsPage = lazy(() =>
 const NCRPage = lazy(() =>
   import('@/features/ncr/NCRPage').then((m) => ({ default: m.NCRPage }))
 );
+// Delivery-lifecycle registers (backend modules oe_site_inventory / oe_site_prep /
+// oe_temporary_works / oe_interface_management / oe_defects_liability).
+const SiteInventoryPage = lazy(() =>
+  import('@/features/site-inventory/SiteInventoryPage').then((m) => ({ default: m.SiteInventoryPage }))
+);
+const SitePrepPage = lazy(() =>
+  import('@/features/site-prep/SitePrepPage').then((m) => ({ default: m.SitePrepPage }))
+);
+const TemporaryWorksPage = lazy(() =>
+  import('@/features/temporary-works/TemporaryWorksPage').then((m) => ({ default: m.TemporaryWorksPage }))
+);
+const InterfaceManagementPage = lazy(() =>
+  import('@/features/interface-management/InterfaceManagementPage').then((m) => ({
+    default: m.InterfaceManagementPage,
+  }))
+);
+const DefectsLiabilityPage = lazy(() =>
+  import('@/features/defects-liability/DefectsLiabilityPage').then((m) => ({
+    default: m.DefectsLiabilityPage,
+  }))
+);
 const MoCPage = lazy(() =>
   import('@/features/moc/MoCPage').then((m) => ({ default: m.MoCPage }))
 );
@@ -1143,6 +1164,16 @@ export default function App() {
         <Route path="/inspections" element={<P title="Inspections"><InspectionsPage /></P>} />
         <Route path="/projects/:projectId/ncr" element={<P title="NCR"><NCRPage /></P>} />
         <Route path="/ncr" element={<P title="NCR"><NCRPage /></P>} />
+        <Route path="/projects/:projectId/site-inventory" element={<P title="Site Inventory"><SiteInventoryPage /></P>} />
+        <Route path="/site-inventory" element={<P title="Site Inventory"><SiteInventoryPage /></P>} />
+        <Route path="/projects/:projectId/site-prep" element={<P title="Site Mobilisation"><SitePrepPage /></P>} />
+        <Route path="/site-prep" element={<P title="Site Mobilisation"><SitePrepPage /></P>} />
+        <Route path="/projects/:projectId/temporary-works" element={<P title="Temporary Works"><TemporaryWorksPage /></P>} />
+        <Route path="/temporary-works" element={<P title="Temporary Works"><TemporaryWorksPage /></P>} />
+        <Route path="/projects/:projectId/interface-management" element={<P title="Interface Register"><InterfaceManagementPage /></P>} />
+        <Route path="/interface-management" element={<P title="Interface Register"><InterfaceManagementPage /></P>} />
+        <Route path="/projects/:projectId/defects-liability" element={<P title="Defects Liability"><DefectsLiabilityPage /></P>} />
+        <Route path="/defects-liability" element={<P title="Defects Liability"><DefectsLiabilityPage /></P>} />
         <Route path="/projects/:projectId/moc" element={<P title="Management of Change"><MoCPage /></P>} />
         <Route path="/moc" element={<P title="Management of Change"><MoCPage /></P>} />
         {/* Construction Control (QA/QC) - acceptance criteria, inspections,
