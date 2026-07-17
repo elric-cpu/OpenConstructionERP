@@ -38,6 +38,7 @@ from app.modules.closeout.schemas import (
     CloseoutSlotResponse,
     CreatePackageRequest,
     CreateSlotRequest,
+    OutstandingWork,
     SlotStatus,
     SuggestBindingsResponse,
     UpdateSlotRequest,
@@ -91,11 +92,14 @@ async def _package_response(service: CloseoutService, package: CloseoutPackage) 
     slots = await service.repo.list_slots(package.id)
     bindings = await service.repo.list_bindings_for_package(package.id)
     has_built = bool(package.package_key)
+    # One live open-work read, shared by the slot statuses and the gap list, so
+    # the certifying gate and the advisory rollup agree and query once.
+    outstanding = await service._outstanding_work(package.project_id)
 
     slot_views: list[CloseoutSlotResponse] = []
     for slot in slots:
         binding = bindings.get(slot.id)
-        st = service._slot_status(slot, binding, has_built=has_built)
+        st = service._slot_status(slot, binding, has_built=has_built, outstanding=outstanding)
         slot_views.append(
             CloseoutSlotResponse(
                 id=slot.id,
@@ -114,8 +118,9 @@ async def _package_response(service: CloseoutService, package: CloseoutPackage) 
             )
         )
 
-    gaps = await service.gaps(package)
+    gaps = await service.gaps(package, outstanding=outstanding)
     ready = len(gaps) == 0 and package.required_slot_count > 0
+    meta = package.metadata_ or {}
     return CloseoutPackageResponse(
         id=package.id,
         project_id=package.project_id,
@@ -129,12 +134,15 @@ async def _package_response(service: CloseoutService, package: CloseoutPackage) 
         last_built_job_id=package.last_built_job_id,
         last_built_at=package.last_built_at,
         has_built_package=has_built,
-        metadata=package.metadata_ or {},
+        metadata=meta,
         created_at=package.created_at,
         updated_at=package.updated_at,
+        issued_at=meta.get("issued_at"),
+        issued_by=meta.get("issued_by"),
         slots=slot_views,
         gaps=gaps,
         ready=ready,
+        outstanding_work=OutstandingWork(**outstanding),
     )
 
 
@@ -142,7 +150,10 @@ async def _slot_response(service: CloseoutService, slot: CloseoutSlot) -> Closeo
     binding = await service.repo.get_binding_for_slot(slot.id)
     package = await service.repo.get_package(slot.package_id)
     has_built = bool(package.package_key) if package is not None else False
-    st = service._slot_status(slot, binding, has_built=has_built)
+    # Apply the same live certifying gate the package view uses, so a single
+    # slot echoed after a mutation agrees with the full readiness picture.
+    outstanding = await service._outstanding_work(package.project_id) if package is not None else None
+    st = service._slot_status(slot, binding, has_built=has_built, outstanding=outstanding)
     return CloseoutSlotResponse(
         id=slot.id,
         package_id=slot.package_id,
@@ -345,6 +356,24 @@ async def build_package(
         progress_percent=job.progress_percent,
         package_id=package.id,
     )
+
+
+@router.post("/packages/{package_id}/issue", response_model=CloseoutPackageResponse)
+async def issue_package(
+    package_id: uuid.UUID,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("closeout.verify")),
+    service: CloseoutService = Depends(_get_service),
+) -> CloseoutPackageResponse:
+    """Issue the package to the client (terminal state).
+
+    Rejects with 409 unless every required item is delivered and every
+    certifying artifact's live work is complete. Issuing to the client is a
+    manager sign-off act, so it reuses the closeout.verify permission.
+    """
+    package = await _load_package_and_verify(service, package_id, user_id)
+    package = await service.issue_package(package, issued_by=str(user_id) if user_id else None)
+    return await _package_response(service, package)
 
 
 @router.get("/packages/{package_id}/download")

@@ -125,6 +125,22 @@ class CreatePackageRequest(BaseModel):
     title: str | None = Field(default=None, max_length=255)
 
 
+class OutstandingWork(BaseModel):
+    """Live count of outstanding site work behind a genuine handover.
+
+    Read from the owning register at request time; each figure is 0 when that
+    module has no data for the project. ``punch`` and ``inspection`` also gate
+    the matching generated certificate slot so a single past build cannot mark
+    it delivered while the work is still open; ``commissioning`` and ``defects``
+    are advisory readiness signals surfaced alongside.
+    """
+
+    punch: int = 0
+    inspection: int = 0
+    commissioning: int = 0
+    defects: int = 0
+
+
 class CloseoutPackageResponse(BaseModel):
     """Full package view with nested slots, completeness and gap list."""
 
@@ -145,12 +161,17 @@ class CloseoutPackageResponse(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    # Set when the package has been issued to the client (terminal state).
+    issued_at: str | None = None
+    issued_by: str | None = None
 
     slots: list[CloseoutSlotResponse] = Field(default_factory=list)
     # Titles of required slots not yet bound + verified.
     gaps: list[str] = Field(default_factory=list)
     # True when every required slot is bound and verified.
     ready: bool = False
+    # Live outstanding-work rollup from the source registers.
+    outstanding_work: OutstandingWork | None = None
 
 
 class BuildPackageResponse(BaseModel):

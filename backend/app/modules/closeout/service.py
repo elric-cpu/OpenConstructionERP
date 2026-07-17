@@ -45,9 +45,47 @@ JOB_KIND = "closeout.build"
 # treated as outstanding unless explicitly verified.
 _GENERATED_KINDS = {"cobie_xlsx", "punch_closure_report", "inspection_cert_pdf"}
 
+# Certifying generated artifacts: their file existing in the ZIP is not enough
+# to call the item delivered, because the artifact certifies live site work
+# that may still be open. Each maps to the ``_outstanding_work`` counter that
+# must be zero for the certificate to count. A single past build can no longer
+# mask an open punch item or an unpassed inspection. COBie is a data export,
+# not a certificate, so it is deliberately absent and stays build-gated only.
+_CERTIFYING_ARTIFACTS = {
+    "punch_closure_report": "punch",
+    "inspection_cert_pdf": "inspection",
+}
+
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _generated_slot_delivered(
+    generated_artifact: str | None,
+    *,
+    has_built: bool,
+    outstanding: dict[str, int] | None,
+) -> bool:
+    """Whether a generated-artifact slot counts as delivered.
+
+    A generated artifact does not exist until the package is built, so it is
+    never delivered before ``has_built``. A *certifying* artifact additionally
+    counts as delivered only when the live work it certifies is complete, read
+    from ``outstanding`` (the open-work count map). ``outstanding`` of ``None``
+    means "do not apply the live gate": the build passes it while assembling
+    its own manifest, which describes the files it is writing rather than the
+    live state of the site. Pure and side-effect free so it can be unit tested
+    without a database.
+    """
+    if not has_built:
+        return False
+    if outstanding is None:
+        return True
+    counter = _CERTIFYING_ARTIFACTS.get(generated_artifact or "")
+    if counter is None:
+        return True  # non-certifying generated artifact (e.g. the COBie export)
+    return outstanding.get(counter, 0) == 0
 
 
 def _safe_zip_name(value: str, fallback: str = "item") -> str:
@@ -122,21 +160,40 @@ class CloseoutService:
 
     # ── Completeness ─────────────────────────────────────────────────────
 
-    def _slot_status(self, slot: CloseoutSlot, binding: CloseoutBinding | None, *, has_built: bool) -> str:
-        """Derive a slot status from its binding and the build state."""
+    def _slot_status(
+        self,
+        slot: CloseoutSlot,
+        binding: CloseoutBinding | None,
+        *,
+        has_built: bool,
+        outstanding: dict[str, int] | None = None,
+    ) -> str:
+        """Derive a slot status from its binding and the build state.
+
+        ``outstanding`` is the live open-work count map; when supplied, a
+        certifying generated artifact (punch-closure report, inspection
+        certificate) only reads as delivered while its work is actually
+        complete. ``None`` keeps the pre-live-gate behaviour (artifact present
+        once built), used by the build assembling its own manifest.
+        """
         if binding is not None:
             return "verified" if binding.is_verified else "bound"
         # Generated artifacts are produced by the build itself; once the
         # package has been built they are present, otherwise outstanding.
-        if slot.source_kind == "generated" and slot.generated_artifact in _GENERATED_KINDS and has_built:
-            return "bound"
+        if slot.source_kind == "generated" and slot.generated_artifact in _GENERATED_KINDS:
+            if _generated_slot_delivered(slot.generated_artifact, has_built=has_built, outstanding=outstanding):
+                return "bound"
         return "empty"
 
     async def _slot_status_map(self, package: CloseoutPackage) -> dict[uuid.UUID, str]:
         slots = await self.repo.list_slots(package.id)
         bindings = await self.repo.list_bindings_for_package(package.id)
         has_built = bool(package.package_key)
-        return {slot.id: self._slot_status(slot, bindings.get(slot.id), has_built=has_built) for slot in slots}
+        outstanding = await self._outstanding_work(package.project_id)
+        return {
+            slot.id: self._slot_status(slot, bindings.get(slot.id), has_built=has_built, outstanding=outstanding)
+            for slot in slots
+        }
 
     async def recompute_completeness(self, package: CloseoutPackage) -> CloseoutPackage:
         """Recompute denormalised counters + status from current slots/bindings.
@@ -148,18 +205,23 @@ class CloseoutService:
         slots = await self.repo.list_slots(package.id)
         bindings = await self.repo.list_bindings_for_package(package.id)
         has_built = bool(package.package_key)
+        outstanding = await self._outstanding_work(package.project_id)
 
         required = [s for s in slots if s.is_required]
         required_count = len(required)
         delivered_count = 0
         for slot in required:
-            st = self._slot_status(slot, bindings.get(slot.id), has_built=has_built)
+            st = self._slot_status(slot, bindings.get(slot.id), has_built=has_built, outstanding=outstanding)
             # A required slot counts as delivered only when verified, OR when it
-            # is a generated artifact that the LAST BUILD actually produced. A
-            # generated artifact does not exist until the package is built, so
-            # it must not inflate completeness before that (has_built gates it).
+            # is a generated artifact the last build produced AND whose live work
+            # is complete. A certifying artifact does not inflate completeness
+            # while its punch items or inspections are still open, and no
+            # generated artifact counts before the package is built at all
+            # (see _generated_slot_delivered).
             if st == "verified" or (
-                slot.source_kind == "generated" and slot.generated_artifact in _GENERATED_KINDS and has_built
+                slot.source_kind == "generated"
+                and slot.generated_artifact in _GENERATED_KINDS
+                and _generated_slot_delivered(slot.generated_artifact, has_built=has_built, outstanding=outstanding)
             ):
                 delivered_count += 1
 
@@ -181,26 +243,48 @@ class CloseoutService:
         await self.session.flush()
         return package
 
-    async def gaps(self, package: CloseoutPackage, *, treat_built: bool | None = None) -> list[str]:
+    async def gaps(
+        self,
+        package: CloseoutPackage,
+        *,
+        treat_built: bool | None = None,
+        outstanding: dict[str, int] | None = None,
+    ) -> list[str]:
         """Titles of required slots not yet satisfied (the gap list).
 
         ``treat_built`` overrides whether generated artifacts are treated as
         present. It defaults to the package's real build state, but the build
         job passes ``True`` so the package it is producing reports its
         generated artifacts as delivered in its own cover / manifest.
+        ``outstanding`` lets a caller pass an already-computed open-work map to
+        avoid re-querying the source registers; it is ignored in the build
+        context (``treat_built`` set), which does not apply the live gate.
         """
         slots = await self.repo.list_slots(package.id)
         bindings = await self.repo.list_bindings_for_package(package.id)
         has_built = bool(package.package_key) if treat_built is None else treat_built
+        # Apply the live certifying gate only for the real readiness view. When
+        # the build passes treat_built explicitly it is describing the ZIP it is
+        # writing, so its generated artifacts read as present regardless of the
+        # live punch / inspection state.
+        if treat_built is not None:
+            outstanding = None
+        elif outstanding is None:
+            outstanding = await self._outstanding_work(package.project_id)
         out: list[str] = []
         for slot in slots:
             if not slot.is_required:
                 continue
-            st = self._slot_status(slot, bindings.get(slot.id), has_built=has_built)
+            st = self._slot_status(slot, bindings.get(slot.id), has_built=has_built, outstanding=outstanding)
             if st == "verified":
                 continue
-            if slot.source_kind == "generated" and slot.generated_artifact in _GENERATED_KINDS and has_built:
-                # Generated artifact present in the last build; not a gap.
+            if (
+                slot.source_kind == "generated"
+                and slot.generated_artifact in _GENERATED_KINDS
+                and _generated_slot_delivered(slot.generated_artifact, has_built=has_built, outstanding=outstanding)
+            ):
+                # Generated artifact present in the last build and its live work
+                # is complete; not a gap.
                 continue
             out.append(slot.title)
         return out
@@ -208,6 +292,134 @@ class CloseoutService:
     async def is_ready(self, package: CloseoutPackage) -> bool:
         """True when every required slot is bound and verified."""
         return len(await self.gaps(package)) == 0 and package.required_slot_count > 0
+
+    async def _outstanding_work(self, project_id: uuid.UUID) -> dict[str, int]:
+        """Live count of outstanding site work behind a genuine handover.
+
+        Reads the owning register at request time and reuses the same queries
+        the build's generators run. Every source is best-effort: a module that
+        is absent or errors contributes 0, so closeout never hard-depends on
+        another module being installed. ``punch`` and ``inspection`` gate the
+        matching generated certificate; ``commissioning`` and ``defects`` are
+        surfaced to the caller as advisory readiness signals.
+        """
+        out = {"punch": 0, "inspection": 0, "commissioning": 0, "defects": 0}
+
+        # Punch: open = not in the punchlist terminal set (closed / verified).
+        try:
+            from app.modules.punchlist.models import PunchItem
+
+            statuses = (
+                (await self.session.execute(select(PunchItem.status).where(PunchItem.project_id == project_id)))
+                .scalars()
+                .all()
+            )
+            out["punch"] = sum(1 for s in statuses if (s or "").lower() not in ("closed", "verified"))
+        except Exception:  # noqa: BLE001 - fail soft, module may be absent
+            logger.debug("closeout outstanding: punch query failed", exc_info=True)
+
+        # Inspection: outstanding = any inspection whose result is not a pass.
+        try:
+            from app.modules.inspections.models import QualityInspection
+
+            results = (
+                (
+                    await self.session.execute(
+                        select(QualityInspection.result).where(QualityInspection.project_id == project_id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            out["inspection"] = sum(1 for r in results if (r or "").lower() != "pass")
+        except Exception:  # noqa: BLE001 - fail soft
+            logger.debug("closeout outstanding: inspection query failed", exc_info=True)
+
+        # Defects: outstanding = open or rectifying (the DLP active set).
+        try:
+            from app.modules.defects_liability.models import DlpDefect
+
+            statuses = (
+                (await self.session.execute(select(DlpDefect.status).where(DlpDefect.project_id == project_id)))
+                .scalars()
+                .all()
+            )
+            out["defects"] = sum(1 for s in statuses if (s or "").lower() in ("open", "rectifying"))
+        except Exception:  # noqa: BLE001 - fail soft
+            logger.debug("closeout outstanding: defects query failed", exc_info=True)
+
+        # Commissioning: systems not yet commissioned, plus any open critical issue.
+        try:
+            from app.modules.commissioning.service import CommissioningService
+
+            stats = await CommissioningService(self.session).get_stats(project_id)
+            out["commissioning"] = max(0, stats.total_systems - stats.commissioned) + (stats.open_critical_issues or 0)
+        except Exception:  # noqa: BLE001 - fail soft
+            logger.debug("closeout outstanding: commissioning query failed", exc_info=True)
+
+        return out
+
+    async def issue_package(self, package: CloseoutPackage, *, issued_by: str | None = None) -> CloseoutPackage:
+        """Issue the package to the client, reaching the terminal ``issued`` state.
+
+        Guarded on genuine readiness: every required slot bound and verified and
+        every certifying artifact's live work complete (``gaps`` applies the
+        live gate). Idempotent: a package already issued is returned unchanged.
+        Records a durable audit entry and emits a fire-and-forget event.
+        """
+        if package.status == "issued":
+            return package
+
+        gaps = await self.gaps(package)
+        if package.required_slot_count <= 0 or gaps:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Package is not ready to issue: outstanding required items remain.",
+            )
+
+        package.status = "issued"
+        package.metadata_ = merge_metadata(
+            package.metadata_ or {},
+            {"issued_at": _now_iso(), "issued_by": issued_by},
+        )
+        self.session.add(package)
+
+        try:
+            from app.core.audit import audit_log
+
+            await audit_log(
+                self.session,
+                action="closeout_issued",
+                entity_type="closeout_package",
+                entity_id=str(package.id),
+                user_id=issued_by,
+                details={
+                    "project_id": str(package.project_id),
+                    "completeness_pct": package.completeness_pct,
+                },
+            )
+        except Exception:  # noqa: BLE001 - audit is best-effort
+            logger.debug("closeout: issue audit failed", exc_info=True)
+
+        await self.session.commit()
+        await self.session.refresh(package)
+
+        try:
+            from app.core.events import event_bus
+
+            event_bus.publish_detached(
+                "closeout.package.issued",
+                data={
+                    "project_id": str(package.project_id),
+                    "package_id": str(package.id),
+                    "issued_by": issued_by,
+                },
+                source_module="closeout",
+            )
+        except Exception:  # noqa: BLE001 - event emit is best-effort
+            logger.debug("closeout: issue event emit failed", exc_info=True)
+
+        return package
 
     # ── Slot CRUD ────────────────────────────────────────────────────────
 

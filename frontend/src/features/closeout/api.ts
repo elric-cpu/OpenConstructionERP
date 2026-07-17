@@ -39,6 +39,13 @@ export interface CloseoutSlot {
   binding: CloseoutBinding | null;
 }
 
+export interface OutstandingWork {
+  punch: number;
+  inspection: number;
+  commissioning: number;
+  defects: number;
+}
+
 export interface CloseoutPackage {
   id: string;
   project_id: string;
@@ -55,9 +62,12 @@ export interface CloseoutPackage {
   metadata: Record<string, unknown>;
   created_at: string | null;
   updated_at: string | null;
+  issued_at: string | null;
+  issued_by: string | null;
   slots: CloseoutSlot[];
   gaps: string[];
   ready: boolean;
+  outstanding_work: OutstandingWork | null;
 }
 
 export interface BuildPackageResponse {
@@ -180,6 +190,15 @@ export function suggestBindings(packageId: string): Promise<{ suggestions: Bindi
 
 export function buildPackage(packageId: string): Promise<BuildPackageResponse> {
   return apiPost<BuildPackageResponse>(`${BASE}/packages/${packageId}/build`, {});
+}
+
+/**
+ * Issue the package to the client, reaching the terminal `issued` state.
+ * The backend returns 409 unless every required item is delivered and every
+ * certifying artifact's live work (punch closure, final inspection) is complete.
+ */
+export function issuePackage(packageId: string): Promise<CloseoutPackage> {
+  return apiPost<CloseoutPackage>(`${BASE}/packages/${packageId}/issue`, {});
 }
 
 export function getJob(jobId: string): Promise<JobRunRead> {

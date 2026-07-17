@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   Loader2,
   AlertTriangle,
+  Send,
 } from 'lucide-react';
 import {
   Card,
@@ -39,6 +40,7 @@ import {
   unbindSlot,
   verifySlot,
   buildPackage,
+  issuePackage,
   getJob,
   suggestBindings,
   downloadPackage,
@@ -229,6 +231,19 @@ export default function CloseoutPage() {
       addToast({ type: 'error', title: t('common.error', { defaultValue: 'Error' }), message: (e as Error).message }),
   });
 
+  const issueMutation = useMutation({
+    mutationFn: () => issuePackage(pkg!.id),
+    onSuccess: () => {
+      addToast({
+        type: 'success',
+        title: t('closeout.toast.issued', { defaultValue: 'Package issued to the client' }),
+      });
+      refetchPackage();
+    },
+    onError: (e) =>
+      addToast({ type: 'error', title: t('common.error', { defaultValue: 'Error' }), message: (e as Error).message }),
+  });
+
   const confirmSuggestion = useCallback(
     async (s: BindingSuggestion) => {
       await bindMutation.mutateAsync({
@@ -259,18 +274,21 @@ export default function CloseoutPage() {
       defaultValue: cat.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
     });
 
-  // ── Readiness chips for the two cross-module gates (CONN-59) ────────────
+  // ── Readiness chips for the cross-module handover gates (CONN-59) ────────
   // `punch_closure` and `final_inspection_cert` are generated from the Punch
-  // List and Inspections registers respectively. Surface their readiness as
-  // chips that deep-link to the owning module, and a warning when a required
-  // gate is not yet satisfied before a build.
+  // List and Inspections registers; their live work must be closed before the
+  // certificate counts (a past build no longer masks open items). Commissioning
+  // and open defects are surfaced as advisory chips from the live rollup. Each
+  // deep-links to the owning module.
   const readinessChips = useMemo(() => {
     const slots = pkg?.slots ?? [];
     const find = (key: string) => slots.find((s) => s.slot_key === key);
+    const ow = pkg?.outstanding_work;
     const chips: {
       key: string;
       label: string;
-      slot: CloseoutSlot | undefined;
+      ready: boolean;
+      gate: boolean;
       to: string;
     }[] = [];
     const punch = find('punch_closure');
@@ -278,7 +296,8 @@ export default function CloseoutPage() {
       chips.push({
         key: 'punch_closure',
         label: t('closeout.chip_punch', { defaultValue: 'Punch closure' }),
-        slot: punch,
+        ready: punch.status === 'verified' || punch.status === 'bound',
+        gate: true,
         to: '/punchlist',
       });
     }
@@ -287,17 +306,35 @@ export default function CloseoutPage() {
       chips.push({
         key: 'final_inspection_cert',
         label: t('closeout.chip_final_inspection', { defaultValue: 'Final inspection' }),
-        slot: inspection,
+        ready: inspection.status === 'verified' || inspection.status === 'bound',
+        gate: true,
         to: '/inspections',
       });
     }
+    if (ow && ow.commissioning > 0) {
+      chips.push({
+        key: 'commissioning',
+        label: t('closeout.chip_commissioning', { defaultValue: 'Commissioning' }),
+        ready: false,
+        gate: false,
+        to: '/commissioning',
+      });
+    }
+    if (ow && ow.defects > 0) {
+      chips.push({
+        key: 'defects',
+        label: t('closeout.chip_defects', { defaultValue: 'Open defects' }),
+        ready: false,
+        gate: false,
+        to: '/defects-liability',
+      });
+    }
     return chips;
-  }, [pkg?.slots, t]);
+  }, [pkg?.slots, pkg?.outstanding_work, t]);
 
-  // A required readiness gate that is still empty blocks a clean build.
-  const readinessGap = readinessChips.some(
-    (c) => c.slot?.is_required && c.slot.status === 'empty',
-  );
+  // A build gate (punch closure / final inspection) not yet satisfied blocks a
+  // clean build.
+  const readinessGap = readinessChips.some((c) => c.gate && !c.ready);
 
   // ── Render: no project selected ────────────────────────────────────────
   if (!activeProjectId) {
@@ -378,6 +415,25 @@ export default function CloseoutPage() {
                     {t('closeout.action.download', { defaultValue: 'Download package' })}
                   </Button>
                 ) : null}
+                {pkg.status !== 'issued' ? (
+                  <Button
+                    variant={pkg.ready ? 'primary' : 'ghost'}
+                    size="sm"
+                    icon={<Send size={14} />}
+                    onClick={() => issueMutation.mutate()}
+                    loading={issueMutation.isPending}
+                    disabled={!pkg.ready}
+                    title={
+                      pkg.ready
+                        ? undefined
+                        : t('closeout.action.issue_blocked', {
+                            defaultValue: 'Close every required item before issuing to the client',
+                          })
+                    }
+                  >
+                    {t('closeout.action.issue', { defaultValue: 'Issue to client' })}
+                  </Button>
+                ) : null}
               </>
             ) : null}
           </>
@@ -445,6 +501,26 @@ export default function CloseoutPage() {
 
       {pkg ? (
         <>
+          {pkg.status === 'issued' ? (
+            <Card className="border-semantic-success/40 bg-semantic-success/5 p-4">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 shrink-0 text-semantic-success" />
+                <div>
+                  <h4 className="text-sm font-semibold text-semantic-success">
+                    {t('closeout.issued_title', { defaultValue: 'Issued to the client' })}
+                  </h4>
+                  {pkg.issued_at ? (
+                    <p className="text-xs text-content-tertiary">
+                      {t('closeout.issued_at', {
+                        defaultValue: 'Issued {{when}}',
+                        when: pkg.issued_at,
+                      })}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </Card>
+          ) : null}
           {/* ── Completeness ring / banner ──────────────────────────────── */}
           <Card className="p-5">
             <div className="flex flex-wrap items-center justify-between gap-4">
@@ -502,8 +578,7 @@ export default function CloseoutPage() {
                     {t('closeout.readiness_label', { defaultValue: 'Readiness' })}:
                   </span>
                   {readinessChips.map((chip) => {
-                    const status = chip.slot?.status ?? 'empty';
-                    const ready = status === 'verified' || status === 'bound';
+                    const ready = chip.ready;
                     return (
                       <button
                         key={chip.key}
