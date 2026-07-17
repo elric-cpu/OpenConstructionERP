@@ -273,6 +273,107 @@ class TestAttachmentMagicByteGate:
         assert stored.endswith(".pdf")
 
 
+class TestLifecycleAndDeadline:
+    """status + response_required_by + contract_clause_ref round-trip, and the
+    router-computed ``is_overdue`` / ``days_until_due`` fields.
+
+    A record only reads as overdue while it still awaits a reply (status
+    ``open`` or ``awaiting_response``) and its deadline has passed; a responded
+    or closed record never flags overdue even with a deadline in the past, and
+    a record with no deadline reports ``days_until_due`` as ``None``.
+    """
+
+    async def _create(self, db_session, **kwargs):
+        owner_id = await _make_user(db_session)
+        owner = str(owner_id)
+        project_id = await _make_project(db_session, owner_id)
+        service = CorrespondenceService(db_session)
+        item = await service.create_correspondence(
+            CorrespondenceCreate(
+                project_id=project_id,
+                direction="incoming",
+                subject="Notice under the contract",
+                correspondence_type="notice",
+                **kwargs,
+            ),
+            user_id=owner,
+        )
+        await db_session.commit()
+        return owner, item
+
+    @pytest.mark.asyncio
+    async def test_awaiting_past_deadline_is_overdue(self, db_session):
+        owner, item = await self._create(
+            db_session,
+            status="awaiting_response",
+            response_required_by="2020-01-01",
+            contract_clause_ref="NEC cl. 61.3",
+        )
+        app = _build_app(db_session, caller_id=owner)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get(f"/v1/correspondence/{item.id}")
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["status"] == "awaiting_response"
+        assert body["response_required_by"] == "2020-01-01"
+        assert body["contract_clause_ref"] == "NEC cl. 61.3"
+        assert body["is_overdue"] is True
+        assert body["days_until_due"] is not None and body["days_until_due"] < 0
+
+    @pytest.mark.asyncio
+    async def test_open_future_deadline_not_overdue(self, db_session):
+        owner, item = await self._create(
+            db_session,
+            status="open",
+            response_required_by="2999-12-31",
+        )
+        app = _build_app(db_session, caller_id=owner)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get(f"/v1/correspondence/{item.id}")
+        body = resp.json()
+        assert body["is_overdue"] is False
+        assert body["days_until_due"] is not None and body["days_until_due"] > 0
+
+    @pytest.mark.asyncio
+    async def test_responded_past_deadline_not_overdue(self, db_session):
+        owner, item = await self._create(
+            db_session,
+            status="responded",
+            response_required_by="2020-01-01",
+        )
+        app = _build_app(db_session, caller_id=owner)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get(f"/v1/correspondence/{item.id}")
+        # Deadline is in the past but the reply is in, so it is not overdue.
+        assert resp.json()["is_overdue"] is False
+
+    @pytest.mark.asyncio
+    async def test_no_deadline_reports_none(self, db_session):
+        owner, item = await self._create(db_session, status="open")
+        app = _build_app(db_session, caller_id=owner)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get(f"/v1/correspondence/{item.id}")
+        body = resp.json()
+        assert body["status"] == "open"
+        assert body["response_required_by"] is None
+        assert body["is_overdue"] is False
+        assert body["days_until_due"] is None
+
+    def test_clause_ref_control_chars_scrubbed(self):
+        payload = CorrespondenceCreate(
+            project_id=uuid.uuid4(),
+            direction="outgoing",
+            subject="Served notice",
+            correspondence_type="notice",
+            contract_clause_ref="NEC\r\ncl. 61.3",
+        )
+        assert payload.contract_clause_ref == "NEC cl. 61.3"
+
+
 class TestProjectScopeIDOR:
     @pytest.mark.asyncio
     async def test_cross_tenant_get_returns_404(self, db_session):

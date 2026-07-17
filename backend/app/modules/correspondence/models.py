@@ -64,6 +64,25 @@ class Correspondence(Base):
 
     linked_transmittal_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     linked_rfi_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+    # Lifecycle + legal-deadline tracking. A correspondence record, and above
+    # all a formal notice, often carries a contractual response deadline; with
+    # only CRUD fields the register could not tell an open notice from a closed
+    # one, nor flag one whose reply window has lapsed. ``status`` is one of
+    # open|awaiting_response|responded|closed; ``response_required_by`` is an ISO
+    # date (yyyy-mm-dd); ``contract_clause_ref`` is a free-text clause pointer
+    # (for example "NEC cl. 61.3" or "FIDIC 20.1"). is_overdue / days_until_due
+    # are computed at serialisation time, never stored.
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="open",
+        server_default="open",
+        index=True,
+    )
+    response_required_by: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    contract_clause_ref: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
 

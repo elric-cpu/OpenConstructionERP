@@ -27,6 +27,8 @@ import {
   ExternalLink,
   ArrowRight,
   Network,
+  Clock,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   Button,
@@ -62,6 +64,7 @@ import {
   type Correspondence,
   type CorrespondenceDirection,
   type CorrespondenceType,
+  type CorrespondenceStatus,
   type CreateCorrespondencePayload,
   type UpdateCorrespondencePayload,
 } from './api';
@@ -89,6 +92,36 @@ const prettyType = (tp: string): string =>
   tp.replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 const correspondenceTypeLabel = (tp: string | null | undefined): string =>
   (tp ? (TYPE_LABELS as Record<string, string>)[tp] : undefined) ?? prettyType(tp || 'letter');
+
+/* Lifecycle statuses in workflow order, plus their English fallback labels and
+   badge colours. open = still with us to action, awaiting_response = ball is in
+   the other party's court, responded = reply received, closed = done. */
+const STATUS_ORDER: CorrespondenceStatus[] = [
+  'open',
+  'awaiting_response',
+  'responded',
+  'closed',
+];
+const STATUS_LABELS: Record<CorrespondenceStatus, string> = {
+  open: 'Open',
+  awaiting_response: 'Awaiting response',
+  responded: 'Responded',
+  closed: 'Closed',
+};
+const correspondenceStatusLabel = (s: string | null | undefined): string =>
+  (s ? (STATUS_LABELS as Record<string, string>)[s] : undefined) ?? prettyType(s || 'open');
+const statusVariant = (s: string | null | undefined): 'blue' | 'warning' | 'success' | 'neutral' => {
+  switch (s) {
+    case 'awaiting_response':
+      return 'warning';
+    case 'responded':
+      return 'success';
+    case 'closed':
+      return 'neutral';
+    default:
+      return 'blue';
+  }
+};
 
 const DIRECTION_CARD_CONFIG: Record<
   CorrespondenceDirection,
@@ -240,6 +273,9 @@ interface CorrespondenceFormData {
   to_display: string;
   date_sent: string;
   date_received: string;
+  status: CorrespondenceStatus;
+  response_required_by: string;
+  contract_clause_ref: string;
   notes: string;
   linked_document_ids: string[];
   linked_transmittal_id: string;
@@ -258,6 +294,9 @@ const EMPTY_FORM: CorrespondenceFormData = {
   to_display: '',
   date_sent: '',
   date_received: '',
+  status: 'open',
+  response_required_by: '',
+  contract_clause_ref: '',
   notes: '',
   linked_document_ids: [],
   linked_transmittal_id: '',
@@ -632,6 +671,73 @@ function CreateCorrespondenceModal({
         </WideModalField>
       </WideModalSection>
 
+      {/* Lifecycle + response deadline — lets a formal notice carry its
+          contractual reply date and the clause it is served under, so the
+          register can flag it overdue and drive the status badge. */}
+      <WideModalSection
+        title={t('correspondence.section_tracking', { defaultValue: 'Tracking' })}
+        columns={2}
+      >
+        <WideModalField
+          label={t('correspondence.status', { defaultValue: 'Status' })}
+          htmlFor="corr-status"
+        >
+          <select
+            id="corr-status"
+            value={form.status}
+            onChange={(e) => set('status', e.target.value as CorrespondenceStatus)}
+            className={inputCls}
+          >
+            {STATUS_ORDER.map((s) => (
+              <option key={s} value={s}>
+                {t(`correspondence.status_${s}`, { defaultValue: correspondenceStatusLabel(s) })}
+              </option>
+            ))}
+          </select>
+        </WideModalField>
+
+        <WideModalField
+          label={t('correspondence.response_required_by', {
+            defaultValue: 'Response required by',
+          })}
+          htmlFor="corr-response-by"
+          hint={t('correspondence.hint_response_required_by', {
+            defaultValue: 'Optional - the date a reply is contractually due. Leave blank if none.',
+          })}
+        >
+          <input
+            id="corr-response-by"
+            type="date"
+            value={form.response_required_by}
+            onChange={(e) => set('response_required_by', e.target.value)}
+            className={inputCls}
+          />
+        </WideModalField>
+
+        <WideModalField
+          label={t('correspondence.contract_clause_ref', {
+            defaultValue: 'Contract clause',
+          })}
+          span={2}
+          htmlFor="corr-clause"
+          hint={t('correspondence.hint_contract_clause_ref', {
+            defaultValue: 'Optional - the clause this notice is served under.',
+          })}
+        >
+          <input
+            id="corr-clause"
+            type="text"
+            maxLength={120}
+            value={form.contract_clause_ref}
+            onChange={(e) => set('contract_clause_ref', e.target.value)}
+            className={inputCls}
+            placeholder={t('correspondence.contract_clause_placeholder', {
+              defaultValue: 'e.g. NEC cl. 61.3',
+            })}
+          />
+        </WideModalField>
+      </WideModalSection>
+
       {/* Linked references — connect this entry into the traceable thread
           (Documents / Transmittal / RFI). Backend fully supports these; this
           is what makes the "Docs" count and the linked-reference badges
@@ -827,6 +933,37 @@ const CorrespondenceRow = React.memo(function CorrespondenceRow({
           {t(`correspondence.type_${item.correspondence_type ?? 'letter'}`, { defaultValue: correspondenceTypeLabel(item.correspondence_type) })}
         </Badge>
 
+        {/* Status */}
+        <Badge variant={statusVariant(item.status)} size="sm" className="shrink-0">
+          {t(`correspondence.status_${item.status}`, {
+            defaultValue: correspondenceStatusLabel(item.status),
+          })}
+        </Badge>
+
+        {/* Response deadline — overdue reads red, a near deadline amber. Only
+            meaningful while the record still awaits a reply. */}
+        {item.response_required_by &&
+          (item.status === 'open' || item.status === 'awaiting_response') &&
+          (item.is_overdue ? (
+            <Badge variant="error" size="sm" className="shrink-0">
+              <AlertTriangle size={11} className="mr-1" />
+              {t('correspondence.overdue', { defaultValue: 'Overdue' })}
+            </Badge>
+          ) : (
+            typeof item.days_until_due === 'number' &&
+            item.days_until_due <= 7 && (
+              <Badge variant="warning" size="sm" className="shrink-0 hidden md:inline-flex">
+                <Clock size={11} className="mr-1" />
+                {item.days_until_due <= 0
+                  ? t('correspondence.due_today', { defaultValue: 'Due today' })
+                  : t('correspondence.due_in_days', {
+                      defaultValue: 'Due in {{count}}d',
+                      count: item.days_until_due,
+                    })}
+              </Badge>
+            )
+          ))}
+
         {/* From — deep-links to the contact when the value is an id */}
         <span
           className="text-xs text-content-tertiary w-24 truncate shrink-0 hidden lg:block"
@@ -897,6 +1034,31 @@ const CorrespondenceRow = React.memo(function CorrespondenceRow({
               {t('correspondence.label_received', { defaultValue: 'Received' })}:{' '}
               <DateDisplay value={item.date_received} className="text-xs" />
             </span>
+            <span className="inline-flex items-center gap-1">
+              {t('correspondence.status', { defaultValue: 'Status' })}:{' '}
+              <Badge variant={statusVariant(item.status)} size="sm">
+                {t(`correspondence.status_${item.status}`, {
+                  defaultValue: correspondenceStatusLabel(item.status),
+                })}
+              </Badge>
+            </span>
+            {item.response_required_by && (
+              <span className={item.is_overdue ? 'text-semantic-error font-medium' : ''}>
+                {t('correspondence.response_required_by', {
+                  defaultValue: 'Response required by',
+                })}
+                :{' '}
+                <DateDisplay value={item.response_required_by} className="text-xs" />
+                {item.is_overdue &&
+                  ` (${t('correspondence.overdue', { defaultValue: 'Overdue' })})`}
+              </span>
+            )}
+            {item.contract_clause_ref && (
+              <span className="inline-flex items-center gap-1">
+                {t('correspondence.contract_clause_ref', { defaultValue: 'Contract clause' })}:{' '}
+                <span className="text-content-secondary">{item.contract_clause_ref}</span>
+              </span>
+            )}
           </div>
 
           {item.notes && (
@@ -1350,6 +1512,11 @@ export function CorrespondencePage() {
         .filter(Boolean),
       date_sent: formData.date_sent || undefined,
       date_received: formData.date_received || undefined,
+      // Lifecycle + response deadline. status is always sent; the date and
+      // clause send null when cleared so an edit is fully round-trippable.
+      status: formData.status,
+      response_required_by: formData.response_required_by || null,
+      contract_clause_ref: formData.contract_clause_ref || null,
       // Link this entry into the traceable thread. Always sent (empty array /
       // null clears links on edit) so the picker is fully round-trippable.
       linked_document_ids: formData.linked_document_ids,
@@ -1390,6 +1557,9 @@ export function CorrespondencePage() {
       to_display: (c.to_contact_ids ?? []).join(', '),
       date_sent: c.date_sent || '',
       date_received: c.date_received || '',
+      status: c.status,
+      response_required_by: c.response_required_by || '',
+      contract_clause_ref: c.contract_clause_ref || '',
       notes: c.notes || '',
       linked_document_ids: c.linked_document_ids ?? [],
       linked_transmittal_id: c.linked_transmittal_id || '',

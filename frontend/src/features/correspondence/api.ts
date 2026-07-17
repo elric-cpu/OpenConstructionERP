@@ -15,6 +15,8 @@ export type CorrespondenceDirection = 'incoming' | 'outgoing';
 
 export type CorrespondenceType = 'letter' | 'email' | 'notice' | 'memo';
 
+export type CorrespondenceStatus = 'open' | 'awaiting_response' | 'responded' | 'closed';
+
 export interface Correspondence {
   id: string;
   project_id: string;
@@ -32,6 +34,16 @@ export interface Correspondence {
   linked_transmittal_id: string | null;
   /** Optional link back to the RFI this letter relates to. */
   linked_rfi_id: string | null;
+  /** Lifecycle state of the record. */
+  status: CorrespondenceStatus;
+  /** ISO date (yyyy-mm-dd) a reply is contractually due, if any. */
+  response_required_by: string | null;
+  /** Free-text pointer to the contract clause a notice is served under. */
+  contract_clause_ref: string | null;
+  /** Computed server-side: still open and past its response deadline. */
+  is_overdue: boolean;
+  /** Computed server-side: signed days to the deadline (negative once past). */
+  days_until_due: number | null;
   /** Server-derived relative paths of validated uploaded attachments. */
   attachments: string[];
   notes: string | null;
@@ -58,6 +70,9 @@ export interface CreateCorrespondencePayload {
   linked_document_ids?: string[];
   linked_transmittal_id?: string | null;
   linked_rfi_id?: string | null;
+  status?: CorrespondenceStatus;
+  response_required_by?: string | null;
+  contract_clause_ref?: string | null;
   notes?: string;
 }
 
@@ -72,6 +87,9 @@ export interface UpdateCorrespondencePayload {
   linked_document_ids?: string[];
   linked_transmittal_id?: string | null;
   linked_rfi_id?: string | null;
+  status?: CorrespondenceStatus;
+  response_required_by?: string | null;
+  contract_clause_ref?: string | null;
   notes?: string | null;
 }
 
@@ -87,12 +105,19 @@ type CorrespondenceWire = Omit<
   | 'linked_transmittal_id'
   | 'linked_rfi_id'
   | 'attachments'
+  | 'status'
+  | 'is_overdue'
 > & {
   to_contact_ids?: string[] | null;
   linked_document_ids?: string[] | null;
   linked_transmittal_id?: string | null;
   linked_rfi_id?: string | null;
   attachments?: string[] | null;
+  status?: CorrespondenceStatus | null;
+  response_required_by?: string | null;
+  contract_clause_ref?: string | null;
+  is_overdue?: boolean | null;
+  days_until_due?: number | null;
 };
 
 function normaliseCorrespondence(c: CorrespondenceWire): Correspondence {
@@ -103,6 +128,13 @@ function normaliseCorrespondence(c: CorrespondenceWire): Correspondence {
     linked_transmittal_id: c.linked_transmittal_id ?? null,
     linked_rfi_id: c.linked_rfi_id ?? null,
     attachments: c.attachments ?? [],
+    // Older rows / partial serialisers may omit the lifecycle fields; default
+    // to an open record with no deadline so the UI never reads undefined.
+    status: c.status ?? 'open',
+    response_required_by: c.response_required_by ?? null,
+    contract_clause_ref: c.contract_clause_ref ?? null,
+    is_overdue: c.is_overdue ?? false,
+    days_until_due: c.days_until_due ?? null,
   } as Correspondence;
 }
 
