@@ -34,6 +34,34 @@ from typing import Any, Literal
 Severity = Literal["error", "warning", "info"]
 
 
+# Dimensional quantity keys that can never legitimately be negative. This is a
+# deliberately CURATED set of true dimensions (areas, volumes, lengths, widths,
+# heights, thicknesses, perimeters, counts). Directional values such as
+# elevation / offset / z / level are intentionally excluded - they can be below
+# zero for basements and below-datum placement - so only real magnitudes are
+# guarded by ``forbid_negative_quantities``.
+_NON_NEGATIVE_QUANTITY_KEYS: tuple[str, ...] = (
+    "area",
+    "area_m2",
+    "net_area",
+    "gross_floor_area",
+    "net_floor_area",
+    "volume",
+    "volume_m3",
+    "length",
+    "length_m",
+    "width",
+    "width_m",
+    "height",
+    "height_m",
+    "thickness",
+    "thickness_m",
+    "perimeter",
+    "perimeter_m",
+    "count",
+)
+
+
 # ── Result shape ─────────────────────────────────────────────────────────────
 
 
@@ -128,6 +156,12 @@ class BIMElementRule:
             minimum threshold whose "missing" case is owned by another rule
             (e.g. door clear width, where a missing width is caught by the
             door dimensions rule).
+        forbid_negative_quantities: If True, scan the curated set of dimensional
+            quantity keys (areas, volumes, lengths, widths, heights,
+            thicknesses, perimeters and count) and fail any that hold a negative
+            number. Deliberately narrow - directional values such as elevation
+            or offset can legitimately be below zero for basements, so they are
+            NOT guarded. One failure is emitted per offending key.
     """
 
     rule_id: str
@@ -146,6 +180,7 @@ class BIMElementRule:
     require_classification_code: bool = False
     require_relation_host: bool = False
     min_when_present: dict[str, Any] = field(default_factory=dict)
+    forbid_negative_quantities: bool = False
     enabled: bool = True
 
     # ── Matching ────────────────────────────────────────────────────────
@@ -347,6 +382,19 @@ class BIMElementRule:
                     _emit(
                         f"{label} {found} is below the minimum of {minimum}",
                         {"label": label, "min": minimum, "value": found, "paths": paths},
+                    )
+
+        # Forbid-negative dimensional quantities: a curated set of true
+        # dimensions (areas, volumes, lengths, counts) can never be below zero.
+        # Directional values (elevation / offset / z) are intentionally excluded
+        # - they can be negative for basements. One failure per offending key.
+        if self.forbid_negative_quantities:
+            for key in _NON_NEGATIVE_QUANTITY_KEYS:
+                num = _coerce_number(_lookup_path(quants, key))
+                if num is not None and num < 0:
+                    _emit(
+                        f"Quantity '{key}' is negative ({num}); a dimensional quantity cannot be below zero",
+                        {"quantity": key, "value": num},
                     )
 
         return results

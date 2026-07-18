@@ -23,10 +23,15 @@ from app.modules.validation.rules.bim_universal import (
     ASSET_HAS_TYPE_IDENTIFIER,
     BIM_UNIVERSAL_RULES,
     CATEGORY_REQUIRED_PROPERTY,
+    CIRCULATION_HAS_DIMENSIONS,
     DOOR_MIN_CLEAR_WIDTH,
     ELEMENT_HAS_CLASSIFICATION,
+    ELEMENT_HAS_PHASE,
+    ELEMENT_HAS_TYPE_NAME,
     HOSTED_HAS_HOST,
+    MEP_HAS_SIZE,
     MIN_DOOR_CLEAR_WIDTH_M,
+    QUANTITY_NON_NEGATIVE,
     SPACE_HAS_IDENTITY,
 )
 
@@ -281,3 +286,138 @@ class TestMinWhenPresentPrimitive:
         quants = {} if value is None else {"w": value}
         results = rule.evaluate(_elem(quantities=quants))
         assert bool(results) is expect_fail
+
+
+# ── Model-review deepening rules registered -------------------------------
+
+
+def test_deepening_element_rules_registered() -> None:
+    ids = [r.rule_id for r in BIM_UNIVERSAL_RULES]
+    assert len(ids) == len(set(ids))  # no duplicate ids
+    for rid in (
+        "bim.quantity.non_negative",
+        "bim.mep.has_size",
+        "bim.circulation.has_dimensions",
+        "bim.element.has_type_name",
+        "bim.element.has_phase",
+    ):
+        assert rid in ids
+
+
+# ── 7. Non-negative dimensional quantities --------------------------------
+
+
+class TestQuantityNonNegative:
+    def test_positive_quantities_pass(self) -> None:
+        el = _elem(quantities={"area_m2": 12.0, "volume_m3": 3.0, "count": 4})
+        assert QUANTITY_NON_NEGATIVE.evaluate(el) == []
+
+    def test_no_quantities_pass(self) -> None:
+        assert QUANTITY_NON_NEGATIVE.evaluate(_elem(quantities={})) == []
+
+    def test_negative_area_fails_error(self) -> None:
+        results = QUANTITY_NON_NEGATIVE.evaluate(_elem(quantities={"area_m2": -5.0}))
+        assert len(results) == 1
+        assert results[0].severity == "error"
+        assert results[0].details == {"quantity": "area_m2", "value": -5.0}
+
+    def test_one_failure_per_offending_key(self) -> None:
+        results = QUANTITY_NON_NEGATIVE.evaluate(
+            _elem(quantities={"area_m2": -1.0, "length_m": -2.0, "height_m": 3.0}),
+        )
+        offenders = {r.details["quantity"] for r in results}
+        assert offenders == {"area_m2", "length_m"}
+
+    def test_negative_elevation_or_z_not_flagged(self) -> None:
+        # Directional values can be negative (basements) - not in the curated set.
+        el = _elem(quantities={"elevation": -3.0, "z": -12.5, "offset": -1.0})
+        assert QUANTITY_NON_NEGATIVE.evaluate(el) == []
+
+    def test_locale_string_negative_flagged(self) -> None:
+        # '-0,24' coerces to -0.24 -> below zero -> flagged.
+        assert len(QUANTITY_NON_NEGATIVE.evaluate(_elem(quantities={"thickness_m": "-0,24"}))) == 1
+
+    def test_sparse_does_not_crash(self) -> None:
+        assert QUANTITY_NON_NEGATIVE.evaluate(_elem(quantities=None)) == []
+
+
+# ── 8. MEP / distribution size --------------------------------------------
+
+
+class TestMepHasSize:
+    def test_duct_with_diameter_passes(self) -> None:
+        duct = _elem(element_type="duct", properties={"diameter": 200})
+        assert MEP_HAS_SIZE.evaluate(duct) == []
+
+    def test_pipe_without_size_fails_warning(self) -> None:
+        pipe = _elem(element_type="ifcpipe", properties={"material": "steel"})
+        results = MEP_HAS_SIZE.evaluate(pipe)
+        assert len(results) == 1
+        assert results[0].severity == "warning"
+
+    def test_non_distribution_out_of_scope(self) -> None:
+        assert MEP_HAS_SIZE.matches(_elem(element_type="wall")) is False
+
+    def test_sparse_does_not_crash(self) -> None:
+        assert len(MEP_HAS_SIZE.evaluate(_elem(element_type="duct", properties=None))) == 1
+
+
+# ── 9. Circulation (stairs / ramps) dimensions ----------------------------
+
+
+class TestCirculationHasDimensions:
+    def test_stair_with_width_passes(self) -> None:
+        stair = _elem(element_type="stair", properties={"width": 1.2})
+        assert CIRCULATION_HAS_DIMENSIONS.evaluate(stair) == []
+
+    def test_ramp_without_width_fails_warning(self) -> None:
+        ramp = _elem(element_type="ifcramp", properties={"material": "concrete"})
+        results = CIRCULATION_HAS_DIMENSIONS.evaluate(ramp)
+        assert len(results) == 1
+        assert results[0].severity == "warning"
+
+    def test_non_circulation_out_of_scope(self) -> None:
+        assert CIRCULATION_HAS_DIMENSIONS.matches(_elem(element_type="wall")) is False
+
+    def test_sparse_does_not_crash(self) -> None:
+        assert len(CIRCULATION_HAS_DIMENSIONS.evaluate(_elem(element_type="stair", properties=None))) == 1
+
+
+# ── 10. Physical element type / family name -------------------------------
+
+
+class TestElementHasTypeName:
+    def test_wall_with_type_name_passes(self) -> None:
+        wall = _elem(element_type="wall", properties={"type_name": "WA-200"})
+        assert ELEMENT_HAS_TYPE_NAME.evaluate(wall) == []
+
+    def test_column_without_type_fails_info(self) -> None:
+        col = _elem(element_type="column", properties={"material": "steel"})
+        results = ELEMENT_HAS_TYPE_NAME.evaluate(col)
+        assert len(results) == 1
+        assert results[0].severity == "info"
+
+    def test_non_physical_out_of_scope(self) -> None:
+        assert ELEMENT_HAS_TYPE_NAME.matches(_elem(element_type="furniture")) is False
+
+    def test_sparse_does_not_crash(self) -> None:
+        assert len(ELEMENT_HAS_TYPE_NAME.evaluate(_elem(element_type="wall", properties=None))) == 1
+
+
+# ── 11. Element phase / status --------------------------------------------
+
+
+class TestElementHasPhase:
+    def test_phase_present_passes(self) -> None:
+        assert ELEMENT_HAS_PHASE.evaluate(_elem(properties={"phase": "New Construction"})) == []
+
+    def test_status_alias_passes(self) -> None:
+        assert ELEMENT_HAS_PHASE.evaluate(_elem(properties={"status": "existing"})) == []
+
+    def test_missing_phase_fails_info(self) -> None:
+        results = ELEMENT_HAS_PHASE.evaluate(_elem(properties={"foo": "bar"}))
+        assert len(results) == 1
+        assert results[0].severity == "info"
+
+    def test_sparse_does_not_crash(self) -> None:
+        assert len(ELEMENT_HAS_PHASE.evaluate(_elem(properties=None))) == 1

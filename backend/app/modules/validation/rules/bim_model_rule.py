@@ -4,8 +4,10 @@
 
 A :class:`BIMModelRule` sees ALL of a model's elements at once, which the
 per-element :class:`app.modules.validation.rules.bim_element_rule.BIMElementRule`
-cannot: duplicate identifiers, whole-category gaps, unit consistency and
-georeference sanity are only visible across the full element set.
+cannot: duplicate identifiers, whole-category gaps, unit consistency,
+georeference sanity, mark uniqueness within a category, classification
+coverage, spatial structure and discipline coverage are only visible across
+the full element set.
 
 The shape deliberately mirrors the per-element rule so the driving service
 (:mod:`app.modules.validation.bim_validation_service`) can fold both families
@@ -37,6 +39,7 @@ from typing import Any
 from app.modules.validation.rules.bim_element_rule import (
     Severity,
     _coerce_number,
+    _has_classification_code,
     _has_value,
     _normalized_category,
 )
@@ -48,6 +51,22 @@ MAX_PLAUSIBLE_COORD_M = 1e7
 _ZERO_EPS = 1e-9
 # How many colliding element ids / coordinates to keep in a finding's details.
 _DETAIL_CAP = 50
+
+# Coverage target for classification codes across a model. Below this share of
+# elements carrying a code the model cannot be broken down reliably for cost or
+# reporting, so a single whole-model suggestion is raised.
+MIN_CLASSIFICATION_COVERAGE = 0.5
+
+# Model-metadata keys that, when carrying a value, signal a declared spatial
+# structure (storeys / levels) even if no element names a storey directly.
+_SPATIAL_STRUCTURE_METADATA_KEYS: tuple[str, ...] = (
+    "storeys",
+    "levels",
+    "building_storeys",
+    "spatial_structure",
+    "stories",
+    "floors",
+)
 
 # Expected element categories a reasonably complete building model should carry.
 # Each entry is ``(human label, (element-type prefixes,))``; a category counts
@@ -365,6 +384,151 @@ class GeoreferenceSanityRule(BIMModelRule):
         return results
 
 
+class UniqueMarksPerCategoryRule(BIMModelRule):
+    """Flag a mark reused by more than one element of the same category."""
+
+    rule_id = "bim.model.unique_marks_per_category"
+    name = "Marks must be unique within a category"
+    severity = "warning"
+    description = (
+        "A mark (falling back to tag, then reference) is a human-facing "
+        "reference that must be unique within its element category - two doors "
+        "both marked 'D-101' collide in a door schedule and on site. The same "
+        "mark used in two different categories (a door and a window both '1') is "
+        "fine. Each colliding category/mark pair is reported once."
+    )
+
+    def evaluate(self, elements: list[Any], context: BIMModelContext) -> list[BIMModelRuleResult]:
+        by_key: dict[tuple[str, str], list[str]] = defaultdict(list)
+        for elem in elements:
+            props = getattr(elem, "properties", None) or {}
+            if not isinstance(props, dict):
+                continue
+            mark = ""
+            for key in ("mark", "tag", "reference"):
+                val = props.get(key)
+                if _has_text(val):
+                    mark = str(val).strip()
+                    break
+            if not mark:
+                continue
+            category = _normalized_category(elem)
+            by_key[(category, mark)].append(_element_primary_id(elem))
+
+        results: list[BIMModelRuleResult] = []
+        for (category, mark), members in by_key.items():
+            if len(members) > 1:
+                results.append(
+                    self._fail(
+                        f"Mark '{mark}' is shared by {len(members)} '{category}' elements; "
+                        "a mark must be unique within its category",
+                        element_ref=mark,
+                        details={
+                            "category": category,
+                            "mark": mark,
+                            "count": len(members),
+                            "element_ids": members[:_DETAIL_CAP],
+                        },
+                    )
+                )
+        return results
+
+
+class ClassificationCoverageRule(BIMModelRule):
+    """Flag a model where too few elements carry a classification code."""
+
+    rule_id = "bim.model.classification_coverage"
+    name = "Enough elements should carry a classification code"
+    severity = "info"
+    description = (
+        "Measures how many elements carry a classification code (DIN 276, NRM, "
+        "MasterFormat, Uniclass, ...). Below the coverage target the model "
+        "cannot be broken down reliably for cost or reporting, so a single "
+        "whole-model suggestion is raised. Informational and fail-soft."
+    )
+
+    def evaluate(self, elements: list[Any], context: BIMModelContext) -> list[BIMModelRuleResult]:
+        total = len(elements)
+        if total == 0:
+            return []
+        classified = 0
+        for elem in elements:
+            props = getattr(elem, "properties", None) or {}
+            if not isinstance(props, dict):
+                props = {}
+            if _has_classification_code(elem, props):
+                classified += 1
+        coverage = classified / total
+        if coverage >= MIN_CLASSIFICATION_COVERAGE:
+            return []
+        pct = round(coverage * 100)
+        threshold_pct = round(MIN_CLASSIFICATION_COVERAGE * 100)
+        return [
+            self._fail(
+                f"Only {classified} of {total} elements ({pct}%) carry a classification code; "
+                f"below the {threshold_pct}% target for a reliable cost/report breakdown",
+                details={"classified": classified, "total": total, "coverage": round(coverage, 3)},
+            )
+        ]
+
+
+class SpatialStructureRule(BIMModelRule):
+    """Flag a model that declares no spatial hierarchy (storeys / levels)."""
+
+    rule_id = "bim.model.spatial_structure"
+    name = "Model should declare a spatial structure"
+    severity = "warning"
+    description = (
+        "A model needs some spatial hierarchy - at least one element assigned to "
+        "a storey, or storey/level metadata on the model - so elements can be "
+        "placed and reported by floor. When neither signal is present a single "
+        "whole-model warning is raised."
+    )
+
+    def evaluate(self, elements: list[Any], context: BIMModelContext) -> list[BIMModelRuleResult]:
+        has_storey = any(_has_value(getattr(elem, "storey", None)) for elem in elements)
+        meta = context.metadata if isinstance(context.metadata, dict) else {}
+        has_meta = any(_has_value(meta.get(k)) for k in _SPATIAL_STRUCTURE_METADATA_KEYS)
+        if has_storey or has_meta:
+            return []
+        return [
+            self._fail(
+                "Model declares no spatial structure (no storeys or levels); "
+                "elements cannot be placed or reported by floor",
+                details={"reason": "no_spatial_structure"},
+            )
+        ]
+
+
+class DisciplineCoverageRule(BIMModelRule):
+    """Flag a model where not one element declares a discipline."""
+
+    rule_id = "bim.model.discipline_coverage"
+    name = "Elements should carry a discipline"
+    severity = "info"
+    description = (
+        "A coarse whole-model signal: if not one element carries a discipline "
+        "the model cannot be split by trade for coordination. Distinct from the "
+        "per-category presence checks - it fires only when the whole model is "
+        "silent on discipline. Informational and fail-soft."
+    )
+
+    def evaluate(self, elements: list[Any], context: BIMModelContext) -> list[BIMModelRuleResult]:
+        disciplines = {
+            str(getattr(elem, "discipline", None)).strip()
+            for elem in elements
+            if _has_text(getattr(elem, "discipline", None))
+        }
+        if disciplines:
+            return []
+        return [
+            self._fail(
+                "No element carries a discipline; the model cannot be split by trade for coordination",
+                details={"reason": "no_discipline"},
+            )
+        ]
+
+
 # ── Registry ─────────────────────────────────────────────────────────────────
 
 BIM_MODEL_RULES: list[BIMModelRule] = [
@@ -372,6 +536,10 @@ BIM_MODEL_RULES: list[BIMModelRule] = [
     ModelCompletenessRule(),
     UnitConsistencyRule(),
     GeoreferenceSanityRule(),
+    UniqueMarksPerCategoryRule(),
+    ClassificationCoverageRule(),
+    SpatialStructureRule(),
+    DisciplineCoverageRule(),
 ]
 """Ordered list of enabled model-level BIM rules."""
 

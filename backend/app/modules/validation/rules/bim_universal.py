@@ -36,6 +36,16 @@ Rules declared here:
   host/parent (warning)
 * ``bim.door.min_clear_width`` - a declared door width must meet the minimum
   clear width (warning)
+* ``bim.quantity.non_negative`` - dimensional quantities (areas, volumes,
+  lengths, counts) must not be negative (error)
+* ``bim.mep.has_size`` - distribution elements (ducts, pipes, trays, conduits)
+  should declare a size or diameter (warning)
+* ``bim.circulation.has_dimensions`` - stairs and ramps should declare a width
+  for egress and accessibility (warning)
+* ``bim.element.has_type_name`` - physical build elements should name their
+  type/family so they roll up in type schedules (info)
+* ``bim.element.has_phase`` - every element should declare a phase/status so
+  4D phasing and renovation scope work (info)
 
 Usage::
 
@@ -352,6 +362,119 @@ DOOR_MIN_CLEAR_WIDTH = BIMElementRule(
 )
 
 
+# ── Model-review deepening rules ──────────────────────────────────────────────
+
+QUANTITY_NON_NEGATIVE = BIMElementRule(
+    rule_id="bim.quantity.non_negative",
+    name="Dimensional quantities must not be negative",
+    severity="error",
+    description=(
+        "Dimensional quantities - areas, volumes, lengths, widths, heights, "
+        "thicknesses, perimeters and counts - must never be negative. A "
+        "negative dimensional value means a broken export or a bad takeoff. "
+        "Directional values such as elevation or offset are not checked here; "
+        "they can legitimately be below zero for basements."
+    ),
+    forbid_negative_quantities=True,
+)
+
+MEP_HAS_SIZE = BIMElementRule(
+    rule_id="bim.mep.has_size",
+    name="Distribution elements should declare a size or diameter",
+    severity="warning",
+    description=(
+        "Ducts, pipes, cable trays and conduits should expose a size, diameter "
+        "or cross-section so coordination clearances and material takeoff can be "
+        "worked out. Warning severity - routing may still be reviewed while "
+        "sizing is completed."
+    ),
+    element_filter={
+        "element_type_startswith": [
+            "duct",
+            "pipe",
+            "cabletray",
+            "conduit",
+            "ifcduct",
+            "ifcpipe",
+            "ifccabletray",
+            "ifcflowsegment",
+            "ifcflowfitting",
+        ],
+    },
+    require_any_of_properties=["size", "diameter", "nominal_diameter", "dimensions", "width", "cross_section"],
+)
+
+CIRCULATION_HAS_DIMENSIONS = BIMElementRule(
+    rule_id="bim.circulation.has_dimensions",
+    name="Stairs and ramps should declare a width",
+    severity="warning",
+    description=(
+        "Stairs and ramps should declare a width so egress capacity and "
+        "accessibility can be reviewed. Warning severity - a width may still be "
+        "added later in design."
+    ),
+    element_filter={
+        "element_type_startswith": [
+            "stair",
+            "ramp",
+            "ifcstair",
+            "ifcramp",
+            "ifcstairflight",
+            "ifcrampflight",
+        ],
+    },
+    require_any_of_properties=["width", "width_m", "clear_width", "tread_width"],
+)
+
+ELEMENT_HAS_TYPE_NAME = BIMElementRule(
+    rule_id="bim.element.has_type_name",
+    name="Physical elements should name their type or family",
+    severity="info",
+    description=(
+        "Physical build elements - walls, slabs, floors, columns, beams, doors, "
+        "windows, roofs, ceilings and stairs - should name their type or family "
+        "so they roll up cleanly in type schedules and quantity breakdowns. "
+        "Informational."
+    ),
+    element_filter={
+        "element_type_startswith": [
+            "wall",
+            "slab",
+            "floor",
+            "column",
+            "beam",
+            "door",
+            "window",
+            "roof",
+            "ceiling",
+            "stair",
+            "ifcwall",
+            "ifcslab",
+            "ifccolumn",
+            "ifcbeam",
+            "ifcdoor",
+            "ifcwindow",
+            "ifcroof",
+            "ifccovering",
+        ],
+    },
+    require_any_of_properties=["type", "type_name", "family_type", "family_and_type", "family", "type_mark"],
+)
+
+ELEMENT_HAS_PHASE = BIMElementRule(
+    rule_id="bim.element.has_phase",
+    name="Elements should declare a phase or status",
+    severity="info",
+    description=(
+        "Every element should declare a phase or status - new, existing, "
+        "temporary or demolished - so 4D phasing and renovation scope can be "
+        "worked out and elements can be filtered by construction stage. "
+        "Informational."
+    ),
+    require_any_of_properties=["phase", "phase_created", "construction_phase", "status", "workset_phase"],
+)
+
+
 # ── Registry ─────────────────────────────────────────────────────────────────
 
 BIM_UNIVERSAL_RULES: list[BIMElementRule] = [
@@ -370,6 +493,11 @@ BIM_UNIVERSAL_RULES: list[BIMElementRule] = [
     SPACE_HAS_IDENTITY,
     HOSTED_HAS_HOST,
     DOOR_MIN_CLEAR_WIDTH,
+    QUANTITY_NON_NEGATIVE,
+    MEP_HAS_SIZE,
+    CIRCULATION_HAS_DIMENSIONS,
+    ELEMENT_HAS_TYPE_NAME,
+    ELEMENT_HAS_PHASE,
 ]
 """Ordered list of enabled universal BIM element rules."""
 
