@@ -11,7 +11,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 
 # ── v3 §10 money serialisation helper ─────────────────────────────────────
@@ -76,6 +76,28 @@ class AISettingsUpdate(BaseModel):
         default=None,
         description="Per-provider model id override (provider -> model id).",
     )
+
+    @field_validator("ollama_base_url", "vllm_base_url")
+    @classmethod
+    def _reject_unsafe_base_url(cls, v: str | None) -> str | None:
+        """SSRF guard for self-hosted AI endpoints.
+
+        A user-supplied Ollama / vLLM URL is fetched server-side, so it may not
+        point at a link-local or cloud-metadata address, and must satisfy the
+        provider allowlist when one is configured. Loopback / private hosts stay
+        allowed so a local runtime works out of the box. Runs at write time
+        (422 on reject); ``ai_client`` re-checks after DNS at dispatch time.
+        """
+        if v is None or not v.strip():
+            return v
+        from app.config import get_settings
+        from app.core.url_safety import UnsafeUrlError, validate_ai_provider_url
+
+        try:
+            validate_ai_provider_url(v.strip(), get_settings().ai_provider_allowlist_hosts)
+        except UnsafeUrlError as exc:
+            raise ValueError(str(exc)) from exc
+        return v
 
 
 class AISettingsResponse(BaseModel):

@@ -1857,7 +1857,11 @@ def create_app() -> FastAPI:
         setattr(app.state, cache_key, {"data": result, "checked_at": time.time()})
         return result
 
-    @app.post("/api/system/upgrade", tags=["System"])
+    @app.post(
+        "/api/system/upgrade",
+        tags=["System"],
+        dependencies=[Depends(RequireRole("admin"))],
+    )
     async def trigger_upgrade(
         version: str | None = None,
         force: bool = False,
@@ -1879,10 +1883,18 @@ def create_app() -> FastAPI:
         their launcher (``openconstructionerp serve``) or, on managed
         installs, the host's systemd unit.
 
-        Gated by ``ALLOW_RUNTIME_UPGRADE=true`` (default off in
-        production) - VPS / staging installs use a deploy pipeline, not
-        in-app upgrades. Localhost dev / Windows-installer installs ship
-        with the flag on so the Settings panel works out of the box.
+        **Admin only.** Requires an authenticated user with the ``admin``
+        role (``RequireRole("admin")``); an unauthenticated or non-admin
+        caller is rejected before any pip process starts. This closes the
+        earlier gap where the route ran with no authentication at all, so a
+        quickstart install reachable on the network could be forced to
+        reinstall / downgrade by anyone.
+
+        Additionally gated by ``ALLOW_RUNTIME_UPGRADE`` (defaults on).
+        Managed deployments that upgrade through a deploy pipeline can set
+        ``ALLOW_RUNTIME_UPGRADE=false`` to disable the route entirely;
+        localhost dev and the desktop / Windows-installer builds leave it
+        on so the Settings panel works out of the box.
         """
         import os
         import subprocess

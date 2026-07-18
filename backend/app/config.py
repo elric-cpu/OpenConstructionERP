@@ -240,6 +240,13 @@ class Settings(BaseSettings):
     app_debug: bool = True
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     allowed_origins: str = "http://localhost:5173"
+    # Optional allowlist for self-hosted AI provider endpoints (Ollama / vLLM).
+    # Empty (default) permits any loopback / private address so a local runtime
+    # works out of the box, while link-local and cloud-metadata addresses stay
+    # blocked. Set a comma-separated list of hostnames and/or CIDR ranges (e.g.
+    # "ollama.internal,10.20.0.0/16") to lock AI provider URLs to a known set;
+    # anything outside it is then rejected. Binds OE_AI_PROVIDER_ALLOWLIST.
+    ai_provider_allowlist: str = ""
 
     # ── Database ─────────────────────────────────────────────────────────
     # PostgreSQL is required; embedded PostgreSQL boots by default (no Docker),
@@ -617,6 +624,12 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",")]
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def ai_provider_allowlist_hosts(self) -> list[str]:
+        """Parsed AI provider allowlist (hostnames / CIDRs), empties dropped."""
+        return [h.strip() for h in self.ai_provider_allowlist.split(",") if h.strip()]
 
     @model_validator(mode="after")
     def _refuse_default_jwt_in_non_dev(self) -> "Settings":

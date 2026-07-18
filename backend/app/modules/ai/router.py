@@ -227,7 +227,10 @@ async def update_ai_settings(
 
 @router.post(
     "/settings/test/",
-    dependencies=[Depends(RequirePermission("ai.settings.read"))],
+    # Testing a connection makes the server emit an outbound request to a
+    # user-influenced endpoint (Ollama / vLLM base_url), so require at least the
+    # role that can SET that URL (EDITOR via ai.settings.update), not read-only.
+    dependencies=[Depends(RequirePermission("ai.settings.update"))],
 )
 async def test_ai_connection(
     body: dict,
@@ -335,6 +338,10 @@ async def test_ai_connection(
             max_tokens=10,
             base_url=resolved_url,
             model=model_override,
+            # Cap how long a connection test can hold a server-side request to a
+            # user-supplied endpoint. 15s covers a cold local model while sharply
+            # limiting the SSRF blast radius versus the 240s inference default.
+            timeout=15.0,
         )
         latency_ms = int((time.monotonic() - t0) * 1000)
         return {
