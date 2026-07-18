@@ -23,10 +23,13 @@ def _sanitize_email_header_value(value: str) -> str:
     """
     if not value:
         return value
-    # Remove CR, LF, NUL and the rest of the C0 range except TAB (\x09).
-    cleaned = "".join(ch for ch in value if ch == "\t" or ord(ch) >= 0x20)
-    # Collapse any internal whitespace runs left by the strip - email
-    # subjects with embedded ``\r\n`` would otherwise become double-space.
+    # Replace CR, LF, NUL and the rest of the C0 range (except TAB) with a
+    # space rather than deleting them, so that words separated only by a
+    # line break ("NEC\r\ncl. 61.3") stay separated ("NEC cl. 61.3") instead
+    # of fusing ("NECcl. 61.3"). TAB is kept as-is.
+    cleaned = "".join(ch if (ch == "\t" or ord(ch) >= 0x20) else " " for ch in value)
+    # Collapse the whitespace runs this leaves so a single embedded break
+    # does not turn into a double space.
     return " ".join(cleaned.split())
 
 

@@ -721,6 +721,7 @@ class CostItemService:
 
         items, total, has_more = await self.repo.search(
             q=query.q,
+            fuzzy=query.fuzzy,
             name=query.name,
             description=query.description,
             unit=query.unit,
