@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [11.14.0] - 2026-07-18
+
+The sidebar Edit menu now reaches the bottom shortcut row. When you open it, the setup buttons at the very bottom (Settings, Users, Modules, Governance, Audit log, About) turn into the same hide and show tiles as the rest of the menu, so you can switch off the ones you never use and bring them back the same way. Nothing is ever lost. Edit menu always brings every tile back.
+
+The defects liability and interface management registers shipped in English only in 11.11. They are now fully translated across every interface language, so their badges, warranty and deadline labels and status text read in the user's own language like the rest of the app.
+
 ## [11.13.0] - 2026-07-18
 
 Two security fixes from responsibly disclosed reports. The in-app upgrade endpoint used to run with no authentication, so anyone who could reach the API on a quickstart or an exposed install could force a package reinstall or a downgrade, and it now requires an authenticated admin and is rejected before any pip process starts. Self-hosted AI provider URLs for Ollama and vLLM were fetched server-side without validation, so a saved base URL could point the server at an internal host or the cloud metadata endpoint, and they are now checked when saved and again after DNS resolution at the single point every AI call funnels through. Loopback and private addresses stay reachable so a local runtime still works out of the box, while link-local and cloud metadata are always blocked, and an operator can set an allowlist to restrict endpoints to a known set.

@@ -38,6 +38,13 @@ interface ChangelogEntry {
 // date, title and meaning intact; trim the prose, not the facts.
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '11.14.0',
+    date: '2026-07-18',
+    tag: 'NEW',
+    summary:
+      'The sidebar Edit menu now hides and restores the bottom shortcut buttons (Settings, Users, Modules, Governance, Audit log, About) too, not just the main menu rows. The defects liability and interface management registers, which had shipped in English only, are now fully translated into every interface language.',
+  },
+  {
     version: '11.13.0',
     date: '2026-07-18',
     tag: 'SECURITY',
