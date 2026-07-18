@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [11.18.0] - 2026-07-18
+
+OpenConstructionERP now exports a bill of quantities back to FIEBDC-3 (BC3), the standard construction budget format used across Spain and Latin America. Open a BOQ, choose Export and pick FIEBDC-3. The file carries the full chapter and item hierarchy with codes, units, quantities, unit rates and long texts, and it re-imports through our own BC3 reader without losing anything, so a budget can travel out to the Spanish desktop estimating tools and come back cleanly. It is written in Windows-1252 by default for the widest tool compatibility and switches to UTF-8 only when a character needs it, with the charset named in the file header. This sits alongside the existing GAEB XML, Excel, CSV and PDF exports, and there is no database change.
+
+The in-app error log that backs the bug-report tool now scrubs a wider set of secrets before anything reaches local storage or a downloaded report. It already stripped emails, API keys and bearer tokens. It now also removes a bare session token in the platform's own format and a fuller set of token, secret, cookie and session fields, so an authentication token cannot end up in a report that gets shared.
+
 ## [11.17.0] - 2026-07-18
 
 Security hardening across the outbound connectors and a few server-side parsers. Outbound chat webhook deliveries (the Slack, Teams and Discord connectors) now resolve and re-check the target address right before the request goes out, so a webhook that points at a loopback or internal address is refused at the send step and not only when it is saved. Several status probes (system status, vector search status and cost vector indexing) no longer echo raw exception text back in their responses; they log the detail server-side and return a short, stable message instead. A handful of text parsers that run server-side (schedule impact, change order durations, smart view filters, quantity formulas and recipient addresses) now cap the length of the value they inspect before the pattern runs, so an oversized crafted string cannot slow a request down. The BIM smart view shortcuts and selection sets kept in the browser reject reserved keys, and the desktop download page escapes the release tag it reads from the public API before showing it. Temporary files written during CAD and takeoff import are created with tighter permissions.

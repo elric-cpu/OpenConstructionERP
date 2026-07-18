@@ -7803,6 +7803,7 @@ const resource = {
     "boq.export_format_csv": "CSV (.csv)",
     "boq.export_format_pdf": "PDF",
     "boq.export_format_gaeb": "GAEB XML (.x83)",
+    "boq.export_format_bc3": "FIEBDC-3 (.bc3)",
     "command_palette.action_new_project": "Neues Projekt erstellen",
     "command_palette.action_new_boq": "Neues LV erstellen",
     "command_palette.action_run_validation": "Validierung ausführen",

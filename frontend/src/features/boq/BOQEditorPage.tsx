@@ -422,7 +422,7 @@ export function BOQEditorPage() {
   /** Stable ref for trackedDelete — allows keyboard shortcut access before declaration. */
   const trackedDeleteRef = useRef<((id: string) => void) | null>(null);
   /** Stable ref for handleExport — allows keyboard shortcut access before declaration. */
-  const handleExportRef = useRef<((format: 'excel' | 'csv' | 'pdf' | 'gaeb') => void) | null>(null);
+  const handleExportRef = useRef<((format: 'excel' | 'csv' | 'pdf' | 'gaeb' | 'bc3') => void) | null>(null);
   /** Stable ref for the AI-copilot toggle (Alt+I) — set after declaration so
    *  the keyboard handler can reach it without widening its dependency array. */
   const toggleAICopilotRef = useRef<(() => void) | null>(null);
@@ -2036,7 +2036,7 @@ export function BOQEditorPage() {
   /* ── Export / Version History state ─────────────────────────────────── */
 
   const [showVersionHistory, setShowVersionHistory] = useState(false);
-  const [exportWarning, setExportWarning] = useState<{ format: 'excel' | 'csv' | 'pdf' | 'gaeb'; score: number } | null>(null);
+  const [exportWarning, setExportWarning] = useState<{ format: 'excel' | 'csv' | 'pdf' | 'gaeb' | 'bc3'; score: number } | null>(null);
   const [gaebPreviewOpen, setGaebPreviewOpen] = useState(false);
 
   /* ── Computed data ─────────────────────────────────────────────────── */
@@ -2871,7 +2871,7 @@ export function BOQEditorPage() {
 
   /** Actually perform the export (download file). */
   const doExport = useCallback(
-    async (format: 'excel' | 'csv' | 'pdf' | 'gaeb') => {
+    async (format: 'excel' | 'csv' | 'pdf' | 'gaeb' | 'bc3') => {
       // Client-side Excel export via SheetJS
       if (format === 'excel' && positions.length > 0) {
         try {
@@ -2952,7 +2952,7 @@ export function BOQEditorPage() {
       if (r.ok) {
         const blob = await r.blob();
         const extensions: Record<string, string> = {
-          excel: 'xlsx', csv: 'csv', pdf: 'pdf', gaeb: 'xml',
+          excel: 'xlsx', csv: 'csv', pdf: 'pdf', gaeb: 'xml', bc3: 'bc3',
         };
         triggerDownload(blob, `${boq?.name ?? 'boq'}.${extensions[format] ?? format}`);
         addToast({ type: 'success', title: t('boq.file_downloaded', { defaultValue: 'File downloaded' }) });
@@ -2974,7 +2974,7 @@ export function BOQEditorPage() {
 
   /** Pre-export validation check: warn if quality < 60%, GAEB preview before export. */
   const handleExport = useCallback(
-    (format: 'excel' | 'csv' | 'pdf' | 'gaeb') => {
+    (format: 'excel' | 'csv' | 'pdf' | 'gaeb' | 'bc3') => {
       // Show GAEB confirmation dialog before quality check
       if (format === 'gaeb') {
         setGaebPreviewOpen(true);

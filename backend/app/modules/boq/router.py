@@ -4482,6 +4482,72 @@ async def export_boq_gaeb(
     )
 
 
+@router.get(
+    "/boqs/{boq_id}/export/bc3",
+    summary="Export BOQ as FIEBDC-3 / BC3 (no-slash alias)",
+    dependencies=[Depends(RequirePermission("boq.read"))],
+    include_in_schema=False,
+)
+@router.get(
+    "/boqs/{boq_id}/export/bc3/",
+    summary="Export BOQ as a FIEBDC-3 (BC3) budget - Spain / LATAM interchange",
+    dependencies=[Depends(RequirePermission("boq.read"))],
+)
+async def export_boq_bc3(
+    boq_id: uuid.UUID,
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: BOQService = Depends(_get_service),
+) -> StreamingResponse:
+    """Export the BOQ as a FIEBDC-3 (BC3) budget file.
+
+    FIEBDC-3 is the standard construction-budget interchange format across
+    Spain and Hispanophone LATAM (mandated by AENOR for Spanish public
+    tenders). The file carries the full chapter / partida hierarchy with
+    codes, units, quantities, unit rates and long texts, and re-imports
+    losslessly through our own BC3 parser. Overhead / profit / VAT are left
+    to the receiving tool's coefficient settings, the FIEBDC convention.
+
+    The build is delegated to the pure, unit-tested ``build_bc3`` builder.
+    Encoding is CP1252 when the document fits it (widest desktop-tool
+    compatibility) and UTF-8 otherwise, declared honestly in the ``~V``
+    record; the ``Content-Type`` charset matches.
+    """
+    from app.config import get_settings
+    from app.modules.boq.exporters.bc3 import build_bc3
+    from app.modules.projects.repository import ProjectRepository
+
+    # IDOR guard: scope the export to the project owner/member, matching every
+    # other BOQ read endpoint.
+    await _verify_boq_owner(session, boq_id, _user_id, payload)
+    boq_data = await service.get_boq_structured(boq_id)
+
+    # Load project for label text + currency.
+    project_repo = ProjectRepository(session)
+    project = await project_repo.get_by_id(boq_data.project_id)
+    project_name = project.name if project else "OpenConstructionERP Project"
+    project_currency = (project.currency or "").strip()[:3].upper() if project else ""
+
+    data, http_charset = build_bc3(
+        boq_data,
+        project_name=project_name,
+        project_currency=project_currency,
+        program_version=getattr(get_settings(), "app_version", "") or "",
+    )
+
+    safe_name = boq_data.name.encode("ascii", errors="replace").decode("ascii").replace('"', "'")
+    filename = f"{safe_name}.bc3"
+
+    return StreamingResponse(
+        iter([data]),
+        media_type=f"text/plain; charset={http_charset}",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
+
+
 def build_gaeb_xml(
     boq_data: Any,
     *,

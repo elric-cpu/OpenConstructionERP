@@ -347,12 +347,21 @@ export function anonymize(text: string): string {
         /(sk-[a-zA-Z0-9-]{20,}|sk-ant-[a-zA-Z0-9-]+|gsk_[a-zA-Z0-9]+)/g,
         '[API_KEY]',
       )
-      // Bearer tokens
+      // Bearer tokens (Authorization: Bearer <jwt|opaque>)
       .replace(/Bearer\s+[a-zA-Z0-9._-]+/g, 'Bearer [TOKEN]')
-      // JSON "password" fields
-      .replace(/("password"\s*:\s*")[^"]+/g, '$1[REDACTED]')
-      // JSON "api_key" fields
-      .replace(/("api_key"\s*:\s*")[^"]+/g, '$1[REDACTED]')
+      // Bare JWTs (header.payload.signature) NOT behind a "Bearer " prefix.
+      // This is our own auth-token format, plus any access/refresh token that
+      // reaches an error string on its own — the Bearer rule above misses those.
+      .replace(/\beyJ[a-zA-Z0-9_-]{5,}\.[a-zA-Z0-9_-]{5,}\.[a-zA-Z0-9_-]{2,}/g, '[JWT]')
+      // JSON secret-bearing fields: password / token / secret / key / cookie /
+      // session variants. Case-insensitive with optional underscores so
+      // "accessToken", "access_token", "Refresh_Token" etc. all match. Covers
+      // the old "password" and "api_key" rules plus the auth-token families the
+      // login/refresh responses carry.
+      .replace(
+        /("(?:password|passwd|pwd|(?:access_?|refresh_?|id_?)?token|api_?key|secret|client_?secret|jwt|session_?id|cookie|set-cookie|authorization)"\s*:\s*")[^"]+/gi,
+        '$1[REDACTED]',
+      )
       // Authorization header values in text
       .replace(/(Authorization:\s*)[^\s\r\n]+/gi, '$1[REDACTED]')
       // Long numeric IDs (> 6 digits) — standalone only

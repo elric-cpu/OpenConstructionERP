@@ -525,9 +525,9 @@ export function ExportWarningDialog({
   onConfirm,
   t,
 }: {
-  exportWarning: { format: 'excel' | 'csv' | 'pdf' | 'gaeb'; score: number };
+  exportWarning: { format: 'excel' | 'csv' | 'pdf' | 'gaeb' | 'bc3'; score: number };
   onCancel: () => void;
-  onConfirm: (format: 'excel' | 'csv' | 'pdf' | 'gaeb') => void;
+  onConfirm: (format: 'excel' | 'csv' | 'pdf' | 'gaeb' | 'bc3') => void;
   t: (key: string, options?: Record<string, string | number>) => string;
 }) {
   return (

@@ -5363,6 +5363,7 @@ const resource = {
     "boq.export_format_csv": "CSV (.csv)",
     "boq.export_format_pdf": "PDF",
     "boq.export_format_gaeb": "GAEB XML (.x83)",
+    "boq.export_format_bc3": "FIEBDC-3 (.bc3)",
     "boq.file_downloaded": "Archivo descargado",
     "boq.filtered": "filtrado",
     "boq.final": "definitivo",

@@ -22,6 +22,7 @@ import {
   isLastErrorNetworkOnly,
   isNetworkErrorMessage,
   isTransientHttpStatus,
+  anonymize,
 } from './errorLogger';
 
 describe('errorLogger.getLastError - bug-report payload selection', () => {
@@ -299,5 +300,77 @@ describe('errorLogger network-blip filter (#155)', () => {
     logError(new TypeError('Failed to fetch'), 'network');
     logError(new TypeError('Failed to fetch'), 'network');
     expect(getErrorLog().length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('errorLogger.anonymize - secret scrubbing before persistence', () => {
+  // Everything the buffer persists to localStorage (and everything
+  // exportErrorReport() hands to the user) runs through anonymize().
+  // These lock in that no auth material survives the scrub — the app's
+  // own JWT is the primary thing we must never leak into a bug report.
+
+  const SAMPLE_JWT =
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' +
+    'eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4ifQ.' +
+    'SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+
+  it('redacts a bare JWT that is not behind a Bearer prefix', () => {
+    const out = anonymize(`token expired: ${SAMPLE_JWT} please re-login`);
+    expect(out).not.toContain(SAMPLE_JWT);
+    expect(out).not.toContain('eyJhbGci');
+    expect(out).toContain('[JWT]');
+  });
+
+  it('redacts a JWT carried in an Authorization: Bearer header', () => {
+    const out = anonymize(`Authorization: Bearer ${SAMPLE_JWT}`);
+    expect(out).not.toContain(SAMPLE_JWT);
+    expect(out).not.toContain('eyJhbGci');
+    // The Bearer, JWT and Authorization-header rules all target this; any
+    // one of them leaves a redaction marker and none leave the payload.
+    expect(out).toMatch(/\[REDACTED\]|\[TOKEN\]|\[JWT\]/);
+  });
+
+  it('redacts token-family JSON fields regardless of case or underscores', () => {
+    const payload = JSON.stringify({
+      access_token: 'ory_at_abc123secretvalue',
+      refreshToken: 'ory_rt_zzz999secretvalue',
+      Client_Secret: 'cs_live_topsecret',
+      id_token: SAMPLE_JWT,
+    });
+    const out = anonymize(payload);
+    expect(out).not.toContain('ory_at_abc123secretvalue');
+    expect(out).not.toContain('ory_rt_zzz999secretvalue');
+    expect(out).not.toContain('cs_live_topsecret');
+    expect(out).toContain('[REDACTED]');
+  });
+
+  it('still redacts the legacy password and api_key JSON fields', () => {
+    const out = anonymize(
+      '{"password":"hunter2","api_key":"kbc_9f8e7d6c5b4a"}',
+    );
+    expect(out).not.toContain('hunter2');
+    expect(out).not.toContain('kbc_9f8e7d6c5b4a');
+    expect(out).toContain('[REDACTED]');
+  });
+
+  it('redacts session and cookie JSON fields', () => {
+    const out = anonymize('{"session_id":"sess_abc123","cookie":"sid=deadbeef"}');
+    expect(out).not.toContain('sess_abc123');
+    expect(out).not.toContain('sid=deadbeef');
+    expect(out).toContain('[REDACTED]');
+  });
+
+  it('keeps scrubbing the identifiers it already handled', () => {
+    const out = anonymize(
+      'user a@b.com id 0e92b341-1111-2222-3333-444455556666 key sk-ant-abcdefghijklmnop',
+    );
+    expect(out).toContain('[EMAIL]');
+    expect(out).toContain('[UUID]');
+    expect(out).toContain('[API_KEY]');
+  });
+
+  it('does not mangle an ordinary error message', () => {
+    const msg = 'Failed to load project BOQ: section 03.20 has no unit rate';
+    expect(anonymize(msg)).toBe(msg);
   });
 });

@@ -80,7 +80,7 @@ export interface BOQToolbarProps {
   importInputRef: React.RefObject<HTMLInputElement | null>;
   onImportInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   // Export
-  onExport: (format: 'excel' | 'csv' | 'pdf' | 'gaeb') => void;
+  onExport: (format: 'excel' | 'csv' | 'pdf' | 'gaeb' | 'bc3') => void;
   /**
    * Open the embodied-carbon view for this BOQ. When provided, a "Carbon
    * footprint" action appears in the File group; the host wires it to
@@ -237,7 +237,7 @@ export function BOQToolbar({
     };
   }, [showExportMenu]);
 
-  const handleExportItem = (format: 'excel' | 'csv' | 'pdf' | 'gaeb') => {
+  const handleExportItem = (format: 'excel' | 'csv' | 'pdf' | 'gaeb' | 'bc3') => {
     setShowExportMenu(false);
     onExport(format);
   };
@@ -444,9 +444,13 @@ export function BOQToolbar({
                     <FileDown size={15} className="text-content-tertiary" />
                     {t('boq.export_format_pdf', { defaultValue: 'PDF' })}
                   </button>
-                  <button role="menuitem" onClick={() => handleExportItem('gaeb')} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-content-primary hover:bg-surface-secondary transition-colors rounded-b-lg">
+                  <button role="menuitem" onClick={() => handleExportItem('gaeb')} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-content-primary hover:bg-surface-secondary transition-colors">
                     <FileText size={15} className="text-content-tertiary" />
                     {t('boq.export_format_gaeb', { defaultValue: 'GAEB XML (.x83)' })}
+                  </button>
+                  <button role="menuitem" onClick={() => handleExportItem('bc3')} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-content-primary hover:bg-surface-secondary transition-colors rounded-b-lg">
+                    <FileText size={15} className="text-content-tertiary" />
+                    {t('boq.export_format_bc3', { defaultValue: 'FIEBDC-3 (.bc3)' })}
                   </button>
                 </div>,
                 document.body,

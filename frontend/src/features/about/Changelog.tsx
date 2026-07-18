@@ -38,6 +38,13 @@ interface ChangelogEntry {
 // date, title and meaning intact; trim the prose, not the facts.
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '11.18.0',
+    date: '2026-07-18',
+    tag: 'NEW',
+    summary:
+      'Bills of quantities now export back to FIEBDC-3 (BC3), the Spanish and Latin American construction budget format, with the full chapter and item hierarchy, codes, units, quantities and rates, and a clean round-trip through the BC3 reader. The in-app error log also scrubs a wider set of secrets, including bare session tokens, before anything reaches local storage or a downloaded bug report.',
+  },
+  {
     version: '11.17.0',
     date: '2026-07-18',
     tag: 'NEW',
