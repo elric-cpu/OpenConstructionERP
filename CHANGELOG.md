@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [11.16.2] - 2026-07-18
+
+The longer introduction on the guided case pages now shows in every interface language. Fourteen of the cases carried this paragraph, and it was still rendering in English under a translated interface. It is now translated into all twenty-seven other languages, so each case reads in a single language from the title to the closing note.
+
 ## [11.16.1] - 2026-07-18
 
 The individual step blocks on the case detail page are tighter now. The block padding, the step title, the "What you do" and "Why" text, the gap between the text and the data-flow column and the connectors between the in, action and out blocks were all pulled in, so each step takes less vertical room and the whole case reads with less empty space around it.

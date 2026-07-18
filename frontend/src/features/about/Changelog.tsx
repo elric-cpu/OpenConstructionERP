@@ -38,6 +38,13 @@ interface ChangelogEntry {
 // date, title and meaning intact; trim the prose, not the facts.
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '11.16.2',
+    date: '2026-07-18',
+    tag: 'NEW',
+    summary:
+      'The longer case introduction now shows in every interface language. Fourteen guided cases carried this paragraph in English only; it is now translated into all twenty-seven other locales so each case reads in one language.',
+  },
+  {
     version: '11.16.1',
     date: '2026-07-18',
     tag: 'NEW',
