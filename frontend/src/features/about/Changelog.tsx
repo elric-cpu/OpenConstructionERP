@@ -38,6 +38,13 @@ interface ChangelogEntry {
 // date, title and meaning intact; trim the prose, not the facts.
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '11.16.1',
+    date: '2026-07-18',
+    tag: 'NEW',
+    summary:
+      'The step blocks on the case detail page are more compact: smaller padding, title and body text, a tighter gap between the text and the data-flow column, and shorter connectors, so each step takes less room and the page reads denser with less empty space.',
+  },
+  {
     version: '11.16.0',
     date: '2026-07-18',
     tag: 'NEW',
