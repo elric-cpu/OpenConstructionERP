@@ -88,11 +88,11 @@ function FlowSide({
 }): ReactElement {
   const Icon = tone === "in" ? LogIn : LogOut;
   return (
-    <div className="flex flex-col rounded-xl border border-border-light bg-surface-secondary/40 p-3.5">
+    <div className="flex flex-col rounded-xl border border-border-light bg-surface-secondary/40 p-3">
       <p
         className={clsx(
           "flex items-center gap-2 text-2xs font-semibold uppercase tracking-wide text-content-secondary",
-          hint ? "mb-1" : "mb-2.5",
+          hint ? "mb-1" : "mb-2",
         )}
       >
         <Icon size={14} strokeWidth={2.2} aria-hidden="true" />
@@ -147,11 +147,11 @@ function FlowConnector(): ReactElement {
   return (
     <div className="flex items-center justify-center" aria-hidden="true">
       <span className="flex flex-col items-center">
-        <span className="h-2.5 w-px bg-border" />
-        <span className="my-1">
+        <span className="h-2 w-px bg-border" />
+        <span className="my-0.5">
           <ConnectorChip down />
         </span>
-        <span className="h-2.5 w-px bg-border" />
+        <span className="h-2 w-px bg-border" />
       </span>
     </div>
   );
@@ -244,7 +244,7 @@ function StepBlock({
       id={id}
       aria-current={isCurrent ? "step" : undefined}
       className={clsx(
-        "scroll-mt-4 rounded-2xl border bg-surface-primary p-4 shadow-xs transition-colors sm:p-5",
+        "scroll-mt-4 rounded-2xl border bg-surface-primary p-3.5 shadow-xs transition-colors sm:p-4",
         isCurrent
           ? "border-oe-blue/50 ring-1 ring-inset ring-oe-blue/20"
           : done
@@ -253,10 +253,10 @@ function StepBlock({
       )}
     >
       {/* Header: number/status, step counter + module, title */}
-      <div className="mb-4 flex items-start gap-3">
+      <div className="mb-3 flex items-start gap-2.5">
         <span
           className={clsx(
-            "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold",
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-bold",
             done
               ? "bg-semantic-success text-white"
               : isCurrent
@@ -281,20 +281,20 @@ function StepBlock({
               {moduleLabel}
             </span>
           </div>
-          <h3 className="mt-1 text-lg font-semibold leading-snug text-content-primary sm:text-xl">
+          <h3 className="mt-1 text-base font-semibold leading-snug text-content-primary sm:text-lg">
             {title}
           </h3>
         </div>
       </div>
 
       {/* Body: text on the left, the In -> Action -> Out flow on the right */}
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,20rem)] lg:gap-7">
-        <div className="min-w-0 space-y-4">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,19rem)] lg:gap-6">
+        <div className="min-w-0 space-y-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-oe-blue-text">
               {t("cases.step.what", { defaultValue: "What you do" })}
             </p>
-            <p className="mt-1.5 text-base leading-relaxed text-content-primary">
+            <p className="mt-1 text-sm leading-relaxed text-content-primary">
               {what}
             </p>
           </div>
@@ -302,15 +302,15 @@ function StepBlock({
             <p className="text-xs font-semibold uppercase tracking-wide text-content-tertiary">
               {t("cases.step.why", { defaultValue: "Why" })}
             </p>
-            <p className="mt-1.5 text-base leading-relaxed text-content-secondary">
+            <p className="mt-1 text-sm leading-relaxed text-content-secondary">
               {why}
             </p>
           </div>
-          <div className="pt-1">
+          <div className="pt-0.5">
             <Button
               variant={done ? "ghost" : "secondary"}
-              size="md"
-              icon={done ? <RotateCcw size={16} /> : <Check size={16} />}
+              size="sm"
+              icon={done ? <RotateCcw size={14} /> : <Check size={14} />}
               onClick={onToggle}
             >
               {done
