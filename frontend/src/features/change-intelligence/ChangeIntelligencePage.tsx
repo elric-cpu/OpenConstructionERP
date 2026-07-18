@@ -38,6 +38,9 @@ import {
   Pencil,
   Trash2,
   SplitSquareHorizontal,
+  ClipboardList,
+  BarChart3,
+  LineChart,
 } from 'lucide-react';
 import {
   Card,
@@ -83,6 +86,9 @@ import {
   getDelayRiskBoard,
   getScopeAmbiguity,
   getNoticeRegister,
+  getCommitmentRegister,
+  getChangeDrivers,
+  getChangeRunRate,
   type Urgency,
   type Awaiting,
   type BackCharge,
@@ -95,6 +101,7 @@ import {
   type IntakePreview,
   type NoticeClock,
   type NoticeStatus,
+  type ParetoRow,
 } from './api';
 import { changeIntelligenceGuide } from './change_intelligenceGuide';
 
@@ -108,8 +115,11 @@ interface ProjectLite {
 type Tab =
   | 'coordination'
   | 'cycle'
+  | 'commitments'
   | 'comms'
   | 'impact'
+  | 'drivers'
+  | 'runrate'
   | 'recovery'
   | 'dispute'
   | 'decision'
@@ -180,6 +190,28 @@ function ratePercent(rate: string | null | undefined): string {
   const n = Number(rate);
   if (!Number.isFinite(n)) return '-';
   return `${Math.round(n * 100)}%`;
+}
+
+/**
+ * Render a 0-100 percentage number (the Pareto cost_pct / cumulative_pct, a pure
+ * ratio) as a compact percent string, or a dash when it is not a finite number.
+ */
+function pctNum(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '-';
+  return `${value.toFixed(1)}%`;
+}
+
+/**
+ * Render a percentage carried as a string (already 0-100, e.g. "12.50", from the
+ * run-rate curve and forecast) as a compact percent. The value is a ratio, not
+ * money, so Number() is safe here; null means there was no usable contract value
+ * to divide by, and shows as a dash.
+ */
+function pctString(value: string | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '-';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '-';
+  return `${n.toFixed(1)}%`;
 }
 
 /** Badge variant for a HIGH/LOW traceability cohort label. */
@@ -2746,6 +2778,611 @@ function NoticeRegisterTab({ projectId }: { projectId: string }) {
   );
 }
 
+// --- Tab: commitment register ("who owes the next action") -----------------
+
+// The origins the register consolidates. Mirrors the backend SOURCE_* tokens in
+// action_register.py; "rfi" would humanize to an ugly "Rfi", so the labels are
+// mapped explicitly here (keyed per source for i18n, like the scope reasons).
+const COMMITMENT_SOURCE_LABELS: Record<string, string> = {
+  meeting_action: 'Meeting action',
+  risk_action: 'Risk mitigation',
+  change_order: 'Change order',
+  rfi: 'RFI',
+  submittal: 'Submittal',
+};
+
+function commitmentSourceLabel(source: string, t: TFunction): string {
+  const fallback = COMMITMENT_SOURCE_LABELS[source];
+  if (fallback) {
+    return t(`change_intelligence.commitments.source.${source}`, { defaultValue: fallback });
+  }
+  return humanize(source);
+}
+
+function CommitmentsTab({ projectId }: { projectId: string }) {
+  const { t } = useTranslation();
+  const q = useQuery({
+    queryKey: ['change-intelligence', 'commitments', projectId],
+    queryFn: () => getCommitmentRegister(projectId),
+    enabled: !!projectId,
+    retry: false,
+    staleTime: 30_000,
+  });
+  const register = q.data;
+  const owners = register?.by_owner ?? [];
+  const items = register?.items ?? [];
+  const sourceEntries = Object.entries(register?.by_source ?? {}).filter(([, n]) => n > 0);
+  const unassigned = t('change_intelligence.commitments.unassigned', { defaultValue: '(unassigned)' });
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <StatTile
+          label={t('change_intelligence.commitments.tile.open', { defaultValue: 'Open commitments' })}
+          value={register?.total_open ?? 0}
+        />
+        <StatTile
+          label={t('change_intelligence.commitments.tile.overdue', { defaultValue: 'Overdue' })}
+          value={register?.overdue_count ?? 0}
+          tone="error"
+        />
+        <StatTile
+          label={t('change_intelligence.commitments.tile.owners', { defaultValue: 'Owners' })}
+          value={owners.length}
+        />
+      </div>
+
+      {sourceEntries.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-content-tertiary">
+            {t('change_intelligence.commitments.by_source', { defaultValue: 'By source' })}
+          </span>
+          {sourceEntries.map(([source, n]) => (
+            <span
+              key={source}
+              className="rounded-full bg-surface-secondary px-2 py-0.5 text-xs text-content-secondary"
+            >
+              {`${commitmentSourceLabel(source, t)}: ${n}`}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <PanelState
+        loading={q.isLoading}
+        error={q.isError ? q.error : null}
+        empty={items.length === 0}
+        emptyIcon={<ClipboardList className="h-6 w-6" />}
+        emptyTitle={t('change_intelligence.commitments.empty_title', { defaultValue: 'Nothing outstanding' })}
+        emptyDescription={t('change_intelligence.commitments.empty_desc', {
+          defaultValue:
+            'No open meeting actions, risk mitigations, change orders or RFIs are waiting on anyone right now.',
+        })}
+      >
+        <div className="space-y-4">
+          {owners.length > 0 && (
+            <Card className="overflow-hidden p-0">
+              <div className="border-b border-border-light px-3 py-2 text-xs font-medium uppercase tracking-wide text-content-tertiary">
+                {t('change_intelligence.commitments.owner_load_heading', { defaultValue: 'Load by owner' })}
+              </div>
+              <table className="w-full text-sm">
+                <thead className="bg-surface-secondary text-left text-xs uppercase tracking-wide text-content-tertiary">
+                  <tr>
+                    <th className="px-3 py-2">
+                      {t('change_intelligence.commitments.col.owner', { defaultValue: 'Owner' })}
+                    </th>
+                    <th className="px-3 py-2 text-right">
+                      {t('change_intelligence.commitments.col.open', { defaultValue: 'Open' })}
+                    </th>
+                    <th className="px-3 py-2 text-right">
+                      {t('change_intelligence.commitments.col.overdue', { defaultValue: 'Overdue' })}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {owners.map((o) => (
+                    <tr key={o.owner || '(unassigned)'} className="border-t border-border-light">
+                      <td className="px-3 py-2 font-medium text-content-primary">{o.owner || unassigned}</td>
+                      <td className="px-3 py-2 text-right">{o.open_count}</td>
+                      <td className="px-3 py-2 text-right text-semantic-error">{o.overdue_count || ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+          )}
+
+          <Card className="overflow-hidden p-0">
+            <div className="border-b border-border-light px-3 py-2 text-xs font-medium uppercase tracking-wide text-content-tertiary">
+              {t('change_intelligence.commitments.register_heading', {
+                defaultValue: 'Open commitments, overdue first',
+              })}
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-surface-secondary text-left text-xs uppercase tracking-wide text-content-tertiary">
+                  <tr>
+                    <th className="px-3 py-2">
+                      {t('change_intelligence.commitments.col.owner', { defaultValue: 'Owner' })}
+                    </th>
+                    <th className="px-3 py-2">
+                      {t('change_intelligence.commitments.col.commitment', { defaultValue: 'Commitment' })}
+                    </th>
+                    <th className="px-3 py-2">
+                      {t('change_intelligence.commitments.col.source', { defaultValue: 'Source' })}
+                    </th>
+                    <th className="px-3 py-2">
+                      {t('change_intelligence.commitments.col.due', { defaultValue: 'Due' })}
+                    </th>
+                    <th className="px-3 py-2 text-right">
+                      {t('change_intelligence.commitments.col.status', { defaultValue: 'Status' })}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((c) => (
+                    <tr
+                      key={`${c.source}:${c.ref_id}`}
+                      className={`border-t border-border-light ${c.overdue ? 'bg-semantic-error/5' : ''}`}
+                    >
+                      <td className="px-3 py-2 font-medium text-content-primary">{c.owner || unassigned}</td>
+                      <td className="px-3 py-2 text-content-secondary">
+                        {c.code ? <span className="font-mono text-xs text-content-tertiary">{c.code} </span> : null}
+                        {c.title || t('change_intelligence.common.untitled', { defaultValue: '(untitled)' })}
+                      </td>
+                      <td className="px-3 py-2 text-content-secondary">{commitmentSourceLabel(c.source, t)}</td>
+                      <td className="px-3 py-2 text-content-secondary">{dateOnly(c.due_date)}</td>
+                      <td className="px-3 py-2 text-right">
+                        {c.overdue ? (
+                          <Badge variant="error">
+                            {t('change_intelligence.commitments.days_overdue', {
+                              defaultValue: '{{days}}d overdue',
+                              days: Math.round(c.days_overdue),
+                            })}
+                          </Badge>
+                        ) : c.age_days != null ? (
+                          <span className="text-content-tertiary">
+                            {t('change_intelligence.commitments.days_open', {
+                              defaultValue: '{{days}}d open',
+                              days: Math.round(c.age_days),
+                            })}
+                          </span>
+                        ) : (
+                          '-'
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+      </PanelState>
+    </div>
+  );
+}
+
+// --- Tab: change drivers (Pareto by cause and responsible party) -----------
+
+/** A thin inline share bar for a Pareto row; pct is already a 0-100 percentage. */
+function ShareBar({ pct }: { pct: number }) {
+  const width = Math.max(0, Math.min(100, Number.isFinite(pct) ? pct : 0));
+  return (
+    <div className="h-1.5 w-full overflow-hidden rounded bg-surface-secondary">
+      <div className="h-full rounded bg-oe-blue/70" style={{ width: `${width}%` }} />
+    </div>
+  );
+}
+
+/**
+ * One Pareto table: rows ranked by cost with a share bar and a running
+ * cumulative percentage. The heading and the key-column label are passed in
+ * (already translated) so the same table serves the by-cause and by-party cuts.
+ */
+function ParetoCard({
+  heading,
+  keyLabel,
+  rows,
+  currency,
+}: {
+  heading: string;
+  keyLabel: string;
+  rows: ParetoRow[];
+  currency: string;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Card className="overflow-hidden p-0">
+      <div className="border-b border-border-light px-3 py-2 text-xs font-medium uppercase tracking-wide text-content-tertiary">
+        {heading}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-surface-secondary text-left text-xs uppercase tracking-wide text-content-tertiary">
+            <tr>
+              <th className="px-3 py-2">{keyLabel}</th>
+              <th className="px-3 py-2 text-right">
+                {t('change_intelligence.drivers.col.count', { defaultValue: 'Count' })}
+              </th>
+              <th className="px-3 py-2 text-right">
+                {t('change_intelligence.drivers.col.cost', { defaultValue: 'Cost' })}
+              </th>
+              <th className="px-3 py-2 text-right">
+                {t('change_intelligence.drivers.col.share', { defaultValue: 'Share' })}
+              </th>
+              <th className="px-3 py-2 text-right">
+                {t('change_intelligence.drivers.col.cumulative', { defaultValue: 'Cumulative' })}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.key} className="border-t border-border-light">
+                <td className="px-3 py-2 font-medium text-content-primary">{humanize(r.key)}</td>
+                <td className="px-3 py-2 text-right">{r.count}</td>
+                <td className="px-3 py-2 text-right">
+                  <MoneyDisplay amount={r.cost} currency={currency} showCode colorize />
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex items-center justify-end gap-2">
+                    <span className="hidden w-16 shrink-0 sm:block">
+                      <ShareBar pct={r.cost_pct} />
+                    </span>
+                    <span className="tabular-nums text-content-secondary">{pctNum(r.cost_pct)}</span>
+                  </div>
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-content-tertiary">
+                  {pctNum(r.cumulative_pct)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+function DriversTab({ projectId }: { projectId: string }) {
+  const { t } = useTranslation();
+  const q = useQuery({
+    queryKey: ['change-intelligence', 'change-drivers', projectId],
+    queryFn: () => getChangeDrivers(projectId),
+    enabled: !!projectId,
+    retry: false,
+    staleTime: 30_000,
+  });
+  const data = q.data;
+  const byCause = data?.by_cause ?? [];
+  const byParty = data?.by_party ?? [];
+  const byCurrency = data?.by_currency ?? [];
+  const trend = data?.trend ?? [];
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <StatTile
+          label={t('change_intelligence.drivers.tile.changes', { defaultValue: 'Changes' })}
+          value={data?.total_count ?? 0}
+        />
+        <StatTile
+          label={t('change_intelligence.drivers.tile.total_cost', { defaultValue: 'Total change cost' })}
+          value={
+            <MoneyDisplay amount={data?.total_cost ?? '0'} currency={data?.primary_currency} showCode colorize />
+          }
+        />
+        <StatTile
+          label={t('change_intelligence.drivers.tile.causes', { defaultValue: 'Distinct causes' })}
+          value={byCause.length}
+        />
+      </div>
+
+      {byCurrency.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-content-tertiary">
+            {t('change_intelligence.drivers.by_currency', { defaultValue: 'Per currency' })}
+          </span>
+          {byCurrency.map((c) => (
+            <span
+              key={c.currency}
+              className="inline-flex items-center gap-1 rounded border border-border-light px-1.5 py-0.5 text-xs text-content-secondary"
+            >
+              <MoneyDisplay amount={c.cost} currency={c.currency} showCode />
+              <span className="text-content-tertiary">{`(${c.count})`}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <PanelState
+        loading={q.isLoading}
+        error={q.isError ? q.error : null}
+        empty={byCause.length === 0 && byParty.length === 0}
+        emptyIcon={<BarChart3 className="h-6 w-6" />}
+        emptyTitle={t('change_intelligence.drivers.empty_title', { defaultValue: 'No change drivers yet' })}
+        emptyDescription={t('change_intelligence.drivers.empty_desc', {
+          defaultValue:
+            'Once this project carries change orders, claims or risks, their cost is ranked here by cause and responsible party.',
+        })}
+      >
+        <div className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <ParetoCard
+              heading={t('change_intelligence.drivers.by_cause_heading', { defaultValue: 'By cause' })}
+              keyLabel={t('change_intelligence.drivers.col.cause', { defaultValue: 'Cause' })}
+              rows={byCause}
+              currency={data?.primary_currency ?? ''}
+            />
+            <ParetoCard
+              heading={t('change_intelligence.drivers.by_party_heading', {
+                defaultValue: 'By responsible party',
+              })}
+              keyLabel={t('change_intelligence.drivers.col.party', { defaultValue: 'Responsible party' })}
+              rows={byParty}
+              currency={data?.primary_currency ?? ''}
+            />
+          </div>
+
+          {trend.length > 0 && (
+            <Card className="overflow-hidden p-0">
+              <div className="border-b border-border-light px-3 py-2 text-xs font-medium uppercase tracking-wide text-content-tertiary">
+                {t('change_intelligence.drivers.trend_heading', { defaultValue: 'Month over month' })}
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-surface-secondary text-left text-xs uppercase tracking-wide text-content-tertiary">
+                    <tr>
+                      <th className="px-3 py-2">
+                        {t('change_intelligence.drivers.col.month', { defaultValue: 'Month' })}
+                      </th>
+                      <th className="px-3 py-2 text-right">
+                        {t('change_intelligence.drivers.col.count', { defaultValue: 'Count' })}
+                      </th>
+                      <th className="px-3 py-2 text-right">
+                        {t('change_intelligence.drivers.col.cost', { defaultValue: 'Cost' })}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {trend.map((pt) => (
+                      <tr key={pt.month} className="border-t border-border-light">
+                        <td className="px-3 py-2 font-medium text-content-primary">{pt.month}</td>
+                        <td className="px-3 py-2 text-right">{pt.count}</td>
+                        <td className="px-3 py-2 text-right">
+                          <MoneyDisplay amount={pt.cost} currency={data?.primary_currency} showCode colorize />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
+
+          {byCurrency.length > 1 && (
+            <p className="text-xs text-content-tertiary">
+              {t('change_intelligence.drivers.multi_currency', {
+                defaultValue:
+                  'Change cost spans {{count}} currencies; the ranking is shown in {{currency}} and currencies are never blended.',
+                count: byCurrency.length,
+                currency:
+                  data?.primary_currency ||
+                  t('change_intelligence.drivers.primary_currency_fallback', {
+                    defaultValue: 'the primary currency',
+                  }),
+              })}
+            </p>
+          )}
+        </div>
+      </PanelState>
+    </div>
+  );
+}
+
+// --- Tab: change run-rate (cumulative curve + burn-rate forecast) ----------
+
+function RunRateTab({ projectId }: { projectId: string }) {
+  const { t } = useTranslation();
+  const q = useQuery({
+    queryKey: ['change-intelligence', 'run-rate', projectId],
+    queryFn: () => getChangeRunRate(projectId),
+    enabled: !!projectId,
+    retry: false,
+    staleTime: 30_000,
+  });
+  const data = q.data;
+  const points = data?.points ?? [];
+  const forecast = data?.forecast ?? null;
+  // Colour the current change % by how much of the contract it has eaten.
+  const currentPct = data?.current_change_pct != null ? Number(data.current_change_pct) : null;
+  const changePctTone: BadgeVariant | undefined =
+    currentPct != null && Number.isFinite(currentPct)
+      ? currentPct >= 10
+        ? 'error'
+        : currentPct >= 5
+          ? 'warning'
+          : undefined
+      : undefined;
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatTile
+          label={t('change_intelligence.runrate.tile.contract', { defaultValue: 'Contract value' })}
+          value={
+            data?.original_contract_value != null ? (
+              <MoneyDisplay amount={data.original_contract_value} currency={data.currency} showCode />
+            ) : (
+              '-'
+            )
+          }
+        />
+        <StatTile
+          label={t('change_intelligence.runrate.tile.change_to_date', { defaultValue: 'Change to date' })}
+          value={
+            <MoneyDisplay amount={data?.total_change_value ?? '0'} currency={data?.currency} showCode colorize />
+          }
+        />
+        <StatTile
+          label={t('change_intelligence.runrate.tile.change_pct', { defaultValue: 'Change %' })}
+          value={pctString(data?.current_change_pct)}
+          tone={changePctTone}
+        />
+        <StatTile
+          label={t('change_intelligence.runrate.tile.intake', { defaultValue: 'Intake / month' })}
+          value={data ? data.intake_rate_per_month.toFixed(1) : '0'}
+        />
+      </div>
+
+      <PanelState
+        loading={q.isLoading}
+        error={q.isError ? q.error : null}
+        empty={!data || (points.length === 0 && data.change_count === 0)}
+        emptyIcon={<LineChart className="h-6 w-6" />}
+        emptyTitle={t('change_intelligence.runrate.empty_title', { defaultValue: 'No change to trend yet' })}
+        emptyDescription={t('change_intelligence.runrate.empty_desc', {
+          defaultValue:
+            'Once this project carries change orders or variations, their cumulative value is tracked here against the contract.',
+        })}
+      >
+        <div className="space-y-4">
+          <Card className="p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-oe-blue/10 text-oe-blue">
+                <TrendingUp className="h-4 w-4" />
+              </span>
+              <span className="font-semibold text-content-primary">
+                {t('change_intelligence.runrate.forecast_heading', { defaultValue: 'Forecast at completion' })}
+              </span>
+              <Badge variant="warning">
+                {t('change_intelligence.runrate.estimate', { defaultValue: 'Estimate' })}
+              </Badge>
+            </div>
+            {forecast ? (
+              <>
+                <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  <div>
+                    <div className="text-xs font-medium uppercase tracking-wide text-content-tertiary">
+                      {t('change_intelligence.runrate.forecast.final_value', {
+                        defaultValue: 'Projected final change',
+                      })}
+                    </div>
+                    <div className="mt-1 text-xl font-semibold text-content-primary">
+                      <MoneyDisplay
+                        amount={forecast.final_change_value}
+                        currency={data?.currency}
+                        showCode
+                        colorize
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium uppercase tracking-wide text-content-tertiary">
+                      {t('change_intelligence.runrate.forecast.final_pct', { defaultValue: 'Projected change %' })}
+                    </div>
+                    <div className="mt-1 text-xl font-semibold text-content-primary">
+                      {pctString(forecast.final_change_pct)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium uppercase tracking-wide text-content-tertiary">
+                      {t('change_intelligence.runrate.forecast.at_date', { defaultValue: 'At completion' })}
+                    </div>
+                    <div className="mt-1 text-xl font-semibold text-content-primary">
+                      {dateOnly(forecast.at_date)}
+                    </div>
+                  </div>
+                </div>
+                <p className="mt-3 text-xs leading-relaxed text-content-tertiary">
+                  {t('change_intelligence.runrate.forecast_note', {
+                    defaultValue:
+                      'A simple linear projection from {{elapsed}} of {{total}} days elapsed at the current run-rate. It is an estimate to aid planning, not a commitment; confirm it against the live change picture before you act on it.',
+                    elapsed: forecast.elapsed_days,
+                    total: forecast.total_days,
+                  })}
+                </p>
+              </>
+            ) : (
+              <p className="mt-2 text-sm text-content-tertiary">
+                {t('change_intelligence.runrate.forecast_unavailable', {
+                  defaultValue:
+                    'Not enough dated changes and a project timeline to project a completion figure yet.',
+                })}
+              </p>
+            )}
+          </Card>
+
+          {data && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-content-tertiary">
+              <span>
+                {t('change_intelligence.runrate.approved_label', { defaultValue: 'Approved' })}{' '}
+                <MoneyDisplay amount={data.approved_value} currency={data.currency} showCode />
+              </span>
+              <span>
+                {t('change_intelligence.runrate.pending_label', { defaultValue: 'Pending' })}{' '}
+                <MoneyDisplay amount={data.pending_value} currency={data.currency} showCode />
+              </span>
+              <span>
+                {t('change_intelligence.runrate.pending_hint', {
+                  defaultValue: 'Pending value is not yet committed and may still change.',
+                })}
+              </span>
+            </div>
+          )}
+
+          {points.length > 0 && (
+            <Card className="overflow-hidden p-0">
+              <div className="border-b border-border-light px-3 py-2 text-xs font-medium uppercase tracking-wide text-content-tertiary">
+                {t('change_intelligence.runrate.curve_heading', { defaultValue: 'Cumulative change by month' })}
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-surface-secondary text-left text-xs uppercase tracking-wide text-content-tertiary">
+                    <tr>
+                      <th className="px-3 py-2">
+                        {t('change_intelligence.runrate.col.month', { defaultValue: 'Month' })}
+                      </th>
+                      <th className="px-3 py-2 text-right">
+                        {t('change_intelligence.runrate.col.approved', { defaultValue: 'Approved' })}
+                      </th>
+                      <th className="px-3 py-2 text-right">
+                        {t('change_intelligence.runrate.col.pending', { defaultValue: 'Pending' })}
+                      </th>
+                      <th className="px-3 py-2 text-right">
+                        {t('change_intelligence.runrate.col.cumulative', { defaultValue: 'Cumulative' })}
+                      </th>
+                      <th className="px-3 py-2 text-right">
+                        {t('change_intelligence.runrate.col.pct', { defaultValue: 'vs contract' })}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {points.map((p) => (
+                      <tr key={p.month} className="border-t border-border-light">
+                        <td className="px-3 py-2 font-medium text-content-primary">{p.month}</td>
+                        <td className="px-3 py-2 text-right">
+                          <MoneyDisplay amount={p.approved_value} currency={data?.currency} showCode />
+                        </td>
+                        <td className="px-3 py-2 text-right text-content-secondary">
+                          <MoneyDisplay amount={p.pending_value} currency={data?.currency} showCode />
+                        </td>
+                        <td className="px-3 py-2 text-right font-medium">
+                          <MoneyDisplay amount={p.cumulative_value} currency={data?.currency} showCode />
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-content-tertiary">
+                          {pctString(p.change_pct)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
+        </div>
+      </PanelState>
+    </div>
+  );
+}
+
 // --- Page -------------------------------------------------------------------
 
 export function ChangeIntelligencePage() {
@@ -2818,6 +3455,11 @@ export function ChangeIntelligencePage() {
                 icon: <Clock className="h-4 w-4" />,
               },
               {
+                id: 'commitments',
+                label: t('change_intelligence.tab.commitments', { defaultValue: 'Commitments' }),
+                icon: <ClipboardList className="h-4 w-4" />,
+              },
+              {
                 id: 'comms',
                 label: t('change_intelligence.tab.comms', { defaultValue: 'Correspondence' }),
                 icon: <Mail className="h-4 w-4" />,
@@ -2826,6 +3468,16 @@ export function ChangeIntelligencePage() {
                 id: 'impact',
                 label: t('change_intelligence.tab.impact', { defaultValue: 'Impact' }),
                 icon: <TrendingUp className="h-4 w-4" />,
+              },
+              {
+                id: 'drivers',
+                label: t('change_intelligence.tab.drivers', { defaultValue: 'Change drivers' }),
+                icon: <BarChart3 className="h-4 w-4" />,
+              },
+              {
+                id: 'runrate',
+                label: t('change_intelligence.tab.runrate', { defaultValue: 'Run rate' }),
+                icon: <LineChart className="h-4 w-4" />,
               },
               {
                 id: 'recovery',
@@ -2877,8 +3529,11 @@ export function ChangeIntelligencePage() {
           <div role="tabpanel" id={ids.panelId(tab)} aria-labelledby={ids.tabId(tab)}>
             {tab === 'coordination' && <CoordinationTab projectId={projectId} />}
             {tab === 'cycle' && <CycleTimeTab projectId={projectId} />}
+            {tab === 'commitments' && <CommitmentsTab projectId={projectId} />}
             {tab === 'comms' && <CommsTab projectId={projectId} />}
             {tab === 'impact' && <ImpactTab projectId={projectId} />}
+            {tab === 'drivers' && <DriversTab projectId={projectId} />}
+            {tab === 'runrate' && <RunRateTab projectId={projectId} />}
             {tab === 'recovery' && <RecoveryTab projectId={projectId} />}
             {tab === 'dispute' && <DisputeRiskTab projectId={projectId} />}
             {tab === 'decision' && <DecisionImpactTab projectId={projectId} />}

@@ -72,6 +72,48 @@ export interface BudgetCategorySummary {
   variance_pct: number;
 }
 
+/**
+ * Contract exposure for a single cost group: how much of the group budget is
+ * already committed to contracts (subcontracts, purchase orders, awarded
+ * values), how much is still free to commit, and whether it is overcommitted.
+ *
+ * IMPORTANT: ``budgeted`` / ``committed`` / ``remaining_to_commit`` are
+ * Decimal-encoded STRINGS - format them at the edge, never store as a number.
+ * ``commitment_ratio`` is a committed/budget fraction (0.5 = 50%), or null when
+ * the group budget is zero or absent. ``remaining_to_commit`` goes negative
+ * when the group is overcommitted.
+ */
+export interface ContractExposureGroup {
+  group: string;
+  budgeted: string;
+  committed: string;
+  remaining_to_commit: string;
+  commitment_ratio: number | null;
+  overcommitted: boolean;
+}
+
+/**
+ * Project-wide committed-vs-budget contract-exposure rollup.
+ *
+ * Mirrors the sibling money surfaces (dashboard / EVM): it carries the project
+ * base ``currency`` and a ``mixed_currency`` flag (true when the budget lines
+ * span more than one currency, so a missing fx rate may have blended the summed
+ * totals). Every money field (``total_budgeted`` / ``total_committed`` /
+ * ``total_remaining_to_commit``) is a Decimal-encoded STRING;
+ * ``total_commitment_ratio`` is a fraction or null.
+ */
+export interface ContractExposureResponse {
+  currency: string;
+  mixed_currency: boolean;
+  total_budgeted: string;
+  total_committed: string;
+  total_remaining_to_commit: string;
+  total_commitment_ratio: number | null;
+  overcommitted: boolean;
+  overcommitted_group_count: number;
+  groups: ContractExposureGroup[];
+}
+
 export interface Snapshot {
   id: string;
   project_id: string;
@@ -261,6 +303,10 @@ export const costModelApi = {
     apiGet<{ periods: CashFlowPoint[] }>(`/v1/costmodel/projects/${projectId}/5d/cash-flow/`),
   getBudgetSummary: (projectId: string) =>
     apiGet<{ categories: BudgetCategorySummary[] }>(`/v1/costmodel/projects/${projectId}/5d/budget/`),
+  getContractExposure: (projectId: string) =>
+    apiGet<ContractExposureResponse>(
+      `/v1/costmodel/projects/${projectId}/5d/contract-exposure/`,
+    ),
   getBudgetLines: (projectId: string) =>
     apiGet<BudgetLine[]>(`/v1/costmodel/projects/${projectId}/5d/budget-lines/`),
   /**

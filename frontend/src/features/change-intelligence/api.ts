@@ -709,3 +709,130 @@ export function getNoticeRegister(
     `${CI_BASE}/projects/${projectId}/notice-register${qs ? `?${qs}` : ''}`,
   );
 }
+
+// --- Commitment register ("who owes the next action") ----------------------
+// The consolidated, owner-ranked, overdue-first list of open commitments a
+// project carries: meeting action items, risk mitigation actions, open change
+// orders, and RFIs / submittals awaiting a response. days_overdue and age_days
+// are pure day counts (not money), safe to render directly; by_source counts the
+// register by its origin (meeting_action / risk_action / change_order / rfi /
+// submittal).
+
+export interface Commitment {
+  source: string;
+  ref_id: string;
+  code: string;
+  title: string;
+  owner: string;
+  due_date: string | null;
+  overdue: boolean;
+  days_overdue: number;
+  age_days: number | null;
+}
+
+export interface OwnerLoad {
+  owner: string;
+  open_count: number;
+  overdue_count: number;
+}
+
+export interface CommitmentRegister {
+  project_id: string;
+  generated_at: string;
+  total_open: number;
+  overdue_count: number;
+  by_owner: OwnerLoad[];
+  by_source: Record<string, number>;
+  items: Commitment[];
+}
+
+export function getCommitmentRegister(projectId: string): Promise<CommitmentRegister> {
+  return apiGet<CommitmentRegister>(`${CI_BASE}/projects/${projectId}/commitments`);
+}
+
+// --- Change-driver Pareto analytics ----------------------------------------
+// A cost-ranked Pareto of the project's change pressure by originating cause and
+// by responsible party, each with a running cumulative percentage, plus a
+// per-currency split and a month-over-month trend. cost is money carried as a
+// string for MoneyDisplay; cost_pct and cumulative_pct are pure 0-100
+// percentages (a ratio, not money), safe to render directly.
+
+export interface ParetoRow {
+  key: string;
+  count: number;
+  cost: string;
+  cost_pct: number;
+  cumulative_pct: number;
+}
+
+export interface DriverCurrency {
+  currency: string;
+  count: number;
+  cost: string;
+}
+
+export interface DriverTrendPoint {
+  month: string;
+  count: number;
+  cost: string;
+}
+
+export interface ChangeDriverAnalytics {
+  project_id: string;
+  total_count: number;
+  total_cost: string;
+  primary_currency: string;
+  by_cause: ParetoRow[];
+  by_party: ParetoRow[];
+  by_currency: DriverCurrency[];
+  trend: DriverTrendPoint[];
+}
+
+export function getChangeDrivers(projectId: string): Promise<ChangeDriverAnalytics> {
+  return apiGet<ChangeDriverAnalytics>(`${CI_BASE}/projects/${projectId}/change-drivers`);
+}
+
+// --- Change run-rate / cumulative change curve -----------------------------
+// The cumulative approved-plus-pending change value month by month against the
+// original contract, the intake rate (changes per month) and a simple linear
+// burn-rate forecast of the change percentage at completion. Every money and
+// percentage figure is a string (the signed Decimal round-tripped losslessly);
+// the percentages are already 0-100 (value / contract * 100), never fractions,
+// and change_pct / current_change_pct / final_change_pct are null when there is
+// no usable contract value to divide by. intake_rate_per_month is a plain rate.
+
+export interface RunRatePoint {
+  month: string;
+  approved_value: string;
+  pending_value: string;
+  cumulative_value: string;
+  change_pct: string | null;
+}
+
+export interface RunRateForecast {
+  method: string;
+  elapsed_days: number;
+  total_days: number;
+  rate_per_day: string;
+  final_change_value: string;
+  final_change_pct: string | null;
+  at_date: string;
+}
+
+export interface ChangeRunRate {
+  project_id: string;
+  original_contract_value: string | null;
+  currency: string;
+  change_count: number;
+  approved_value: string;
+  pending_value: string;
+  total_change_value: string;
+  current_change_pct: string | null;
+  intake_rate_per_month: number;
+  points: RunRatePoint[];
+  forecast: RunRateForecast | null;
+}
+
+export function getChangeRunRate(projectId: string): Promise<ChangeRunRate> {
+  return apiGet<ChangeRunRate>(`${CI_BASE}/projects/${projectId}/run-rate`);
+}

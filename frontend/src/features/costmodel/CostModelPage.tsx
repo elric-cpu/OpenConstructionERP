@@ -45,6 +45,7 @@ import {
 } from './api';
 import { CostBenchmark } from './CostBenchmark';
 import { CostSpinePanel } from './CostSpinePanel';
+import { ContractExposurePanel } from './ContractExposurePanel';
 import { costmodelGuide } from './costmodelGuide';
 import { BudgetLineThresholdEditor, parseThreshold } from './BudgetLineThresholdEditor';
 import { getIntlLocale } from '@/shared/lib/formatters';
@@ -2564,6 +2565,9 @@ function FiveDDashboard({ project }: { project: Project }) {
           )}
         </CardContent>
       </Card>
+
+      {/* Contract Exposure (committed vs budget by cost group) */}
+      <ContractExposurePanel projectId={project.id} currency={currency} />
 
       {/* Editable Budget Lines */}
       {hasBudget && (

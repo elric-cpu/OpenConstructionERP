@@ -53,6 +53,7 @@ import { PageHeader } from '@/shared/ui/PageHeader';
 import { ContractStatusPipeline } from './ContractStatusPipeline';
 import { ContractExpiryBadge } from './ContractExpiryBadge';
 import { ComplianceGate } from './ComplianceGate';
+import { ContractAnalyticsPanels } from './ContractAnalyticsPanels';
 import { contractsGuide } from './contractsGuide';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
@@ -1828,6 +1829,15 @@ function ContractDetailDrawer({
                 )}
             </Card>
           )}
+
+          {/* Analytics & close-out — four read-only endpoints surfaced as
+              stacked panels (SoV status, completeness, EOT exposure, final-
+              account checklist). Each owns its query so one slow/forbidden
+              endpoint never blocks the others. */}
+          <ContractAnalyticsPanels
+            contractId={contractId}
+            currency={contract.currency}
+          />
         </div>
       </div>
 

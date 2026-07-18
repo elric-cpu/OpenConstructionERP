@@ -787,6 +787,153 @@ export async function downloadAiaApplicationPdf(
   triggerDownload(blob, `AIA_G702_${applicationNumber || claimId}.pdf`);
 }
 
+/* ── Contract analytics (detail-view panels) ──────────────────────────── */
+//
+// Four read-only analytics endpoints that hang off a single contract. All are
+// GET, permission `contracts.read`, path param `contract_id`. They mirror the
+// backend shapes in contracts/router.py and contracts/service.py exactly. Money
+// is a decimal STRING on the wire (the SoV router coerces Decimals to strings);
+// we type money as `number | string` for parity with ContractItem and coerce at
+// the call site.
+
+/** One Schedule-of-Values line's billed-vs-earned-vs-paid position. */
+export interface SovStatusLine {
+  scheduled: number | string;
+  billed: number | string;
+  earned: number | string;
+  paid: number | string;
+  retained: number | string;
+  net_paid: number | string;
+  /** Earned / scheduled × 100, already rounded server-side (a plain number). */
+  percent_complete: number;
+}
+
+/** Totals row for the SoV status table. Note: no `net_paid` at the total level. */
+export interface SovStatusTotals {
+  scheduled: number | string;
+  billed: number | string;
+  earned: number | string;
+  paid: number | string;
+  retained: number | string;
+  percent_complete: number;
+}
+
+export interface SovStatusResponse {
+  /** Keyed by contract-line id (UUID string), in contract-line order. */
+  by_line: Record<string, SovStatusLine>;
+  totals: SovStatusTotals;
+}
+
+/** Per-line scheduled/billed/earned/paid + totals for a contract's SoV. */
+export function getSovStatus(contractId: string): Promise<SovStatusResponse> {
+  return apiGet<SovStatusResponse>(
+    `/v1/contracts/contracts/${contractId}/sov-status`,
+  );
+}
+
+/** One finding from the contracts completeness rule set (parties/security/EOT). */
+export interface CompletenessFinding {
+  rule_id: string;
+  rule_name: string;
+  severity: 'error' | 'warning' | 'info';
+  passed: boolean;
+  message: string;
+  element_ref: string | null;
+  suggestion: string | null;
+}
+
+/** Overall validation status (mirrors backend ValidationStatus enum). */
+export type CompletenessStatus =
+  | 'passed'
+  | 'warnings'
+  | 'errors'
+  | 'info'
+  | 'skipped'
+  | 'unsupported';
+
+export interface CompletenessReport {
+  contract_id: string;
+  status: CompletenessStatus;
+  score: number | null;
+  summary: {
+    id?: string | null;
+    status: string;
+    score: number | null;
+    counts: {
+      total: number;
+      passed: number;
+      errors: number;
+      warnings: number;
+      infos: number;
+      engine_errors: number;
+    };
+    rule_sets?: string[];
+    supported_rule_sets?: string[];
+    unsupported_rule_sets?: string[];
+    duration_ms?: number;
+  };
+  errors: CompletenessFinding[];
+  warnings: CompletenessFinding[];
+}
+
+/** Run the contracts rule set over a contract for a traffic-light panel. */
+export function getContractCompleteness(
+  contractId: string,
+): Promise<CompletenessReport> {
+  return apiGet<CompletenessReport>(
+    `/v1/contracts/contracts/${contractId}/completeness`,
+  );
+}
+
+/** Aggregate extension-of-time exposure for a contract. */
+export interface EotSummary {
+  contract_id: string;
+  claims_count: number;
+  pending_count: number;
+  decided_count: number;
+  total_days_claimed: number;
+  total_days_granted: number;
+  /** ISO date of the latest revised completion date, or null when none set. */
+  latest_revised_completion_date: string | null;
+}
+
+export function getEotSummary(contractId: string): Promise<EotSummary> {
+  return apiGet<EotSummary>(
+    `/v1/contracts/contracts/${contractId}/eot-summary`,
+  );
+}
+
+export type FinalAccountCheckStatus = 'pass' | 'fail' | 'not_applicable';
+
+/** One close-out condition in the final-account readiness checklist. */
+export interface FinalAccountCheckItem {
+  /** Stable identifier, e.g. `progress_claims_settled` (safe for i18n wiring). */
+  key: string;
+  status: FinalAccountCheckStatus;
+  reason: string;
+  based_on: Record<string, string>;
+}
+
+export interface FinalAccountChecklist {
+  contract_id: string;
+  ready: boolean;
+  /** Passed / applicable × 100 (a Decimal on the wire; coerce with toNum). */
+  completion_percent: number | string;
+  passed_count: number;
+  applicable_count: number;
+  total_count: number;
+  items: FinalAccountCheckItem[];
+}
+
+/** Close-out readiness checklist for a contract. */
+export function getFinalAccountChecklist(
+  contractId: string,
+): Promise<FinalAccountChecklist> {
+  return apiGet<FinalAccountChecklist>(
+    `/v1/contracts/contracts/${contractId}/final-account-checklist`,
+  );
+}
+
 /* ── Back-compat aliases (old skeleton names) ─────────────────────────── */
 
 export type Contract = ContractItem;
