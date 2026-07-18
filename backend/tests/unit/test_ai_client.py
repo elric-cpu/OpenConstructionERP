@@ -401,6 +401,7 @@ class TestModelErrorSurfacing:
             max_tokens=4096,
             model=None,
             base_url=None,
+            timeout=None,
         ):
             seen.append(model)
             if model == "openrouter/auto":

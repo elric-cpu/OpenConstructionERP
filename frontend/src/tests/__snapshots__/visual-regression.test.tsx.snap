@@ -3663,54 +3663,7 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
       </div>
       <div
         class="h-full [&>*]:h-full lg:col-span-3"
-      >
-        <div
-          class="rounded-xl border border-border-light bg-surface-elevated shadow-xs transition-all duration-normal ease-oe transform-gpu p-6"
-        >
-          <div
-            class="flex items-start justify-between gap-4"
-          >
-            <div
-              class="min-w-0"
-            >
-              <h3
-                class="text-lg font-semibold text-content-primary truncate"
-              >
-                Finance summary
-              </h3>
-            </div>
-          </div>
-          <div
-            class="mt-4"
-          >
-            <div
-              aria-busy="true"
-              class="grid grid-cols-1 sm:grid-cols-2 gap-3"
-            >
-              <div
-                class="rounded-xl border border-border-light bg-surface-elevated/90 p-3"
-              >
-                <div
-                  class="h-3 w-20 rounded bg-surface-secondary animate-pulse"
-                />
-                <div
-                  class="mt-2 h-5 w-24 rounded bg-surface-secondary animate-pulse"
-                />
-              </div>
-              <div
-                class="rounded-xl border border-border-light bg-surface-elevated/90 p-3"
-              >
-                <div
-                  class="h-3 w-20 rounded bg-surface-secondary animate-pulse"
-                />
-                <div
-                  class="mt-2 h-5 w-24 rounded bg-surface-secondary animate-pulse"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      />
       <div
         class="h-full [&>*]:h-full lg:col-span-3"
       />
