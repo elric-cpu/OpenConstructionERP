@@ -3734,156 +3734,23 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
         class="h-full [&>*]:h-full lg:col-span-3"
       >
         <div
-          class="rounded-xl border border-border-light bg-surface-elevated shadow-xs transition-all duration-normal ease-oe transform-gpu"
-        >
-          <div
-            class="px-4 pb-2 pt-4"
-          >
-            <div
-              class="flex items-start justify-between gap-4"
-            >
-              <div
-                class="min-w-0"
-              >
-                <h3
-                  class="text-lg font-semibold text-content-primary truncate"
-                >
-                  <span
-                    class="inline-flex items-center gap-2"
-                  >
-                    <svg
-                      class="lucide lucide-inbox text-oe-blue"
-                      fill="none"
-                      height="16"
-                      stroke="currentColor"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="1.75"
-                      viewBox="0 0 24 24"
-                      width="16"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <polyline
-                        points="22 12 16 12 14 15 10 15 8 12 2 12"
-                      />
-                      <path
-                        d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"
-                      />
-                    </svg>
-                    Inbox
-                  </span>
-                </h3>
-              </div>
-              <div
-                class="shrink-0"
-              >
-                <button
-                  class="inline-flex items-center gap-1 text-xs font-medium text-content-secondary hover:text-oe-blue transition-colors"
-                  type="button"
-                >
-                  View all
-                  <svg
-                    class="lucide lucide-arrow-right"
-                    fill="none"
-                    height="13"
-                    stroke="currentColor"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    viewBox="0 0 24 24"
-                    width="13"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path
-                      d="M5 12h14"
-                    />
-                    <path
-                      d="m12 5 7 7-7 7"
-                    />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>
-          <div
-            class="flex flex-col lg:flex-row lg:items-stretch"
-          >
-            <div
-              class="order-2 min-w-0 flex-1 lg:order-1"
-            >
-              <div
-                aria-busy="true"
-                class="px-4 py-6 space-y-3"
-              >
-                <div
-                  class="flex items-start gap-2.5"
-                >
-                  <div
-                    class="h-7 w-7 rounded-md bg-surface-secondary animate-pulse shrink-0"
-                  />
-                  <div
-                    class="flex-1 space-y-1.5"
-                  >
-                    <div
-                      class="h-2.5 w-3/4 rounded bg-surface-secondary animate-pulse"
-                    />
-                    <div
-                      class="h-2 w-1/2 rounded bg-surface-secondary animate-pulse"
-                    />
-                  </div>
-                </div>
-                <div
-                  class="flex items-start gap-2.5"
-                >
-                  <div
-                    class="h-7 w-7 rounded-md bg-surface-secondary animate-pulse shrink-0"
-                  />
-                  <div
-                    class="flex-1 space-y-1.5"
-                  >
-                    <div
-                      class="h-2.5 w-3/4 rounded bg-surface-secondary animate-pulse"
-                    />
-                    <div
-                      class="h-2 w-1/2 rounded bg-surface-secondary animate-pulse"
-                    />
-                  </div>
-                </div>
-                <div
-                  class="flex items-start gap-2.5"
-                >
-                  <div
-                    class="h-7 w-7 rounded-md bg-surface-secondary animate-pulse shrink-0"
-                  />
-                  <div
-                    class="flex-1 space-y-1.5"
-                  >
-                    <div
-                      class="h-2.5 w-3/4 rounded bg-surface-secondary animate-pulse"
-                    />
-                    <div
-                      class="h-2 w-1/2 rounded bg-surface-secondary animate-pulse"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+          aria-hidden="true"
+          class="h-full min-h-[8rem] w-full animate-pulse rounded-2xl border border-border-subtle bg-surface-muted/40"
+        />
       </div>
       <div
         class="h-full [&>*]:h-full lg:col-span-3"
       >
         <div
-          class="animate-card-in"
+          class="animate-card-in h-full"
           style="animation-delay: 120ms;"
         >
           <div
-            class="rounded-xl border border-border-light bg-surface-elevated shadow-xs transition-all duration-normal ease-oe transform-gpu"
+            class="rounded-xl border border-border-light bg-surface-elevated shadow-xs transition-all duration-normal ease-oe transform-gpu h-full"
           >
             <div
               aria-label="File upload area"
-              class="relative flex items-center gap-4 rounded-xl border-2 border-dashed px-5 py-5 transition-all border-border-light bg-surface-secondary/30 hover:border-oe-blue/40 opacity-60"
+              class="relative flex h-full items-center gap-4 rounded-xl border-2 border-dashed px-5 py-5 transition-all border-border-light bg-surface-secondary/30 hover:border-oe-blue/40 opacity-60"
               role="region"
               style="min-height: 160px;"
             >
@@ -5315,84 +5182,7 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
       </div>
       <div
         class="h-full [&>*]:h-full lg:col-span-6"
-      >
-        <div
-          class="animate-card-in"
-          style="animation-delay: 160ms;"
-        >
-          <div
-            class="rounded-xl border border-border-light bg-surface-elevated shadow-xs transition-all duration-normal ease-oe transform-gpu p-6 !bg-surface-elevated/70"
-          >
-            <div
-              class="px-4 pt-3 pb-1"
-            >
-              <h3
-                class="text-sm font-semibold text-content-primary"
-              >
-                Operations snapshot
-              </h3>
-              <p
-                class="text-2xs text-content-tertiary"
-              >
-                Health across nine operations modules - empty tiles light up as data lands.
-              </p>
-            </div>
-            <div
-              class="mt-4"
-            >
-              <div
-                class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2"
-              >
-                <div
-                  aria-hidden="true"
-                  class="animate-shimmer bg-gradient-to-r from-surface-secondary via-surface-tertiary to-surface-secondary bg-[length:200%_100%] rounded-lg"
-                  style="height: 56px;"
-                />
-                <div
-                  aria-hidden="true"
-                  class="animate-shimmer bg-gradient-to-r from-surface-secondary via-surface-tertiary to-surface-secondary bg-[length:200%_100%] rounded-lg"
-                  style="height: 56px;"
-                />
-                <div
-                  aria-hidden="true"
-                  class="animate-shimmer bg-gradient-to-r from-surface-secondary via-surface-tertiary to-surface-secondary bg-[length:200%_100%] rounded-lg"
-                  style="height: 56px;"
-                />
-                <div
-                  aria-hidden="true"
-                  class="animate-shimmer bg-gradient-to-r from-surface-secondary via-surface-tertiary to-surface-secondary bg-[length:200%_100%] rounded-lg"
-                  style="height: 56px;"
-                />
-                <div
-                  aria-hidden="true"
-                  class="animate-shimmer bg-gradient-to-r from-surface-secondary via-surface-tertiary to-surface-secondary bg-[length:200%_100%] rounded-lg"
-                  style="height: 56px;"
-                />
-                <div
-                  aria-hidden="true"
-                  class="animate-shimmer bg-gradient-to-r from-surface-secondary via-surface-tertiary to-surface-secondary bg-[length:200%_100%] rounded-lg"
-                  style="height: 56px;"
-                />
-                <div
-                  aria-hidden="true"
-                  class="animate-shimmer bg-gradient-to-r from-surface-secondary via-surface-tertiary to-surface-secondary bg-[length:200%_100%] rounded-lg"
-                  style="height: 56px;"
-                />
-                <div
-                  aria-hidden="true"
-                  class="animate-shimmer bg-gradient-to-r from-surface-secondary via-surface-tertiary to-surface-secondary bg-[length:200%_100%] rounded-lg"
-                  style="height: 56px;"
-                />
-                <div
-                  aria-hidden="true"
-                  class="animate-shimmer bg-gradient-to-r from-surface-secondary via-surface-tertiary to-surface-secondary bg-[length:200%_100%] rounded-lg"
-                  style="height: 56px;"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      />
       <div
         class="h-full [&>*]:h-full lg:col-span-6"
       />
@@ -5413,69 +5203,7 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
       />
       <div
         class="h-full [&>*]:h-full lg:col-span-4"
-      >
-        <div
-          class="animate-card-in"
-          style="animation-delay: 160ms;"
-        >
-          <div
-            class="rounded-xl border border-border-light bg-surface-elevated shadow-xs transition-all duration-normal ease-oe transform-gpu p-6"
-          >
-            <div
-              class="mb-4 flex items-center gap-2"
-            >
-              <svg
-                class="lucide lucide-camera text-content-tertiary"
-                fill="none"
-                height="16"
-                stroke="currentColor"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="1.75"
-                viewBox="0 0 24 24"
-                width="16"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"
-                />
-                <circle
-                  cx="12"
-                  cy="13"
-                  r="3"
-                />
-              </svg>
-              <h3
-                class="text-sm font-semibold text-content-primary"
-              >
-                Latest site photos
-              </h3>
-            </div>
-            <div
-              class="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-8 xl:grid-cols-12"
-            >
-              <div
-                class="aspect-[3/2] w-full animate-pulse rounded-xl bg-surface-secondary"
-              />
-              <div
-                class="aspect-[3/2] w-full animate-pulse rounded-xl bg-surface-secondary"
-              />
-              <div
-                class="aspect-[3/2] w-full animate-pulse rounded-xl bg-surface-secondary"
-              />
-              <div
-                class="aspect-[3/2] w-full animate-pulse rounded-xl bg-surface-secondary"
-              />
-              <div
-                class="aspect-[3/2] w-full animate-pulse rounded-xl bg-surface-secondary"
-              />
-              <div
-                class="aspect-[3/2] w-full animate-pulse rounded-xl bg-surface-secondary"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
+      />
     </div>
   </div>
 </div>
