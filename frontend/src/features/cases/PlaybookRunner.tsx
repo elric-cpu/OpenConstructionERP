@@ -670,45 +670,53 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
       </button>
 
       <header className="rounded-2xl border border-border-light bg-gradient-to-br from-oe-blue/[0.08] via-oe-blue/[0.03] to-transparent p-5 sm:p-6">
-          <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span
-              className={clsx(
-                "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-2xs font-medium",
-                tint.chip,
-              )}
-            >
-              <PlaybookIcon size={11} strokeWidth={2} aria-hidden="true" />
-              {t(cat.labelKey, { defaultValue: cat.labelDefault })}
-            </span>
-            <span className="inline-flex items-center gap-1 text-2xs font-medium text-content-tertiary">
-              <Clock size={11} aria-hidden="true" />
-              {t("cases.card.minutes", {
-                defaultValue: "about {{count}} min",
-                count: playbook.estMinutes,
-              })}
-            </span>
-            <span className="inline-flex items-center gap-1 text-2xs font-medium text-content-tertiary">
-              <ListChecks size={11} aria-hidden="true" />
-              {t("cases.card.steps", { defaultValue: "{{count}} steps", count: total })}
-            </span>
-          </div>
-          <h1 className="text-2xl font-semibold tracking-tight text-content-primary sm:text-3xl">
-            {title}
-          </h1>
-          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-content-secondary sm:text-base">
-            {desc}
-          </p>
-          {longDesc && (
-            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-content-tertiary">
-              {longDesc}
+        {/* Two columns on wide screens: the case identity and purpose on the
+            left, a compact control panel (progress, the primary action, reset
+            and the sample-project picker) on the right. They stack on narrow
+            screens. This keeps the header short instead of one tall stack. */}
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_19rem] lg:items-start lg:gap-8">
+          {/* Left: what this case is and why */}
+          <div className="min-w-0">
+            <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span
+                className={clsx(
+                  "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-2xs font-medium",
+                  tint.chip,
+                )}
+              >
+                <PlaybookIcon size={11} strokeWidth={2} aria-hidden="true" />
+                {t(cat.labelKey, { defaultValue: cat.labelDefault })}
+              </span>
+              <span className="inline-flex items-center gap-1 text-2xs font-medium text-content-tertiary">
+                <Clock size={11} aria-hidden="true" />
+                {t("cases.card.minutes", {
+                  defaultValue: "about {{count}} min",
+                  count: playbook.estMinutes,
+                })}
+              </span>
+              <span className="inline-flex items-center gap-1 text-2xs font-medium text-content-tertiary">
+                <ListChecks size={11} aria-hidden="true" />
+                {t("cases.card.steps", { defaultValue: "{{count}} steps", count: total })}
+              </span>
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight text-content-primary sm:text-3xl">
+              {title}
+            </h1>
+            <p className="mt-2 text-sm leading-relaxed text-content-secondary sm:text-base">
+              {desc}
             </p>
-          )}
+            {longDesc && (
+              <p className="mt-2 text-sm leading-relaxed text-content-tertiary">
+                {longDesc}
+              </p>
+            )}
+          </div>
 
-          {/* Controls: progress with the primary action on one line (they stack
-              on narrow screens), then the sample-project picker underneath. */}
-          <div className="mt-5 flex flex-col gap-3 border-t border-border-light/70 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          {/* Right: a compact control panel - progress, primary action, reset
+              and the sample-project picker, stacked in one tidy card. */}
+          <div className="rounded-xl border border-border-light/70 bg-surface-primary/60 p-4">
             <div
-              className="flex min-w-0 flex-1 items-center gap-3"
+              className="flex flex-col gap-1.5"
               role="progressbar"
               aria-valuemin={0}
               aria-valuemax={total}
@@ -717,24 +725,27 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
               aria-label={t("cases.progress_label", { defaultValue: "Case progress" })}
               aria-live="polite"
             >
-              <span className="shrink-0 text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
-                {t("cases.progress_label", { defaultValue: "Case progress" })}
-              </span>
-              <div className="h-2 min-w-[4rem] flex-1 overflow-hidden rounded-full bg-surface-secondary">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
+                  {t("cases.progress_label", { defaultValue: "Case progress" })}
+                </span>
+                <span className="shrink-0 text-2xs font-medium tabular-nums text-content-secondary">
+                  {progressLabel}
+                </span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-surface-secondary">
                 <div
                   className="h-full rounded-full bg-oe-blue transition-all"
                   style={{ width: `${pct}%` }}
                 />
               </div>
-              <span className="shrink-0 text-2xs font-medium tabular-nums text-content-secondary">
-                {progressLabel}
-              </span>
             </div>
-            <div className="flex shrink-0 flex-wrap items-center gap-2.5">
+            <div className="mt-4 flex flex-col gap-2">
               <Button
                 variant="primary"
                 size="lg"
                 icon={<Play size={16} />}
+                className="w-full justify-center"
                 onClick={() => {
                   selectStep(currentIndex);
                   const step = playbook.steps[currentIndex];
@@ -743,43 +754,44 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
               >
                 {primaryLabel}
               </Button>
-              {resetButton}
+              <div className="flex justify-center">{resetButton}</div>
+            </div>
+            <div className="mt-4 border-t border-border-light/70 pt-3">
+              <label
+                htmlFor={selectId}
+                className="block text-2xs font-semibold uppercase tracking-wide text-content-tertiary"
+              >
+                {t("cases.run_on", { defaultValue: "Run on" })}
+              </label>
+              <select
+                id={selectId}
+                value={selectedRaw}
+                onChange={(e) => setSelectedProject(playbook.id, e.target.value)}
+                className="mt-1.5 h-8 w-full rounded-lg border border-border bg-surface-primary px-2.5 text-xs text-content-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+              >
+                <option value="">
+                  {t("cases.run_on_none", {
+                    defaultValue: "No sample project (just open the module)",
+                  })}
+                </option>
+                {sortedProjects.map((p) => {
+                  const label = isDemoProject(p)
+                    ? t("cases.run_on_sample_option", {
+                        defaultValue: "{{name}} (sample)",
+                        name: p.name,
+                      })
+                    : p.name;
+                  return (
+                    <option key={p.id} value={p.id}>
+                      {label}
+                    </option>
+                  );
+                })}
+              </select>
             </div>
           </div>
-          <div className="mt-3 flex items-center gap-2">
-            <label
-              htmlFor={selectId}
-              className="shrink-0 text-2xs font-semibold uppercase tracking-wide text-content-tertiary"
-            >
-              {t("cases.run_on", { defaultValue: "Run on" })}
-            </label>
-            <select
-              id={selectId}
-              value={selectedRaw}
-              onChange={(e) => setSelectedProject(playbook.id, e.target.value)}
-              className="h-8 max-w-[18rem] flex-1 rounded-lg border border-border bg-surface-primary px-2.5 text-xs text-content-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
-            >
-              <option value="">
-                {t("cases.run_on_none", {
-                  defaultValue: "No sample project (just open the module)",
-                })}
-              </option>
-              {sortedProjects.map((p) => {
-                const label = isDemoProject(p)
-                  ? t("cases.run_on_sample_option", {
-                      defaultValue: "{{name}} (sample)",
-                      name: p.name,
-                    })
-                  : p.name;
-                return (
-                  <option key={p.id} value={p.id}>
-                    {label}
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-        </header>
+        </div>
+      </header>
 
         {/* The process: a compact, full-width row of step cards below the header. */}
         <section aria-label={t("cases.the_process", { defaultValue: "The process" })}>
