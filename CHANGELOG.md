@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [11.16.0] - 2026-07-18
+
+The case detail page now lays its header out in two columns on wide screens. The case identity and purpose sit on the left, and a compact control panel with the progress track, the start button, reset and the sample-project picker sits on the right, so the header reads shorter and the steps start higher up the page. On narrow screens it still stacks as before.
+
+The featured article card at the foot of the sidebar starts collapsed, showing only its title, and expands to reveal the short summary and the read link when you hover over it or move keyboard focus to it. The whole card stays a single link in both states.
+
 ## [11.15.0] - 2026-07-18
 
 Every file and model viewer can now match a selected element straight to a priced cost position. Open the BIM viewer, the PDF takeoff or the DWG takeoff, pick an element, and the viewer reads that element's own properties, searches every cost catalogue you have loaded and ranks the positions that fit. Accept one and it creates a priced BOQ line for that element in the target bill and links it back to the element in a single step, so the quantity and the price travel together. This used to work only in the BIM viewer. It is now one shared panel across all of them, and it reuses the existing matching service, so there is no database change.

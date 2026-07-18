@@ -38,6 +38,13 @@ interface ChangelogEntry {
 // date, title and meaning intact; trim the prose, not the facts.
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '11.16.0',
+    date: '2026-07-18',
+    tag: 'NEW',
+    summary:
+      'The case detail page lays its header out in two columns on wide screens, with the case identity on the left and a compact control panel (progress, start, reset and the sample-project picker) on the right, so it reads shorter and denser. The featured article card in the sidebar now shows only its title and expands to reveal the summary and link when you hover or focus it.',
+  },
+  {
     version: '11.15.0',
     date: '2026-07-18',
     tag: 'NEW',
