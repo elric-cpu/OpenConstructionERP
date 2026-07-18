@@ -1604,3 +1604,22 @@ html.oe-nav-pending body {
 @keyframes oe-nav-spin {
   to { transform: rotate(360deg); }
 }
+
+/* ── Takeoff toolbar: collapse labels by the TOOLBAR's own width (#368) ──
+   The two-row takeoff toolbar shares its flex row with the w-72 properties
+   panel, so opening the panel narrows the toolbar even though the viewport
+   width is unchanged. A viewport media query (Tailwind's `sm:`) therefore
+   cannot tell the row is about to wrap. A container query on the toolbar's
+   own inline size can: the button labels drop to icons only once the
+   toolbar itself is too narrow to keep row 1 on a single line. */
+.takeoff-toolbar {
+  container-type: inline-size;
+}
+.takeoff-toolbar-label {
+  display: inline;
+}
+@container (max-width: 1024px) {
+  .takeoff-toolbar-label {
+    display: none;
+  }
+}
