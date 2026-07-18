@@ -78,7 +78,14 @@ implementation is our own.
 - **arvildev** ([@arvildev](https://github.com/arvildev)): pointed out that the required
   `POSTGRES_PASSWORD` and `JWT_SECRET` interpolations in the quickstart Docker Compose file
   needed quoting so the YAML parses before the fail-fast checks run
-  ([#227](https://github.com/datadrivenconstruction/OpenConstructionERP/pull/227)).
+  ([#227](https://github.com/datadrivenconstruction/OpenConstructionERP/pull/227)). Later
+  reported three PDF takeoff viewer bugs: the scale-calibrate button showing its full tooltip
+  text as its visible label, the draw-tool previews not being suppressed during a two-click
+  scale calibration and lingering after it, and the toolbar top row wrapping when the side
+  panels narrow it
+  ([#366](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/366),
+  [#367](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/367),
+  [#368](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/368)).
 - **Aidan Koetaan** ([@aidankoetaan-tech](https://github.com/aidankoetaan-tech),
   akoetaan@cut.ac.za): proposed a South Africa construction pack and shared a reference
   implementation covering SANS 1200 and ASAQS measurement, CIDB contractor grading, the
@@ -156,6 +163,19 @@ implementation is our own.
   app now ships
   ([#125](https://github.com/datadrivenconstruction/OpenConstructionERP/pull/125),
   [#137](https://github.com/datadrivenconstruction/OpenConstructionERP/pull/137)).
+- **EQSTLab** ([@EQSTLab](https://github.com/EQSTLab)): reported through a private security
+  advisory that the in-app upgrade endpoint ran without authentication, so anyone who could
+  reach the API on a quickstart or an exposed install could force a package reinstall or a
+  downgrade. The fix, which gates the endpoint behind an authenticated admin, is our own.
+- **nullbenny** ([@nullbenny](https://github.com/nullbenny)): reported through a private
+  security advisory a blind server-side request forgery in the configurable self-hosted AI
+  provider endpoint, where a saved Ollama or vLLM base URL was fetched server-side without
+  validation. Our own fix checks the URL when it is saved and again after DNS resolution at
+  dispatch, always blocking link-local and cloud-metadata addresses while keeping loopback and
+  private hosts reachable for a local runtime, with an optional allowlist.
+- **dizconnectz** ([@dizconnectz](https://github.com/dizconnectz)): reported through a private
+  security advisory a cross-tenant access gap where a project handover document bundle could be
+  read by another tenant. We closed it with an ownership check on the handover chain.
 
 See the full list of everyone who has contributed:
 
