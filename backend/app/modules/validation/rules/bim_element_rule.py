@@ -107,6 +107,27 @@ class BIMElementRule:
         require_storey: If True, the element must have a non-empty ``storey``.
         require_name: If True, the element must have a real ``name`` (not
             ``None``, ``""``, or the literal string ``"None"``).
+        category_required_properties: Data-driven map of ``category prefix ->
+            list of property paths`` where the category must expose at least
+            one of the listed properties. The rule self-scopes: it only checks
+            elements whose (``ifc``-stripped, lower-cased) ``element_type``
+            starts with one of the map keys. Generalises the per-category
+            "has material / has key property" checks into one rule.
+        require_classification_code: If True, the element must carry at least
+            one non-empty classification code, read from a ``classification``
+            attribute or ``properties['classification']`` (din276 / nrm /
+            masterformat / uniclass - any of them).
+        require_relation_host: If True, the element must reference a host or
+            parent, read from a ``relations`` attribute,
+            ``properties['relations']`` or a flat host/parent key in
+            ``properties`` (host, host_id, parent, parent_id, ...).
+        min_when_present: Optional ``{"paths": [...], "min": float,
+            "label": str}`` spec. When ANY listed path (searched in
+            quantities then properties) holds a number BELOW ``min`` the check
+            fails. A value that is absent does NOT fail - use this for a
+            minimum threshold whose "missing" case is owned by another rule
+            (e.g. door clear width, where a missing width is caught by the
+            door dimensions rule).
     """
 
     rule_id: str
@@ -121,12 +142,23 @@ class BIMElementRule:
     require_any_positive_quantity: list[str] = field(default_factory=list)
     require_storey: bool = False
     require_name: bool = False
+    category_required_properties: dict[str, list[str]] = field(default_factory=dict)
+    require_classification_code: bool = False
+    require_relation_host: bool = False
+    min_when_present: dict[str, Any] = field(default_factory=dict)
     enabled: bool = True
 
     # ── Matching ────────────────────────────────────────────────────────
 
     def matches(self, element: Any) -> bool:
         """Return True if ``element`` is in scope for this rule."""
+        # Data-driven category rules self-scope: an element is in scope only
+        # when its (ifc-stripped) category is a key in the map. This runs
+        # before the empty-filter short-circuit so a category rule that sets
+        # no ``element_filter`` still only checks the categories it governs.
+        if self.category_required_properties and _match_category(self.category_required_properties, element) is None:
+            return False
+
         f = self.element_filter
         if not f:
             return True
@@ -270,6 +302,53 @@ class BIMElementRule:
                     },
                 )
 
+        # Category-required-property (data-driven per-category completeness).
+        # Only mapped categories reach here (matches() self-scoped the rule).
+        if self.category_required_properties:
+            matched = _match_category(self.category_required_properties, element)
+            if matched is not None:
+                cat_key, required = matched
+                if required and not any(_has_value(_lookup_path(props, p)) for p in required):
+                    _emit(
+                        f"{cat_key} element is missing a required property (any of: " + ", ".join(required) + ")",
+                        {"category": cat_key, "required_any_of": required, "scope": "properties"},
+                    )
+
+        # Classification-code presence (din276 / nrm / masterformat / uniclass).
+        if self.require_classification_code and not _has_classification_code(element, props):
+            _emit(
+                "Element has no classification code (e.g. DIN 276 / NRM / MasterFormat / Uniclass)",
+                {"field": "classification"},
+            )
+
+        # Hosted element must reference a host or parent.
+        if self.require_relation_host and not _has_host_reference(element, props):
+            _emit(
+                "Hosted element has no host or parent reference in its relations",
+                {"field": "relations"},
+            )
+
+        # Minimum-when-present threshold: fails only when a value is present AND
+        # below the minimum; an absent value is left to the presence rules.
+        if self.min_when_present:
+            paths = self.min_when_present.get("paths") or []
+            minimum = self.min_when_present.get("min")
+            label = str(self.min_when_present.get("label") or "value")
+            if minimum is not None and paths:
+                found: float | None = None
+                for p in paths:
+                    num = _coerce_number(_lookup_path(quants, p))
+                    if num is None:
+                        num = _coerce_number(_lookup_path(props, p))
+                    if num is not None:
+                        found = num
+                        break
+                if found is not None and found < float(minimum):
+                    _emit(
+                        f"{label} {found} is below the minimum of {minimum}",
+                        {"label": label, "min": minimum, "value": found, "paths": paths},
+                    )
+
         return results
 
 
@@ -299,6 +378,80 @@ def _has_value(value: Any) -> bool:
     if isinstance(value, (list, dict, tuple, set)):
         return len(value) > 0
     return True
+
+
+def _normalized_category(element: Any) -> str:
+    """Return the element's category key: ``element_type`` lower-cased with any
+    leading ``ifc`` stripped (so ``IfcWallStandardCase`` -> ``wallstandardcase``).
+    """
+    etype = (getattr(element, "element_type", None) or "").strip().lower()
+    if etype.startswith("ifc"):
+        etype = etype[3:]
+    return etype
+
+
+def _match_category(mapping: dict[str, list[str]], element: Any) -> tuple[str, list[str]] | None:
+    """Return ``(matched_key, required_paths)`` when the element's category
+    starts with one of ``mapping``'s keys, else ``None``.
+    """
+    norm = _normalized_category(element)
+    if not norm:
+        return None
+    for key, required in mapping.items():
+        if norm.startswith(str(key).lower()):
+            return key, required
+    return None
+
+
+# Flat property / relation keys under which a host or parent reference lives.
+_HOST_RELATION_KEYS = (
+    "host",
+    "host_id",
+    "host_element",
+    "host_element_id",
+    "hosted_by",
+    "parent",
+    "parent_id",
+    "container",
+    "container_id",
+)
+
+
+def _has_classification_code(element: Any, props: dict[str, Any]) -> bool:
+    """True when the element carries at least one non-empty classification code.
+
+    Reads a ``classification`` attribute (a dict of ``system -> code`` or a bare
+    code string) and ``properties['classification']``. Fail-soft on missing or
+    oddly-typed data.
+    """
+    containers: list[Any] = [getattr(element, "classification", None)]
+    if isinstance(props, dict):
+        containers.append(props.get("classification"))
+    for container in containers:
+        if isinstance(container, dict):
+            if any(_has_value(v) for v in container.values()):
+                return True
+        elif _has_value(container):
+            return True
+    return False
+
+
+def _has_host_reference(element: Any, props: dict[str, Any]) -> bool:
+    """True when the element references a host/parent through its relations.
+
+    Looks in a ``relations`` attribute, ``properties['relations']`` and flat
+    host/parent keys on ``properties``. Fail-soft on missing data.
+    """
+    containers: list[dict[str, Any]] = []
+    direct = getattr(element, "relations", None)
+    if isinstance(direct, dict):
+        containers.append(direct)
+    if isinstance(props, dict):
+        rel = props.get("relations")
+        if isinstance(rel, dict):
+            containers.append(rel)
+        containers.append(props)
+    return any(_has_value(container.get(key)) for container in containers for key in _HOST_RELATION_KEYS)
 
 
 _GROUP_WHITESPACE = "   \t"  # space, NBSP, NARROW NBSP, tab

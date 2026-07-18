@@ -64,7 +64,12 @@ def rep(**kw: Any) -> SimpleNamespace:
 
 
 def _clean_wall(i: int) -> SimpleNamespace:
-    """A wall passing every applicable universal rule (thickness/fire/storey/name)."""
+    """A wall passing every applicable universal rule.
+
+    Carries thickness, fire rating, storey, name AND (for the expanded rule set)
+    a material and a classification code, so it passes the per-category
+    required-property and classification-presence checks too.
+    """
     return ns(
         id=f"w{i}",
         stable_id=f"w{i}",
@@ -72,7 +77,7 @@ def _clean_wall(i: int) -> SimpleNamespace:
         name=f"Wall {i}",
         storey="L1",
         discipline=None,
-        properties={"fire_rating": "F90"},
+        properties={"fire_rating": "F90", "material": "concrete_c30_37", "classification": {"din276": "331"}},
         quantities={"thickness_m": 0.24},
     )
 
@@ -171,7 +176,7 @@ class TestPropertyCompleteness:
 
     def test_blocking_error_caps_score(self) -> None:
         # 7 clean walls + 1 wall failing only the thickness ERROR rule.
-        # 7/8 weighted would be 0.95; a single error caps it to 0.25, matching
+        # 81/84 weighted would be ~0.96; a single error caps it to 0.25, matching
         # the shared compute_quality_score contract (E-XMOD-015 / E-VAL-007).
         bad = ns(
             id="bad",
@@ -179,7 +184,7 @@ class TestPropertyCompleteness:
             element_type="wall",
             name="Wall X",
             storey="L1",
-            properties={"fire_rating": "F90"},
+            properties={"fire_rating": "F90", "material": "concrete_c30_37", "classification": {"din276": "331"}},
             quantities={"thickness_m": 0},
         )
         els = [_clean_wall(i) for i in range(7)]
@@ -187,7 +192,7 @@ class TestPropertyCompleteness:
         facet = property_completeness_facet(els)
         assert facet.details["error_findings"] == 1
         assert facet.score == 0.25
-        assert facet.score == compute_quality_score(57.0, 60.0, 1)
+        assert facet.score == compute_quality_score(81.0, 84.0, 1)
         assert facet.element_refs == ["bad"]
 
     def test_all_error_score_zero(self) -> None:
@@ -209,9 +214,11 @@ class TestPropertyCompleteness:
         assert len(facet.element_refs) == 3
 
     def test_uses_shared_severity_weights(self) -> None:
-        # A single clean wall: 1 error-check + 3 warning-checks, all passing.
+        # A single clean wall: 1 error-check + 5 warning-checks, all passing
+        # (thickness=error; fire, storey, name, category-required-property and
+        # classification-presence = warning).
         facet = property_completeness_facet([_clean_wall(0)])
-        expected_weight = SEVERITY_WEIGHTS["error"] + 3 * SEVERITY_WEIGHTS["warning"]
+        expected_weight = SEVERITY_WEIGHTS["error"] + 5 * SEVERITY_WEIGHTS["warning"]
         assert facet.details["total_weight"] == pytest.approx(expected_weight)
         assert facet.details["passed_weight"] == pytest.approx(expected_weight)
 

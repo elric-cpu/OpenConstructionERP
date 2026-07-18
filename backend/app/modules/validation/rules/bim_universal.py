@@ -22,6 +22,20 @@ Rules declared here:
   populated (warning)
 * ``bim.element.name_not_none`` - every element must have a meaningful
   name (warning)
+* ``bim.category.required_property`` - data-driven per-category completeness:
+  each category must expose at least one required property (warning)
+* ``bim.element.has_classification`` - every element should carry a
+  classification code (warning)
+* ``bim.asset.has_type_identifier`` - asset-relevant elements should carry a
+  type/model identifier (info)
+* ``bim.asset.has_mark_tag`` - asset-relevant elements should carry a
+  mark/tag (info)
+* ``bim.space.identity`` - spaces need a name, a number and a positive
+  area (warning)
+* ``bim.hosted.has_host`` - hosted elements (doors, windows) must reference a
+  host/parent (warning)
+* ``bim.door.min_clear_width`` - a declared door width must meet the minimum
+  clear width (warning)
 
 Usage::
 
@@ -170,6 +184,174 @@ ELEMENT_NAME_NOT_NONE = BIMElementRule(
 )
 
 
+# ── Configurable data ────────────────────────────────────────────────────────
+
+# Minimum clear width for a single door leaf, in metres. A common accessible /
+# egress clear-opening threshold; kept as a module constant so it is easy to
+# tune per jurisdiction without touching rule logic.
+MIN_DOOR_CLEAR_WIDTH_M = 0.85
+
+# Category prefix -> "at least one of these properties must be present". This is
+# the data-driven generalisation of the per-category "has material / has key
+# property" idea: physical build elements must declare a material, spaces must
+# declare a function/occupancy. Keys are matched by prefix against the
+# ifc-stripped, lower-cased element type.
+CATEGORY_REQUIRED_PROPERTIES: dict[str, list[str]] = {
+    "wall": ["material"],
+    "slab": ["material"],
+    "floor": ["material"],
+    "column": ["material"],
+    "beam": ["material"],
+    "door": ["material"],
+    "window": ["material"],
+    "pipe": ["material"],
+    "duct": ["material"],
+    "space": ["occupancy", "function", "space_type", "usage"],
+    "room": ["occupancy", "function", "space_type", "usage"],
+}
+
+# Element-type prefixes considered "asset-relevant" for operational handover:
+# things a facilities team tracks, maintains or replaces.
+ASSET_CATEGORY_PREFIXES: list[str] = [
+    "door",
+    "ifcdoor",
+    "window",
+    "ifcwindow",
+    "equipment",
+    "mechanicalequipment",
+    "electricalequipment",
+    "plumbingfixture",
+    "airterminal",
+    "boiler",
+    "chiller",
+    "pump",
+    "fan",
+    "ifcpump",
+    "ifcfan",
+    "ifcairterminal",
+    "ifcflowterminal",
+    "ifcunitaryequipment",
+    "ifcbuildingelementproxy",
+]
+
+# Space-like element-type prefixes (rooms / zones / spaces).
+SPACE_CATEGORY_PREFIXES: list[str] = ["space", "room", "zone", "ifcspace", "ifczone"]
+
+# Hosted element-type prefixes: openings that sit inside a host element.
+HOSTED_CATEGORY_PREFIXES: list[str] = ["door", "ifcdoor", "window", "ifcwindow"]
+
+
+# ── Data-driven / relational rules ───────────────────────────────────────────
+
+CATEGORY_REQUIRED_PROPERTY = BIMElementRule(
+    rule_id="bim.category.required_property",
+    name="Elements must carry the key property their category requires",
+    severity="warning",
+    description=(
+        "Data-driven completeness check. Each element category must expose at "
+        "least one of the properties its category requires - a wall, slab, "
+        "column, beam, door, window, pipe or duct must declare a material; a "
+        "space or room must declare its function/occupancy. Generalises the "
+        "per-category 'has material' checks into one configurable map."
+    ),
+    category_required_properties=CATEGORY_REQUIRED_PROPERTIES,
+)
+
+ELEMENT_HAS_CLASSIFICATION = BIMElementRule(
+    rule_id="bim.element.has_classification",
+    name="Elements should carry a classification code",
+    severity="warning",
+    description=(
+        "Every element should carry at least one classification code (DIN 276, "
+        "NRM, MasterFormat, Uniclass, ...) so it can be grouped, costed and "
+        "reported by a recognised breakdown structure. Warning severity - a "
+        "model can still be usable while classification is being completed."
+    ),
+    require_classification_code=True,
+)
+
+ASSET_HAS_TYPE_IDENTIFIER = BIMElementRule(
+    rule_id="bim.asset.has_type_identifier",
+    name="Asset-relevant elements should carry a type or model identifier",
+    severity="info",
+    description=(
+        "Handover data: equipment, mechanical items, doors and windows should "
+        "expose a type or model identifier so the physical item can be tied to "
+        "a product, spare part or maintenance record. Informational."
+    ),
+    element_filter={"element_type_startswith": ASSET_CATEGORY_PREFIXES},
+    require_any_of_properties=[
+        "type",
+        "type_name",
+        "type_mark",
+        "model",
+        "model_number",
+        "family_type",
+        "family_and_type",
+        "product",
+    ],
+)
+
+ASSET_HAS_MARK_TAG = BIMElementRule(
+    rule_id="bim.asset.has_mark_tag",
+    name="Asset-relevant elements should carry a mark or tag",
+    severity="info",
+    description=(
+        "Handover data: equipment, mechanical items, doors and windows should "
+        "expose a mark, tag or asset number so the item can be found on site "
+        "and in the asset register. Informational."
+    ),
+    element_filter={"element_type_startswith": ASSET_CATEGORY_PREFIXES},
+    require_any_of_properties=["mark", "tag", "asset_tag", "asset_id", "number", "reference"],
+)
+
+SPACE_HAS_IDENTITY = BIMElementRule(
+    rule_id="bim.space.identity",
+    name="Spaces must have a name, a number and a positive area",
+    severity="warning",
+    description=(
+        "Every space, room or zone must carry a name, a number or identifier, "
+        "and a positive area so it can appear in room schedules and area "
+        "takeoffs. A zero or missing area is flagged."
+    ),
+    element_filter={"element_type_startswith": SPACE_CATEGORY_PREFIXES},
+    require_name=True,
+    require_any_of_properties=["number", "room_number", "space_number", "mark", "identifier"],
+    require_any_positive_quantity=["area_m2", "area", "net_floor_area", "gross_floor_area"],
+)
+
+HOSTED_HAS_HOST = BIMElementRule(
+    rule_id="bim.hosted.has_host",
+    name="Hosted elements must reference a host or parent",
+    severity="warning",
+    description=(
+        "Hosted elements such as doors and windows must reference the host or "
+        "parent element (the wall they sit in) so openings, quantities and "
+        "coordination stay consistent."
+    ),
+    element_filter={"element_type_startswith": HOSTED_CATEGORY_PREFIXES},
+    require_relation_host=True,
+)
+
+DOOR_MIN_CLEAR_WIDTH = BIMElementRule(
+    rule_id="bim.door.min_clear_width",
+    name="Door clear width should meet the minimum",
+    severity="warning",
+    description=(
+        f"Doors that declare a width below the minimum clear width "
+        f"({MIN_DOOR_CLEAR_WIDTH_M} m) are flagged for an egress / accessibility "
+        "review. Only doors that declare a width are checked - a missing width "
+        "is handled by the door dimensions rule."
+    ),
+    element_filter={"element_type_startswith": ["door", "ifcdoor"]},
+    min_when_present={
+        "paths": ["width_m", "width", "clear_width", "overall_width"],
+        "min": MIN_DOOR_CLEAR_WIDTH_M,
+        "label": "Door clear width",
+    },
+)
+
+
 # ── Registry ─────────────────────────────────────────────────────────────────
 
 BIM_UNIVERSAL_RULES: list[BIMElementRule] = [
@@ -181,6 +363,13 @@ BIM_UNIVERSAL_RULES: list[BIMElementRule] = [
     MEP_HAS_SYSTEM,
     ELEMENT_HAS_STOREY,
     ELEMENT_NAME_NOT_NONE,
+    CATEGORY_REQUIRED_PROPERTY,
+    ELEMENT_HAS_CLASSIFICATION,
+    ASSET_HAS_TYPE_IDENTIFIER,
+    ASSET_HAS_MARK_TAG,
+    SPACE_HAS_IDENTITY,
+    HOSTED_HAS_HOST,
+    DOOR_MIN_CLEAR_WIDTH,
 ]
 """Ordered list of enabled universal BIM element rules."""
 

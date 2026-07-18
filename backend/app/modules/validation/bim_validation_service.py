@@ -37,6 +37,10 @@ from app.modules.validation.rules.bim_element_rule import (
     BIMElementRule,
     BIMElementRuleResult,
 )
+from app.modules.validation.rules.bim_model_rule import (
+    BIMModelContext,
+    get_model_rules_by_ids,
+)
 from app.modules.validation.rules.bim_universal import get_rules_by_ids
 
 logger = logging.getLogger(__name__)
@@ -307,6 +311,94 @@ class BIMValidationService:
                 )
             truncated = truncated or ids_added.truncated
 
+        # 3c. Model-level rules.
+        #
+        # These see ALL elements at once - duplicate identifiers, expected-
+        # category completeness, unit consistency, georeference sanity - which
+        # the per-element DSL cannot express. Each APPLICABLE rule is folded in
+        # as exactly one check, mirroring the per-element accounting: one rule
+        # weight per check (added to the denominator once), per-severity buckets
+        # over its findings, and a passing check when it emits nothing. A rule
+        # that is not applicable (e.g. unit consistency with no unit information)
+        # contributes nothing, exactly like a per-element rule whose filter
+        # matched no element - so an empty model still reports "skipped".
+        model_context = BIMModelContext.from_model(model)
+        model_rules = get_model_rules_by_ids(rule_ids)
+        model_pass_pre_trunc = truncated
+        for model_rule in model_rules:
+            try:
+                if not model_rule.applies(elements, model_context):
+                    continue
+                model_failures = [f for f in model_rule.evaluate(elements, model_context) if not f.passed]
+            except Exception:  # noqa: BLE001 - a model-rule crash must never fail the run
+                logger.warning(
+                    "BIM model rule %s crashed for model %s",
+                    getattr(model_rule, "rule_id", "?"),
+                    model_id,
+                    exc_info=True,
+                )
+                continue
+
+            rule_weight = SEVERITY_WEIGHTS.get(str(model_rule.severity), 1.0)
+            total_checks += 1
+            total_weight += rule_weight
+            if not model_failures:
+                passed_count += 1
+                passed_weight += rule_weight
+                continue
+
+            failed_checks += 1
+            for failure in model_failures:
+                if failure.severity == "error":
+                    error_count += 1
+                elif failure.severity == "warning":
+                    warning_count += 1
+                else:
+                    info_count += 1
+
+                if len(results_json) >= MAX_RESULTS_PER_REPORT:
+                    truncated = True
+                    continue
+
+                results_json.append(
+                    {
+                        "rule_id": failure.rule_id,
+                        "rule_name": failure.rule_name,
+                        "severity": failure.severity,
+                        "status": failure.severity,
+                        "passed": False,
+                        "message": failure.message,
+                        "element_id": failure.element_id,
+                        "element_name": failure.element_name,
+                        "element_type": failure.element_type,
+                        "element_ref": failure.element_ref,
+                        "details": failure.details,
+                    }
+                )
+
+        # Add the truncation sentinel if the model-rule pass is what tipped the
+        # result list over the cap (mirrors the per-element / IDS handling).
+        if truncated and not model_pass_pre_trunc:
+            results_json.append(
+                {
+                    "rule_id": "_truncated",
+                    "rule_name": "Results truncated",
+                    "severity": "info",
+                    "status": "warning",
+                    "passed": False,
+                    "message": (
+                        f"Result list truncated at {MAX_RESULTS_PER_REPORT} entries. "
+                        f"The model produced more findings than can be stored in a "
+                        f"single report - narrow the rule set to see the rest."
+                    ),
+                    "element_id": None,
+                    "element_name": None,
+                    "element_type": None,
+                    "element_ref": None,
+                    "details": {"cap": MAX_RESULTS_PER_REPORT},
+                }
+            )
+
         # 4. Derive overall status + score
         #
         # info findings used to be swallowed: a model with only info-level
@@ -366,7 +458,7 @@ class BIMValidationService:
             project_id=model.project_id,
             target_type="bim_model",
             target_id=str(model_id),
-            rule_set=("bim_universal+ids_custom" if applied_ids_set else "bim_universal"),
+            rule_set=("bim_universal+bim_model+ids_custom" if applied_ids_set else "bim_universal+bim_model"),
             status=status_value,
             score=(None if score is None else str(round(score, 4))),
             total_rules=total_checks,
@@ -381,6 +473,8 @@ class BIMValidationService:
                 "model_name": model.name,
                 "element_count": total,
                 "rule_ids": [r.rule_id for r in rules],
+                # Model-level rules folded in after the per-element pass.
+                "model_rule_ids": [r.rule_id for r in model_rules],
                 # The scoped IDS set (if any) whose rules were folded in. None
                 # when the project never imported an IDS - behaviour unchanged.
                 "ids_rule_set": applied_ids_set,
