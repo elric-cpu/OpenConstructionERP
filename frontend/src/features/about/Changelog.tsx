@@ -38,6 +38,13 @@ interface ChangelogEntry {
 // date, title and meaning intact; trim the prose, not the facts.
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '11.13.0',
+    date: '2026-07-18',
+    tag: 'SECURITY',
+    summary:
+      'Two security fixes from disclosed reports: the in-app upgrade endpoint now requires an authenticated admin, and self-hosted AI provider URLs (Ollama, vLLM) are validated against internal and cloud-metadata targets before they are fetched. The PDF takeoff viewer also gets a shorter calibrate label, no stray draw previews during a scale calibration and a toolbar that collapses by its own width, and the cases are recolored per category with the case page reworked to lead with its title and steps.',
+  },
+  {
     version: '11.12.0',
     date: '2026-07-17',
     tag: 'NEW',
