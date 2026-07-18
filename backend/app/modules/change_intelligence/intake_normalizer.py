@@ -298,7 +298,9 @@ def parse_duration_days(
     """
     if raw is None:
         return None, None
-    text = str(raw).strip()
+    # Cap length: a schedule-impact value is a short phrase, and the duration
+    # regex is super-linear, so an unbounded record value could stall the parse.
+    text = str(raw).strip()[:256]
     if not text:
         return None, None
 
@@ -342,7 +344,7 @@ def _alias_key(name: str) -> str:
     """
     cleaned = (name or "").strip().lower()
     cleaned = cleaned.strip("\"'")
-    cleaned = re.sub(r"[:*]+$", "", cleaned).strip()
+    cleaned = cleaned.rstrip(":*").strip()
     cleaned = re.sub(r"\s+", " ", cleaned)
     return cleaned
 

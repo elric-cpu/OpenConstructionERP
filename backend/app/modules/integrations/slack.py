@@ -12,6 +12,8 @@ from typing import Any
 
 import httpx
 
+from app.core.url_safety import UnsafeUrlError, resolve_and_validate_external_url
+
 logger = logging.getLogger(__name__)
 
 _TIMEOUT = 15.0
@@ -77,8 +79,9 @@ async def send_slack_notification(
     payload["text"] = f"{title}: {message[:200]}"
 
     try:
+        safe_url = await resolve_and_validate_external_url(webhook_url)
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.post(webhook_url, json=payload)
+            resp = await client.post(safe_url, json=payload)
             if resp.status_code == 200 and resp.text == "ok":
                 logger.info("Slack notification sent: %s", title)
                 return True
@@ -88,6 +91,9 @@ async def send_slack_notification(
                 resp.text[:200],
             )
             return False
+    except UnsafeUrlError as exc:
+        logger.error("Slack webhook blocked (unsafe URL): %s", exc)
+        return False
     except httpx.HTTPError as exc:
         logger.error("Slack webhook failed: %s", exc)
         return False

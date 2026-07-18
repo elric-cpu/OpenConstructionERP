@@ -1608,8 +1608,9 @@ def create_app() -> FastAPI:
                 "status": "connected",
                 "engine": "postgresql",
             }
-        except Exception as exc:
-            result["database"] = {"status": "error", "error": str(exc)[:100]}
+        except Exception:
+            logger.warning("System status DB probe failed", exc_info=True)
+            result["database"] = {"status": "error", "error": "unavailable"}
 
         # Vector DB check (LanceDB or Qdrant).
         #

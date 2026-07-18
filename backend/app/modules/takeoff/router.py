@@ -1095,7 +1095,7 @@ def _download_one_file(download_url: str, target: Path) -> int:
     if hasattr(os, "O_NOFOLLOW"):
         open_flags |= os.O_NOFOLLOW  # type: ignore[attr-defined]
     try:
-        fd = os.open(str(target), open_flags, 0o644)
+        fd = os.open(str(target), open_flags, 0o600)
     except OSError as exc:
         # ELOOP on Linux when O_NOFOLLOW hits a symlink - surface as
         # a clear refusal rather than a generic OSError.

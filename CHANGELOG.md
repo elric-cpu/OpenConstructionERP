@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [11.17.0] - 2026-07-18
+
+Security hardening across the outbound connectors and a few server-side parsers. Outbound chat webhook deliveries (the Slack, Teams and Discord connectors) now resolve and re-check the target address right before the request goes out, so a webhook that points at a loopback or internal address is refused at the send step and not only when it is saved. Several status probes (system status, vector search status and cost vector indexing) no longer echo raw exception text back in their responses; they log the detail server-side and return a short, stable message instead. A handful of text parsers that run server-side (schedule impact, change order durations, smart view filters, quantity formulas and recipient addresses) now cap the length of the value they inspect before the pattern runs, so an oversized crafted string cannot slow a request down. The BIM smart view shortcuts and selection sets kept in the browser reject reserved keys, and the desktop download page escapes the release tag it reads from the public API before showing it. Temporary files written during CAD and takeoff import are created with tighter permissions.
+
 ## [11.16.2] - 2026-07-18
 
 The longer introduction on the guided case pages now shows in every interface language. Fourteen of the cases carried this paragraph, and it was still rendering in English under a translated interface. It is now translated into all twenty-seven other languages, so each case reads in a single language from the title to the closing note.

@@ -4472,7 +4472,9 @@ async def email_propdev_document(
     locale = _normalise_locale(str(body.get("locale", "en")))
 
     recipient = str(body.get("recipient_email", "")).strip()
-    if not recipient or not _EMAIL_RE.match(recipient):
+    # Cap length before the regex: two ``[^@\s]+`` groups around ``\.`` make it
+    # super-linear, and RFC 5321 caps an address at 254 chars anyway.
+    if not recipient or len(recipient) > 254 or not _EMAIL_RE.match(recipient):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="A valid recipient_email is required",

@@ -894,6 +894,10 @@ a.dl-dl.btn-primary{color:#fff;}
     .then(function(r){ if(!r.ok) throw r.status; return r.json(); })
     .then(function(rel){
       var v = rel.tag_name || "";
+      // Escape before any innerHTML use — tag_name is API data, treat as untrusted.
+      var vSafe = v.replace(/[&<>"']/g, function(c){
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+      });
       var assets = rel.assets || [];
       function pick(re){ for(var i=0;i<assets.length;i++){ if(re.test(assets[i].name)) return assets[i]; } return null; }
 
@@ -913,16 +917,16 @@ a.dl-dl.btn-primary{color:#fff;}
           if(meta){
             var size = humanizeBytes(asset.size);
             if(heroMeta && ((os === "windows" && def.btn === "btn-win") || (os === "macos" && def.btn === "btn-mac"))){
-              heroMeta.innerHTML = (v ? v + " &middot; " : "") + size;
+              heroMeta.innerHTML = (vSafe ? vSafe + " &middot; " : "") + size;
             }
             if(splitLabel){
               /* linux shares one meta line, append non-destructively */
               var prev = meta.getAttribute("data-built") || "";
               prev += (prev ? " &middot; " : "") + splitLabel + " <b>" + size + "</b>";
               meta.setAttribute("data-built", prev);
-              meta.innerHTML = (v ? v + " &middot; " : "") + prev;
+              meta.innerHTML = (vSafe ? vSafe + " &middot; " : "") + prev;
             } else {
-              meta.innerHTML = (v ? v + " &middot; " : "") + "<b>" + size + "</b>";
+              meta.innerHTML = (vSafe ? vSafe + " &middot; " : "") + "<b>" + size + "</b>";
             }
           }
         } else if(meta && !splitLabel){

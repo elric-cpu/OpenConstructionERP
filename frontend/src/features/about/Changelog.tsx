@@ -38,6 +38,13 @@ interface ChangelogEntry {
 // date, title and meaning intact; trim the prose, not the facts.
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '11.17.0',
+    date: '2026-07-18',
+    tag: 'NEW',
+    summary:
+      'Security hardening across the outbound connectors and several server-side parsers. The Slack, Teams and Discord webhook connectors re-check the target address at send time, so a webhook pointed at an internal address is refused, not only when it is saved. Status probes no longer echo raw exception text and return a short, stable message instead. The schedule, change order, smart view, formula and email parsers cap the length they inspect before the pattern runs. Browser-stored BIM shortcuts and selection sets reject reserved keys, and the desktop download page escapes the release tag it reads from the public API.',
+  },
+  {
     version: '11.16.2',
     date: '2026-07-18',
     tag: 'NEW',

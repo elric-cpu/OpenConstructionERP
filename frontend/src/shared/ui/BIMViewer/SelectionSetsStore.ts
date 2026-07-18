@@ -208,6 +208,9 @@ export class SelectionSetsStore {
     elementIds: string[],
     extras?: { color?: string; note?: string; folder?: string },
   ): SelectionSet {
+    if (modelId === '__proto__' || modelId === 'constructor' || modelId === 'prototype') {
+      throw new Error('Invalid model id.');
+    }
     const trimmedName = validateName(name);
     const note = validateNote(extras?.note);
     const folder = validateFolder(extras?.folder);

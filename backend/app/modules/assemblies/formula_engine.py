@@ -786,7 +786,9 @@ def parse_dimensions(text: str) -> DimensionProfile:
         A :class:`DimensionProfile`; any field that could not be parsed is
         left ``None`` and covered by the ``effective_*`` defaults.
     """
-    raw = text or ""
+    # Bound input before the dimension regexes (each is super-linear); the API
+    # caps description at 500 chars, so 4000 never truncates real input.
+    raw = (text or "")[:4000]
     low = raw.lower()
     return DimensionProfile(
         thickness_m=_match_thickness(raw),

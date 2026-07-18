@@ -239,7 +239,7 @@ _MONEY_RE = re.compile(
     re.IGNORECASE,
 )
 _DAYS_RE = re.compile(
-    r"(\d+(?:\.\d+)?)\s*[-\s]?\s*(?:calendar|working|business|extra)?\s*days?\b",
+    r"(\d+(?:\.\d+)?)[-\s]{0,4}(?:calendar|working|business|extra)?\s{0,3}days?\b",
     re.IGNORECASE,
 )
 _DRAFT_SYSTEM = (

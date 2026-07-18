@@ -406,7 +406,7 @@ class _ConverterInstallLock:
         if not _is_windows():
             import fcntl
 
-            self._fd = os.open(str(self._lock_path), os.O_RDWR | os.O_CREAT, 0o644)
+            self._fd = os.open(str(self._lock_path), os.O_RDWR | os.O_CREAT, 0o600)
             while True:
                 try:
                     fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -422,7 +422,7 @@ class _ConverterInstallLock:
         # Windows: exclusive-create poll loop.
         while True:
             try:
-                self._fd = os.open(str(self._lock_path), os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o644)
+                self._fd = os.open(str(self._lock_path), os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
                 return self
             except FileExistsError:
                 # Reclaim a stale lock left by a crashed holder. Staleness
@@ -1868,7 +1868,9 @@ def _norm_col(name: str) -> str:
     """
     import re
 
-    s = str(name).strip().lower()
+    # Cap length before the super-linear cleanup regexes below; a real quantity
+    # column name is short, so this never truncates legitimate input.
+    s = str(name)[:256].strip().lower()
     s = s.replace("²", "2").replace("³", "3")
     # Drop a trailing unit qualifier in brackets/parens: "volume (m3)",
     # "area [m2]", "weight {kg}".

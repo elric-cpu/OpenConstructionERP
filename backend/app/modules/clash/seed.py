@@ -76,7 +76,7 @@ def _signature(a_stable: str, b_stable: str, clash_type: str) -> tuple[str, str]
     this seeder would hash the same physical pair to the same value.
     """
     lo, hi = sorted((a_stable, b_stable))
-    digest = hashlib.sha1(f"{lo}|{hi}|{clash_type}".encode()).hexdigest()
+    digest = hashlib.sha1(f"{lo}|{hi}|{clash_type}".encode(), usedforsecurity=False).hexdigest()
     return digest[:16], digest
 
 

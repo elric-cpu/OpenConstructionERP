@@ -12,6 +12,8 @@ from typing import Any
 
 import httpx
 
+from app.core.url_safety import UnsafeUrlError, resolve_and_validate_external_url
+
 logger = logging.getLogger(__name__)
 
 _TIMEOUT = 15.0
@@ -88,8 +90,9 @@ async def send_teams_notification(
     }
 
     try:
+        safe_url = await resolve_and_validate_external_url(webhook_url)
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.post(webhook_url, json=payload)
+            resp = await client.post(safe_url, json=payload)
             if resp.status_code in (200, 202):
                 logger.info("Teams notification sent: %s", title)
                 return True
@@ -99,6 +102,9 @@ async def send_teams_notification(
                 resp.text[:200],
             )
             return False
+    except UnsafeUrlError as exc:
+        logger.error("Teams webhook blocked (unsafe URL): %s", exc)
+        return False
     except httpx.HTTPError as exc:
         logger.error("Teams webhook failed: %s", exc)
         return False

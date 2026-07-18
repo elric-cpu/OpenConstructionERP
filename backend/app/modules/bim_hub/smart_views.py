@@ -403,8 +403,14 @@ def _eval_leaf(element: Any, leaf: dict[str, Any]) -> bool:
         if op == OP_ENDS_WITH:
             return s.endswith(target)
         if op == OP_REGEX:
+            # User-supplied pattern run server-side: bound the pattern and the
+            # subject length so a crafted catastrophic-backtracking regex cannot
+            # stall the request (stdlib ``re`` has no timeout). re.escape would
+            # be wrong here - the regex operator intentionally takes a pattern.
+            if len(str(val)) > 1000:
+                return False
             try:
-                return bool(re.search(val, _to_str(actual), flags=re.IGNORECASE))
+                return bool(re.search(val, _to_str(actual)[:10000], flags=re.IGNORECASE))
             except re.error:
                 return False
 

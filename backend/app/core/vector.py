@@ -758,8 +758,9 @@ def vector_status() -> dict[str, Any]:
             info["embedding_dim"] = QDRANT_SNAPSHOT_DIM
             info["backend"] = "qdrant"
             return info
-        except Exception as exc:
-            return {"connected": False, "engine": "qdrant", "error": str(exc)}
+        except Exception:
+            logger.warning("Qdrant status probe failed", exc_info=True)
+            return {"connected": False, "engine": "qdrant", "error": "Qdrant status probe failed"}
 
     return _lancedb_status()
 

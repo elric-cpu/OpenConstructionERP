@@ -215,6 +215,11 @@ def _target_path_for_attachment(
         return None
     kind = parts[1]
     rest = parts[2:]
+    # Bundle zip is attacker-supplied: confine each remaining segment to one
+    # non-traversing component. On Windows a backslash inside a single "/"
+    # segment would otherwise be treated as a path separator and escape.
+    if any((not seg) or seg in {".", ".."} or "/" in seg or "\\" in seg for seg in rest):
+        return None
 
     # Documents: attachments/documents/{doc_id}/{filename}
     if kind == "documents":

@@ -64,12 +64,17 @@ export interface SmartViewShortcuts {
   clearRecents: () => void;
 }
 
+// Reject prototype-chain keys so a crafted projectId (e.g. a "/bim/__proto__"
+// route) can neither pollute the shortcuts map nor read back Object.prototype.
+const UNSAFE_SHORTCUT_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 /** React hook — returns starred + recent ids for one project plus mutators. */
 export function useSmartViewShortcuts(
   projectId: string | null,
 ): SmartViewShortcuts {
   const [state, setState] = useState<PerProjectShortcuts>(() => {
     if (!projectId) return { starred: [], recents: [] };
+    if (UNSAFE_SHORTCUT_KEYS.has(projectId)) return { starred: [], recents: [] };
     const store = readStore();
     return store[projectId] ?? { starred: [], recents: [] };
   });
@@ -80,6 +85,10 @@ export function useSmartViewShortcuts(
       setState({ starred: [], recents: [] });
       return;
     }
+    if (UNSAFE_SHORTCUT_KEYS.has(projectId)) {
+      setState({ starred: [], recents: [] });
+      return;
+    }
     const store = readStore();
     setState(store[projectId] ?? { starred: [], recents: [] });
   }, [projectId]);
@@ -87,7 +96,7 @@ export function useSmartViewShortcuts(
   const persist = useCallback(
     (next: PerProjectShortcuts) => {
       setState(next);
-      if (!projectId) return;
+      if (!projectId || UNSAFE_SHORTCUT_KEYS.has(projectId)) return;
       const store = readStore();
       store[projectId] = next;
       writeStore(store);

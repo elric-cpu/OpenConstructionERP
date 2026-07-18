@@ -1483,9 +1483,9 @@ async def vector_v3_status(
                 payload["status_band"] = "ready"
         else:
             payload["status_band"] = "missing"
-    except Exception as exc:
-        logger.debug("Qdrant v3 status probe failed", exc_info=True)
-        payload["error"] = str(exc)
+    except Exception:
+        logger.warning("Qdrant v3 status probe failed", exc_info=True)
+        payload["error"] = "Qdrant status probe failed"
         payload["status_band"] = "disconnected"
 
     return payload
@@ -1768,13 +1768,12 @@ async def vectorize_region(
     # Quick check: can we even import the vector module?
     try:
         from app.core.vector import encode_texts, get_embedder, vector_index
-    except Exception as exc:
-        logger.warning("Vector module import failed: %s", exc)
+    except Exception:
+        logger.warning("Vector module import failed", exc_info=True)
         return JSONResponse(
             content={
                 "indexed": 0,
                 "message": "Vector indexing is not available: vector module failed to load.",
-                "error": str(exc),
             },
             status_code=503,
         )
@@ -1802,12 +1801,12 @@ async def vectorize_region(
             },
             status_code=503,
         )
-    except Exception as exc:
-        logger.warning("Embedding model check failed: %s", exc)
+    except Exception:
+        logger.warning("Embedding model check failed", exc_info=True)
         return JSONResponse(
             content={
                 "indexed": 0,
-                "message": f"Vector indexing is not available: {exc}",
+                "message": "Vector indexing is not available: embedding model failed to load.",
             },
             status_code=503,
         )
