@@ -13,6 +13,12 @@ import { ArrowUpRight, Newspaper } from 'lucide-react';
  * instead, so the whole card is a single external link with a title, a short
  * subtitle and an external-link affordance. It keeps the existing
  * `sidebar.video_news.*` i18n keys for the title/subtitle.
+ *
+ * Collapsed by default: only the title shows so the block stays quiet at the
+ * foot of the sidebar. On hover (or keyboard focus, for accessibility) the
+ * subtitle and the "Read the article" affordance expand into view. The whole
+ * card is a link in both states, so it is always clickable - hovering just
+ * reveals the detail before the click.
  */
 
 const ARTICLE_URL = 'https://openconstructionerp.com/uberization-of-construction/';
@@ -42,12 +48,23 @@ export function ArticleNewsCard() {
         <span className="block break-words text-[13px] font-bold leading-tight text-content-primary">
           {title}
         </span>
-        <span className="mt-1 block text-[11px] leading-snug text-content-secondary">
-          {subtitle}
-        </span>
-        <span className="mt-1.5 flex items-center gap-1 text-[11px] font-semibold text-blue-600 dark:text-sky-300">
-          {read}
-          <ArrowUpRight size={11} className="shrink-0" />
+        {/* Detail row: collapsed to zero height by default, expands on hover
+            or keyboard focus. The grid-rows 0fr -> 1fr trick animates to the
+            content's natural height; the inner overflow-hidden span is what
+            clips it while collapsed. */}
+        <span
+          className="grid grid-rows-[0fr] opacity-0 transition-all duration-200 ease-out group-hover:grid-rows-[1fr] group-hover:opacity-100 group-focus-visible:grid-rows-[1fr] group-focus-visible:opacity-100 motion-reduce:transition-none"
+          aria-hidden="false"
+        >
+          <span className="overflow-hidden">
+            <span className="mt-1 block text-[11px] leading-snug text-content-secondary">
+              {subtitle}
+            </span>
+            <span className="mt-1.5 flex items-center gap-1 text-[11px] font-semibold text-blue-600 dark:text-sky-300">
+              {read}
+              <ArrowUpRight size={11} className="shrink-0" />
+            </span>
+          </span>
         </span>
       </span>
     </a>
