@@ -23,13 +23,24 @@ def _sanitize_email_header_value(value: str) -> str:
     """
     if not value:
         return value
-    # Replace CR, LF, NUL and the rest of the C0 range (except TAB) with a
-    # space rather than deleting them, so that words separated only by a
-    # line break ("NEC\r\ncl. 61.3") stay separated ("NEC cl. 61.3") instead
-    # of fusing ("NECcl. 61.3"). TAB is kept as-is.
+    # Remove CR, LF, NUL and the rest of the C0 range except TAB (\x09).
+    cleaned = "".join(ch for ch in value if ch == "\t" or ord(ch) >= 0x20)
+    # Collapse any internal whitespace runs left by the strip - email
+    # subjects with embedded ``\r\n`` would otherwise become double-space.
+    return " ".join(cleaned.split())
+
+
+def _sanitize_readable_text(value: str) -> str:
+    """Scrub control chars from a human-readable free-text value, replacing
+    each with a space so that words separated only by a line break stay
+    separated (``NEC\\r\\ncl. 61.3`` becomes ``NEC cl. 61.3``, not the fused
+    ``NECcl. 61.3``). Use this for values shown verbatim to people, such as a
+    clause reference on an exported cover sheet, where an email subject's
+    outright removal of the break would corrupt the text instead.
+    """
+    if not value:
+        return value
     cleaned = "".join(ch if (ch == "\t" or ord(ch) >= 0x20) else " " for ch in value)
-    # Collapse the whitespace runs this leaves so a single embedded break
-    # does not turn into a double space.
     return " ".join(cleaned.split())
 
 
@@ -73,12 +84,12 @@ class CorrespondenceCreate(BaseModel):
     @classmethod
     def _clause_no_control_chars(cls, value: str | None) -> str | None:
         # The clause pointer is rendered as raw text on the frontend and can
-        # end up in an exported cover sheet, so scrub control characters the
-        # same way the subject is scrubbed. An all-whitespace value collapses
-        # to None rather than a stored blank.
+        # end up in an exported cover sheet, so scrub control characters while
+        # keeping words that only a line break separated readable. An
+        # all-whitespace value collapses to None rather than a stored blank.
         if value is None:
             return None
-        cleaned = _sanitize_email_header_value(value)
+        cleaned = _sanitize_readable_text(value)
         return cleaned or None
 
 
@@ -124,7 +135,7 @@ class CorrespondenceUpdate(BaseModel):
     def _clause_no_control_chars(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        cleaned = _sanitize_email_header_value(value)
+        cleaned = _sanitize_readable_text(value)
         return cleaned or None
 
 
