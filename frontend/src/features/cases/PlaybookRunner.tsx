@@ -3,17 +3,17 @@
 //
 // PlaybookRunner - the case detail page that drives one case.
 //
-// Layout, top to bottom. First a single top row: on the left the process as a
-// row of step cards (a picture of the work, the step title and the module it
-// uses), on the right the case itself - title and purpose, the progress track
-// and one obvious primary action with the sample-project picker and reset. The
-// cards are a map of the whole journey; clicking one jumps to that step below
-// and marks it current. Below the row every step is laid out in full, one under
-// the other, so the entire case reads on one page with nothing hidden behind a
-// click. Each step block puts its text on the left (What you do / Why, then Mark
-// done) and its data flow on the right: what goes IN, the module action scene
-// you click to open it, and what comes OUT. On narrow screens the top row stacks
-// (the case intro first, then the cards) and each step block stacks its columns.
+// Layout, top to bottom. First a full-width header: the tags (discipline,
+// minutes, step count), the case title and purpose, then a control band with the
+// progress track, one obvious primary action, and the sample-project picker and
+// reset. Under it, the process as a full-width row of step cards (a picture of
+// the work, the step title and the module it uses) - a map of the whole journey;
+// clicking one jumps to that step below and marks it current. Below the row every
+// step is laid out in full, one under the other, so the entire case reads on one
+// page with nothing hidden behind a click. Each step block puts its text on the
+// left (What you do / Why, then Mark done) and its data flow on the right: what
+// goes IN, the module action scene you click to open it, and what comes OUT. On
+// narrow screens the header controls and each step block stack their columns.
 //
 // Progress and the current step are owned by `useCasesStore` and persist across
 // reloads: marking a step done, or clicking a process card, writes that state,
@@ -669,13 +669,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
         {t("cases.back_to_list", { defaultValue: "All cases" })}
       </button>
 
-      {/* ── Top row: the process (cards) on the left, the case + progress on
-          the right. Source order puts the case intro first so it leads on
-          narrow screens; on lg the cards take the left column and the intro
-          the right. ─────────────────────────────────────────────────────── */}
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)] lg:items-start">
-        {/* Case intro + progress + primary action */}
-        <aside className="order-1 lg:order-2 rounded-2xl border border-border-light bg-gradient-to-br from-oe-blue/[0.08] via-oe-blue/[0.03] to-transparent p-5">
+      <header className="rounded-2xl border border-border-light bg-gradient-to-br from-oe-blue/[0.08] via-oe-blue/[0.03] to-transparent p-5 sm:p-6">
           <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
             <span
               className={clsx(
@@ -698,58 +692,59 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
               {t("cases.card.steps", { defaultValue: "{{count}} steps", count: total })}
             </span>
           </div>
-          <h1 className="text-xl font-semibold tracking-tight text-content-primary sm:text-2xl">
+          <h1 className="text-2xl font-semibold tracking-tight text-content-primary sm:text-3xl">
             {title}
           </h1>
-          <p className="mt-1.5 text-sm leading-relaxed text-content-secondary">
+          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-content-secondary sm:text-base">
             {desc}
           </p>
           {longDesc && (
-            <p className="mt-2 text-sm leading-relaxed text-content-tertiary">
+            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-content-tertiary">
               {longDesc}
             </p>
           )}
 
-          {/* Progress track */}
-          <div
-            className="mt-4 flex items-center gap-3"
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={total}
-            aria-valuenow={doneCount}
-            aria-valuetext={progressLabel}
-            aria-label={t("cases.progress_label", { defaultValue: "Case progress" })}
-            aria-live="polite"
-          >
-            <span className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
-              {t("cases.progress_label", { defaultValue: "Case progress" })}
-            </span>
-            <div className="h-2 min-w-[4rem] flex-1 overflow-hidden rounded-full bg-surface-secondary">
-              <div
-                className="h-full rounded-full bg-oe-blue transition-all"
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <span className="shrink-0 text-2xs font-medium tabular-nums text-content-secondary">
-              {progressLabel}
-            </span>
-          </div>
-
-          {/* Primary action + sample-project context + reset */}
-          <div className="mt-4 flex flex-wrap items-center gap-2.5">
-            <Button
-              variant="primary"
-              size="lg"
-              icon={<Play size={16} />}
-              onClick={() => {
-                selectStep(currentIndex);
-                const step = playbook.steps[currentIndex];
-                if (step) scrollToStep(step.id);
-              }}
+          {/* Controls: progress with the primary action on one line (they stack
+              on narrow screens), then the sample-project picker underneath. */}
+          <div className="mt-5 flex flex-col gap-3 border-t border-border-light/70 pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div
+              className="flex min-w-0 flex-1 items-center gap-3"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={total}
+              aria-valuenow={doneCount}
+              aria-valuetext={progressLabel}
+              aria-label={t("cases.progress_label", { defaultValue: "Case progress" })}
+              aria-live="polite"
             >
-              {primaryLabel}
-            </Button>
-            {resetButton}
+              <span className="shrink-0 text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
+                {t("cases.progress_label", { defaultValue: "Case progress" })}
+              </span>
+              <div className="h-2 min-w-[4rem] flex-1 overflow-hidden rounded-full bg-surface-secondary">
+                <div
+                  className="h-full rounded-full bg-oe-blue transition-all"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <span className="shrink-0 text-2xs font-medium tabular-nums text-content-secondary">
+                {progressLabel}
+              </span>
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center gap-2.5">
+              <Button
+                variant="primary"
+                size="lg"
+                icon={<Play size={16} />}
+                onClick={() => {
+                  selectStep(currentIndex);
+                  const step = playbook.steps[currentIndex];
+                  if (step) scrollToStep(step.id);
+                }}
+              >
+                {primaryLabel}
+              </Button>
+              {resetButton}
+            </div>
           </div>
           <div className="mt-3 flex items-center gap-2">
             <label
@@ -762,7 +757,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
               id={selectId}
               value={selectedRaw}
               onChange={(e) => setSelectedProject(playbook.id, e.target.value)}
-              className="h-8 max-w-[15rem] flex-1 rounded-lg border border-border bg-surface-primary px-2.5 text-xs text-content-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+              className="h-8 max-w-[18rem] flex-1 rounded-lg border border-border bg-surface-primary px-2.5 text-xs text-content-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
             >
               <option value="">
                 {t("cases.run_on_none", {
@@ -784,13 +779,10 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
               })}
             </select>
           </div>
-        </aside>
+        </header>
 
-        {/* The process: a row of step cards, one per step. */}
-        <section
-          aria-label={t("cases.the_process", { defaultValue: "The process" })}
-          className="order-2 lg:order-1"
-        >
+        {/* The process: a compact, full-width row of step cards below the header. */}
+        <section aria-label={t("cases.the_process", { defaultValue: "The process" })}>
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
             <p className="text-2xs font-semibold uppercase tracking-wide text-content-tertiary">
               {t("cases.the_process", { defaultValue: "The process" })}
@@ -805,7 +797,7 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
               longer cases this wraps to a second row rather than shrinking the
               cards past readable. */}
           <ol
-            className="grid grid-cols-2 gap-2 sm:grid-cols-4"
+            className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-6"
             aria-label={title}
           >
             {playbook.steps.map((step, i) => {
@@ -873,10 +865,9 @@ export function PlaybookRunner({ playbook, onBack }: PlaybookRunnerProps) {
             })}
           </ol>
         </section>
-      </div>
 
       {/* ── Every step, in full, one under the other ─────────────────────── */}
-      <div className="space-y-4">
+      <div className="space-y-3">
         {playbook.steps.map((step, i) => {
           const stepTitle = t(step.titleKey, { defaultValue: step.titleDefault });
           const stepModule = step.moduleLabelKey
