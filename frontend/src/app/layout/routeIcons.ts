@@ -187,6 +187,7 @@ const ROUTE_ICON_MAP: Record<string, LucideIcon> = {
   '/cde': Database,
   '/photos': Camera,
   '/markups': PenTool,
+  '/plan-room': Layers,
   // ── 16. Real Estate ───────────────────────────────────────────────
   '/property-dev': Building2,
   '/accommodation': Building2,

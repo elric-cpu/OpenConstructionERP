@@ -640,6 +640,7 @@ const navGroups: NavGroup[] = [
       { labelKey: 'cde.title', to: '/cde', icon: Database },
       { labelKey: 'nav.photos', to: '/photos', icon: Camera },
       { labelKey: 'nav.markups', to: '/markups', icon: PenTool },
+      { labelKey: 'nav.plan_room', to: '/plan-room', icon: Layers, badge: 'BETA' },
     ],
   },
   // ── 17. REAL ESTATE ────────────────────────────────────────────────

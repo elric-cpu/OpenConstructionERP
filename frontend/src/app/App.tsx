@@ -122,6 +122,9 @@ const BcfPage = lazy(() => import('@/features/bcf/BcfPage').then((m) => ({ defau
 const ModelReviewPage = lazy(() =>
   import('@/features/bim/ModelReviewPage').then((m) => ({ default: m.ModelReviewPage }))
 );
+const PlanRoomPage = lazy(() =>
+  import('@/features/plan-room/PlanRoomPage').then((m) => ({ default: m.PlanRoomPage }))
+);
 const CloseoutPage = lazy(() => import('@/features/closeout/CloseoutPage'));
 const InboxPage = lazy(() =>
   import('@/features/inbox').then((m) => ({ default: m.InboxPage })),
@@ -1035,6 +1038,7 @@ export default function App() {
         <Route path="/coordination" element={<P title="Model Coordination"><CoordinationHubPage /></P>} />
         <Route path="/bcf" element={<P title="Model Issues"><BcfPage /></P>} />
         <Route path="/model-review" element={<P title="Model Review"><ModelReviewPage /></P>} />
+        <Route path="/plan-room" element={<P title="Plan Room"><PlanRoomPage /></P>} />
         <Route path="/assets" element={<P title="Asset Register"><AssetsPage /></P>} />
         <Route path="/bim/:modelId" element={<P title="BIM Viewer"><BIMPage /></P>} />
         <Route path="/projects/:projectId/bim" element={<P title="BIM Viewer"><BIMPage /></P>} />
