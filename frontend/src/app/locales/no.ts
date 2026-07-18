@@ -10643,6 +10643,7 @@ const resource = {
     "correspondence.field_type": "Type",
     "correspondence.filter_all_dir": "Alle retninger",
     "correspondence.filter_all_type": "Alle typer",
+    "correspondence.filter_all_status": "Alle statuser",
     "correspondence.from_placeholder": "Avsendernavn eller organisasjon",
     "correspondence.from_required": "Avsender er påkrevd",
     "correspondence.label_from": "Fra",

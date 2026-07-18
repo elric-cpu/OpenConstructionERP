@@ -7507,6 +7507,7 @@ const resource = {
     "correspondence.field_type": "Type",
     "correspondence.filter_all_dir": "Alle richtingen",
     "correspondence.filter_all_type": "Alle typen",
+    "correspondence.filter_all_status": "Alle statussen",
     "correspondence.from_placeholder": "Naam of organisatie van afzender",
     "correspondence.from_required": "Afzender is verplicht",
     "correspondence.label_from": "Van",

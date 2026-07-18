@@ -8463,6 +8463,7 @@ const resource = {
     "correspondence.field_type": "Тип",
     "correspondence.filter_all_dir": "Всички посоки",
     "correspondence.filter_all_type": "Всички типове",
+    "correspondence.filter_all_status": "Всички статуси",
     "correspondence.from_placeholder": "Име или организация на подателя",
     "correspondence.from_required": "Подателят е задължителен",
     "correspondence.label_from": "От",

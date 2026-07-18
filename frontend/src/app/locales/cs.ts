@@ -8450,6 +8450,7 @@ const resource = {
     "correspondence.field_type": "Typ",
     "correspondence.filter_all_dir": "Všechny směry",
     "correspondence.filter_all_type": "Všechny typy",
+    "correspondence.filter_all_status": "Všechny stavy",
     "correspondence.from_placeholder": "Jméno nebo organizace odesílatele",
     "correspondence.from_required": "Odesílatel je povinný",
     "correspondence.label_from": "Z",

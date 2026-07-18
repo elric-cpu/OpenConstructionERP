@@ -8935,6 +8935,7 @@ const resource = {
     "correspondence.field_type": "Tip",
     "correspondence.filter_all_dir": "Toate direcțiile",
     "correspondence.filter_all_type": "Toate tipurile",
+    "correspondence.filter_all_status": "Toate statusurile",
     "correspondence.from_placeholder": "Numele sau organizația expeditorului",
     "correspondence.from_required": "Expeditorul este obligatoriu",
     "correspondence.label_from": "Din",

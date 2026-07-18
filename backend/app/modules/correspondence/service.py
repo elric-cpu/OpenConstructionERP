@@ -149,6 +149,7 @@ class CorrespondenceService:
         limit: int = 50,
         direction: str | None = None,
         correspondence_type: str | None = None,
+        status: str | None = None,
     ) -> tuple[list[Correspondence], int]:
         return await self.repo.list_for_project(
             project_id,
@@ -156,6 +157,7 @@ class CorrespondenceService:
             limit=limit,
             direction=direction,
             correspondence_type=correspondence_type,
+            status=status,
         )
 
     async def update_correspondence(

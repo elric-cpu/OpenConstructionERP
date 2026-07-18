@@ -8450,6 +8450,7 @@ const resource = {
     "correspondence.field_type": "Typ",
     "correspondence.filter_all_dir": "Wszystkie kierunki",
     "correspondence.filter_all_type": "Wszystkie typy",
+    "correspondence.filter_all_status": "Wszystkie statusy",
     "correspondence.from_placeholder": "Imię i nazwisko lub organizacja nadawcy",
     "correspondence.from_required": "Nadawca jest wymagany",
     "correspondence.label_from": "Z",

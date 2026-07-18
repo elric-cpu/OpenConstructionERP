@@ -7010,6 +7010,7 @@ const resource = {
     "correspondence.field_type": "Type",
     "correspondence.filter_all_dir": "All Directions",
     "correspondence.filter_all_type": "All Types",
+    "correspondence.filter_all_status": "All Statuses",
     "correspondence.from_placeholder": "Sender name or organization",
     "correspondence.from_required": "Sender is required",
     "correspondence.label_from": "From",

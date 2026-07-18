@@ -8481,6 +8481,7 @@ const resource = {
     "correspondence.field_type": "유형",
     "correspondence.filter_all_dir": "전체 방향",
     "correspondence.filter_all_type": "전체 유형",
+    "correspondence.filter_all_status": "모든 상태",
     "correspondence.from_placeholder": "발신자 이름 또는 기관",
     "correspondence.from_required": "발신자는 필수입니다",
     "correspondence.label_from": "발신",

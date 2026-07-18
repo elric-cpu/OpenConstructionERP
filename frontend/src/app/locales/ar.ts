@@ -7978,6 +7978,7 @@ const resource = {
     "correspondence.field_type": "النوع",
     "correspondence.filter_all_dir": "جميع الاتجاهات",
     "correspondence.filter_all_type": "جميع الأنواع",
+    "correspondence.filter_all_status": "كل الحالات",
     "correspondence.from_placeholder": "اسم المرسل أو المنظمة",
     "correspondence.from_required": "المرسل مطلوب",
     "correspondence.label_from": "من",

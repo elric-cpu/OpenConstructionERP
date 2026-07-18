@@ -28,12 +28,15 @@ class CorrespondenceRepository:
         limit: int = 50,
         direction: str | None = None,
         correspondence_type: str | None = None,
+        status: str | None = None,
     ) -> tuple[list[Correspondence], int]:
         base = select(Correspondence).where(Correspondence.project_id == project_id)
         if direction is not None:
             base = base.where(Correspondence.direction == direction)
         if correspondence_type is not None:
             base = base.where(Correspondence.correspondence_type == correspondence_type)
+        if status is not None:
+            base = base.where(Correspondence.status == status)
 
         count_stmt = select(func.count()).select_from(base.subquery())
         total = (await self.session.execute(count_stmt)).scalar_one()

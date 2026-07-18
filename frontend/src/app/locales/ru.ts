@@ -8597,6 +8597,7 @@ const resource = {
     "correspondence.field_type": "Тип",
     "correspondence.filter_all_dir": "Все направления",
     "correspondence.filter_all_type": "Все типы",
+    "correspondence.filter_all_status": "Все статусы",
     "correspondence.from_placeholder": "Отправитель или организация",
     "correspondence.from_required": "Отправитель обязателен",
     "correspondence.label_from": "От",

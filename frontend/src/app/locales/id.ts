@@ -9041,6 +9041,7 @@ const resource = {
     "correspondence.field_type": "Jenis",
     "correspondence.filter_all_dir": "Semua Arah",
     "correspondence.filter_all_type": "Semua Jenis",
+    "correspondence.filter_all_status": "Semua status",
     "correspondence.from_placeholder": "Nama atau organisasi pengirim",
     "correspondence.from_required": "Pengirim wajib diisi",
     "correspondence.label_from": "Dari",

@@ -8469,6 +8469,7 @@ const resource = {
     "correspondence.field_type": "Tür",
     "correspondence.filter_all_dir": "Tüm Yönler",
     "correspondence.filter_all_type": "Tüm Türler",
+    "correspondence.filter_all_status": "Tüm durumlar",
     "correspondence.from_placeholder": "Gönderen adı veya kuruluş",
     "correspondence.from_required": "Gönderen gereklidir",
     "correspondence.label_from": "Gönderen",

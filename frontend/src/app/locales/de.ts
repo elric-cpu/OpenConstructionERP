@@ -7946,6 +7946,7 @@ const resource = {
     "correspondence.field_type": "Typ",
     "correspondence.filter_all_dir": "Alle Richtungen",
     "correspondence.filter_all_type": "Alle Typen",
+    "correspondence.filter_all_status": "Alle Status",
     "correspondence.from_placeholder": "Absendername oder Organisation",
     "correspondence.from_required": "Absender ist erforderlich",
     "correspondence.label_from": "Von",

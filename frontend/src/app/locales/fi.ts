@@ -8431,6 +8431,7 @@ const resource = {
     "correspondence.field_type": "Tyyppi",
     "correspondence.filter_all_dir": "Kaikki suunnat",
     "correspondence.filter_all_type": "Kaikki tyypit",
+    "correspondence.filter_all_status": "Kaikki tilat",
     "correspondence.from_placeholder": "Lähettäjän nimi tai organisaatio",
     "correspondence.from_required": "Lähettäjä vaaditaan",
     "correspondence.label_from": "Alkaen",

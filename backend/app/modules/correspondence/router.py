@@ -119,6 +119,11 @@ async def list_correspondences(
     limit: int = Query(default=50, ge=1, le=100),
     direction: str | None = Query(default=None),
     type_filter: str | None = Query(default=None, alias="type"),
+    status_filter: str | None = Query(
+        default=None,
+        alias="status",
+        pattern=r"^(open|awaiting_response|responded|closed)$",
+    ),
     _perm: None = Depends(RequirePermission("correspondence.read")),
     service: CorrespondenceService = Depends(_get_service),
 ) -> list[CorrespondenceResponse]:
@@ -129,6 +134,7 @@ async def list_correspondences(
         limit=limit,
         direction=direction,
         correspondence_type=type_filter,
+        status=status_filter,
     )
     return [_to_response(c) for c in items]
 

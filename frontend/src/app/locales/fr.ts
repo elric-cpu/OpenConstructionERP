@@ -7446,6 +7446,7 @@ const resource = {
     "correspondence.field_type": "Type",
     "correspondence.filter_all_dir": "Tous les sens",
     "correspondence.filter_all_type": "Tous les types",
+    "correspondence.filter_all_status": "Tous les statuts",
     "correspondence.from_placeholder": "Nom ou organisation de l'expéditeur",
     "correspondence.from_required": "L'expéditeur est obligatoire",
     "correspondence.label_from": "De",

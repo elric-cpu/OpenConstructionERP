@@ -8507,6 +8507,7 @@ const resource = {
     "correspondence.field_type": "类型",
     "correspondence.filter_all_dir": "全部方向",
     "correspondence.filter_all_type": "全部类型",
+    "correspondence.filter_all_status": "所有状态",
     "correspondence.from_placeholder": "发件人姓名或单位",
     "correspondence.from_required": "发件人为必填项",
     "correspondence.label_from": "从",

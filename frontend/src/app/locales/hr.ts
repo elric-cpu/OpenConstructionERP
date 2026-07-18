@@ -8901,6 +8901,7 @@ const resource = {
     "correspondence.field_type": "Tip",
     "correspondence.filter_all_dir": "Svi smjerovi",
     "correspondence.filter_all_type": "Sve vrste",
+    "correspondence.filter_all_status": "Svi statusi",
     "correspondence.from_placeholder": "Ime ili organizacija pošiljatelja",
     "correspondence.from_required": "Pošiljatelj je obavezan",
     "correspondence.label_from": "Od",

@@ -7840,6 +7840,7 @@ const resource = {
     "correspondence.field_type": "Төрөл",
     "correspondence.filter_all_dir": "Бүх чиглэл",
     "correspondence.filter_all_type": "Бүх төрөл",
+    "correspondence.filter_all_status": "Бүх төлөв",
     "correspondence.from_placeholder": "Sender нэр эсвэл байгууллага",
     "correspondence.from_required": "Илгээгч шаардлагатай",
     "correspondence.label_from": "Аас",

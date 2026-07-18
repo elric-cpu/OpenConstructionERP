@@ -7521,6 +7521,7 @@ const resource = {
     "correspondence.field_type": "Tipo",
     "correspondence.filter_all_dir": "Todas as direções",
     "correspondence.filter_all_type": "Todos os tipos",
+    "correspondence.filter_all_status": "Todos os estados",
     "correspondence.from_placeholder": "Nome ou organização do remetente",
     "correspondence.from_required": "O remetente é obrigatório",
     "correspondence.label_from": "De",

@@ -9041,6 +9041,7 @@ const resource = {
     "correspondence.field_type": "Loại",
     "correspondence.filter_all_dir": "Tất cả chiều",
     "correspondence.filter_all_type": "Tất cả loại",
+    "correspondence.filter_all_status": "Tất cả trạng thái",
     "correspondence.from_placeholder": "Tên người gửi hoặc tổ chức",
     "correspondence.from_required": "Người gửi là bắt buộc",
     "correspondence.label_from": "Từ",

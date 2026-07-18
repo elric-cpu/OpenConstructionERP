@@ -7513,6 +7513,7 @@ const resource = {
     "correspondence.field_type": "Tipo",
     "correspondence.filter_all_dir": "Tutte le direzioni",
     "correspondence.filter_all_type": "Tutti i tipi",
+    "correspondence.filter_all_status": "Tutti gli stati",
     "correspondence.from_placeholder": "Nome o organizzazione del mittente",
     "correspondence.from_required": "Il mittente è obbligatorio",
     "correspondence.label_from": "Da",

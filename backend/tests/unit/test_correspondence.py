@@ -400,3 +400,65 @@ class TestProjectScopeIDOR:
             resp = await client.get(f"/v1/correspondence/{victim_corr.id}")
         assert resp.status_code == 404, resp.text
         assert "Confidential" not in resp.text
+
+
+class TestListStatusFilter:
+    """The list endpoint filters by lifecycle status (?status=), so a user can
+    narrow a busy log to just the open items or the closed ones.
+    """
+
+    async def _seed(self, db_session):
+        owner_id = await _make_user(db_session)
+        project_id = await _make_project(db_session, owner_id)
+        service = CorrespondenceService(db_session)
+        for subject, st in (
+            ("First open item", "open"),
+            ("Second open item", "open"),
+            ("A closed item", "closed"),
+        ):
+            await service.create_correspondence(
+                CorrespondenceCreate(
+                    project_id=project_id,
+                    direction="incoming",
+                    subject=subject,
+                    correspondence_type="letter",
+                    status=st,
+                ),
+                user_id=str(owner_id),
+            )
+        await db_session.commit()
+        return str(owner_id), project_id
+
+    @pytest.mark.asyncio
+    async def test_status_filter_narrows_the_list(self, db_session):
+        owner, project_id = await self._seed(db_session)
+        app = _build_app(db_session, caller_id=owner)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            all_resp = await client.get(f"/v1/correspondence/?project_id={project_id}")
+            open_resp = await client.get(
+                f"/v1/correspondence/?project_id={project_id}&status=open"
+            )
+            closed_resp = await client.get(
+                f"/v1/correspondence/?project_id={project_id}&status=closed"
+            )
+        assert all_resp.status_code == 200, all_resp.text
+        assert len(all_resp.json()) == 3
+        assert open_resp.status_code == 200, open_resp.text
+        open_rows = open_resp.json()
+        assert len(open_rows) == 2
+        assert {r["status"] for r in open_rows} == {"open"}
+        closed_rows = closed_resp.json()
+        assert len(closed_rows) == 1
+        assert closed_rows[0]["status"] == "closed"
+
+    @pytest.mark.asyncio
+    async def test_unknown_status_value_is_rejected(self, db_session):
+        owner, project_id = await self._seed(db_session)
+        app = _build_app(db_session, caller_id=owner)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get(f"/v1/correspondence/?project_id={project_id}&status=bogus")
+        # The status query param is regex-validated, so an unknown value is a
+        # 422 rather than a silent full-list fallback.
+        assert resp.status_code == 422, resp.text

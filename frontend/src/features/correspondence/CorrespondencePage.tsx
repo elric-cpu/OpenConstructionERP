@@ -1394,6 +1394,7 @@ export function CorrespondencePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [directionFilter, setDirectionFilter] = useState<CorrespondenceDirection | ''>('');
   const [typeFilter, setTypeFilter] = useState<CorrespondenceType | ''>('');
+  const [statusFilter, setStatusFilter] = useState<CorrespondenceStatus | ''>('');
   const { confirm, ...confirmProps } = useConfirm();
 
   // Data
@@ -1417,12 +1418,13 @@ export function CorrespondencePage() {
     error,
     refetch,
   } = useQuery({
-    queryKey: ['correspondence', projectId, directionFilter, typeFilter],
+    queryKey: ['correspondence', projectId, directionFilter, typeFilter, statusFilter],
     queryFn: () =>
       fetchCorrespondence({
         project_id: projectId,
         direction: directionFilter || undefined,
         type: typeFilter || undefined,
+        status: statusFilter || undefined,
       }),
     enabled: !!projectId,
   });
@@ -1786,6 +1788,28 @@ export function CorrespondencePage() {
             <ChevronDown size={14} />
           </div>
         </div>
+
+        {/* Status filter */}
+        <div className="relative">
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as CorrespondenceStatus | '')}
+            aria-label={t('correspondence.filter_all_status', { defaultValue: 'All Statuses' })}
+            className="h-10 appearance-none rounded-lg border border-border bg-surface-primary pl-3 pr-9 text-sm text-content-primary focus:outline-none focus:ring-2 focus:ring-oe-blue sm:w-40"
+          >
+            <option value="">
+              {t('correspondence.filter_all_status', { defaultValue: 'All Statuses' })}
+            </option>
+            {(Object.keys(STATUS_LABELS) as CorrespondenceStatus[]).map((st) => (
+              <option key={st} value={st}>
+                {t(`correspondence.status_${st}`, { defaultValue: STATUS_LABELS[st] })}
+              </option>
+            ))}
+          </select>
+          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 text-content-tertiary">
+            <ChevronDown size={14} />
+          </div>
+        </div>
       </div>
 
       {/* Table */}
@@ -1798,12 +1822,12 @@ export function CorrespondencePage() {
           <EmptyState
             icon={<Mail size={28} strokeWidth={1.5} />}
             title={
-              searchQuery || directionFilter || typeFilter
+              searchQuery || directionFilter || typeFilter || statusFilter
                 ? t('correspondence.no_results', { defaultValue: 'No matching entries' })
                 : t('correspondence.no_entries', { defaultValue: 'No correspondence yet' })
             }
             description={
-              searchQuery || directionFilter || typeFilter
+              searchQuery || directionFilter || typeFilter || statusFilter
                 ? t('correspondence.no_results_hint', {
                     defaultValue: 'Try adjusting your search or filters',
                   })
@@ -1812,7 +1836,7 @@ export function CorrespondencePage() {
                   })
             }
             action={
-              !searchQuery && !directionFilter && !typeFilter
+              !searchQuery && !directionFilter && !typeFilter && !statusFilter
                 ? {
                     label: t('correspondence.new_letter', { defaultValue: 'New Letter' }),
                     onClick: () => setShowCreateModal(true),

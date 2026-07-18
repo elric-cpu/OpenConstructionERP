@@ -8463,6 +8463,7 @@ const resource = {
     "correspondence.field_type": "種類",
     "correspondence.filter_all_dir": "すべての方向",
     "correspondence.filter_all_type": "すべての種類",
+    "correspondence.filter_all_status": "すべてのステータス",
     "correspondence.from_placeholder": "送信者名または組織",
     "correspondence.from_required": "送信者は必須です",
     "correspondence.label_from": "差出人",
