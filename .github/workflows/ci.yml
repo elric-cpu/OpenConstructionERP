@@ -290,18 +290,26 @@ jobs:
         run: npm run lint
 
       - name: Type check
-        # tsc crossed Node's default heap on 2026-06-06 ("Reached heap limit
-        # Allocation failed"), same growth the Build step hit earlier. Give it
-        # the same 6 GB old-space ceiling.
+        # tsc --noEmit whole-program check OOMs at the old 6 GB ceiling
+        # ("Reached heap limit Allocation failed", exit 134). ubuntu and windows
+        # are 16 GB runners and get the proven-local 9 GB ceiling for headroom as
+        # the codebase grows. macOS is a 7 GB Apple-Silicon runner where even the
+        # 6 GB ceiling already thrashes at the physical limit (GC "Ineffective
+        # mark-compacts", ~16 min) and a 9 GB heap exceeds total RAM, so it skips
+        # this step. tsc is OS-independent, so ubuntu (case-sensitive, strictest)
+        # plus windows fully cover the type check; macOS still runs lint and the
+        # unit tests for its OS-specific (path/CRLF/runtime) signal.
+        if: matrix.os != 'macos-latest'
         env:
-          NODE_OPTIONS: --max-old-space-size=6144
+          NODE_OPTIONS: --max-old-space-size=9216
         run: npm run typecheck
 
       - name: Build
-        # Vite/Rollup now needs more than Node's default ~4 GB heap (exit 134,
-        # "JavaScript heap out of memory"). Lift the old-space ceiling to 6 GB.
+        # `tsc -b && vite build` runs another whole-program compile, so it needs
+        # the same 9 GB heap and likewise cannot fit the 7 GB macOS runner.
+        if: matrix.os != 'macos-latest'
         env:
-          NODE_OPTIONS: --max-old-space-size=6144
+          NODE_OPTIONS: --max-old-space-size=9216
         run: npm run build
 
       - name: Run tests

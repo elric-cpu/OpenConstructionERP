@@ -212,12 +212,7 @@ def _ai_address_blocked(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> 
     mapped = getattr(addr, "ipv4_mapped", None)
     if mapped is not None:
         addr = mapped
-    return (
-        addr.is_link_local
-        or addr.is_multicast
-        or addr.is_unspecified
-        or addr in _AI_METADATA_ADDRESSES
-    )
+    return addr.is_link_local or addr.is_multicast or addr.is_unspecified or addr in _AI_METADATA_ADDRESSES
 
 
 def _host_in_allowlist(host: str, allowlist: list[str]) -> bool:
