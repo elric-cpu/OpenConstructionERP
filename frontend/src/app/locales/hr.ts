@@ -3,6 +3,10 @@
 
 const resource = {
   "translation": {
+    "match.target_boq": "Ciljni BOQ",
+    "match.no_boqs": "Još nema BOQ-ova u ovom projektu",
+    "match.accept_position_toast": "Stavka {{ordinal}} stvorena - {{code}}: {{description}}",
+    "match.apply_section_title": "Pronađi troškovnu stavku",
     "defects_liability.action_add_defect": "Dodaj nedostatak",
     "defects_liability.action_delete": "Izbriši",
     "defects_liability.action_edit": "Uredi",

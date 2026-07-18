@@ -82,6 +82,7 @@ import { installBIMConverter } from '@/features/bim/api';
 import { ConverterInstallProgressBar } from '@/features/bim/ConverterInstallProgressBar';
 import { AutoInstallConverterNotice } from '@/features/bim/AutoInstallConverterNotice';
 import { useAutoInstallConverter } from '@/features/bim/useAutoInstallConverter';
+import { ElementCostMatchPanel } from '@/features/match';
 import {
   fetchDrawing,
   fetchDrawings,
@@ -4571,6 +4572,60 @@ export function DwgTakeoffPage() {
                           </button>
                         </div>
                       )}
+
+                      {/* Match to a cost position - search every loaded cost catalogue by this
+                          entity's layer/type/size and apply a priced BOQ position, linked to the
+                          entity via a text_pin annotation. */}
+                      {projectId && (() => {
+                        const matchPayload = toDWGElementPayload(selectedEntity, effectiveScale, {
+                          calculatePerimeter,
+                          calculateArea,
+                          calculateDistance,
+                        });
+                        const matchMeasurement = extractEntityMeasurement(selectedEntity, effectiveScale);
+                        const matchQuantities: Record<string, number> = {};
+                        if (matchMeasurement && Number.isFinite(matchMeasurement.value)) {
+                          const isArea = matchMeasurement.kind === 'area'; // m2 -> area
+                          matchQuantities[isArea ? 'area_m2' : 'length_m'] = matchMeasurement.value;
+                        }
+                        return (
+                          <div className="mt-2 pt-2 border-t border-[#3a3a3a]">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-blue-300 mb-1.5">
+                              {t('match.apply_section_title', { defaultValue: 'Find a cost position' })}
+                            </p>
+                            <div className="h-96 rounded-sm border border-[#3a3a3a] overflow-hidden bg-surface-primary">
+                              <ElementCostMatchPanel
+                                key={selectedEntity.id}
+                                source="dwg"
+                                projectId={projectId}
+                                elementKey={selectedEntity.id}
+                                compact
+                                rawElementData={matchPayload as unknown as Record<string, unknown>}
+                                envelope={{
+                                  category: selectedEntity.type,
+                                  description: `${selectedEntity.type} · ${selectedEntity.layer}`,
+                                  properties: matchPayload.properties,
+                                  quantities: matchQuantities,
+                                  unitHint: matchMeasurement?.unit ?? null,
+                                }}
+                                quantityOverride={matchMeasurement ? matchMeasurement.value : null}
+                                onApplied={async (result) => {
+                                  // Native back-link: ensure a text_pin annotation for this entity
+                                  // and link it to the freshly created BOQ position, so the entity
+                                  // shows as linked on the canvas.
+                                  const annotationId = await ensureAnnotationForEntity(
+                                    selectedEntity,
+                                    matchMeasurement,
+                                  );
+                                  if (annotationId) {
+                                    await linkAnnotationToBoq(annotationId, result.position_id);
+                                  }
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* ── Polyline measurements ──────────────── */}
                       {selectedEntity.type === 'LWPOLYLINE' && selectedEntity.vertices && selectedEntity.vertices.length >= 2 && (() => {

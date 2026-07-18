@@ -3,6 +3,10 @@
 
 const resource = {
   "translation": {
+    "match.target_boq": "Mål-BOQ",
+    "match.no_boqs": "Ingen BOQ-er i dette prosjektet ennå",
+    "match.accept_position_toast": "Post {{ordinal}} opprettet - {{code}}: {{description}}",
+    "match.apply_section_title": "Finn en kostnadspost",
     "defects_liability.action_add_defect": "Legg til mangel",
     "defects_liability.action_delete": "Slett",
     "defects_liability.action_edit": "Rediger",

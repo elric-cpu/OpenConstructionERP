@@ -3,6 +3,11 @@
 
 export { MatchSuggestionsPanel } from './MatchSuggestionsPanel';
 export type { MatchSuggestionsPanelProps } from './MatchSuggestionsPanel';
+export { ElementCostMatchPanel } from './ElementCostMatchPanel';
+export type {
+  ElementCostMatchPanelProps,
+  ElementCostMatchEnvelope,
+} from './ElementCostMatchPanel';
 export * from './types';
 export { acceptMatch, matchElement, submitMatchFeedback } from './api';
 export {

@@ -3,6 +3,10 @@
 
 const resource = {
   "translation": {
+    "match.target_boq": "Kohde-BOQ",
+    "match.no_boqs": "Tässä projektissa ei ole vielä yhtään BOQ:ta",
+    "match.accept_position_toast": "Nimike {{ordinal}} luotu - {{code}}: {{description}}",
+    "match.apply_section_title": "Etsi kustannusnimike",
     "defects_liability.action_add_defect": "Lisaa virhe",
     "defects_liability.action_delete": "Poista",
     "defects_liability.action_edit": "Muokkaa",

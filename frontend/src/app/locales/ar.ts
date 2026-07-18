@@ -3,6 +3,10 @@
 
 const resource = {
   "translation": {
+    "match.target_boq": "BOQ المستهدف",
+    "match.no_boqs": "لا توجد جداول BOQ في هذا المشروع بعد",
+    "match.accept_position_toast": "تم إنشاء البند {{ordinal}} - {{code}}: {{description}}",
+    "match.apply_section_title": "البحث عن بند تكلفة",
     "defects_liability.action_add_defect": "إضافة عيب",
     "defects_liability.action_delete": "حذف",
     "defects_liability.action_edit": "تعديل",

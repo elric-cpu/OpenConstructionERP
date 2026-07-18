@@ -3,6 +3,10 @@
 
 const resource = {
   "translation": {
+    "match.target_boq": "BOQ Target",
+    "match.no_boqs": "Belum ada BOQ di proyek ini",
+    "match.accept_position_toast": "Item {{ordinal}} dibuat - {{code}}: {{description}}",
+    "match.apply_section_title": "Cari item biaya",
     "defects_liability.action_add_defect": "Tambah cacat",
     "defects_liability.action_delete": "Hapus",
     "defects_liability.action_edit": "Edit",

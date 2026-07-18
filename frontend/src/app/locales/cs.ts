@@ -3,6 +3,10 @@
 
 const resource = {
   "translation": {
+    "match.target_boq": "Cílový BOQ",
+    "match.no_boqs": "V tomto projektu zatím nejsou žádné BOQ",
+    "match.accept_position_toast": "Položka {{ordinal}} vytvořena - {{code}}: {{description}}",
+    "match.apply_section_title": "Najít nákladovou položku",
     "defects_liability.action_add_defect": "Přidat vadu",
     "defects_liability.action_delete": "Smazat",
     "defects_liability.action_edit": "Upravit",

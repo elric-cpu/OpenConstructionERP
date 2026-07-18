@@ -174,6 +174,7 @@ import {
   displayUnitFor,
   measurementLabel,
 } from '../../features/takeoff/lib/takeoff-display-units';
+import { ElementCostMatchPanel } from '@/features/match';
 
 // Configure PDF.js worker — bundled locally (no CDN dependency)
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -233,6 +234,29 @@ const boqQuantity = (value: number): number => {
   if (!Number.isFinite(value)) return 0;
   return Math.round(value * 1e4) / 1e4;
 };
+
+/** Map a takeoff measurement to a canonical quantities dict for cost
+ *  matching: area measurements feed area_m2, volumes feed volume_m3,
+ *  lines/polylines feed length_m, counts feed count. */
+function pdfMeasurementQuantities(m: {
+  type: string;
+  value: number;
+}): Record<string, number> {
+  if (!Number.isFinite(m.value)) return {};
+  switch (m.type) {
+    case 'area':
+      return { area_m2: m.value };
+    case 'volume':
+      return { volume_m3: m.value };
+    case 'count':
+      return { count: m.value };
+    case 'distance':
+    case 'polyline':
+      return { length_m: m.value };
+    default:
+      return {};
+  }
+}
 
 /** i18n descriptors for a measure dimension, used by the dimension-guard
  *  toast (mirrors the backend ``push_quantity`` guard, which refuses the
@@ -8434,6 +8458,61 @@ export default function TakeoffViewerModule({
                   <Trash2 size={12} />
                   {t('takeoff_viewer.prop_delete', { defaultValue: 'Delete measurement' })}
                 </button>
+
+                {/* Match to a cost position - search every loaded cost catalogue by
+                    this measurement's type/size and apply a priced BOQ position to it. */}
+                {activeProjectId && (
+                  <div className="pt-2 border-t border-oe-blue/20">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-oe-blue mb-1.5">
+                      {t('match.apply_section_title', { defaultValue: 'Find a cost position' })}
+                    </p>
+                    <div className="h-96 rounded-md border border-border-light overflow-hidden bg-surface-primary">
+                      <ElementCostMatchPanel
+                        key={selectedMeasurement.id}
+                        source="pdf"
+                        projectId={activeProjectId}
+                        elementKey={selectedMeasurement.id}
+                        compact
+                        rawElementData={{
+                          source: 'pdf',
+                          id: selectedMeasurement.id,
+                          label: selectedMeasurement.label ?? selectedMeasurement.annotation ?? '',
+                          measurementType: selectedMeasurement.type,
+                          value: selectedMeasurement.value,
+                          unit: selectedMeasurement.unit,
+                          properties: selectedMeasurement.annotation
+                            ? { note: selectedMeasurement.annotation }
+                            : {},
+                        }}
+                        envelope={{
+                          category: selectedMeasurement.type,
+                          description:
+                            selectedMeasurement.label ||
+                            selectedMeasurement.annotation ||
+                            selectedMeasurement.type,
+                          quantities: pdfMeasurementQuantities(selectedMeasurement),
+                          unitHint: selectedMeasurement.unit || null,
+                        }}
+                        quantityOverride={
+                          Number.isFinite(selectedMeasurement.value)
+                            ? selectedMeasurement.value
+                            : null
+                        }
+                        onApplied={async (result) => {
+                          // Native back-link: bind the created position to this measurement
+                          // so the takeoff row shows as linked. Only synced measurements
+                          // (with a serverId) can be linked; unsynced ones still got a
+                          // priced position created in the BOQ.
+                          if (selectedMeasurement.serverId) {
+                            await takeoffApi.linkToBoq(selectedMeasurement.serverId, result.position_id, {
+                              pushQuantity: false,
+                            });
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

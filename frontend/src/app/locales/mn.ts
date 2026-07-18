@@ -3,6 +3,10 @@
 
 const resource = {
   "translation": {
+    "match.target_boq": "Зорилтот BOQ",
+    "match.no_boqs": "Энэ төсөлд одоогоор BOQ байхгүй байна",
+    "match.accept_position_toast": "Зүйл {{ordinal}} үүсгэгдлээ - {{code}}: {{description}}",
+    "match.apply_section_title": "Өртгийн зүйл хайх",
     "defects_liability.action_add_defect": "Согог нэмэх",
     "defects_liability.action_delete": "Устгах",
     "defects_liability.action_edit": "Засах",

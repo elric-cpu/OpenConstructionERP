@@ -3,6 +3,10 @@
 
 const resource = {
   "translation": {
+    "match.target_boq": "目标BOQ",
+    "match.no_boqs": "此项目中尚无BOQ",
+    "match.accept_position_toast": "已创建子目 {{ordinal}} - {{code}}: {{description}}",
+    "match.apply_section_title": "查找成本子目",
     "defects_liability.action_add_defect": "添加缺陷",
     "defects_liability.action_delete": "删除",
     "defects_liability.action_edit": "编辑",

@@ -3,6 +3,10 @@
 
 const resource = {
   "translation": {
+    "match.target_boq": "Doel-BOQ",
+    "match.no_boqs": "Nog geen BOQ's in dit project",
+    "match.accept_position_toast": "Post {{ordinal}} aangemaakt - {{code}}: {{description}}",
+    "match.apply_section_title": "Een kostenpost zoeken",
     "defects_liability.action_add_defect": "Gebrek toevoegen",
     "defects_liability.action_delete": "Verwijderen",
     "defects_liability.action_edit": "Bewerken",

@@ -3,6 +3,10 @@
 
 const resource = {
   "translation": {
+    "match.target_boq": "대상 BOQ",
+    "match.no_boqs": "이 프로젝트에 아직 BOQ가 없습니다",
+    "match.accept_position_toast": "항목 {{ordinal}} 생성됨 - {{code}}: {{description}}",
+    "match.apply_section_title": "비용 항목 찾기",
     "defects_liability.action_add_defect": "하자 추가",
     "defects_liability.action_delete": "삭제",
     "defects_liability.action_edit": "편집",

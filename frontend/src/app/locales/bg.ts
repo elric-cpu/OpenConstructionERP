@@ -3,6 +3,10 @@
 
 const resource = {
   "translation": {
+    "match.target_boq": "Целева BOQ",
+    "match.no_boqs": "Все още няма BOQ в този проект",
+    "match.accept_position_toast": "Позиция {{ordinal}} е създадена - {{code}}: {{description}}",
+    "match.apply_section_title": "Намиране на разходна позиция",
     "defects_liability.action_add_defect": "Добави дефект",
     "defects_liability.action_delete": "Изтрий",
     "defects_liability.action_edit": "Редактирай",

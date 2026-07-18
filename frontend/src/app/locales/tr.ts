@@ -3,6 +3,10 @@
 
 const resource = {
   "translation": {
+    "match.target_boq": "Hedef BOQ",
+    "match.no_boqs": "Bu projede henüz BOQ yok",
+    "match.accept_position_toast": "Poz {{ordinal}} oluşturuldu - {{code}}: {{description}}",
+    "match.apply_section_title": "Maliyet pozu bul",
     "defects_liability.action_add_defect": "Kusur ekle",
     "defects_liability.action_delete": "Sil",
     "defects_liability.action_edit": "Duzenle",

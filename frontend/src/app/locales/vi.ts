@@ -3,6 +3,10 @@
 
 const resource = {
   "translation": {
+    "match.target_boq": "BOQ đích",
+    "match.no_boqs": "Chưa có BOQ nào trong dự án này",
+    "match.accept_position_toast": "Đã tạo hạng mục {{ordinal}} - {{code}}: {{description}}",
+    "match.apply_section_title": "Tìm một hạng mục chi phí",
     "defects_liability.action_add_defect": "Thêm khiếm khuyết",
     "defects_liability.action_delete": "Xóa",
     "defects_liability.action_edit": "Sửa",

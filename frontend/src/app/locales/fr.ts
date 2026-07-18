@@ -3,6 +3,10 @@
 
 const resource = {
   "translation": {
+    "match.target_boq": "BOQ cible",
+    "match.no_boqs": "Aucun BOQ dans ce projet pour l'instant",
+    "match.accept_position_toast": "Poste {{ordinal}} créé - {{code}}: {{description}}",
+    "match.apply_section_title": "Rechercher un poste de coût",
     "defects_liability.action_add_defect": "Ajouter un défaut",
     "defects_liability.action_delete": "Supprimer",
     "defects_liability.action_edit": "Modifier",
