@@ -24,10 +24,11 @@ import { rolesForPlaybook, ROLE_BY_ID } from '@/features/cases/roles';
 import { iconFor } from '@/features/cases/icons';
 import { CaseArt } from '@/features/cases/CaseArt';
 
-// How many cases to preview as picture tiles. Eight fills one compact row on a
-// wide dashboard (eight across) and reflows to fewer columns as it narrows, a
-// small gallery of the case library rather than a thin strip of chips.
-const PREVIEW_COUNT = 8;
+// How many cases to preview as picture tiles. Ten fills one compact row on a
+// wide dashboard (ten across, plus the "all cases" tile) and reflows to fewer
+// columns as it narrows, a small gallery of the case library rather than a thin
+// strip of chips.
+const PREVIEW_COUNT = 10;
 
 export function DashboardCasesCard() {
   const { t } = useTranslation();
@@ -140,10 +141,10 @@ export function DashboardCasesCard() {
           </div>
           {/* Picture gallery: each case leads with its line-art illustration on
               an always-light tile (the same art the Cases hub uses), so the
-              block previews the library visually. Eight compact tiles land as a
-              single row on a wide dashboard, reflowing to six, four or two on
-              narrower screens. */}
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-9">
+              block previews the library visually. Ten compact tiles plus the
+              "all cases" tile land as a single row on a wide dashboard,
+              reflowing to six, four or two on narrower screens. */}
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-11">
           {picks.map(({ pb, best, total, inProgress }) => {
             const Icon = iconFor(pb.icon);
             const tint = tintFor(pb.category);
@@ -164,7 +165,7 @@ export function DashboardCasesCard() {
                 {/* Line-art banner on an always-light tile so the linework reads
                     the same in light and dark theme. */}
                 <div className="relative aspect-[16/9] w-full overflow-hidden border-b border-border-light bg-white ring-1 ring-inset ring-slate-900/[0.04]">
-                  <CaseArt id={pb.id} fallbackIcon={Icon} fallbackClass={tint.text} alt={title} />
+                  <CaseArt id={pb.id} category={pb.category} fallbackIcon={Icon} fallbackClass={tint.text} alt={title} />
                   {inProgress && (
                     <span
                       className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-oe-blue shadow-sm ring-2 ring-white"

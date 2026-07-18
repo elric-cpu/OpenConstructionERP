@@ -1733,7 +1733,7 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
           Popular starting points
         </div>
         <div
-          class="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-9"
+          class="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-11"
         >
           <button
             class="group relative isolate flex flex-col overflow-hidden rounded-lg border border-border-light bg-surface-primary text-left shadow-xs transition duration-200 hover:-translate-y-0.5 hover:border-oe-blue/40 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
@@ -1772,28 +1772,28 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
                 <circle
                   cx="20"
                   cy="34"
-                  fill="#4aa6d8"
+                  fill="#7dd3fc"
                   r="6"
                   stroke="none"
                 />
                 <circle
                   cx="40"
                   cy="34"
-                  fill="#1a6c9c"
+                  fill="#0284c7"
                   r="6"
                   stroke="none"
                 />
                 <circle
                   cx="60"
                   cy="34"
-                  fill="#1a6c9c"
+                  fill="#0284c7"
                   r="6"
                   stroke="none"
                 />
                 <circle
                   cx="80"
                   cy="34"
-                  fill="#1a6c9c"
+                  fill="#0284c7"
                   r="6"
                   stroke="none"
                 />
@@ -1804,7 +1804,7 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
                   stroke-width="1.6"
                 />
                 <rect
-                  fill="#0d4d74"
+                  fill="#0369a1"
                   height="18"
                   rx="1"
                   stroke="none"
@@ -1814,7 +1814,7 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
                 />
                 <path
                   d="M91 26 L99 20 L107 26 Z"
-                  fill="#0d4d74"
+                  fill="#0369a1"
                   stroke="none"
                 />
                 <path
@@ -1825,7 +1825,7 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
                 />
                 <path
                   d="M18 54 H78"
-                  stroke="#2563eb"
+                  stroke="#0284c7"
                   stroke-linecap="round"
                   stroke-width="4"
                 />
@@ -1923,10 +1923,10 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
                   stroke-width="1.3"
                 />
                 <rect
-                  fill="#2563eb"
+                  fill="#059669"
                   fill-opacity="0.2"
                   height="16"
-                  stroke="#2563eb"
+                  stroke="#059669"
                   stroke-width="1"
                   width="8"
                   x="40"
@@ -1957,7 +1957,7 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
                 <path
                   d="M58 42 H68 M64 38 l4 4 l-4 4"
                   fill="none"
-                  stroke="#2563eb"
+                  stroke="#059669"
                   stroke-linecap="round"
                   stroke-linejoin="round"
                   stroke-width="2.2"
@@ -1984,7 +1984,7 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
                 />
                 <path
                   d="M70 27 V22 a4 4 0 0 1 4 -4 H102 a4 4 0 0 1 4 4 V27 Z"
-                  fill="#1a6c9c"
+                  fill="#059669"
                   stroke="none"
                 />
                 <rect
@@ -2117,7 +2117,7 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
                 />
                 <path
                   d="M22 26 V20 a4 4 0 0 1 4 -4 H62 a4 4 0 0 1 4 4 V26 Z"
-                  fill="#1a6c9c"
+                  fill="#059669"
                   stroke="none"
                 />
                 <rect
@@ -2287,7 +2287,7 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
                 />
                 <path
                   d="M16 27 V22 a4 4 0 0 1 4 -4 H46 a4 4 0 0 1 4 4 V27 Z"
-                  fill="#1a6c9c"
+                  fill="#7c3aed"
                   stroke="none"
                 />
                 <rect
@@ -2467,7 +2467,7 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
                 />
                 <path
                   d="M16 27 V22 a4 4 0 0 1 4 -4 H46 a4 4 0 0 1 4 4 V27 Z"
-                  fill="#1a6c9c"
+                  fill="#7c3aed"
                   stroke="none"
                 />
                 <rect
@@ -2503,7 +2503,7 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
                 <path
                   d="M52 42 H62 M58 38 l4 4 l-4 4"
                   fill="none"
-                  stroke="#2563eb"
+                  stroke="#7c3aed"
                   stroke-linecap="round"
                   stroke-linejoin="round"
                   stroke-width="2.2"
@@ -2532,17 +2532,17 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
                 </text>
                 <path
                   d="M66 50 L78 56 L78 68 L66 62 Z"
-                  fill="#1a6c9c"
+                  fill="#7c3aed"
                   stroke="none"
                 />
                 <path
                   d="M78 56 L90 50 L90 62 L78 68 Z"
-                  fill="#0d4d74"
+                  fill="#6d28d9"
                   stroke="none"
                 />
                 <path
                   d="M78 44 L90 50 L78 56 L66 50 Z"
-                  fill="#4aa6d8"
+                  fill="#c4b5fd"
                   stroke="#ffffff"
                   stroke-width="0.8"
                 />
@@ -2675,7 +2675,7 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
                 <path
                   d="M30 52 L50 55 L70 61 L88 66 L100 68"
                   fill="none"
-                  stroke="#2563eb"
+                  stroke="#4f46e5"
                   stroke-linecap="round"
                   stroke-linejoin="round"
                   stroke-width="2.4"
@@ -2685,13 +2685,13 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
                   cy="68"
                   fill="none"
                   r="4.5"
-                  stroke="#2563eb"
+                  stroke="#4f46e5"
                   stroke-width="1.4"
                 />
                 <circle
                   cx="100"
                   cy="68"
-                  fill="#2563eb"
+                  fill="#4f46e5"
                   r="1.8"
                   stroke="none"
                 />
@@ -2768,7 +2768,7 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
                 />
                 <path
                   d="M16 25 V20 a4 4 0 0 1 4 -4 H102 a4 4 0 0 1 4 4 V25 Z"
-                  fill="#1a6c9c"
+                  fill="#0284c7"
                   stroke="none"
                 />
                 <rect
@@ -2792,7 +2792,7 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
                   y="32"
                 />
                 <rect
-                  fill="#1a6c9c"
+                  fill="#0284c7"
                   height="5"
                   rx="2.5"
                   stroke="none"
@@ -2811,7 +2811,7 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
                   y="42"
                 />
                 <rect
-                  fill="#1a6c9c"
+                  fill="#0284c7"
                   height="5"
                   rx="2.5"
                   stroke="none"
@@ -2830,7 +2830,7 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
                   y="52"
                 />
                 <rect
-                  fill="#2563eb"
+                  fill="#0284c7"
                   height="5"
                   rx="2.5"
                   stroke="none"
@@ -2898,24 +2898,24 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
                 </g>
                 <path
                   d="M17 31.5 L32 39 L32 56 L17 48.5 Z"
-                  fill="#1a6c9c"
+                  fill="#4f46e5"
                   stroke="none"
                 />
                 <path
                   d="M32 39 L47 31.5 L47 48.5 L32 56 Z"
-                  fill="#0d4d74"
+                  fill="#4338ca"
                   stroke="none"
                 />
                 <path
                   d="M32 24 L47 31.5 L32 39 L17 31.5 Z"
-                  fill="#4aa6d8"
+                  fill="#a5b4fc"
                   stroke="#ffffff"
                   stroke-width="0.8"
                 />
                 <path
                   d="M50 38 H60 M56 34 l4 4 l-4 4"
                   fill="none"
-                  stroke="#2563eb"
+                  stroke="#4f46e5"
                   stroke-linecap="round"
                   stroke-linejoin="round"
                   stroke-width="2.2"
@@ -2942,7 +2942,7 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
                 />
                 <path
                   d="M62 29 V24 a4 4 0 0 1 4 -4 H102 a4 4 0 0 1 4 4 V29 Z"
-                  fill="#1a6c9c"
+                  fill="#4f46e5"
                   stroke="none"
                 />
                 <rect
@@ -3016,6 +3016,340 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
                 class="mt-auto flex items-center gap-1 text-2xs text-content-tertiary"
               >
                 3 steps
+              </span>
+            </div>
+          </button>
+          <button
+            class="group relative isolate flex flex-col overflow-hidden rounded-lg border border-border-light bg-surface-primary text-left shadow-xs transition duration-200 hover:-translate-y-0.5 hover:border-oe-blue/40 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+            title="Measure quantities from a DWG"
+            type="button"
+          >
+            <span
+              aria-hidden="true"
+              class="pointer-events-none absolute inset-0 -z-10 bg-indigo-400/5 dark:bg-indigo-400/10"
+            />
+            <div
+              class="relative aspect-[16/9] w-full overflow-hidden border-b border-border-light bg-white ring-1 ring-inset ring-slate-900/[0.04]"
+            >
+              <svg
+                aria-label="Measure quantities from a DWG"
+                class="h-full w-full p-3 text-slate-400"
+                fill="none"
+                role="img"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2.4"
+                viewBox="0 0 120 84"
+              >
+                <g
+                  opacity="0.16"
+                  stroke-width="0.6"
+                >
+                  <path
+                    d="M0 21 H120 M0 42 H120 M0 63 H120"
+                  />
+                  <path
+                    d="M30 0 V84 M60 0 V84 M90 0 V84"
+                  />
+                </g>
+                <rect
+                  fill="#0d3550"
+                  height="52"
+                  opacity="0.08"
+                  rx="4"
+                  stroke="none"
+                  width="56"
+                  x="20"
+                  y="19"
+                />
+                <rect
+                  fill="#eaf2f8"
+                  height="52"
+                  rx="4"
+                  stroke="#9fb3c2"
+                  stroke-width="1.6"
+                  width="56"
+                  x="18"
+                  y="16"
+                />
+                <path
+                  d="M26 26 H66 V58 H26 Z"
+                  fill="none"
+                  stroke="#9fb3c2"
+                  stroke-width="1.4"
+                />
+                <path
+                  d="M26 40 H48 M48 26 V58"
+                  fill="none"
+                  stroke="#9fb3c2"
+                  stroke-width="1.2"
+                />
+                <rect
+                  fill="#4f46e5"
+                  fill-opacity="0.18"
+                  height="18"
+                  stroke="#4f46e5"
+                  stroke-width="1.2"
+                  width="18"
+                  x="48"
+                  y="40"
+                />
+                <path
+                  d="M26 64 H66 M26 62 v4 M66 62 v4"
+                  fill="none"
+                  stroke="#cf8320"
+                  stroke-width="1.4"
+                />
+                <rect
+                  fill="#2e9c6a"
+                  height="11"
+                  rx="2.5"
+                  stroke="none"
+                  width="22"
+                  x="82"
+                  y="30"
+                />
+                <text
+                  dominant-baseline="central"
+                  fill="#ffffff"
+                  font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+                  font-size="4.6"
+                  font-weight="700"
+                  stroke="none"
+                  text-anchor="middle"
+                  x="93"
+                  y="35.7"
+                >
+                  m2
+                </text>
+                <rect
+                  fill="#a5b4fc"
+                  height="11"
+                  rx="2.5"
+                  stroke="none"
+                  width="22"
+                  x="82"
+                  y="46"
+                />
+                <text
+                  dominant-baseline="central"
+                  fill="#ffffff"
+                  font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+                  font-size="4.6"
+                  font-weight="700"
+                  stroke="none"
+                  text-anchor="middle"
+                  x="93"
+                  y="51.7"
+                >
+                  12
+                </text>
+              </svg>
+            </div>
+            <div
+              class="flex min-w-0 flex-1 flex-col gap-0.5 px-2 py-1.5"
+            >
+              <span
+                class="truncate text-xs font-semibold leading-snug text-content-primary"
+              >
+                Measure quantities from a DWG
+              </span>
+              <span
+                class="mt-auto flex items-center gap-1 text-2xs text-content-tertiary"
+              >
+                3 steps
+              </span>
+            </div>
+          </button>
+          <button
+            class="group relative isolate flex flex-col overflow-hidden rounded-lg border border-border-light bg-surface-primary text-left shadow-xs transition duration-200 hover:-translate-y-0.5 hover:border-oe-blue/40 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+            title="Run the site day"
+            type="button"
+          >
+            <span
+              aria-hidden="true"
+              class="pointer-events-none absolute inset-0 -z-10 bg-amber-400/5 dark:bg-amber-400/10"
+            />
+            <div
+              class="relative aspect-[16/9] w-full overflow-hidden border-b border-border-light bg-white ring-1 ring-inset ring-slate-900/[0.04]"
+            >
+              <svg
+                aria-label="Run the site day"
+                class="h-full w-full p-3 text-slate-400"
+                fill="none"
+                role="img"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2.4"
+                viewBox="0 0 120 84"
+              >
+                <g
+                  opacity="0.16"
+                  stroke-width="0.6"
+                >
+                  <path
+                    d="M0 21 H120 M0 42 H120 M0 63 H120"
+                  />
+                  <path
+                    d="M30 0 V84 M60 0 V84 M90 0 V84"
+                  />
+                </g>
+                <rect
+                  fill="#0d3550"
+                  height="58"
+                  opacity="0.08"
+                  rx="4"
+                  stroke="none"
+                  width="80"
+                  x="22"
+                  y="17"
+                />
+                <rect
+                  fill="#ffffff"
+                  height="58"
+                  rx="4"
+                  stroke="#9fb3c2"
+                  stroke-width="1.6"
+                  width="80"
+                  x="20"
+                  y="14"
+                />
+                <path
+                  d="M20 25 V18 a4 4 0 0 1 4 -4 H96 a4 4 0 0 1 4 4 V25 Z"
+                  fill="#d97706"
+                  stroke="none"
+                />
+                <rect
+                  fill="#ffffff"
+                  height="3.4"
+                  opacity="0.9"
+                  rx="1.7"
+                  stroke="none"
+                  width="24"
+                  x="26"
+                  y="18"
+                />
+                <circle
+                  cx="90"
+                  cy="19.5"
+                  fill="#e0a23a"
+                  r="4"
+                  stroke="none"
+                />
+                <rect
+                  fill="#fcd34d"
+                  height="8"
+                  rx="2"
+                  stroke="none"
+                  width="16"
+                  x="26"
+                  y="32"
+                />
+                <text
+                  dominant-baseline="central"
+                  fill="#ffffff"
+                  font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+                  font-size="4.6"
+                  font-weight="700"
+                  stroke="none"
+                  text-anchor="middle"
+                  x="34"
+                  y="36.2"
+                >
+                  hrs
+                </text>
+                <rect
+                  fill="#cdd9e2"
+                  height="3"
+                  opacity="1"
+                  rx="1.5"
+                  stroke="none"
+                  width="26"
+                  x="46"
+                  y="34"
+                />
+                <rect
+                  fill="#fcd34d"
+                  height="16"
+                  rx="2"
+                  stroke="#ffffff"
+                  stroke-width="1.2"
+                  width="22"
+                  x="26"
+                  y="44"
+                />
+                <circle
+                  cx="31"
+                  cy="49"
+                  fill="#ffffff"
+                  r="1.8"
+                  stroke="none"
+                />
+                <path
+                  d="M28 60 l6 -5 l4 3 l4 -4 l4 6 z"
+                  fill="#b45309"
+                  stroke="none"
+                />
+                <path
+                  d="M62 46.6 L68 57.4 L56 57.4 Z"
+                  fill="#0d3550"
+                  opacity="0.08"
+                  stroke="none"
+                  transform="translate(1.5,2)"
+                />
+                <path
+                  d="M62 46.6 L68 57.4 L56 57.4 Z"
+                  fill="#e0a23a"
+                  stroke="none"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M62 50.488 V53.08"
+                  fill="none"
+                  stroke="#ffffff"
+                  stroke-linecap="round"
+                  stroke-width="1.32"
+                />
+                <circle
+                  cx="62"
+                  cy="54.808"
+                  fill="#ffffff"
+                  r="0.72"
+                  stroke="none"
+                />
+                <rect
+                  fill="#cdd9e2"
+                  height="3"
+                  opacity="1"
+                  rx="1.5"
+                  stroke="none"
+                  width="22"
+                  x="72"
+                  y="50"
+                />
+                <path
+                  d="M72 62 c2.6399999999999997 -6 4.4 6 6.6 0 c1.76 -4.5 3.52 3.5 5.279999999999999 0 c1.3199999999999998 -2.5 3.08 2.5 4.84 0.5"
+                  fill="none"
+                  stroke="#d97706"
+                  stroke-linecap="round"
+                  stroke-width="1.8"
+                />
+              </svg>
+            </div>
+            <div
+              class="flex min-w-0 flex-1 flex-col gap-0.5 px-2 py-1.5"
+            >
+              <span
+                class="truncate text-xs font-semibold leading-snug text-content-primary"
+              >
+                Run the site day
+              </span>
+              <span
+                class="mt-auto flex items-center gap-1 text-2xs text-content-tertiary"
+              >
+                4 steps
               </span>
             </div>
           </button>

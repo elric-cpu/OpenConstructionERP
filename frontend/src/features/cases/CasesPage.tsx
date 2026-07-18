@@ -1073,7 +1073,7 @@ function CaseCard({
           gating the art on `near` never shifts the layout. */}
       <div className="relative aspect-[16/9] w-full shrink-0 overflow-hidden border-b border-border-light bg-gradient-to-b from-white to-slate-50 ring-1 ring-inset ring-slate-900/[0.04]">
         {near ? (
-          <CaseArt id={pb.id} fallbackIcon={Icon} fallbackClass={tint.text} />
+          <CaseArt id={pb.id} category={pb.category} fallbackIcon={Icon} fallbackClass={tint.text} />
         ) : (
           <div className="h-full w-full" aria-hidden="true" />
         )}

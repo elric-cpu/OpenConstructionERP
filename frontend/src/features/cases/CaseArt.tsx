@@ -4,10 +4,15 @@ import { type ComponentType } from 'react';
 import clsx from 'clsx';
 import type { LucideProps } from 'lucide-react';
 import { CASE_SCENES, CaseScene } from './caseScenes';
+import { accentFor } from './categories';
+import type { CaseCategory } from './types';
 
 interface CaseArtProps {
   /** Playbook id; selects the bespoke vector scene from {@link CASE_SCENES}. */
   id: string;
+  /** Case discipline; picks the accent ramp the scene is painted in, so a tile
+   *  reads in its card's colour. Falls back to the neutral blue ramp. */
+  category?: CaseCategory;
   /** Discipline icon shown if a case has no scene yet. */
   fallbackIcon: ComponentType<LucideProps>;
   /** Colour class for the fallback icon (discipline tint text). */
@@ -22,9 +27,9 @@ interface CaseArtProps {
  * light and dark theme on its always-light tile. A case with no scene yet falls
  * back to its discipline icon rather than a broken picture.
  */
-export function CaseArt({ id, fallbackIcon: Icon, fallbackClass, alt = '' }: CaseArtProps) {
+export function CaseArt({ id, category, fallbackIcon: Icon, fallbackClass, alt = '' }: CaseArtProps) {
   if (CASE_SCENES[id]) {
-    return <CaseScene id={id} title={alt} />;
+    return <CaseScene id={id} title={alt} accent={accentFor(category)} />;
   }
 
   return (

@@ -183,3 +183,40 @@ export const NEUTRAL_TINT: CategoryTint = {
 export function tintFor(category: CaseCategory | undefined): CategoryTint {
   return category ? (CATEGORY_BY_ID[category]?.tint ?? NEUTRAL_TINT) : NEUTRAL_TINT;
 }
+
+/**
+ * A three-stop solid-colour ramp for a discipline, in the SAME hue as that
+ * category's soft card tint above. Case scenes ({@link file://./caseScenes.tsx})
+ * paint their hero shapes in this ramp so a scene reads in its card's colour -
+ * emerald for estimating, violet for tendering, and so on - instead of one
+ * uniform blue. `base` is the main fill, `deep` the shaded side (cube faces,
+ * lower bars), `light` the raised highlight. Values are the Tailwind 600/700/300
+ * stops of each family, tuned to sit crisply on the always-light case tile.
+ * Structural neutrals (paper greys, ink) and status colours (green/amber/red)
+ * stay shared and do NOT come from here - only the category-identity shapes do.
+ */
+export interface Accent {
+  base: string;
+  deep: string;
+  light: string;
+}
+
+/** Category id -> its solid accent ramp. Hues mirror the card tints above. */
+export const CATEGORY_ACCENT: Record<CaseCategory, Accent> = {
+  estimating: { base: '#059669', deep: '#047857', light: '#6ee7b7' }, // emerald
+  tendering: { base: '#7c3aed', deep: '#6d28d9', light: '#c4b5fd' }, // violet
+  planning: { base: '#0284c7', deep: '#0369a1', light: '#7dd3fc' }, // sky
+  bim: { base: '#4f46e5', deep: '#4338ca', light: '#a5b4fc' }, // indigo
+  site: { base: '#d97706', deep: '#b45309', light: '#fcd34d' }, // amber
+  quality: { base: '#0d9488', deep: '#0f766e', light: '#5eead4' }, // teal
+  commercial: { base: '#e11d48', deep: '#be123c', light: '#fda4af' }, // rose
+  handover: { base: '#0891b2', deep: '#0e7490', light: '#67e8f9' }, // cyan
+};
+
+/** Neutral blue ramp for the "All" view and any unknown category. */
+export const NEUTRAL_ACCENT: Accent = { base: '#1a6c9c', deep: '#0d4d74', light: '#4aa6d8' };
+
+/** The accent ramp for a category id, falling back to the neutral blue ramp. */
+export function accentFor(category: CaseCategory | undefined): Accent {
+  return category ? (CATEGORY_ACCENT[category] ?? NEUTRAL_ACCENT) : NEUTRAL_ACCENT;
+}
