@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [11.15.0] - 2026-07-18
+
+Every file and model viewer can now match a selected element straight to a priced cost position. Open the BIM viewer, the PDF takeoff or the DWG takeoff, pick an element, and the viewer reads that element's own properties, searches every cost catalogue you have loaded and ranks the positions that fit. Accept one and it creates a priced BOQ line for that element in the target bill and links it back to the element in a single step, so the quantity and the price travel together. This used to work only in the BIM viewer. It is now one shared panel across all of them, and it reuses the existing matching service, so there is no database change.
+
 ## [11.14.0] - 2026-07-18
 
 The sidebar Edit menu now reaches the bottom shortcut row. When you open it, the setup buttons at the very bottom (Settings, Users, Modules, Governance, Audit log, About) turn into the same hide and show tiles as the rest of the menu, so you can switch off the ones you never use and bring them back the same way. Nothing is ever lost. Edit menu always brings every tile back.

@@ -38,6 +38,13 @@ interface ChangelogEntry {
 // date, title and meaning intact; trim the prose, not the facts.
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '11.15.0',
+    date: '2026-07-18',
+    tag: 'NEW',
+    summary:
+      'Match a selected element to a priced cost position from inside every viewer. In the BIM, PDF takeoff and DWG takeoff viewers, pick an element and the panel reads its properties, searches every loaded cost catalogue and ranks the positions that fit; accept one to create a priced BOQ line for that element and link it back in a single step.',
+  },
+  {
     version: '11.14.0',
     date: '2026-07-18',
     tag: 'NEW',
