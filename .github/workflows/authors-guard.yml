@@ -24,12 +24,14 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            const repositoryOwner = context.repo.owner.toLowerCase();
             const allowLogins = new Set([
               'boikoartem',
               'datadrivenconstruction',
               'dependabot[bot]',
               'github-actions[bot]',
               'web-flow',
+              repositoryOwner,
             ]);
             const allowEmails = new Set([
               'info@datadrivenconstruction.io',
@@ -64,7 +66,7 @@ jobs:
             if (offenders.length) {
               core.setFailed(
                 'This pull request contains commits that are not authored by '
-                + 'DataDrivenConstruction:\n'
+                + 'DataDrivenConstruction or the repository owner:\n'
                 + offenders.join('\n')
                 + '\n\nProject policy: we do not merge external code. Please open an '
                 + 'issue describing the change and we will implement it in-house.'
