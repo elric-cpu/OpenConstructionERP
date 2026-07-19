@@ -73,3 +73,12 @@ updates:
     labels: ["dependencies", "docker"]
     commit-message:
       prefix: "chore"
+
+  # Benson Operations runtime image
+  - package-ecosystem: "docker"
+    directory: "/benson-app"
+    schedule:
+      interval: "monthly"
+    labels: ["dependencies", "docker", "benson-operations"]
+    commit-message:
+      prefix: "chore"

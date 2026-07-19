@@ -6,6 +6,7 @@ import httpx
 from .config import Settings
 from .message_templates import client_lead_message
 from .signing import employee_invite_token
+from .sealed_secret import open_secret
 
 
 class NotificationDeliveryError(RuntimeError):
@@ -38,6 +39,19 @@ def _email_message(payload: dict[str, Any], settings: Settings) -> tuple[str, st
             settings.employee_invite_signing_secret, str(payload["invite_id"])
         )
         invite_url = f"{payload['invite_base_url']}/#/activate?token={token}"
+        bootstrap_lines: tuple[str, ...] = ()
+        if payload.get("bootstrap_credential"):
+            password = open_secret(
+                payload["bootstrap_credential"],
+                settings.employee_document_key_bytes(),
+                context=str(payload["invite_id"]),
+            )
+            bootstrap_lines = (
+                f"Workspace login: {payload['workspace_email']}",
+                f"Temporary password: {password}",
+                "Google will require you to replace this password at first sign-in.",
+                "",
+            )
         return (
             "Your Benson Home Solutions staff portal invitation",
             "\n".join(
@@ -48,6 +62,7 @@ def _email_message(payload: dict[str, Any], settings: Settings) -> tuple[str, st
                     f"Open this secure invitation before {payload['expires_at']}:",
                     invite_url,
                     "",
+                    *bootstrap_lines,
                     "If you were not expecting this invitation, do not use the link.",
                 )
             ),

@@ -181,6 +181,7 @@ export type Employee = {
   name: string;
   email: string;
   invite_delivery_email: string | null;
+  phone: string;
   start_date: string;
   work_location: string;
   classification: "employee" | "independent_contractor";

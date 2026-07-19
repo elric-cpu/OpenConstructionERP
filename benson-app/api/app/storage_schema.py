@@ -180,6 +180,7 @@ employees = Table(
     Column("federal_contract_applicability", String(40), nullable=False),
     Column("status", String(40), nullable=False),
     Column("workspace_account_status", String(40), nullable=False),
+    Column("phone", String(20), nullable=False, default=""),
     Column("created_by", String(320), nullable=False),
     Column("google_subject", String(200), unique=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
@@ -437,6 +438,7 @@ employee_tasks = Table(
     Column("applicability_status", String(40), nullable=False),
     Column("retention_rule", Text, nullable=False),
     Column("data_classification", String(40), nullable=False),
+    Column("data_category", String(40), nullable=False),
     Column("official_source", Text, nullable=False),
     Column("legal_review_status", String(20), nullable=False),
     Column("signature_statement", Text),
@@ -447,6 +449,11 @@ employee_tasks = Table(
     Column("completed_by", String(320)),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
+    CheckConstraint(
+        "data_category IN ('identity_i9', 'tax', 'banking', "
+        "'medical_disability', 'veteran', 'general')",
+        name="ck_employee_tasks_data_category",
+    ),
 )
 
 employee_signatures = Table(

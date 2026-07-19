@@ -47,6 +47,8 @@ class Settings(BaseSettings):
 
     notification_worker_audience: AnyHttpUrl | None = None
     notification_worker_email: str = ""
+    identity_worker_audience: AnyHttpUrl | None = None
+    identity_worker_email: str = ""
     notification_email_to: str = "office@bensonhomesolutions.com"
     notification_max_attempts: int = Field(default=10, ge=2, le=25)
     notification_batch_size: int = Field(default=25, ge=1, le=100)
@@ -58,6 +60,14 @@ class Settings(BaseSettings):
     twilio_from_number: str = ""
     sms_to: str = ""
     sms_enabled_default: bool = False
+
+    google_directory_credentials_json: SecretStr = SecretStr("")
+    google_directory_admin: str = ""
+    google_directory_customer_id: str = "my_customer"
+    google_production_onboarding_ou: str = "/Benson Onboarding"
+    google_test_onboarding_ou: str = "/Benson Onboarding Test"
+    google_paid_license_skus: str = ""
+    google_paid_license_skus_approved: bool = False
 
     accounting_provider_client_id: str = ""
     accounting_provider_client_secret: str = ""
@@ -103,6 +113,18 @@ class Settings(BaseSettings):
             missing.append("BENSON_NOTIFICATION_WORKER_AUDIENCE")
         if not self.notification_worker_email:
             missing.append("BENSON_NOTIFICATION_WORKER_EMAIL")
+        if not self.identity_worker_audience:
+            missing.append("BENSON_IDENTITY_WORKER_AUDIENCE")
+        if not self.identity_worker_email:
+            missing.append("BENSON_IDENTITY_WORKER_EMAIL")
+        if not self.google_directory_credentials_json.get_secret_value():
+            missing.append("BENSON_GOOGLE_DIRECTORY_CREDENTIALS_JSON")
+        if not self.google_directory_admin:
+            missing.append("BENSON_GOOGLE_DIRECTORY_ADMIN")
+        if not self.google_paid_license_skus.strip():
+            missing.append("BENSON_GOOGLE_PAID_LICENSE_SKUS")
+        if not self.google_paid_license_skus_approved:
+            missing.append("BENSON_GOOGLE_PAID_LICENSE_SKUS_APPROVED=true")
         if not self.resend_api_key.get_secret_value():
             missing.append("BENSON_RESEND_API_KEY")
         if not self.notification_email_to:

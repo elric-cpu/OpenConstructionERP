@@ -28,3 +28,17 @@
 - Do not silence `max-lines` with file-level disables or generated wrapper components.
 - Do not move server authorization or workflow rules into the browser.
 - Do not expose private attachment storage keys or persist Google credentials outside session storage.
+
+## Staff Onboarding Frontend Implementation
+
+The staff onboarding frontend includes:
+
+- NewHireForm component with auto-generated email (from first name) and phone number input
+- EmployeeRoster component with delete functionality for draft employees
+- Updated Employee type in types.ts to include phone field
+
+Implementation follows existing frontend patterns:
+
+- Form validation and state management
+- Component composition and reuse
+- Type safety with TypeScript

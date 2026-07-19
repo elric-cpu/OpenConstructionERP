@@ -27,7 +27,7 @@ async function mockOwnerPortal(page: import("@playwright/test").Page) {
   await page.route("**/api/benson/v1/settings/notifications", (route) => route.fulfill({ status: 403 }));
 }
 
-test("owner creates an unlicensed new hire and queues the invite", async ({ page }) => {
+test("owner starts automatic identity and invitation onboarding", async ({ page }) => {
   await mockOwnerPortal(page);
   const employees: Record<string, unknown>[] = [];
   await page.route("**/api/benson/v1/employees", async (route) => {
@@ -36,44 +36,28 @@ test("owner creates an unlicensed new hire and queues the invite", async ({ page
       return;
     }
     const request = route.request().postDataJSON() as Record<string, unknown>;
-    expect(request.workspace_unlicensed_confirmed).toBe(true);
     expect(request.invite_delivery_email).toBe("newhire@example.com");
+    expect(request.email).toBeUndefined();
     const employee = {
       ...request,
       id: "employee-1",
       status: "draft",
-      workspace_account_status: "unlicensed_attested",
+      email: "morgan.builder@bensonhomesolutions.com",
+      workspace_account_status: "external_unlicensed_required",
       workspace_license_policy: "no_paid_license",
       created_at: "2026-07-16T12:00:00Z",
     };
     employees.push(employee);
     await route.fulfill({ status: 201, json: employee });
   });
-  await page.route("**/api/benson/v1/employees/employee-1/invite", async (route) => {
-    expect(route.request().headers().authorization).toBe("Bearer owner-token");
-    await route.fulfill({
-      status: 202,
-      json: {
-        id: "invite-1",
-        employee_id: "employee-1",
-        status: "pending_delivery",
-        expires_at: "2026-07-19T12:00:00Z",
-      },
-    });
-  });
-
   await page.goto("/#employees");
   await expect(page.getByRole("heading", { name: "New hires" })).toBeVisible();
   await page.getByLabel("Full name").fill("Morgan Builder");
-  await page.getByLabel("Workspace login").fill("morgan@bensonhomesolutions.com");
-  await page.getByLabel("Invite delivery email").fill("newhire@example.com");
-  await page.getByLabel("Start date").fill("2026-08-03");
-  await page.getByLabel(/I confirmed this account/).check();
-  await page.getByRole("button", { name: "Create new hire" }).click();
+  await page.getByLabel("Email address").fill("newhire@example.com");
+  await page.getByRole("button", { name: "Create identity and send invite" }).click();
   await expect(page.getByText("Morgan Builder")).toBeVisible();
   await expect(page.getByText("No paid license", { exact: true }).first()).toBeVisible();
-  await page.getByRole("button", { name: "Send invite" }).click();
-  await expect(page.getByText("invited", { exact: true })).toBeVisible();
+  await expect(page.getByText("Creating identity…")).toBeVisible();
   const results = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
   expect(results.violations.filter((item) => ["serious", "critical"].includes(item.impact ?? ""))).toEqual([]);
 });
@@ -117,6 +101,22 @@ test("employee lands on Tasks and submits encrypted evidence", async ({ page }) 
       instructions: "Complete and sign your federal withholding election.",
       applicability_reason: "Required for employees.",
       evidence_required: true,
+      completion_method: "document_upload",
+      applicability_review_required: false,
+      applicability_status: "applied",
+      retention_rule: "Payroll record schedule.",
+      data_classification: "highly_restricted",
+      data_category: "tax",
+      official_source: "https://www.irs.gov/pub/irs-pdf/fw4.pdf",
+      legal_review_status: "pending",
+      signature_statement: null,
+      applicability_decided_at: null,
+      applicability_decided_by: null,
+      rule_version: "test-rule",
+      latest_rejection_reason: null,
+      version: 1,
+      created_at: "2026-07-16T12:00:00Z",
+      updated_at: "2026-07-16T12:00:00Z",
       completed_at: null,
       completed_by: null,
     },
@@ -131,30 +131,64 @@ test("employee lands on Tasks and submits encrypted evidence", async ({ page }) 
       instructions: "Review company policies.",
       applicability_reason: "All employees.",
       evidence_required: false,
+      completion_method: "employee_signature",
+      applicability_review_required: false,
+      applicability_status: "applied",
+      retention_rule: "Personnel record schedule.",
+      data_classification: "confidential",
+      data_category: "general",
+      official_source: "benson-policy://employee-handbook",
+      legal_review_status: "pending",
+      signature_statement: "I reviewed the handbook.",
+      applicability_decided_at: null,
+      applicability_decided_by: null,
+      rule_version: "test-rule",
+      latest_rejection_reason: null,
+      version: 2,
+      created_at: "2026-07-16T12:00:00Z",
+      updated_at: "2026-07-16T12:00:00Z",
       completed_at: "2026-07-16T12:00:00Z",
       completed_by: "owner@bensonhomesolutions.com",
     },
   ];
+  const documents: Record<string, unknown>[] = [];
   await page.route("**/api/benson/v1/onboarding/tasks", (route) =>
-    route.fulfill({ json: { default_view: "tasks", tasks, progress: { completed: 1, total: 2 } } }),
+    route.fulfill({
+      json: {
+        default_view: "tasks",
+        employee: ownerSession.employee ?? {
+          id: "employee-1",
+          name: "Morgan Builder",
+          email: "morgan@bensonhomesolutions.com",
+        },
+        tasks,
+        progress: { completed: 1, total: 2 },
+      },
+    }),
   );
-  await page.route("**/api/benson/v1/onboarding/documents", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/benson/v1/onboarding/documents", (route) => route.fulfill({ json: documents }));
+  await page.route("**/api/benson/v1/onboarding/signatures", (route) => route.fulfill({ json: [] }));
   await page.route("**/api/benson/v1/onboarding/tasks/task-w4/evidence", async (route) => {
     expect(route.request().headers().authorization).toBe("Bearer employee-token");
+    tasks[0].status = "submitted";
+    tasks[0].version = 2;
+    documents.push({
+      id: "document-1",
+      employee_id: "employee-1",
+      task_id: "task-w4",
+      version: 1,
+      original_name: "w4.pdf",
+      content_type: "application/pdf",
+      size_bytes: 19,
+      sha256: "synthetic",
+      data_classification: "highly_restricted",
+      status: "active",
+      uploaded_by: "morgan@bensonhomesolutions.com",
+      created_at: "2026-07-16T12:05:00Z",
+    });
     await route.fulfill({
       status: 201,
-      json: {
-        id: "document-1",
-        employee_id: "employee-1",
-        task_id: "task-w4",
-        version: 1,
-        original_name: "w4.pdf",
-        content_type: "application/pdf",
-        size_bytes: 19,
-        data_classification: "highly_restricted",
-        status: "active",
-        created_at: "2026-07-16T12:05:00Z",
-      },
+      json: documents[0],
     });
   });
 
@@ -162,12 +196,16 @@ test("employee lands on Tasks and submits encrypted evidence", async ({ page }) 
   await expect(page).toHaveURL(/#tasks$/);
   await expect(page.getByRole("heading", { name: "Welcome, Morgan." })).toBeVisible();
   await expect(page.getByText("50%", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open official form or instructions" })).toHaveAttribute(
+    "href",
+    "https://www.irs.gov/pub/irs-pdf/fw4.pdf",
+  );
   await page.locator('input[type="file"]').setInputFiles({
     name: "w4.pdf",
     mimeType: "application/pdf",
     buffer: Buffer.from("%PDF-synthetic-test"),
   });
-  await expect(page.getByText("Waiting for Benson review")).toBeVisible();
+  await expect(page.getByText("Submitted for Benson review")).toBeVisible();
   await expect(page.getByRole("button", { name: /w4.pdf/ })).toBeVisible();
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -241,9 +279,21 @@ test("employee accepts an invite and is routed to Tasks", async ({ page }) => {
     }),
   );
   await page.route("**/api/benson/v1/onboarding/tasks", (route) =>
-    route.fulfill({ json: { default_view: "tasks", tasks: [], progress: { completed: 0, total: 0 } } }),
+    route.fulfill({
+      json: {
+        default_view: "tasks",
+        employee: {
+          id: "employee-activation",
+          name: "Alex Carpenter",
+          email: "alex@bensonhomesolutions.com",
+        },
+        tasks: [],
+        progress: { completed: 0, total: 0 },
+      },
+    }),
   );
   await page.route("**/api/benson/v1/onboarding/documents", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/benson/v1/onboarding/signatures", (route) => route.fulfill({ json: [] }));
 
   await page.goto("/#activate?token=synthetic-invite-token");
   await expect(page.getByRole("heading", { name: /Accept your invitation/ })).toBeVisible();

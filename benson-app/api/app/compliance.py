@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 from typing import Any
 
-from .domain import ComplianceRequirement, EmployeeCreate
+from .onboarding_domain import ComplianceRequirement, EmployeeCreate
 
 RULE_VERSION = "2026-07-16.2.pending-legal-review"
 
@@ -20,7 +20,10 @@ ONBOARDING_REQUIREMENTS = [
             "whichever is later."
         ),
         data_classification="highly_restricted",
-        official_source="https://www.uscis.gov/i-9-central/completing-form-i-9",
+        data_category="identity_i9",
+        official_source=(
+            "https://www.uscis.gov/sites/default/files/document/forms/i-9.pdf"
+        ),
     ),
     ComplianceRequirement(
         id="form-i9-employer-review",
@@ -35,7 +38,10 @@ ONBOARDING_REQUIREMENTS = [
             "employment ends, whichever is later."
         ),
         data_classification="highly_restricted",
-        official_source="https://www.uscis.gov/i-9-central/completing-form-i-9",
+        data_category="identity_i9",
+        official_source=(
+            "https://www.uscis.gov/sites/default/files/document/forms/i-9.pdf"
+        ),
     ),
     ComplianceRequirement(
         id="e-verify",
@@ -53,6 +59,7 @@ ONBOARDING_REQUIREMENTS = [
             "related Form I-9 record."
         ),
         data_classification="highly_restricted",
+        data_category="identity_i9",
         official_source="https://www.e-verify.gov/employers/federal-contractors",
     ),
     ComplianceRequirement(
@@ -68,7 +75,8 @@ ONBOARDING_REQUIREMENTS = [
             "employment-tax record period."
         ),
         data_classification="highly_restricted",
-        official_source="https://www.irs.gov/taxtopics/tc753",
+        data_category="tax",
+        official_source="https://www.irs.gov/pub/irs-pdf/fw4.pdf",
     ),
     ComplianceRequirement(
         id="oregon-w4",
@@ -80,8 +88,9 @@ ONBOARDING_REQUIREMENTS = [
         completion_method="document_upload",
         retention_rule="Retain the effective certificate with payroll tax records.",
         data_classification="highly_restricted",
+        data_category="tax",
         official_source=(
-            "https://www.oregon.gov/dor/programs/individuals/Pages/PIT-withholding.aspx"
+            "https://www.oregon.gov/dor/forms/FormsPubs/form-or-W-4_101-402_2026.pdf"
         ),
     ),
     ComplianceRequirement(
@@ -96,6 +105,7 @@ ONBOARDING_REQUIREMENTS = [
             "Retain the submission confirmation under the approved payroll record schedule."
         ),
         data_classification="highly_restricted",
+        data_category="tax",
         official_source="https://sos.oregon.gov/business/Pages/employer-forms.aspx",
     ),
     ComplianceRequirement(
@@ -108,6 +118,7 @@ ONBOARDING_REQUIREMENTS = [
         completion_method="document_upload",
         retention_rule="Retain under the approved payroll and employment-tax schedule.",
         data_classification="highly_restricted",
+        data_category="tax",
         official_source="https://www.irs.gov/publications/p15",
     ),
     ComplianceRequirement(
@@ -123,6 +134,7 @@ ONBOARDING_REQUIREMENTS = [
         completion_method="document_upload",
         retention_rule="Retain the effective authorization under the payroll schedule.",
         data_classification="highly_restricted",
+        data_category="banking",
         official_source="https://www.oregon.gov/boli/workers/Pages/paychecks.aspx",
     ),
     ComplianceRequirement(
@@ -135,6 +147,7 @@ ONBOARDING_REQUIREMENTS = [
         completion_method="manual_review",
         retention_rule="Retain while current; supersede stale contact details.",
         data_classification="confidential",
+        data_category="general",
         official_source="benson-policy://emergency-contact-record",
     ),
     ComplianceRequirement(
@@ -147,6 +160,7 @@ ONBOARDING_REQUIREMENTS = [
         completion_method="employee_signature",
         retention_rule="Retain the signed acknowledgement with the personnel record.",
         data_classification="confidential",
+        data_category="general",
         official_source="benson-policy://employee-handbook",
     ),
     ComplianceRequirement(
@@ -159,6 +173,7 @@ ONBOARDING_REQUIREMENTS = [
         completion_method="employee_signature",
         retention_rule="Retain training and acknowledgement records under the safety schedule.",
         data_classification="confidential",
+        data_category="general",
         official_source=(
             "https://www.osha.gov/laws-regs/regulations/standardnumber/1926/1926.21"
         ),
@@ -179,6 +194,7 @@ ONBOARDING_REQUIREMENTS = [
             "for the legally approved period."
         ),
         data_classification="restricted",
+        data_category="tax",
         official_source="https://www.dol.gov/agencies/whd/forms/wh347",
     ),
     ComplianceRequirement(
@@ -197,7 +213,11 @@ ONBOARDING_REQUIREMENTS = [
             "OFCCP schedule."
         ),
         data_classification="highly_restricted",
-        official_source="https://www.dol.gov/agencies/ofccp/jurisdictional-thresholds",
+        data_category="medical_disability",
+        official_source=(
+            "https://www.dol.gov/sites/dolgov/files/OFCCP/regs/compliance/"
+            "sec503/Self_ID_Forms/503Self-IDForm.pdf"
+        ),
     ),
     ComplianceRequirement(
         id="vevraa-self-id",
@@ -215,7 +235,8 @@ ONBOARDING_REQUIREMENTS = [
             "OFCCP schedule."
         ),
         data_classification="highly_restricted",
-        official_source="https://www.dol.gov/agencies/ofccp/jurisdictional-thresholds",
+        data_category="veteran",
+        official_source="https://www.dol.gov/agencies/ofccp/vevraa/self-id-form",
     ),
     ComplianceRequirement(
         id="contractor-w9",
@@ -229,6 +250,7 @@ ONBOARDING_REQUIREMENTS = [
         completion_method="document_upload",
         retention_rule="Retain with information-return and backup-withholding records.",
         data_classification="highly_restricted",
+        data_category="tax",
         official_source="https://www.irs.gov/forms-pubs/about-form-w-9",
     ),
 ]
@@ -273,6 +295,7 @@ def _task(
         "applicability_status": applicability_status,
         "retention_rule": requirement.retention_rule,
         "data_classification": requirement.data_classification,
+        "data_category": requirement.data_category,
         "official_source": requirement.official_source,
         "legal_review_status": requirement.legal_review_status,
         "signature_statement": signature_statement,

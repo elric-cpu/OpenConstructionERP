@@ -1,14 +1,20 @@
 name: Benson Rewrite Verify
 
 on:
+  workflow_dispatch:
   push:
     paths: ["benson-app/**", ".github/workflows/benson-verify.yml"]
   pull_request:
     paths: ["benson-app/**", ".github/workflows/benson-verify.yml"]
 
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    env:
+      UV_FROZEN: "1"
     services:
       postgres:
         image: postgres:16
@@ -31,6 +37,10 @@ jobs:
           cache: npm
           cache-dependency-path: benson-app/web/package-lock.json
       - uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.11.26
+          enable-cache: true
+          cache-dependency-glob: benson-app/api/uv.lock
       - run: npm ci
         working-directory: benson-app/web
       - run: npx playwright install --with-deps chromium
@@ -41,3 +51,66 @@ jobs:
         working-directory: benson-app
         env:
           BENSON_POSTGRES_TEST_URL: postgresql+psycopg://benson:benson@127.0.0.1:5432/benson_test
+
+  release-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate migration sequence and create checksum evidence
+        working-directory: benson-app
+        run: |
+          python - <<'PY'
+          from hashlib import sha256
+          from pathlib import Path
+          import re
+
+          migrations = sorted(Path("api/migrations").glob("*.sql"))
+          if not migrations:
+              raise SystemExit("No Benson SQL migrations found")
+
+          manifest = []
+          for expected, path in enumerate(migrations, start=1):
+              match = re.fullmatch(r"\d{8}_(\d{2})_[a-z0-9_]+\.sql", path.name)
+              if match is None or int(match.group(1)) != expected:
+                  raise SystemExit(
+                      f"Migration sequence error at {path.name}; expected {expected:02d}"
+                  )
+              payload = path.read_bytes()
+              sql = payload.decode("utf-8").strip()
+              statements = "\n".join(
+                  line for line in sql.splitlines() if not line.lstrip().startswith("--")
+              ).upper()
+              destructive = ("DROP TABLE", "DROP COLUMN", "TRUNCATE", "DELETE FROM")
+              if not sql or "\x00" in sql or any(token in statements for token in destructive):
+                  raise SystemExit(f"Unsafe additive migration contract in {path.name}")
+              manifest.append(f"{sha256(payload).hexdigest()}  {path.as_posix()}")
+
+          Path("migration-checksums.txt").write_text(
+              "\n".join(manifest) + "\n", encoding="utf-8"
+          )
+          print("\n".join(manifest))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benson-migration-checksums-${{ github.sha }}
+          path: benson-app/migration-checksums.txt
+          if-no-files-found: error
+          retention-days: 30
+      - name: Build release image from frozen inputs
+        run: >-
+          docker build
+          --pull
+          --build-arg VCS_REF=${{ github.sha }}
+          --tag benson-operations:${{ github.sha }}
+          benson-app
+      - name: Verify runtime image contents
+        run: |
+          docker run --rm --entrypoint sh benson-operations:${{ github.sha }} -ceu '
+            test "$(id -u)" = "10001"
+            test -f /app/uv.lock
+            test -f /app/migrations/20260716_01_logistics_foundation.sql
+            test -f /app/migrations/20260716_08_onboarding_completion.sql
+            test "$(find /app/migrations -maxdepth 1 -type f -name "*.sql" | wc -l)" -ge 8
+            test -w /var/lib/benson/private-uploads
+            python -c "from app.main import app; assert app.title == \"Benson Operations API\""
+          '

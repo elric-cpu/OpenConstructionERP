@@ -2,7 +2,7 @@
 name = "benson-operations-api"
 version = "0.1.0"
 description = "Benson Home Solutions construction operations API"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.14"
 license = "AGPL-3.0-or-later"
 dependencies = [
   "cryptography>=45,<47",
@@ -42,3 +42,8 @@ target-version = "py312"
 python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

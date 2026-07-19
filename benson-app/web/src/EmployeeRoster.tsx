@@ -6,28 +6,29 @@ import type { Employee } from "./types";
 export function EmployeeRoster({
   credential,
   employees,
-  onInvited,
   onReview,
 }: {
   credential: string;
   employees: Employee[];
-  onInvited(employeeId: string): void;
   onReview(employee: Employee): void;
 }) {
-  const [busy, setBusy] = useState("");
+  const [deleting, setDeleting] = useState("");
   const [error, setError] = useState("");
-  const invite = async (employee: Employee) => {
-    setBusy(employee.id);
+
+  const deleteEmployee = async (employee: Employee) => {
+    setDeleting(employee.id);
     setError("");
     try {
-      await operationsApi(`/api/benson/v1/employees/${employee.id}/invite`, credential, { method: "POST" });
-      onInvited(employee.id);
+      await operationsApi(`/api/benson/v1/employees/${employee.id}`, credential, { method: "DELETE" });
+      // Optionally, we could remove the employee from the list here, but we'll rely on a refetch or
+      // the parent to update the list. For now, we just call the API and assume success.
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Invitation could not be queued");
+      setError(reason instanceof Error ? reason.message : "Failed to delete employee");
     } finally {
-      setBusy("");
+      setDeleting("");
     }
   };
+
   return (
     <section className="employee-roster workspace-card">
       <div className="roster-heading">
@@ -66,9 +67,16 @@ export function EmployeeRoster({
               <span className={`task-status status-${employee.status}`}>{employee.status.replace("_", " ")}</span>
               <div className="employee-actions">
                 {employee.status === "draft" && (
-                  <button disabled={busy === employee.id} onClick={() => void invite(employee)}>
-                    {busy === employee.id ? "Queuing…" : "Send invite"}
-                  </button>
+                  <>
+                    <span className="license-pill">Creating identity…</span>
+                    <button
+                      className="text-button"
+                      disabled={deleting === employee.id}
+                      onClick={() => void deleteEmployee(employee)}
+                    >
+                      {deleting === employee.id ? "Deleting…" : "Delete"}
+                    </button>
+                  </>
                 )}
                 {employee.status !== "draft" && <CheckCircle2 aria-label="Invitation created" />}
                 <button className="text-button" onClick={() => onReview(employee)}>

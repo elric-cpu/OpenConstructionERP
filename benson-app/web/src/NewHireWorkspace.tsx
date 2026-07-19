@@ -42,16 +42,7 @@ export function NewHireWorkspace({ credential }: { credential: string }) {
             setEmployees((current) => [...current, employee].sort((a, b) => a.name.localeCompare(b.name)))
           }
         />
-        <EmployeeRoster
-          credential={credential}
-          employees={employees}
-          onInvited={(employeeId) =>
-            setEmployees((current) =>
-              current.map((employee) => (employee.id === employeeId ? { ...employee, status: "invited" } : employee)),
-            )
-          }
-          onReview={setSelected}
-        />
+        <EmployeeRoster credential={credential} employees={employees} onReview={setSelected} />
       </div>
     </section>
   );

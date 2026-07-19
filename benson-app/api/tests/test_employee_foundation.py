@@ -14,6 +14,7 @@ from app.storage import operations_store
 from tests.support import (
     STAFF_HEADERS,
     client,
+    provision_test_identity,
 )
 
 
@@ -95,6 +96,7 @@ def test_owner_can_queue_secure_single_use_employee_invitation(
             "role": "field",
         },
     ).json()
+    provision_test_identity(isolated_settings, employee["id"])
 
     invitation = client.post(
         f"/api/benson/v1/employees/{employee['id']}/invite", headers=STAFF_HEADERS
@@ -109,7 +111,7 @@ def test_owner_can_queue_secure_single_use_employee_invitation(
         isolated_settings.resolved_database_url()
     ).claim_employee_notifications(limit=1)
     assert employee["workspace_license_policy"] == "no_paid_license"
-    assert employee["workspace_account_status"] == "unlicensed_attested"
+    assert listed[0]["workspace_account_status"] == "unlicensed_attested"
     assert claimed[0]["destination"] == "invitee.personal@example.com"
     assert "token" not in json.dumps(claimed[0]["payload"])
     assert "invite_url" not in claimed[0]["payload"]
@@ -131,6 +133,7 @@ def test_invitation_delivery_uses_durable_outbox(
             "role": "office",
         },
     ).json()
+    provision_test_identity(isolated_settings, employee["id"])
     assert (
         client.post(
             f"/api/benson/v1/employees/{employee['id']}/invite", headers=STAFF_HEADERS
@@ -189,7 +192,7 @@ def test_invitation_requires_unlicensed_workspace_attestation() -> None:
 
     assert response.status_code == 409
     assert response.json()["detail"] == (
-        "Confirm the Workspace account exists without a paid license before inviting"
+        "A verified no-paid-license identity is required before inviting"
     )
 
 
@@ -210,6 +213,7 @@ def test_invited_employee_activates_with_matching_verified_google_identity(
             "role": "field",
         },
     ).json()
+    provision_test_identity(isolated_settings, employee["id"])
     invitation = client.post(
         f"/api/benson/v1/employees/{employee['id']}/invite", headers=STAFF_HEADERS
     ).json()
@@ -257,7 +261,7 @@ def test_invited_employee_activates_with_matching_verified_google_identity(
                 "credential": "google-credential-value",
             },
         ).status_code
-        == 409
+        == 403
     )
 
 
@@ -291,6 +295,7 @@ def test_invitation_rejects_wrong_google_account(
             "role": "office",
         },
     ).json()
+    provision_test_identity(isolated_settings, employee["id"])
     invitation = client.post(
         f"/api/benson/v1/employees/{employee['id']}/invite", headers=STAFF_HEADERS
     ).json()
@@ -314,13 +319,11 @@ def test_invitation_rejects_wrong_google_account(
         json={"token": token, "credential": "google-credential-value"},
     )
 
-    assert response.status_code == 409
-    assert (
-        response.json()["detail"] == "Invitation does not match the signed-in account"
-    )
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Invitation is invalid or no longer available"
 
 
-def test_employee_requires_managed_workspace_email() -> None:
+def test_employee_personal_email_provisions_managed_workspace_identity() -> None:
     response = client.post(
         "/api/benson/v1/employees",
         headers=STAFF_HEADERS,
@@ -334,10 +337,10 @@ def test_employee_requires_managed_workspace_email() -> None:
         },
     )
 
-    assert response.status_code == 422
-    assert response.json()["detail"] == (
-        "Employees must use an @bensonhomesolutions.com Workspace email"
-    )
+    assert response.status_code == 201
+    employee = response.json()
+    assert employee["email"] == "personal.employee@bensonhomesolutions.com"
+    assert employee["invite_delivery_email"] == "personal@example.com"
 
 
 def test_invitation_activation_requires_managed_hosted_domain(
@@ -357,6 +360,7 @@ def test_invitation_activation_requires_managed_hosted_domain(
             "role": "field",
         },
     ).json()
+    provision_test_identity(isolated_settings, employee["id"])
     invitation = client.post(
         f"/api/benson/v1/employees/{employee['id']}/invite",
         headers=STAFF_HEADERS,
@@ -381,4 +385,4 @@ def test_invitation_activation_requires_managed_hosted_domain(
     )
 
     assert response.status_code == 403
-    assert response.json()["detail"] == "Managed Benson Workspace account required"
+    assert response.json()["detail"] == "Invitation is invalid or no longer available"

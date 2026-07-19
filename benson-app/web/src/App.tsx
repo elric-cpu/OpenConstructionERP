@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "./AppShell";
 import { CustomerWorkspace } from "./CustomerWorkspace";
-import { EmployeeTasks } from "./EmployeeTasks";
+import { EmployeeOnboardingWorkspace } from "./EmployeeOnboardingWorkspace";
 import { EstimateWorkspace } from "./EstimateWorkspace";
 import { FieldRecordWorkspace } from "./FieldRecordWorkspace";
 import { LeadWorkspace } from "./LeadWorkspace";
@@ -150,14 +150,7 @@ export function App() {
           </section>
         )}
         {operations.requestStatus === "ready" && operations.portalSession?.kind === "employee" ? (
-          <EmployeeTasks
-            credential={operations.credential}
-            documents={operations.employeeDocuments}
-            session={operations.portalSession}
-            setDocuments={operations.setEmployeeDocuments}
-            setTasks={operations.setEmployeeTasks}
-            tasks={operations.employeeTasks}
-          />
+          <EmployeeOnboardingWorkspace credential={operations.credential} />
         ) : operations.requestStatus === "ready" && activeView === "employees" ? (
           <NewHireWorkspace credential={operations.credential} />
         ) : operations.requestStatus === "ready" && activeView === "customers" ? (

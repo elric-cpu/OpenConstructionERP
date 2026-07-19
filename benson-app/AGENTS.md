@@ -45,3 +45,15 @@
 - Build immutable images and deploy candidate revisions at zero traffic until the approved UAT and cutover gates pass.
 - Do not change public traffic, production website intake routing, or rollback retention merely because a candidate deploy succeeds.
 - Preserve unrelated working-tree changes and leave `.serena/` untouched.
+
+## Staff Onboarding Implementation
+
+The staff onboarding functionality includes:
+- DELETE endpoint for employee records with cascade deletion and audit logging
+- Phone number field in employee model and forms
+- Automatic email generation for new hires (firstname@bensonhomesolutions.com)
+- Delete functionality in EmployeeRoster for draft employees
+
+Implementation follows existing patterns in the codebase:
+- Backend: Store pattern with proper dependency cleanup and audit trails
+- Frontend: Form state management and API consumption consistent with other components
