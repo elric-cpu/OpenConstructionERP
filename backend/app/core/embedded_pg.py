@@ -572,7 +572,15 @@ def _pre_initialize_cluster(pgdata: Path) -> bool:
         logger.warning("could not import pixeltable pgexec for pre-init: %r", exc)
         return False
     try:
-        pgexec("initdb", _initdb_args(pgdata))
+        # The packaged Windows binary mishandles mkdir traversal for an absolute
+        # -D path when an ancestor already exists (normal for the temp root).
+        # Run from the parent and give it only the absent leaf directory.
+        relative_target = Path(pgdata.name)
+        pgexec(
+            "initdb",
+            _initdb_args(relative_target),
+            cwd=str(pgdata.parent),
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "pre-initialising embedded PostgreSQL with --locale=C failed; falling back to pixeltable's own initdb: %r",

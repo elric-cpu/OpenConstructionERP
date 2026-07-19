@@ -130,9 +130,10 @@ def test_pre_initialize_cluster_passes_c_locale_on_windows(tmp_path, monkeypatch
 
     calls: dict[str, object] = {}
 
-    def fake_pgexec(command, args, **_kwargs):
+    def fake_pgexec(command, args, **kwargs):
         calls["command"] = command
         calls["args"] = tuple(args)
+        calls["cwd"] = kwargs.get("cwd")
         calls["target_absent"] = not pgdata.exists()
         pgdata.mkdir()
         (pgdata / "PG_VERSION").write_text("16\n")  # simulate a real initdb
@@ -147,6 +148,8 @@ def test_pre_initialize_cluster_passes_c_locale_on_windows(tmp_path, monkeypatch
     assert embedded_pg._pre_initialize_cluster(pgdata) is True
     assert calls["command"] == "initdb"
     assert "--locale=C" in calls["args"]
+    assert calls["args"][-2:] == ("-D", "pgdata")
+    assert calls["cwd"] == str(pgdata.parent)
     assert calls["target_absent"] is True
 
 
