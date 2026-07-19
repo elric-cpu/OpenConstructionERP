@@ -26,5 +26,5 @@ and recorded production smoke evidence.
 The release is **NO-GO**. Billing, accounting, full onboarding, isolated staging,
 current backup restoration, qualified HR/legal approval, and a current immutable
 candidate do not yet exist as recorded evidence. Twilio remains disabled. No
-production traffic change, real payment, QuickBooks production write, or real
+production traffic change, real payment, accounting-provider production write, or real
 employee invitation may occur merely because an individual module passes.

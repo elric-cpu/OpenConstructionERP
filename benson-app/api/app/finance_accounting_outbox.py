@@ -6,14 +6,14 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.engine import Connection
 
-from .finance_schema import quickbooks_outbox
+from .finance_schema import accounting_outbox
 
 
 def canonical_json(value: dict[str, Any]) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
-def enqueue_quickbooks(
+def enqueue_accounting_export(
     db: Connection,
     *,
     entity_type: str,
@@ -25,8 +25,8 @@ def enqueue_quickbooks(
     encoded = canonical_json(payload)
     existing = (
         db.execute(
-            select(quickbooks_outbox).where(
-                quickbooks_outbox.c.idempotency_key == idempotency_key
+            select(accounting_outbox).where(
+                accounting_outbox.c.idempotency_key == idempotency_key
             )
         )
         .mappings()
@@ -39,12 +39,12 @@ def enqueue_quickbooks(
             or existing["operation"] != operation
             or existing["payload"] != encoded
         ):
-            raise ValueError("QuickBooks idempotency key payload mismatch")
+            raise ValueError("Accounting export idempotency key payload mismatch")
         return str(existing["id"]), False
     outbox_id = str(uuid4())
     now = datetime.now(UTC)
     db.execute(
-        quickbooks_outbox.insert().values(
+        accounting_outbox.insert().values(
             id=outbox_id,
             entity_type=entity_type,
             entity_id=entity_id,

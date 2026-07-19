@@ -11,7 +11,7 @@ from sqlalchemy.engine import Connection
 from .change_order_schema import change_orders
 from .finance_domain import JournalEntryCreate
 from .finance_journal_accounts import ensure_default_accounts
-from .finance_quickbooks_outbox import canonical_json
+from .finance_accounting_outbox import canonical_json
 from .finance_schema import (
     accounting_conflicts,
     invoices,
@@ -19,8 +19,8 @@ from .finance_schema import (
     journal_lines,
     ledger_accounts,
     payments,
-    quickbooks_external_ids,
-    quickbooks_outbox,
+    accounting_external_ids,
+    accounting_outbox,
     reconciliation_items,
 )
 from .storage_schema import jobs
@@ -225,7 +225,7 @@ class AccountingStoreMixin(StoreBase):
                 )
         return entry_id, created
 
-    def acknowledge_quickbooks(
+    def acknowledge_accounting_export(
         self,
         outbox_id: str,
         *,
@@ -237,7 +237,7 @@ class AccountingStoreMixin(StoreBase):
         with finance_write_lock, self.engine.begin() as db:
             item = (
                 db.execute(
-                    select(quickbooks_outbox).where(quickbooks_outbox.c.id == outbox_id)
+                    select(accounting_outbox).where(accounting_outbox.c.id == outbox_id)
                 )
                 .mappings()
                 .first()
@@ -258,16 +258,16 @@ class AccountingStoreMixin(StoreBase):
                     actual_payload=acknowledged_payload,
                 )
                 db.execute(
-                    update(quickbooks_outbox)
-                    .where(quickbooks_outbox.c.id == outbox_id)
+                    update(accounting_outbox)
+                    .where(accounting_outbox.c.id == outbox_id)
                     .values(status="conflict", updated_at=datetime.now(UTC))
                 )
                 return False
             external = (
                 db.execute(
-                    select(quickbooks_external_ids).where(
-                        quickbooks_external_ids.c.entity_type == item["entity_type"],
-                        quickbooks_external_ids.c.entity_id == item["entity_id"],
+                    select(accounting_external_ids).where(
+                        accounting_external_ids.c.entity_type == item["entity_type"],
+                        accounting_external_ids.c.entity_id == item["entity_id"],
                     )
                 )
                 .mappings()
@@ -276,8 +276,8 @@ class AccountingStoreMixin(StoreBase):
             now = datetime.now(UTC)
             if external:
                 db.execute(
-                    update(quickbooks_external_ids)
-                    .where(quickbooks_external_ids.c.id == external["id"])
+                    update(accounting_external_ids)
+                    .where(accounting_external_ids.c.id == external["id"])
                     .values(
                         external_id=external_id,
                         external_version=external_version,
@@ -286,7 +286,7 @@ class AccountingStoreMixin(StoreBase):
                 )
             else:
                 db.execute(
-                    quickbooks_external_ids.insert().values(
+                    accounting_external_ids.insert().values(
                         id=str(uuid4()),
                         entity_type=item["entity_type"],
                         entity_id=item["entity_id"],
@@ -296,13 +296,13 @@ class AccountingStoreMixin(StoreBase):
                     )
                 )
             db.execute(
-                update(quickbooks_outbox)
-                .where(quickbooks_outbox.c.id == outbox_id)
+                update(accounting_outbox)
+                .where(accounting_outbox.c.id == outbox_id)
                 .values(status="acknowledged", updated_at=now)
             )
             self._audit(
                 db,
-                event="accounting.quickbooks_acknowledged",
+                event="accounting.export_acknowledged",
                 actor=actor,
                 subject_type=item["entity_type"],
                 subject_id=item["entity_id"],

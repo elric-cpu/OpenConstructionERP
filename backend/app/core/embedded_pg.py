@@ -552,6 +552,20 @@ def _pre_initialize_cluster(pgdata: Path) -> bool:
     # directory, so clear that first. This is what unblocks a user upgrading from
     # a build that was stuck "Recovering the local database" forever.
     _clear_incomplete_cluster(pgdata)
+    # The packaged Windows initdb wrapper creates its target directory. Passing
+    # an existing empty directory fails with "File exists", even though native
+    # PostgreSQL accepts that shape on POSIX. Remove only the verified-empty
+    # shell; initdb immediately recreates it with the same parent ACLs.
+    try:
+        if pgdata.exists():
+            pgdata.rmdir()
+    except OSError as exc:
+        logger.warning(
+            "could not prepare an absent Windows initdb target at %s: %r",
+            pgdata,
+            exc,
+        )
+        return False
     try:
         from pixeltable_pgserver.pgexec import pgexec
     except Exception as exc:  # noqa: BLE001

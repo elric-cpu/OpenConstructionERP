@@ -80,7 +80,7 @@ but cannot satisfy, its gates:
 | G1 — merged source | Clean signed commit, reviewed PR, current main integration, required checks green | **NO-GO:** current work is not merged and root CI is red |
 | G2 — complete local gate | Ruff, mypy, pytest/coverage, Prettier, ESLint, TypeScript, build, Playwright, desktop/mobile accessibility | **NO-GO:** no complete current-SHA evidence bundle |
 | G3 — migration and restore | CI checksums, staging application, migration history, backup restore, counts/hashes/ledger reconciliation | **NO-GO:** checksums are defined; staging apply and restore are absent |
-| G4 — isolated staging UAT | Dedicated database/storage/test OU, Stripe test, QuickBooks sandbox, non-delivering providers, both full UAT journeys | **NO-GO:** isolated staging is not provisioned |
+| G4 — isolated staging UAT | Dedicated database/storage/test OU, payment-provider test mode, accounting-provider sandbox, non-delivering providers, both full UAT journeys | **NO-GO:** isolated staging is not provisioned |
 | G5 — external review | Security, privacy, accessibility, operations, and qualified HR/legal approvals with no unresolved high severity | **NO-GO:** approvals are not recorded |
 | G6 — immutable candidate | One merged image digest, unchanged staging regression, zero-traffic production deploy, IAM/secrets/monitoring/rollback proof | **NO-GO:** no current digest or candidate exists |
 | G7 — production cutover | Approved 8–10 PM Pacific window, write freeze, final exports, guarded delta, no dual-write, 100% traffic and smoke evidence | **NO-GO:** G1–G6 are incomplete |
@@ -95,7 +95,7 @@ waive earlier gates or authorize additional invitations.
 - Twilio is disabled. The known account was previously Trial-limited, and this
   release does not mount Twilio secrets, send SMS, or use SMS as an onboarding
   fallback.
-- Stripe remains test-only and QuickBooks remains sandbox-only until their
+- Payment processing remains test-only and accounting export remains sandbox-only until their
   authoritative workflows, signed events, reconciliation, and approvals pass.
 - Stop before traffic change if the serving service, image digest, migrations,
   scheduler audience/identity, secret versions, monitoring, backups, or rollback

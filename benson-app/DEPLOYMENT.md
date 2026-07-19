@@ -13,7 +13,7 @@ an employee invitation.
   every staging and production deploy.
 - Run the same digest in isolated staging before creating the production
   candidate. Staging uses a separate PostgreSQL database, private buckets,
-  Google test OU, Stripe test mode, QuickBooks sandbox, and non-delivering
+  Google test OU, payment-provider test mode, accounting-provider sandbox, and non-delivering
   notification providers.
 - Deploy the production candidate to `benson-operations` with zero traffic.
   Preserve the current serving and rollback revisions.

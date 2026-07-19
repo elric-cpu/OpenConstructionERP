@@ -262,8 +262,8 @@ journal_lines = Table(
     ),
 )
 
-quickbooks_outbox = Table(
-    "quickbooks_outbox",
+accounting_outbox = Table(
+    "accounting_outbox",
     metadata,
     Column("id", String(36), primary_key=True),
     Column("entity_type", String(60), nullable=False),
@@ -278,12 +278,12 @@ quickbooks_outbox = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False),
     CheckConstraint(
         "status IN ('pending', 'processing', 'acknowledged', 'failed', 'conflict')",
-        name="ck_quickbooks_outbox_status",
+        name="ck_accounting_outbox_status",
     ),
 )
 
-quickbooks_external_ids = Table(
-    "quickbooks_external_ids",
+accounting_external_ids = Table(
+    "accounting_external_ids",
     metadata,
     Column("id", String(36), primary_key=True),
     Column("entity_type", String(60), nullable=False),
@@ -291,15 +291,15 @@ quickbooks_external_ids = Table(
     Column("external_id", String(200), nullable=False),
     Column("external_version", String(200)),
     Column("updated_at", DateTime(timezone=True), nullable=False),
-    UniqueConstraint("entity_type", "entity_id", name="uq_qb_external_entity"),
-    UniqueConstraint("entity_type", "external_id", name="uq_qb_external_id"),
+    UniqueConstraint("entity_type", "entity_id", name="uq_accounting_external_entity"),
+    UniqueConstraint("entity_type", "external_id", name="uq_accounting_external_id"),
 )
 
 accounting_conflicts = Table(
     "accounting_conflicts",
     metadata,
     Column("id", String(36), primary_key=True),
-    Column("outbox_id", String(36), ForeignKey("quickbooks_outbox.id")),
+    Column("outbox_id", String(36), ForeignKey("accounting_outbox.id")),
     Column("entity_type", String(60), nullable=False),
     Column("entity_id", String(200), nullable=False),
     Column("conflict_type", String(80), nullable=False),

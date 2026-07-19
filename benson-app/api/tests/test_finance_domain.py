@@ -11,7 +11,7 @@ import app.finance_domain as finance_domain
 from app.accounting_store import post_journal, reverse_journal
 from app.config import Settings
 from app.finance_journal_accounts import DEFAULT_ACCOUNTS
-from app.finance_quickbooks_outbox import canonical_json, enqueue_quickbooks
+from app.finance_accounting_outbox import canonical_json, enqueue_accounting_export
 from app.finance_schema import journal_entries, journal_lines, ledger_accounts
 from app.storage import operations_store
 
@@ -80,7 +80,7 @@ def test_invoice_and_journal_models_enforce_accounting_invariants() -> None:
         )
 
 
-def test_journal_and_quickbooks_outbox_are_idempotent(
+def test_journal_and_accounting_outbox_are_idempotent(
     isolated_settings: Settings,
 ) -> None:
     engine = operations_store(isolated_settings.resolved_database_url()).engine
@@ -135,33 +135,33 @@ def test_journal_and_quickbooks_outbox_are_idempotent(
         assert reversal_id != entry_id
 
         payload = {"total_cents": 5000, "invoice": "BHS-2026-0001"}
-        outbox_id, outbox_created = enqueue_quickbooks(
+        outbox_id, outbox_created = enqueue_accounting_export(
             db,
             entity_type="invoice",
             entity_id="invoice-1",
             operation="upsert",
-            idempotency_key="quickbooks-invoice-0001",
+            idempotency_key="accounting-invoice-0001",
             payload=payload,
         )
         assert outbox_created is True
         assert canonical_json(payload) == (
             '{"invoice":"BHS-2026-0001","total_cents":5000}'
         )
-        assert enqueue_quickbooks(
+        assert enqueue_accounting_export(
             db,
             entity_type="invoice",
             entity_id="invoice-1",
             operation="upsert",
-            idempotency_key="quickbooks-invoice-0001",
+            idempotency_key="accounting-invoice-0001",
             payload=payload,
         ) == (outbox_id, False)
         with pytest.raises(ValueError, match="payload mismatch"):
-            enqueue_quickbooks(
+            enqueue_accounting_export(
                 db,
                 entity_type="invoice",
                 entity_id="invoice-1",
                 operation="upsert",
-                idempotency_key="quickbooks-invoice-0001",
+                idempotency_key="accounting-invoice-0001",
                 payload={"total_cents": 4999},
             )
 
