@@ -1,9 +1,11 @@
 # Benson Operations release and production deployment
 
 `erp.bensonhomesolutions.com` maps to the `benson-operations` Cloud Run
-service. A successful build or zero-traffic deploy is not authorization to
-change traffic, apply production migrations, enable Twilio, move money, or send
-an employee invitation.
+service. The normal release path is gated. A successful build or zero-traffic
+deploy alone is not authorization to change traffic, apply production
+migrations, enable Twilio, move money, or send an employee invitation. The
+owner-authorized emergency path below is the only exception for application
+traffic.
 
 ## Release invariants
 
@@ -15,14 +17,42 @@ an employee invitation.
   candidate. Staging uses a separate PostgreSQL database, private buckets,
   Google test OU, payment-provider test mode, accounting-provider sandbox, and non-delivering
   notification providers.
-- Deploy the production candidate to `benson-operations` with zero traffic.
-  Preserve the current serving and rollback revisions.
+- Normally deploy the production candidate to `benson-operations` with zero
+  traffic. Preserve the current serving and rollback revisions.
 - Keep Twilio disabled. Do not mount Twilio credentials or create SMS work for
   this release.
 - Apply migrations only through the reviewed sequence and checksum procedure
   below. Application startup is not the migration mechanism.
-- Change traffic only during the authorized 8–10 PM Pacific window after every
-  G1–G8 prerequisite in `docs/production-cutover-evidence.md` is satisfied.
+- Normally change traffic only during the authorized 8–10 PM Pacific window
+  after every applicable prerequisite in `docs/production-cutover-evidence.md`
+  is satisfied.
+
+## Owner-authorized emergency release
+
+The application owner may explicitly authorize a named revision for immediate
+production traffic even when CI is failing or absent, isolated staging/UAT is
+incomplete, the normal cutover window is unavailable, or a zero-traffic soak
+has not occurred. The instruction must be contemporaneous and specific; do not
+infer this waiver from general urgency.
+
+An emergency authorization waives only those release gates. It does not waive
+the following controls:
+
+- deploy from a clean commit and tag the image with the full Git SHA;
+- resolve and deploy the immutable image digest, never `latest`;
+- record the previous serving revision and keep it available for rollback;
+- do not apply database migrations unless separately authorized and backed up;
+- keep Twilio, real payments, external accounting writes, and employee
+  invitations disabled unless each is separately authorized;
+- send production traffic to the new revision only after Cloud Run reports it
+  ready, then immediately check the public health endpoint and core authenticated
+  application shell; and
+- restore the previous serving revision immediately on a critical health,
+  startup, authentication, or application-shell failure.
+
+Record the waived gates and the live verification result in the release
+evidence. Failing GitHub Actions are acceptable under this path when the owner
+has explicitly said to deploy despite them.
 
 ## Required infrastructure
 

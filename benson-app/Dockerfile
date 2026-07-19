@@ -1,9 +1,9 @@
 FROM ghcr.io/astral-sh/uv:0.11.26@sha256:3d868e555f8f1dbc324afa005066cd11e1053fc4743b9808ca8025283e65efa5 AS uv
 
-FROM node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS web-build
+FROM node:24.18.0-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS web-build
 WORKDIR /web
 COPY web/package*.json ./
-RUN npm ci
+RUN npm install --global npm@12.0.1 && npm ci
 COPY web/ ./
 RUN npm run build
 
