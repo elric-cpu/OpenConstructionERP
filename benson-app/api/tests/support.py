@@ -102,6 +102,7 @@ def production_settings(**overrides: object) -> Settings:
         "fcc_base_url": "https://fcc.example.com",
         "notification_worker_audience": "https://operations.example.com",
         "notification_worker_email": "worker@example.iam.gserviceaccount.com",
+        "identity_provisioning_enabled": True,
         "identity_worker_audience": "https://operations.example.com",
         "identity_worker_email": "identity-worker@example.iam.gserviceaccount.com",
         "google_directory_credentials_json": '{"type":"service_account"}',

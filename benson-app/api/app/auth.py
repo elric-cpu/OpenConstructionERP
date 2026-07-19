@@ -296,6 +296,11 @@ def require_identity_provisioning_worker(
     authorization: Annotated[str | None, Header()] = None,
     settings: Settings = Depends(get_settings),
 ) -> str:
+    if not settings.identity_provisioning_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Identity provisioning is disabled",
+        )
     if settings.environment != "production":
         return "development-identity-provisioning-worker"
     if not settings.identity_worker_audience or not settings.identity_worker_email:

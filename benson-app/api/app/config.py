@@ -47,6 +47,7 @@ class Settings(BaseSettings):
 
     notification_worker_audience: AnyHttpUrl | None = None
     notification_worker_email: str = ""
+    identity_provisioning_enabled: bool = True
     identity_worker_audience: AnyHttpUrl | None = None
     identity_worker_email: str = ""
     notification_email_to: str = "office@bensonhomesolutions.com"
@@ -113,18 +114,19 @@ class Settings(BaseSettings):
             missing.append("BENSON_NOTIFICATION_WORKER_AUDIENCE")
         if not self.notification_worker_email:
             missing.append("BENSON_NOTIFICATION_WORKER_EMAIL")
-        if not self.identity_worker_audience:
-            missing.append("BENSON_IDENTITY_WORKER_AUDIENCE")
-        if not self.identity_worker_email:
-            missing.append("BENSON_IDENTITY_WORKER_EMAIL")
-        if not self.google_directory_credentials_json.get_secret_value():
-            missing.append("BENSON_GOOGLE_DIRECTORY_CREDENTIALS_JSON")
-        if not self.google_directory_admin:
-            missing.append("BENSON_GOOGLE_DIRECTORY_ADMIN")
-        if not self.google_paid_license_skus.strip():
-            missing.append("BENSON_GOOGLE_PAID_LICENSE_SKUS")
-        if not self.google_paid_license_skus_approved:
-            missing.append("BENSON_GOOGLE_PAID_LICENSE_SKUS_APPROVED=true")
+        if self.identity_provisioning_enabled:
+            if not self.identity_worker_audience:
+                missing.append("BENSON_IDENTITY_WORKER_AUDIENCE")
+            if not self.identity_worker_email:
+                missing.append("BENSON_IDENTITY_WORKER_EMAIL")
+            if not self.google_directory_credentials_json.get_secret_value():
+                missing.append("BENSON_GOOGLE_DIRECTORY_CREDENTIALS_JSON")
+            if not self.google_directory_admin:
+                missing.append("BENSON_GOOGLE_DIRECTORY_ADMIN")
+            if not self.google_paid_license_skus.strip():
+                missing.append("BENSON_GOOGLE_PAID_LICENSE_SKUS")
+            if not self.google_paid_license_skus_approved:
+                missing.append("BENSON_GOOGLE_PAID_LICENSE_SKUS_APPROVED=true")
         if not self.resend_api_key.get_secret_value():
             missing.append("BENSON_RESEND_API_KEY")
         if not self.notification_email_to:

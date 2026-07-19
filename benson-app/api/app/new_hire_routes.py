@@ -105,7 +105,10 @@ def create_employee(
         row = lifecycle.employee_row(str(created.id))
         if row is None:
             raise ValueError("Created employee lifecycle row was not initialized")
-        if employee.classification == "employee":
+        if (
+            employee.classification == "employee"
+            and settings.identity_provisioning_enabled
+        ):
             commands = IdentityProvisioningStore(store(settings).engine)
             command = commands.request_create(
                 str(created.id),

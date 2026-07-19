@@ -47,6 +47,11 @@ def _require_true_owner(principal: Principal = Depends(require_owner)) -> Princi
     return principal
 
 
+def _require_identity_provisioning_enabled(settings: Settings) -> None:
+    if not settings.identity_provisioning_enabled:
+        raise HTTPException(status_code=503, detail="Identity provisioning is disabled")
+
+
 def _translate(error: ValueError) -> HTTPException:
     if isinstance(error, StaleOnboardingVersion):
         return HTTPException(status_code=409, detail=str(error))
@@ -86,6 +91,7 @@ def request_identity_provisioning(
     principal: Principal = Depends(_require_true_owner),
     settings: Settings = Depends(get_settings),
 ) -> IdentityProvisioningSummary:
+    _require_identity_provisioning_enabled(settings)
     try:
         result = _commands(settings).request_create(
             str(request.employee_id),
@@ -111,6 +117,7 @@ def approve_identity_provisioning(
     principal: Principal = Depends(_require_true_owner),
     settings: Settings = Depends(get_settings),
 ) -> IdentityProvisioningSummary:
+    _require_identity_provisioning_enabled(settings)
     try:
         result = _commands(settings).approve(
             command_id,
@@ -134,6 +141,7 @@ def confirm_identity_license_state(
     principal: Principal = Depends(_require_true_owner),
     settings: Settings = Depends(get_settings),
 ) -> IdentityProvisioningSummary:
+    _require_identity_provisioning_enabled(settings)
     try:
         result = _commands(settings).confirm_unavailable_verification(
             command_id,
@@ -175,6 +183,7 @@ def retry_identity_provisioning(
     principal: Principal = Depends(_require_true_owner),
     settings: Settings = Depends(get_settings),
 ) -> IdentityProvisioningSummary:
+    _require_identity_provisioning_enabled(settings)
     try:
         result = _commands(settings).retry(
             command_id,
@@ -210,6 +219,7 @@ def drain_identity_provisioning(
     worker: str = Depends(require_identity_provisioning_worker),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, object]:
+    _require_identity_provisioning_enabled(settings)
     try:
         config = DirectoryProviderConfig.from_settings(settings)
         provider = GoogleDirectoryProvider(config)
