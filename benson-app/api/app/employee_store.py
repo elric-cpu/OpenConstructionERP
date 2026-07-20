@@ -283,6 +283,7 @@ class EmployeeStoreMixin(StoreBase):
         expected_version: int,
         bootstrap_password: str | None = None,
         encryption_key: bytes | None = None,
+        identity_command_id: str | None = None,
     ) -> OnboardingInviteReceipt | None:
         now = datetime.now(UTC)
         expires_at = now + timedelta(hours=expires_in_hours)
@@ -306,6 +307,10 @@ class EmployeeStoreMixin(StoreBase):
             ):
                 raise InvalidEmployeeInvite(
                     "A verified no-paid-license identity is required before inviting"
+                )
+            if employee["classification"] == "employee" and not bootstrap_password:
+                raise InvalidEmployeeInvite(
+                    "Employee invitations require a fresh managed-account credential"
                 )
             version = OnboardingLifecycleStore(self.engine).guard_employee_version(
                 db, employee_id, expected_version, now=now
@@ -345,6 +350,8 @@ class EmployeeStoreMixin(StoreBase):
                 payload["bootstrap_credential"] = seal_secret(
                     bootstrap_password, encryption_key, context=invite_id
                 )
+            if identity_command_id:
+                payload["identity_command_id"] = identity_command_id
             db.execute(
                 employee_notification_outbox.insert().values(
                     id=str(uuid4()),

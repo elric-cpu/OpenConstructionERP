@@ -18,6 +18,7 @@ from .onboarding_schema import (
     onboarding_employee_versions,
 )
 from .storage_schema import audit_events, employees
+from .sealed_secret import seal_secret
 
 
 class IdentityProvisioningStore:
@@ -33,6 +34,7 @@ class IdentityProvisioningStore:
         idempotency_key: str,
         target_org_unit: str,
         actor: str,
+        initial_status: str = "pending_approval",
     ) -> dict[str, Any] | None:
         now = datetime.now(UTC)
         command_id = str(uuid4())
@@ -55,9 +57,13 @@ class IdentityProvisioningStore:
                     raise InvalidOnboardingLifecycle(
                         "Contractors use their verified external Google identity"
                     )
-                if employee["status"] != "draft":
+                if employee["status"] not in {"draft", "invited"}:
                     raise InvalidOnboardingLifecycle(
-                        "Identity provisioning is only available for draft employees"
+                        "Identity provisioning is unavailable for this employee lifecycle state"
+                    )
+                if initial_status not in {"pending_approval", "manual_setup_required"}:
+                    raise InvalidOnboardingLifecycle(
+                        "Invalid initial provisioning state"
                     )
                 self.lifecycle.guard_employee_version(
                     db, employee_id, expected_version, now=now
@@ -66,7 +72,7 @@ class IdentityProvisioningStore:
                     "id": command_id,
                     "employee_id": employee_id,
                     "kind": "create",
-                    "status": "pending_approval",
+                    "status": initial_status,
                     "version": 1,
                     "idempotency_key": idempotency_key,
                     "target_email": employee["email"],
@@ -82,7 +88,11 @@ class IdentityProvisioningStore:
                     event="employee.identity_provisioning_requested",
                     actor=actor,
                     employee_id=employee_id,
-                    payload={"command_id": command_id, "kind": "create"},
+                    payload={
+                        "command_id": command_id,
+                        "kind": "create",
+                        "status": initial_status,
+                    },
                     now=now,
                 )
         except IntegrityError as error:
@@ -216,6 +226,109 @@ class IdentityProvisioningStore:
             values.update(
                 status="admin_confirmed",
                 version=expected_version + 1,
+                updated_at=now,
+            )
+        return values
+
+    def confirm_manual_setup(
+        self,
+        command_id: str,
+        *,
+        expected_version: int,
+        reason: str,
+        evidence_reference: str,
+        bootstrap_password: str,
+        encryption_key: bytes,
+        actor: str,
+        reissue: bool = False,
+    ) -> dict[str, Any] | None:
+        now = datetime.now(UTC)
+        with self.engine.begin() as db:
+            command = self._command(db, command_id)
+            if not command:
+                return None
+            allowed = (
+                {"admin_confirmed", "verified"}
+                if reissue
+                else {
+                    "manual_setup_required",
+                    "admin_confirmation_required",
+                }
+            )
+            if command["status"] not in allowed:
+                raise InvalidOnboardingLifecycle(
+                    "A fresh Google credential cannot be attached in this provisioning state"
+                )
+            next_status = command["status"] if reissue else "admin_confirmed"
+            encrypted = seal_secret(
+                bootstrap_password, encryption_key, context=command_id
+            )
+            changed = db.execute(
+                update(identity_provisioning_commands)
+                .where(
+                    identity_provisioning_commands.c.id == command_id,
+                    identity_provisioning_commands.c.status == command["status"],
+                    identity_provisioning_commands.c.version == expected_version,
+                )
+                .values(
+                    status=next_status,
+                    version=expected_version + 1,
+                    bootstrap_credential=encrypted,
+                    updated_at=now,
+                )
+            )
+            if changed.rowcount != 1:
+                raise StaleOnboardingVersion(
+                    "Provisioning command changed; refresh and try again"
+                )
+            if not reissue:
+                db.execute(
+                    onboarding_admin_confirmations.insert().values(
+                        id=str(uuid4()),
+                        command_id=command_id,
+                        confirmed_by=actor,
+                        reason=reason,
+                        evidence_reference=evidence_reference,
+                        confirmed_at=now,
+                    )
+                )
+                db.execute(
+                    update(employees)
+                    .where(employees.c.id == command["employee_id"])
+                    .values(
+                        workspace_account_status="unlicensed_attested", updated_at=now
+                    )
+                )
+            db.execute(
+                update(onboarding_employee_versions)
+                .where(
+                    onboarding_employee_versions.c.employee_id == command["employee_id"]
+                )
+                .values(
+                    version=onboarding_employee_versions.c.version + 1, updated_at=now
+                )
+            )
+            self._audit(
+                db,
+                event=(
+                    "employee.identity_invitation_credential_reissued"
+                    if reissue
+                    else "employee.identity_manual_setup_confirmed"
+                ),
+                actor=actor,
+                employee_id=command["employee_id"],
+                payload={
+                    "command_id": command_id,
+                    "evidence_reference": evidence_reference,
+                    "confirmed_no_paid_license": True,
+                },
+                now=now,
+            )
+            values = dict(command)
+            values.update(
+                status=next_status,
+                version=expected_version + 1,
+                bootstrap_credential=encrypted,
                 updated_at=now,
             )
         return values

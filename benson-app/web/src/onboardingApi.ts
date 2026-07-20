@@ -96,6 +96,50 @@ export const onboardingApi = {
     });
   },
 
+  confirmManualIdentity(
+    credential: string,
+    command: IdentityProvisioningCommand,
+    temporaryPassword: string,
+    reason: string,
+    evidenceReference: string,
+  ): Promise<IdentityProvisioningCommand> {
+    return operationsApi(
+      `/api/benson/v1/identity-provisioning/${command.id}/manual-confirm-and-invite`,
+      credential,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          expected_version: command.version,
+          confirmed_account_created: true,
+          confirmed_no_paid_license: true,
+          temporary_password: temporaryPassword,
+          reason,
+          evidence_reference: evidenceReference,
+        }),
+      },
+    );
+  },
+
+  reissueIdentityInvite(
+    credential: string,
+    command: IdentityProvisioningCommand,
+    temporaryPassword: string,
+    reason: string,
+    evidenceReference: string,
+  ): Promise<IdentityProvisioningCommand> {
+    return operationsApi(`/api/benson/v1/identity-provisioning/${command.id}/reissue-invite`, credential, {
+      method: "POST",
+      body: JSON.stringify({
+        expected_version: command.version,
+        confirmed_password_reset: true,
+        confirmed_no_paid_license: true,
+        temporary_password: temporaryPassword,
+        reason,
+        evidence_reference: evidenceReference,
+      }),
+    });
+  },
+
   reviewTask(credential: string, employeeId: string, taskId: string, review: TaskReviewInput): Promise<OnboardingTask> {
     return operationsApi(`/api/benson/v1/employees/${employeeId}/tasks/${taskId}`, credential, {
       method: "PATCH",

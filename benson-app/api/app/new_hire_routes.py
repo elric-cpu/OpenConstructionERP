@@ -105,10 +105,7 @@ def create_employee(
         row = lifecycle.employee_row(str(created.id))
         if row is None:
             raise ValueError("Created employee lifecycle row was not initialized")
-        if (
-            employee.classification == "employee"
-            and settings.identity_provisioning_enabled
-        ):
+        if employee.classification == "employee":
             commands = IdentityProvisioningStore(store(settings).engine)
             command = commands.request_create(
                 str(created.id),
@@ -120,14 +117,20 @@ def create_employee(
                     else settings.google_test_onboarding_ou
                 ),
                 actor=principal.email,
+                initial_status=(
+                    "pending_approval"
+                    if settings.identity_provisioning_enabled
+                    else "manual_setup_required"
+                ),
             )
             if not command:
                 raise ValueError("Identity provisioning command was not created")
-            commands.approve(
-                str(command["id"]),
-                expected_version=int(command["version"]),
-                actor=principal.email,
-            )
+            if settings.identity_provisioning_enabled:
+                commands.approve(
+                    str(command["id"]),
+                    expected_version=int(command["version"]),
+                    actor=principal.email,
+                )
             row = lifecycle.employee_row(str(created.id))
         return OnboardingEmployeeSummary.model_validate(row)
     except ValueError as error:
@@ -145,6 +148,16 @@ def invite_employee(
     principal: Principal = Depends(require_owner),
     settings: Settings = Depends(get_settings),
 ) -> OnboardingInviteReceipt:
+    existing = OnboardingLifecycleStore(store(settings).engine).employee_row(
+        employee_id
+    )
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    if existing["classification"] == "employee":
+        raise HTTPException(
+            status_code=409,
+            detail="Employee invitations require a fresh managed-account credential",
+        )
     expected_version = command.expected_version if command else None
     if expected_version is None:
         employee = OnboardingLifecycleStore(store(settings).engine).employee_row(

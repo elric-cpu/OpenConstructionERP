@@ -58,11 +58,14 @@ def _email_message(payload: dict[str, Any], settings: Settings) -> tuple[str, st
                 (
                     f"Hello {payload['name']},",
                     "",
-                    "Benson Home Solutions invited you to set up your staff portal account.",
-                    f"Open this secure invitation before {payload['expires_at']}:",
-                    invite_url,
-                    "",
+                    "Benson Home Solutions created your managed Google account.",
                     *bootstrap_lines,
+                    "First, sign in to Google with the login and temporary password above.",
+                    "Google will require you to choose a new password.",
+                    "Then open this secure staff portal invitation:",
+                    invite_url,
+                    f"This invitation expires {payload['expires_at']}.",
+                    "",
                     "If you were not expecting this invitation, do not use the link.",
                 )
             ),

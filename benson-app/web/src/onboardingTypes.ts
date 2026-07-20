@@ -84,12 +84,14 @@ export type IdentityProvisioningCommand = {
   kind: "create" | "suspend";
   status:
     | "pending_approval"
+    | "manual_setup_required"
     | "approved"
     | "executing"
     | "verified"
     | "admin_confirmation_required"
     | "admin_confirmed"
     | "failed"
+    | "manual_review_required"
     | "suspended";
   version: number;
   target_email: string;

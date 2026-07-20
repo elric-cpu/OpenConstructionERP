@@ -1,6 +1,6 @@
 import { type FormEvent, useState } from "react";
-import { operationsApi } from "./api";
-import type { Employee } from "./types";
+import { onboardingApi } from "./onboardingApi";
+import type { OnboardingEmployee } from "./onboardingTypes";
 
 const initialForm = { name: "", email: "" };
 
@@ -9,7 +9,7 @@ function localDate(): string {
   return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
 }
 
-export function NewHireForm({ credential, onCreated }: { credential: string; onCreated(employee: Employee): void }) {
+export function NewHireForm({ credential, onCreated }: { credential: string; onCreated(employee: OnboardingEmployee): void }) {
   const [form, setForm] = useState(initialForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -19,9 +19,7 @@ export function NewHireForm({ credential, onCreated }: { credential: string; onC
     setSaving(true);
     setError("");
     try {
-      const employee = await operationsApi<Employee>("/api/benson/v1/employees", credential, {
-        method: "POST",
-        body: JSON.stringify({
+      const employee = await onboardingApi.createEmployee(credential, {
           name: form.name,
           invite_delivery_email: form.email,
           start_date: localDate(),
@@ -29,7 +27,7 @@ export function NewHireForm({ credential, onCreated }: { credential: string; onC
           classification: "employee",
           role: "field",
           federal_contract_applicability: "unknown",
-        }),
+        email: form.email,
       });
       onCreated(employee);
       setForm(initialForm);
@@ -45,7 +43,7 @@ export function NewHireForm({ credential, onCreated }: { credential: string; onC
       <div className="section-kicker">NEW HIRE</div>
       <h2>Start onboarding</h2>
       <p className="form-intro">
-        Benson creates the managed Workspace identity, sends a secure invitation, and assigns the onboarding checklist.
+        Benson reserves the managed Workspace login and assigns the onboarding checklist. Credentials are sent only after Google setup is verified.
       </p>
       <div className="field-grid">
         <label>
@@ -75,7 +73,7 @@ export function NewHireForm({ credential, onCreated }: { credential: string; onC
       </p>
       {error && <p className="form-error">{error}</p>}
       <button className="primary" disabled={saving} type="submit">
-        {saving ? "Starting onboarding…" : "Create identity and send invite"}
+        {saving ? "Starting onboarding…" : "Create onboarding record"}
       </button>
     </form>
   );

@@ -74,6 +74,42 @@ export function useIdentityProvisioning({
     [credential, onEmployeeChanged, onError, replaceCommand, setSaving],
   );
 
+  const submitCredential = useCallback(
+    async (
+      command: IdentityProvisioningCommand,
+      temporaryPassword: string,
+      reason: string,
+      evidenceReference: string,
+      reissue: boolean,
+    ) => {
+      setSaving(true);
+      try {
+        const changed = reissue
+          ? await onboardingApi.reissueIdentityInvite(
+              credential,
+              command,
+              temporaryPassword,
+              reason,
+              evidenceReference,
+            )
+          : await onboardingApi.confirmManualIdentity(
+              credential,
+              command,
+              temporaryPassword,
+              reason,
+              evidenceReference,
+            );
+        replaceCommand(changed);
+        await onEmployeeChanged();
+      } catch (reasonCaught) {
+        onError(reasonCaught instanceof Error ? reasonCaught.message : "Credential invitation failed");
+      } finally {
+        setSaving(false);
+      }
+    },
+    [credential, onEmployeeChanged, onError, replaceCommand, setSaving],
+  );
+
   const clearCommands = useCallback(() => setCommands([]), []);
-  return { approveIdentity, clearCommands, commands, confirmIdentity, loadCommands, requestIdentity };
+  return { approveIdentity, clearCommands, commands, confirmIdentity, loadCommands, requestIdentity, submitCredential };
 }

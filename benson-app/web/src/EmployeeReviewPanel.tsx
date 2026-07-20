@@ -1,17 +1,20 @@
 import { ArrowLeft, FileLock2, Upload } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { onboardingApi } from "./onboardingApi";
+import { EmployeeIdentitySection } from "./EmployeeIdentitySection";
 import { OnboardingReviewActions } from "./OnboardingReviewActions";
 import type { ApplicabilityReviewInput, OnboardingDocument, OnboardingTask, TaskReviewInput } from "./onboardingTypes";
-import type { Employee } from "./types";
+import type { OnboardingEmployee } from "./onboardingTypes";
 
 export function EmployeeReviewPanel({
   credential,
   employee,
+  onEmployeeChanged,
   onBack,
 }: {
   credential: string;
-  employee: Employee;
+  employee: OnboardingEmployee;
+  onEmployeeChanged(): Promise<unknown>;
   onBack(): void;
 }) {
   const [tasks, setTasks] = useState<OnboardingTask[]>([]);
@@ -78,6 +81,11 @@ export function EmployeeReviewPanel({
         <span className="license-pill">No paid Workspace license</span>
       </div>
       {error && <p className="form-error">{error}</p>}
+      <EmployeeIdentitySection
+        credential={credential}
+        employee={employee}
+        onEmployeeChanged={onEmployeeChanged}
+      />
       <div className="review-task-list">
         {tasks.map((task) => (
           <article className="review-task" key={task.id}>

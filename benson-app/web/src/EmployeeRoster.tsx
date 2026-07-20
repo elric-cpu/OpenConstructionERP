@@ -1,7 +1,7 @@
 import { CheckCircle2, Mail, ShieldCheck, UserRound } from "lucide-react";
 import { useState } from "react";
 import { operationsApi } from "./api";
-import type { Employee } from "./types";
+import type { OnboardingEmployee } from "./onboardingTypes";
 
 export function EmployeeRoster({
   credential,
@@ -9,13 +9,13 @@ export function EmployeeRoster({
   onReview,
 }: {
   credential: string;
-  employees: Employee[];
-  onReview(employee: Employee): void;
+  employees: OnboardingEmployee[];
+  onReview(employee: OnboardingEmployee): void;
 }) {
   const [deleting, setDeleting] = useState("");
   const [error, setError] = useState("");
 
-  const deleteEmployee = async (employee: Employee) => {
+  const deleteEmployee = async (employee: OnboardingEmployee) => {
     setDeleting(employee.id);
     setError("");
     try {
@@ -68,7 +68,7 @@ export function EmployeeRoster({
               <div className="employee-actions">
                 {employee.status === "draft" && (
                   <>
-                    <span className="license-pill">Creating identity…</span>
+                    <span className="license-pill">Identity setup required</span>
                     <button
                       className="text-button"
                       disabled={deleting === employee.id}

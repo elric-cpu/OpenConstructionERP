@@ -163,7 +163,7 @@ identity_provisioning_commands = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False),
     CheckConstraint("kind IN ('create', 'suspend')", name="ck_identity_command_kind"),
     CheckConstraint(
-        "status IN ('pending_approval', 'approved', 'executing', 'verified', "
+        "status IN ('pending_approval', 'manual_setup_required', 'approved', 'executing', 'verified', "
         "'admin_confirmation_required', 'admin_confirmed', 'failed', "
         "'manual_review_required', 'suspended')",
         name="ck_identity_command_status",

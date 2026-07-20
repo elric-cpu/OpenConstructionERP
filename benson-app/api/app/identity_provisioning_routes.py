@@ -13,6 +13,8 @@ from .identity_provisioning_worker import IdentityProvisioningWorker
 from .onboarding_domain import (
     IdentityAdminConfirmation,
     IdentityCommandMutation,
+    IdentityInviteReissue,
+    IdentityManualSetupConfirmation,
     IdentityProvisioningRequest,
     IdentityProvisioningSummary,
 )
@@ -64,9 +66,10 @@ def _queue_invitation(
     *,
     actor: str,
     bootstrap_password: str | None = None,
+    identity_command_id: str | None = None,
 ) -> None:
     row = OnboardingLifecycleStore(store(settings).engine).employee_row(employee_id)
-    if not row or row["status"] != "draft":
+    if not row or row["status"] not in {"draft", "invited"}:
         return
     store(settings).create_employee_invite(
         employee_id,
@@ -78,6 +81,7 @@ def _queue_invitation(
         expected_version=int(row["version"]),
         bootstrap_password=bootstrap_password,
         encryption_key=settings.employee_document_key_bytes(),
+        identity_command_id=identity_command_id,
     )
 
 
@@ -91,7 +95,6 @@ def request_identity_provisioning(
     principal: Principal = Depends(_require_true_owner),
     settings: Settings = Depends(get_settings),
 ) -> IdentityProvisioningSummary:
-    _require_identity_provisioning_enabled(settings)
     try:
         result = _commands(settings).request_create(
             str(request.employee_id),
@@ -99,6 +102,11 @@ def request_identity_provisioning(
             idempotency_key=request.idempotency_key,
             target_org_unit=_target_ou(settings),
             actor=principal.email,
+            initial_status=(
+                "pending_approval"
+                if settings.identity_provisioning_enabled
+                else "manual_setup_required"
+            ),
         )
     except InvalidOnboardingLifecycle as error:
         raise _translate(error) from error
@@ -173,6 +181,84 @@ def confirm_identity_license_state(
     return IdentityProvisioningSummary.model_validate(result)
 
 
+def _manual_invitation(
+    command_id: str,
+    confirmation: IdentityManualSetupConfirmation | IdentityInviteReissue,
+    *,
+    reissue: bool,
+    principal: Principal,
+    settings: Settings,
+) -> IdentityProvisioningSummary:
+    password = confirmation.temporary_password.get_secret_value()
+    try:
+        result = _commands(settings).confirm_manual_setup(
+            command_id,
+            expected_version=confirmation.expected_version,
+            reason=confirmation.reason,
+            evidence_reference=confirmation.evidence_reference,
+            bootstrap_password=password,
+            encryption_key=settings.employee_document_key_bytes(),
+            actor=principal.email,
+            reissue=reissue,
+        )
+        if not result:
+            raise HTTPException(
+                status_code=404, detail="Provisioning command not found"
+            )
+        _queue_invitation(
+            settings,
+            str(result["employee_id"]),
+            actor=principal.email,
+            bootstrap_password=password,
+            identity_command_id=command_id,
+        )
+    except (
+        InvalidOnboardingLifecycle,
+        StaleOnboardingVersion,
+        InvalidEmployeeInvite,
+    ) as error:
+        raise _translate(error) from error
+    return IdentityProvisioningSummary.model_validate(result)
+
+
+@router.post(
+    "/api/benson/v1/identity-provisioning/{command_id}/manual-confirm-and-invite",
+    response_model=IdentityProvisioningSummary,
+)
+def confirm_manual_identity_and_invite(
+    command_id: str,
+    confirmation: IdentityManualSetupConfirmation,
+    principal: Principal = Depends(_require_true_owner),
+    settings: Settings = Depends(get_settings),
+) -> IdentityProvisioningSummary:
+    return _manual_invitation(
+        command_id,
+        confirmation,
+        reissue=False,
+        principal=principal,
+        settings=settings,
+    )
+
+
+@router.post(
+    "/api/benson/v1/identity-provisioning/{command_id}/reissue-invite",
+    response_model=IdentityProvisioningSummary,
+)
+def reissue_identity_invitation(
+    command_id: str,
+    confirmation: IdentityInviteReissue,
+    principal: Principal = Depends(_require_true_owner),
+    settings: Settings = Depends(get_settings),
+) -> IdentityProvisioningSummary:
+    return _manual_invitation(
+        command_id,
+        confirmation,
+        reissue=True,
+        principal=principal,
+        settings=settings,
+    )
+
+
 @router.post(
     "/api/benson/v1/identity-provisioning/{command_id}/retry",
     response_model=IdentityProvisioningSummary,
@@ -234,6 +320,7 @@ def drain_identity_provisioning(
                 str(processed["employee_id"]),
                 actor=worker,
                 bootstrap_password=processed.get("bootstrap_password"),
+                identity_command_id=str(processed["id"]),
             )
     except (DirectoryProviderError, InvalidEmployeeInvite) as error:
         code = error.code if isinstance(error, DirectoryProviderError) else str(error)

@@ -2,7 +2,7 @@ from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from pydantic import BaseModel, EmailStr, Field, SecretStr, model_validator
 
 from .domain import Role
 
@@ -267,12 +267,23 @@ class IdentityAdminConfirmation(IdentityCommandMutation):
     evidence_reference: str = Field(min_length=1, max_length=500)
 
 
+class IdentityManualSetupConfirmation(IdentityAdminConfirmation):
+    confirmed_account_created: Literal[True]
+    temporary_password: SecretStr = Field(min_length=12, max_length=256)
+
+
+class IdentityInviteReissue(IdentityAdminConfirmation):
+    confirmed_password_reset: Literal[True]
+    temporary_password: SecretStr = Field(min_length=12, max_length=256)
+
+
 class IdentityProvisioningSummary(BaseModel):
     id: UUID
     employee_id: UUID
     kind: Literal["create", "suspend"]
     status: Literal[
         "pending_approval",
+        "manual_setup_required",
         "approved",
         "executing",
         "verified",
