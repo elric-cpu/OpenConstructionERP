@@ -142,11 +142,16 @@ export function App() {
               <p>
                 {activeView === "activate"
                   ? "Use the exact unlicensed Workspace identity created for you."
-                  : "Customer, project, pricing, and accounting information stays behind staff authentication."}
+                  : "Sign in to open your Benson operations workspace."}
               </p>
               {activationError && <p className="form-error">{activationError}</p>}
             </div>
-            <div ref={googleButton} className="google-button" />
+            <div className="google-signin-area">
+              <div ref={googleButton} className="google-button" />
+              <button className="google-signin-fallback" type="button">
+                Sign in with Google
+              </button>
+            </div>
           </section>
         )}
         {operations.requestStatus === "ready" && operations.portalSession?.kind === "employee" ? (
