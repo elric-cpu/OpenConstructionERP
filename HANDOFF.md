@@ -25,6 +25,16 @@ No production deployment or production data mutation was performed. The working 
 
 An isolated Cloud Run staging deploy was attempted on 2026-07-20. The configured project is `civic-wall-494004-b3`, but the available local gcloud credential for `elric@bensonhomesolutions.com` is expired and no active service-account credential or ADC was available. Authenticate gcloud, then resume with the documented immutable build and `--no-traffic` staging deployment.
 
+That credential issue was resolved through the gcloud CLI. The committed revision `eb7e5040a6c1b8edacedcda4bbe5247d757e09c9` built successfully as digest `sha256:aeaeaf4be4f1f58cba2898a4137aafde705e3f87ca0d1169322d608364868886` and is serving 100% traffic on the isolated test-mode preview service:
+
+`https://benson-operations-preview-1048944000089.us-west1.run.app`
+
+Smoke checks passed:
+
+- `GET /api/health` returned 200 with `status=healthy` and `environment=test`.
+- `GET /` returned the Benson Operations branded application shell with 200.
+- Production service `benson-operations` and domain traffic were not changed.
+
 ## Next operator loop
 
 1. Diagnose the API test stall in a network-enabled/dev-container environment and add focused tests for manual setup, reissue, password scrubbing, and employee invite rejection.
