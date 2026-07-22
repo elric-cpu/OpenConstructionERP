@@ -1,68 +1,108 @@
 # Benson Operations production cutover evidence
 
-Last updated: 2026-07-15 UTC. This record covers the isolated production candidate. It is not authorization to switch the public website or `erp.bensonhomesolutions.com` before every open gate below passes.
+Last updated: 2026-07-16 UTC. Overall release decision: **NO-GO**.
 
-## Verified candidate
+This document separates live observed state and historical recovery evidence
+from the evidence still required for the next full-ERP candidate. It is not
+authorization to deploy a candidate, apply migrations, change traffic, enable a
+provider, move money, or send an employee invitation.
 
-- Cloud Run service: `benson-operations`, revision `benson-operations-00003-xt7`
-- Image: `sha256:2ca1707b9f58974314635b6b8d93df788bc0e8c47fc5615222a8edb53c71e6d9`
-- Dedicated runtime identity: `benson-operations@civic-wall-494004-b3.iam.gserviceaccount.com`
-- Database: regional-HA PostgreSQL 16 instance `benson-operations-postgres`, PITR enabled, deletion protection enabled, 90 retained backups
-- Uploads: private uniform-access bucket `benson-operations-private-uploads-1048944000089`, public access prevention, versioning, and 90-day soft delete
-- AI: private IAM-authenticated service `benson-fcc-gateway`, pinned gateway source and container image
-- Identity: Google Workspace OAuth client `1048944000089-77cgutagg3qlp4ghn59kojgglgb6h41h.apps.googleusercontent.com`; server roles fail closed
+## Live observed state
 
-The live candidate returned HTTP 200 from `/api/health`, reported `environment=production` and `storage=postgresql`, rejected unauthenticated staff lead access with HTTP 401, and rejected unauthenticated notification-worker access with HTTP 401.
+Read-only Google Cloud inspection on 2026-07-16 established:
 
-The exact pinned Operations image is also staged on the existing production-domain Cloud Run service as revision `openconstructionerp-00012-kiz`, tagged `operations-candidate`, at zero percent traffic. Its tagged `/api/health` endpoint returned HTTP 200 with production PostgreSQL storage. The previously rehearsed Operations image is staged as secure rollback revision `openconstructionerp-ops-rollback`, tagged `operations-rollback`, also at zero percent traffic; its tagged health endpoint returned HTTP 200 with production PostgreSQL. Public traffic remains 100% on legacy revision `openconstructionerp-00011-hzr`; no domain mapping or public traffic was changed. This permits the approved-window cutover and rollback to use Cloud Run traffic updates without deleting and recreating the `erp.bensonhomesolutions.com` mapping.
+- `erp.bensonhomesolutions.com` is ready and maps to Cloud Run service
+  `benson-operations` in `us-west1`.
+- `benson-operations` sends 100% of traffic to historical revision
+  `benson-operations-full-erp2-20260716`. The current repository commit is not
+  deployed as the serving production revision.
+- Zero-traffic module candidates remain tagged on the same service, including
+  `estimates-candidate`, `jobs-candidate`, and `schedule-candidate`. None is the
+  complete candidate required by this plan.
+- Runtime identity is
+  `benson-operations@civic-wall-494004-b3.iam.gserviceaccount.com`.
+- Scheduler `benson-notifications-drain` is enabled every minute, targets the
+  canonical `benson-operations` service URL, uses the matching origin as its
+  OIDC audience, and authenticates as the dedicated scheduler identity.
+- Regional PostgreSQL instance `benson-operations-postgres` is runnable with
+  backups and deletion protection. The private operations upload and cutover
+  archive buckets enforce uniform access and public-access prevention.
+- No isolated staging Cloud Run service or staging Cloud SQL instance was
+  visible. Production module tags are not a substitute for isolated staging.
+- The separate `openconstructionerp` service still exists, but it is not the
+  current target of the ERP domain mapping.
 
-## Verification gates
+## Current repository and CI evidence
 
-- `npm run verify`: 35 API tests passed at 92.41% coverage; Ruff, strict mypy, Prettier, ESLint, TypeScript, and the production build passed; Playwright passed 9 tests with 1 intentional skip.
-- Scheduler identity probe: `benson-notifications-drain` called the private worker contract with its exact OIDC service identity and received HTTP 200 after audience normalization.
-- Durable delivery: lead acceptance and email outbox rows share one transaction; idempotent intake does not duplicate jobs; provider failures remain retryable with bounded exponential backoff and stale-lock recovery. Emergency SMS is an owner-controlled opt-in setting that defaults off; disabling it prevents new SMS work and retires unsent SMS jobs.
-- Resend provider probe: controlled message accepted with a provider message ID.
-- Optional Twilio probe: credentials authenticate, but the account is `Trial`; arbitrary SMS was rejected with error `572006`, and a Content API template creation probe returned HTTP 401 / `20003 Policy evaluation failed`. SMS therefore remains disabled for launch and can be enabled later only by an authenticated owner after provider configuration succeeds.
-- Signed intake probe: first request HTTP 201, exact replay HTTP 200 with `duplicate=true` and the same lead ID.
-- Upload probe: controlled PDF accepted; unauthenticated application download returned HTTP 401; direct public object request returned HTTP 403.
-- Synthetic intake, upload, outbox, audit, and object artifacts were removed after the probe. The target returned to exactly 9 leads and zero outbox jobs.
-- Rollback rehearsal: traffic moved 100% from revision `00003-xt7` to `00002-sk9`, health returned HTTP 200, traffic restored 100% to `00003-xt7`, and health again returned HTTP 200. The notification scheduler was paused during the older revision and resumed after restoration.
-- Production-domain rollback staging: prior Operations image `sha256:53714d811635b8abc6036b51bc96503365562a84b062a0b1c312db87d26ec57e` is available as zero-traffic revision `openconstructionerp-ops-rollback`. Rollback pauses the scheduler, shifts to this signed-intake Operations revision, and never returns public traffic to the legacy unsigned intake.
+- The sequential SQL bundle covers the logistics foundation, customers,
+  estimates, jobs, schedule, field records, change orders, and onboarding
+  completion.
+- The release Dockerfile now installs the API from `uv.lock`, pins base images
+  by digest, and includes the complete migration bundle.
+- `Benson Rewrite Verify` validates migration ordering and additive safety,
+  publishes a checksum artifact tied to the commit SHA, builds the runtime
+  image, and verifies its migration and application contents.
+- Root CI run `29514349987` is red for upstream source/environment failures,
+  including frontend heap exhaustion under an unsupported Node version,
+  forbidden zero-width characters in locale sources, fuzzy-search behavior,
+  and cross-platform embedded-PostgreSQL setup. These failures are not waived
+  or hidden by the Benson workflow.
+- Full-suite run `29536920627` was still active when inspected; its Windows job
+  failed before collection because embedded PostgreSQL attempted to create an
+  already-existing temporary parent directory.
+- No immutable image digest has been built or approved from the current complete
+  branch. No migration in this branch has been applied by this workstream.
 
-## Monitoring
+## Historical recovery evidence requiring revalidation
 
-- External 60-second uptime check: `benson-operations-health-sFoZ-vqnIxc`, Oregon, Virginia, and Europe
-- Alert policy: `Benson Operations unavailable` (`5110565086227570806`)
-- Log metric: `benson_operations_notification_delivery_failures`
-- Alert policy: `Benson notification delivery failures` (`17727204473347113289`)
-- Email channel: `Benson Operations alerts` (`12660752846837039647`)
-- Durable worker: `benson-notifications-drain`, every minute, dedicated identity `benson-notification-scheduler@civic-wall-494004-b3.iam.gserviceaccount.com`
+The following evidence predates the next full-scope candidate and may support,
+but cannot satisfy, its gates:
 
-## Retained exports
+- Regional-HA PostgreSQL 16, PITR, retained backups, and deletion protection
+  were previously verified for `benson-operations-postgres`.
+- Private upload and archive buckets were previously verified with versioning,
+  uniform access, public-access prevention, and retention controls.
+- Uptime check `benson-operations-health-sFoZ-vqnIxc`, alert policy
+  `Benson Operations unavailable`, notification-failure metric and alert, and
+  email channel `Benson Operations alerts` were previously configured.
+- Protected exports `legacy/precutover-20260715T0509Z.sql.gz` and
+  `operations/postmigration-20260715T0510Z.sql.gz` were retained for 90 days.
+- The nine-lead migration previously reconciled source and target counts and
+  hashes without enqueuing historical notifications. A final write-freeze export
+  and delta reconciliation remain required.
+- A prior rollback rehearsal restored health after moving traffic between older
+  Operations revisions. The new digest requires a fresh rehearsal and evidence.
 
-Private archive bucket `benson-operations-cutover-archive-1048944000089` is regional in `US-WEST1`, uses uniform bucket access, enforces public access prevention, has versioning enabled, and has a 90-day retention policy.
+## G1–G8 acceptance ledger
 
-- Legacy baseline: `legacy/precutover-20260715T0509Z.sql.gz`, 218,866 bytes, retained until 2026-10-13T05:09:23Z
-- Operations post-migration: `operations/postmigration-20260715T0510Z.sql.gz`, 5,986 bytes, retained until 2026-10-13T05:09:53Z
+| Gate | Required evidence | Current status |
+| --- | --- | --- |
+| G1 — merged source | Clean signed commit, reviewed PR, current main integration, required checks green | **NO-GO:** current work is not merged and root CI is red |
+| G2 — complete local gate | Ruff, mypy, pytest/coverage, Prettier, ESLint, TypeScript, build, Playwright, desktop/mobile accessibility | **NO-GO:** no complete current-SHA evidence bundle |
+| G3 — migration and restore | CI checksums, staging application, migration history, backup restore, counts/hashes/ledger reconciliation | **NO-GO:** checksums are defined; staging apply and restore are absent |
+| G4 — isolated staging UAT | Dedicated database/storage/test OU, payment-provider test mode, accounting-provider sandbox, non-delivering providers, both full UAT journeys | **NO-GO:** isolated staging is not provisioned |
+| G5 — external review | Security, privacy, accessibility, operations, and qualified HR/legal approvals with no unresolved high severity | **NO-GO:** approvals are not recorded |
+| G6 — immutable candidate | One merged image digest, unchanged staging regression, zero-traffic production deploy, IAM/secrets/monitoring/rollback proof | **NO-GO:** no current digest or candidate exists |
+| G7 — production cutover | Approved 8–10 PM Pacific window, write freeze, final exports, guarded delta, no dual-write, 100% traffic and smoke evidence | **NO-GO:** G1–G6 are incomplete |
+| G8 — first real invitation | Successful production smoke, verified Directory identity and no-paid-license state, reachable delivery email, HR/legal and audit approval | **NO-GO:** G7 is incomplete; no invitation may be sent |
 
-The final write-freeze delta requires a new timestamped export; these are the pre-cutover baseline and post-migration recovery artifacts.
+Authorization to shift general ERP traffic and send one real invitation becomes
+actionable only when the corresponding gates are recorded as PASS. It does not
+waive earlier gates or authorize additional invitations.
 
-## Nine-lead reconciliation
+## Provider and cutover stop conditions
 
-The guarded migration tool refuses any accepted source count other than 9 and any target that is neither empty nor the already reconciled set. It preserves source timestamps and payloads, records `lead.migrated` audit events, and intentionally sends no historical notifications.
-
-- Accepted legacy CRM leads: 9
-- Accepted legacy webhook records: 9
-- Target leads after migration: 9
-- ID fingerprint: `8f136c99af2678e0bd569305d6d53dfb2522d205147766473330f6e88baf4416`
-- Content fingerprint: `6062c920bdafbcc2f94ba5b61f058e5fea41c69c29cc9e19bad55d3d847de6e3`
-- Content reconciliation: true
-- Historical notifications enqueued: 0
-
-## Open cutover gates
-
-1. Complete authenticated Google Workspace staff UAT against the live nine-lead queue. The configured inference browser was unavailable (`App not found`), so automated database reconciliation is not being mislabeled as human UAT.
-2. During the approved 8–10 PM Pacific window: freeze legacy writes, run the final guarded reconciliation, switch every website form directly with no dual-write, switch domain/traffic, and run post-cutover smoke/rollback verification.
-3. Put the legacy service into no-write rollback/archive mode for 30 days after cutover; the 90-day baseline exports are already retained, and a final post-freeze export remains required.
-
-Accounting, jobs, estimating, portals, and the rest of full lead-to-cash remain outside this launch scope.
+- Twilio is disabled. The known account was previously Trial-limited, and this
+  release does not mount Twilio secrets, send SMS, or use SMS as an onboarding
+  fallback.
+- Payment processing remains test-only and accounting export remains sandbox-only until their
+  authoritative workflows, signed events, reconciliation, and approvals pass.
+- Stop before traffic change if the serving service, image digest, migrations,
+  scheduler audience/identity, secret versions, monitoring, backups, or rollback
+  revision differs from the release record.
+- Stop before the real invitation if production smoke, Directory/license
+  verification, delivery-address validation, HR/legal approval, or invitation
+  audit controls fail.
+- On a critical smoke failure, pause workers and providers, restore traffic to
+  the retained compatible revision, and reconcile all writes accepted after the
+  freeze point.

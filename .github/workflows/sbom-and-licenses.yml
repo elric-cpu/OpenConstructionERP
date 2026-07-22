@@ -21,9 +21,12 @@ jobs:
           python-version: "3.12"
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "24.18.0"
+
+      - name: Upgrade npm
+        run: npm install --global npm@12.0.1
 
       - name: Install tooling
         run: |

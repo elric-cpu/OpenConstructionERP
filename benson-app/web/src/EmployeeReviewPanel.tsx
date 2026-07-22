@@ -1,77 +1,70 @@
-import { ArrowLeft, FileLock2 } from "lucide-react";
-import { useEffect, useState } from "react";
-import { operationsApi, requestHeaders } from "./api";
-import type { Employee, EmployeeDocument, EmployeeTask } from "./types";
+import { ArrowLeft, FileLock2, Upload } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { onboardingApi } from "./onboardingApi";
+import { EmployeeIdentitySection } from "./EmployeeIdentitySection";
+import { OnboardingReviewActions } from "./OnboardingReviewActions";
+import type { ApplicabilityReviewInput, OnboardingDocument, OnboardingTask, TaskReviewInput } from "./onboardingTypes";
+import type { OnboardingEmployee } from "./onboardingTypes";
 
 export function EmployeeReviewPanel({
   credential,
   employee,
+  onEmployeeChanged,
   onBack,
 }: {
   credential: string;
-  employee: Employee;
+  employee: OnboardingEmployee;
+  onEmployeeChanged(): Promise<unknown>;
   onBack(): void;
 }) {
-  const [tasks, setTasks] = useState<EmployeeTask[]>([]);
-  const [documents, setDocuments] = useState<EmployeeDocument[]>([]);
-  const [comment, setComment] = useState("");
+  const [tasks, setTasks] = useState<OnboardingTask[]>([]);
+  const [documents, setDocuments] = useState<OnboardingDocument[]>([]);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  useEffect(() => {
-    let active = true;
-    Promise.all([
-      operationsApi<EmployeeTask[]>(`/api/benson/v1/employees/${employee.id}/tasks`, credential),
-      operationsApi<EmployeeDocument[]>(`/api/benson/v1/employees/${employee.id}/documents`, credential),
-    ])
-      .then(([nextTasks, nextDocuments]) => {
-        if (active) {
-          setTasks(nextTasks);
-          setDocuments(nextDocuments);
-        }
-      })
-      .catch((reason) => active && setError(reason instanceof Error ? reason.message : "Review data unavailable"));
-    return () => {
-      active = false;
-    };
-  }, [credential, employee.id]);
-  const review = async (task: EmployeeTask, decision: "complete" | "reject" | "not_applicable") => {
-    if (!comment.trim()) {
-      setError("Add a review note before changing a task.");
-      return;
+
+  const load = useCallback(async () => {
+    setError("");
+    try {
+      const [nextTasks, nextDocuments] = await Promise.all([
+        onboardingApi.listEmployeeTasks(credential, employee.id),
+        onboardingApi.listEmployeeDocuments(credential, employee.id),
+      ]);
+      setTasks(nextTasks);
+      setDocuments(nextDocuments);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Review data unavailable");
     }
+  }, [credential, employee.id]);
+
+  useEffect(() => void load(), [load]);
+
+  const update = async (task: OnboardingTask, action: () => Promise<OnboardingTask>) => {
     setBusy(task.id);
     setError("");
     try {
-      const updated = await operationsApi<EmployeeTask>(
-        `/api/benson/v1/employees/${employee.id}/tasks/${task.id}`,
-        credential,
-        { method: "PATCH", body: JSON.stringify({ decision, comment }) },
-      );
-      setTasks((current) => current.map((item) => (item.id === updated.id ? updated : item)));
-      setComment("");
+      const changed = await action();
+      setTasks((current) => current.map((item) => (item.id === changed.id ? changed : item)));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Task review failed");
+      setError(reason instanceof Error ? reason.message : "Onboarding review failed");
     } finally {
       setBusy("");
     }
   };
-  const openDocument = async (document: EmployeeDocument) => {
+
+  const upload = async (task: OnboardingTask, file?: File) => {
+    if (!file) return;
+    setBusy(task.id);
     setError("");
-    const response = await fetch(`/api/benson/v1/employees/${employee.id}/documents/${document.id}`, {
-      headers: requestHeaders(credential),
-    });
-    if (!response.ok) {
-      setError("Protected document could not be opened.");
-      return;
+    try {
+      await onboardingApi.submitEmployerEvidence(credential, employee.id, task, file);
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Employer evidence could not be uploaded");
+    } finally {
+      setBusy("");
     }
-    const url = URL.createObjectURL(await response.blob());
-    const link = window.document.createElement("a");
-    link.href = url;
-    link.download = document.original_name;
-    link.click();
-    URL.revokeObjectURL(url);
   };
-  const documentsFor = (taskId: string) => documents.filter((document) => document.task_id === taskId);
+
   return (
     <section className="employee-review">
       <button className="back-button" onClick={onBack}>
@@ -87,15 +80,12 @@ export function EmployeeReviewPanel({
         </div>
         <span className="license-pill">No paid Workspace license</span>
       </div>
-      <label className="review-comment">
-        Review note
-        <textarea
-          placeholder="Required for completion, rejection, or not-applicable decisions"
-          value={comment}
-          onChange={(event) => setComment(event.target.value)}
-        />
-      </label>
       {error && <p className="form-error">{error}</p>}
+      <EmployeeIdentitySection
+        credential={credential}
+        employee={employee}
+        onEmployeeChanged={onEmployeeChanged}
+      />
       <div className="review-task-list">
         {tasks.map((task) => (
           <article className="review-task" key={task.id}>
@@ -103,36 +93,46 @@ export function EmployeeReviewPanel({
               <span className={`task-status status-${task.status}`}>{task.status.replace("_", " ")}</span>
               <h2>{task.label}</h2>
               <p>{task.instructions}</p>
+              {task.official_source.startsWith("https://") && (
+                <a className="official-form-link" href={task.official_source} rel="noreferrer" target="_blank">
+                  Open official form or instructions
+                </a>
+              )}
               <small>{task.applicability_reason}</small>
             </div>
             <div className="protected-files">
-              {documentsFor(task.id).map((document) => (
-                <button key={document.id} onClick={() => void openDocument(document)}>
-                  <FileLock2 /> {document.original_name} · v{document.version}
-                </button>
-              ))}
+              {documents
+                .filter((item) => item.task_id === task.id)
+                .map((document) => (
+                  <button
+                    key={document.id}
+                    onClick={() => void onboardingApi.downloadEmployeeDocument(credential, employee.id, document)}
+                  >
+                    <FileLock2 /> {document.original_name} · v{document.version}
+                  </button>
+                ))}
             </div>
-            <div className="review-actions">
-              {task.status === "submitted" && (
-                <>
-                  <button disabled={busy === task.id} onClick={() => void review(task, "complete")}>
-                    Approve
-                  </button>
-                  <button disabled={busy === task.id} onClick={() => void review(task, "reject")}>
-                    Reject
-                  </button>
-                </>
-              )}
-              {!["completed", "not_applicable"].includes(task.status) && (
-                <button
-                  className="text-button"
+            {task.responsible_party === "employer" && task.status === "pending" && (
+              <label className="upload-control">
+                <Upload /> Upload employer evidence
+                <input
+                  accept="application/pdf,image/jpeg,image/png,image/webp"
                   disabled={busy === task.id}
-                  onClick={() => void review(task, "not_applicable")}
-                >
-                  Mark not applicable
-                </button>
-              )}
-            </div>
+                  type="file"
+                  onChange={(event) => void upload(task, event.target.files?.[0])}
+                />
+              </label>
+            )}
+            <OnboardingReviewActions
+              busy={busy === task.id}
+              onApplicability={(review: ApplicabilityReviewInput) =>
+                update(task, () => onboardingApi.reviewApplicability(credential, employee.id, task.id, review))
+              }
+              onTaskReview={(review: TaskReviewInput) =>
+                update(task, () => onboardingApi.reviewTask(credential, employee.id, task.id, review))
+              }
+              task={task}
+            />
           </article>
         ))}
       </div>

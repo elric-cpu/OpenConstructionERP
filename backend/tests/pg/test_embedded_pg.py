@@ -133,6 +133,8 @@ def test_pre_initialize_cluster_passes_c_locale_on_windows(tmp_path, monkeypatch
     def fake_pgexec(command, args, **_kwargs):
         calls["command"] = command
         calls["args"] = tuple(args)
+        calls["target_absent"] = not pgdata.exists()
+        pgdata.mkdir()
         (pgdata / "PG_VERSION").write_text("16\n")  # simulate a real initdb
         return ""
 
@@ -145,6 +147,7 @@ def test_pre_initialize_cluster_passes_c_locale_on_windows(tmp_path, monkeypatch
     assert embedded_pg._pre_initialize_cluster(pgdata) is True
     assert calls["command"] == "initdb"
     assert "--locale=C" in calls["args"]
+    assert calls["target_absent"] is True
 
 
 def test_clear_incomplete_cluster_wipes_debris_without_pg_version(tmp_path) -> None:
@@ -193,9 +196,9 @@ def test_pre_initialize_cluster_clears_debris_then_inits(tmp_path, monkeypatch) 
     seen: dict[str, object] = {}
 
     def fake_pgexec(command, args, **_kwargs):
-        # initdb must find an EMPTY directory (debris already cleared).
-        seen["dir_empty_at_initdb"] = list(pgdata.iterdir()) == []
+        seen["target_absent_at_initdb"] = not pgdata.exists()
         seen["command"] = command
+        pgdata.mkdir()
         (pgdata / "PG_VERSION").write_text("16\n")
         return ""
 
@@ -207,7 +210,7 @@ def test_pre_initialize_cluster_clears_debris_then_inits(tmp_path, monkeypatch) 
 
     assert embedded_pg._pre_initialize_cluster(pgdata) is True
     assert seen["command"] == "initdb"
-    assert seen["dir_empty_at_initdb"] is True  # debris cleared before initdb ran
+    assert seen["target_absent_at_initdb"] is True
 
 
 @pytest.mark.asyncio

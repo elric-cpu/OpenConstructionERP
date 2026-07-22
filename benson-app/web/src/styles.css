@@ -417,6 +417,23 @@ header {
   min-width: 210px;
   min-height: 40px;
 }
+
+.google-signin-area {
+  display: grid;
+  gap: 0.6rem;
+  min-width: 210px;
+}
+
+.google-signin-fallback {
+  border: 1px solid #b9a7a1;
+  border-radius: 0.55rem;
+  background: #fff;
+  color: #351011;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 0.8rem 1rem;
+}
 .lead-list {
   display: grid;
 }

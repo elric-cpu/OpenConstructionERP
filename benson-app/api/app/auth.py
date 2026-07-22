@@ -154,25 +154,25 @@ def require_portal_user(
     email = str(claims.get("email", "")).lower()
     subject = str(claims.get("sub", ""))
     hosted_domain = str(claims.get("hd", "")).lower()
-    if (
-        not claims.get("email_verified")
-        or not email
-        or not subject
-        or hosted_domain != settings.staff_google_domain.lower()
-    ):
+    if not claims.get("email_verified") or not email or not subject:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Benson Workspace account required",
+            detail="Portal account is not authorized",
         )
-    staff_role = staff_role_for_email(email, settings)
-    if staff_role:
-        return Principal(email=email, role=staff_role, subject=subject)
+    managed_domain = hosted_domain == settings.staff_google_domain.lower()
+    if managed_domain:
+        staff_role = staff_role_for_email(email, settings)
+        if staff_role:
+            return Principal(email=email, role=staff_role, subject=subject)
     from .storage import operations_store
 
     employee = operations_store(
         settings.resolved_database_url()
     ).get_employee_by_identity(email, subject)
-    if not employee:
+    external_contractor = (
+        employee is not None and employee.classification == "independent_contractor"
+    )
+    if not employee or not (managed_domain or external_contractor):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Portal account is not authorized",
@@ -239,6 +239,17 @@ def require_schedule_planner(
     return principal
 
 
+def require_field_records_user(
+    principal: Principal = Depends(require_staff),
+) -> Principal:
+    if principal.role not in STAFF | {Role.FIELD}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Field records access required",
+        )
+    return principal
+
+
 def require_notification_worker(
     authorization: Annotated[str | None, Header()] = None,
     settings: Settings = Depends(get_settings),
@@ -277,5 +288,49 @@ def require_notification_worker(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Notification worker is not authorized",
+        )
+    return email
+
+
+def require_identity_provisioning_worker(
+    authorization: Annotated[str | None, Header()] = None,
+    settings: Settings = Depends(get_settings),
+) -> str:
+    if not settings.identity_provisioning_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Identity provisioning is disabled",
+        )
+    if settings.environment != "production":
+        return "development-identity-provisioning-worker"
+    if not settings.identity_worker_audience or not settings.identity_worker_email:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Identity provisioning worker is not configured",
+        )
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Identity provisioning worker identity is required",
+        )
+    try:
+        claims: dict[str, Any] = id_token.verify_oauth2_token(  # type: ignore[no-untyped-call]
+            authorization.removeprefix("Bearer ").strip(),
+            google_requests.Request(),
+            str(settings.identity_worker_audience).rstrip("/"),
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid identity provisioning worker identity",
+        ) from error
+    email = str(claims.get("email", "")).lower()
+    if (
+        not claims.get("email_verified")
+        or email != settings.identity_worker_email.lower()
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Identity provisioning worker is not authorized",
         )
     return email

@@ -18,6 +18,7 @@ from .storage_schema import (
     operations_settings,
     upload_sessions,
 )
+from .onboarding_schema import identity_provisioning_commands
 
 
 class NotificationStoreMixin(StoreBase):
@@ -294,6 +295,24 @@ class NotificationStoreMixin(StoreBase):
         now = datetime.now(UTC)
         outbox = self._outbox(outbox_type)
         with self.engine.begin() as db:
+            row = (
+                db.execute(select(outbox).where(outbox.c.id == notification_id))
+                .mappings()
+                .first()
+            )
+            payload = (
+                json.loads(row["payload"])
+                if row and outbox_type == "employee"
+                else None
+            )
+            if payload and payload.pop("bootstrap_credential", None):
+                command_id = payload.get("identity_command_id")
+                if command_id:
+                    db.execute(
+                        update(identity_provisioning_commands)
+                        .where(identity_provisioning_commands.c.id == command_id)
+                        .values(bootstrap_credential=None, updated_at=now)
+                    )
             db.execute(
                 update(outbox)
                 .where(
@@ -307,6 +326,11 @@ class NotificationStoreMixin(StoreBase):
                     last_error=None,
                     locked_at=None,
                     sent_at=now,
+                    payload=json.dumps(payload, sort_keys=True)
+                    if payload is not None
+                    else row["payload"]
+                    if row
+                    else None,
                     updated_at=now,
                 )
             )
@@ -331,6 +355,15 @@ class NotificationStoreMixin(StoreBase):
                 return
             attempts = int(row["attempts"]) + 1
             exhausted = attempts >= int(row["max_attempts"])
+            payload = json.loads(row["payload"]) if outbox_type == "employee" else None
+            if exhausted and payload and payload.pop("bootstrap_credential", None):
+                command_id = payload.get("identity_command_id")
+                if command_id:
+                    db.execute(
+                        update(identity_provisioning_commands)
+                        .where(identity_provisioning_commands.c.id == command_id)
+                        .values(bootstrap_credential=None, updated_at=now)
+                    )
             retry_minutes = min(60, 2 ** min(attempts - 1, 6))
             db.execute(
                 update(outbox)
@@ -341,6 +374,11 @@ class NotificationStoreMixin(StoreBase):
                     available_at=now + timedelta(minutes=retry_minutes),
                     locked_at=None,
                     last_error=error[:1_000],
+                    payload=(
+                        json.dumps(payload, sort_keys=True)
+                        if exhausted and payload is not None
+                        else row["payload"]
+                    ),
                     updated_at=now,
                 )
             )

@@ -46,6 +46,16 @@ export function JobWorkspace({
           <h1 id="jobs-heading">Jobs</h1>
           <span>Accepted scope converted into an attributable delivery record.</span>
         </div>
+        {canPlan && (
+          <button
+            className="primary"
+            disabled={!estimates.length}
+            onClick={() => estimates[0] && setSource(estimates[0])}
+            title={estimates.length ? "Create a job from an accepted estimate" : "Accept an estimate before creating a job"}
+          >
+            + New job
+          </button>
+        )}
       </div>
       {status && !["loading", "saving"].includes(status) && (
         <p className="form-status" role="status">
@@ -74,7 +84,11 @@ export function JobWorkspace({
         {!jobs.length && status !== "loading" && (
           <div className="empty">
             <h2>No jobs yet</h2>
-            <p>Record acceptance on an estimate before creating a job.</p>
+            <p>
+              {canPlan
+                ? "Accept an estimate, then use New job to create the planned delivery record."
+                : "An office, estimator, or administrator can create a job from an accepted estimate."}
+            </p>
           </div>
         )}
         {jobs.map((job) => (

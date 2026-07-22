@@ -27,8 +27,8 @@ import os
 # policy (the default on Linux/macOS) closes them deterministically. Must run
 # before any event loop is created.
 import sys as _sys  # noqa: E402
-import tempfile
-from pathlib import Path
+
+from tests._embedded_pg_fixture import make_embedded_pg_data_dir
 
 if _sys.platform == "win32":
     import asyncio as _asyncio
@@ -52,7 +52,7 @@ if not os.environ.get("DATABASE_URL", "").strip():
 
     from app.core import embedded_pg
 
-    _PG_DATA_DIR = Path(tempfile.mkdtemp(prefix="oe-tests-pg-"))
+    _PG_DATA_DIR = make_embedded_pg_data_dir()
     if not embedded_pg.boot(_PG_DATA_DIR):
         raise RuntimeError(
             "could not boot embedded PostgreSQL for the test session; set "

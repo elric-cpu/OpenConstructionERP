@@ -5,7 +5,8 @@ from uuid import uuid4
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
-from .domain import EmployeeDocumentSummary
+from .onboarding_domain import EmployeeDocumentSummary
+from .onboarding_lifecycle_store import OnboardingLifecycleStore
 from .store_base import StoreBase
 from .storage_schema import (
     InvalidEmployeeTaskTransition,
@@ -58,6 +59,7 @@ class EmployeeDocumentStoreMixin(StoreBase):
         key_version: str,
         actor: str,
         actor_party: str,
+        expected_version: int,
     ) -> EmployeeDocumentSummary:
         now = datetime.now(UTC)
         document_id = str(uuid4())
@@ -94,6 +96,9 @@ class EmployeeDocumentStoreMixin(StoreBase):
                 raise InvalidEmployeeTaskTransition(
                     f"Evidence cannot be uploaded while task is {task['status']}"
                 )
+            OnboardingLifecycleStore(self.engine).guard_task_version(
+                db, task_id, expected_version, now=now
+            )
             db.execute(
                 update(employee_documents)
                 .where(
@@ -126,6 +131,15 @@ class EmployeeDocumentStoreMixin(StoreBase):
                 raise InvalidEmployeeTaskTransition(
                     "A newer evidence version was uploaded; refresh and try again"
                 ) from error
+            OnboardingLifecycleStore(self.engine).record_submission(
+                db,
+                employee_id=employee_id,
+                task_id=task_id,
+                evidence_type="document",
+                evidence_id=document_id,
+                submitted_by=actor,
+                now=now,
+            )
             db.execute(
                 update(employee_tasks)
                 .where(employee_tasks.c.id == task_id)

@@ -6,6 +6,7 @@ import httpx
 from .config import Settings
 from .message_templates import client_lead_message
 from .signing import employee_invite_token
+from .sealed_secret import open_secret
 
 
 class NotificationDeliveryError(RuntimeError):
@@ -38,15 +39,32 @@ def _email_message(payload: dict[str, Any], settings: Settings) -> tuple[str, st
             settings.employee_invite_signing_secret, str(payload["invite_id"])
         )
         invite_url = f"{payload['invite_base_url']}/#/activate?token={token}"
+        bootstrap_lines: tuple[str, ...] = ()
+        if payload.get("bootstrap_credential"):
+            password = open_secret(
+                payload["bootstrap_credential"],
+                settings.employee_document_key_bytes(),
+                context=str(payload["invite_id"]),
+            )
+            bootstrap_lines = (
+                f"Workspace login: {payload['workspace_email']}",
+                f"Temporary password: {password}",
+                "Google will require you to replace this password at first sign-in.",
+                "",
+            )
         return (
             "Your Benson Home Solutions staff portal invitation",
             "\n".join(
                 (
                     f"Hello {payload['name']},",
                     "",
-                    "Benson Home Solutions invited you to set up your staff portal account.",
-                    f"Open this secure invitation before {payload['expires_at']}:",
+                    "Benson Home Solutions created your managed Google account.",
+                    *bootstrap_lines,
+                    "First, sign in to Google with the login and temporary password above.",
+                    "Google will require you to choose a new password.",
+                    "Then open this secure staff portal invitation:",
                     invite_url,
+                    f"This invitation expires {payload['expires_at']}.",
                     "",
                     "If you were not expecting this invitation, do not use the link.",
                 )

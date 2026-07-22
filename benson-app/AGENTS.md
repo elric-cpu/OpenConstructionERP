@@ -42,6 +42,27 @@
 
 ## Release safety
 
-- Build immutable images and deploy candidate revisions at zero traffic until the approved UAT and cutover gates pass.
-- Do not change public traffic, production website intake routing, or rollback retention merely because a candidate deploy succeeds.
+- Build immutable images from a clean commit and retain the currently serving
+  revision as the immediate rollback target.
+- The normal release path uses isolated staging and a zero-traffic production
+  candidate until the approved UAT and cutover gates pass.
+- An explicit, contemporaneous owner instruction may authorize an emergency
+  production release despite failing or missing CI, incomplete staging/UAT, or
+  the zero-traffic soak. Record the waived gates, deploy the exact immutable
+  digest, keep high-risk providers disabled, run public health and application
+  smoke checks immediately, and restore the retained revision on failure.
+- Do not infer an emergency waiver from urgency, a successful build, or a
+  candidate deploy; it must be stated by the owner for the specific revision.
 - Preserve unrelated working-tree changes and leave `.serena/` untouched.
+
+## Staff Onboarding Implementation
+
+The staff onboarding functionality includes:
+- DELETE endpoint for employee records with cascade deletion and audit logging
+- Phone number field in employee model and forms
+- Automatic email generation for new hires (firstname@bensonhomesolutions.com)
+- Delete functionality in EmployeeRoster for draft employees
+
+Implementation follows existing patterns in the codebase:
+- Backend: Store pattern with proper dependency cleanup and audit trails
+- Frontend: Form state management and API consumption consistent with other components

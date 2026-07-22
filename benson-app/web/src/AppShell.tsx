@@ -3,6 +3,7 @@ import {
   BriefcaseBusiness,
   CalendarDays,
   ClipboardCheck,
+  ClipboardPenLine,
   Home,
   Inbox,
   LogOut,
@@ -20,6 +21,7 @@ const nav = [
   [Inbox, "Leads", "leads"],
   [BriefcaseBusiness, "Jobs", "jobs"],
   [CalendarDays, "Schedule", "schedule"],
+  [ClipboardPenLine, "Field records", "field-records"],
   [ClipboardCheck, "Estimates", "estimates"],
   [Users, "Customers", "customers"],
 ] as const;
@@ -55,7 +57,7 @@ export function AppShell({
   }[requestStatus];
   const employeePortal = portalSession?.kind === "employee";
   const role = portalSession?.role;
-  const roleNav = role === "field" ? [nav[2], nav[3]] : role === "accounting" ? [nav[2]] : nav;
+  const roleNav = role === "field" ? [nav[2], nav[3], nav[4]] : role === "accounting" ? [nav[2]] : nav;
   const staffNav =
     role && ["owner", "admin"].includes(role)
       ? [...roleNav.slice(0, 2), [UserPlus, "New hires", "employees"] as const, ...roleNav.slice(2)]
@@ -117,7 +119,7 @@ export function AppShell({
                 ? "Onboarding"
                 : activeView === "estimates"
                   ? "Sales"
-                  : activeView === "jobs"
+                  : ["jobs", "schedule", "field-records"].includes(activeView)
                     ? "Delivery"
                     : "People operations"}
             </div>
