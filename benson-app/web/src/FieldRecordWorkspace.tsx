@@ -3,6 +3,14 @@ import { requestHeaders } from "./api";
 import { emptyFieldReportDraft, FieldReportForm, type FieldReportDraft } from "./FieldReportForm";
 import type { FieldReport, Job } from "./types";
 
+// Define photo type based on expected API response
+interface FieldReportPhoto {
+  id: string;
+  url: string; // URL to access the photo
+  filename: string;
+  uploaded_at: string;
+}
+
 async function detail(response: Response, fallback: string) {
   const body = (await response.json().catch(() => ({}))) as { detail?: string };
   return body.detail || fallback;
@@ -31,6 +39,8 @@ export function FieldRecordWorkspace({ credential, role }: { credential: string;
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState<FieldReportDraft>(emptyFieldReportDraft);
   const [status, setStatus] = useState("Loading field records…");
+  const [photos, setPhotos] = useState<FieldReportPhoto[]>([]);
+  const [photoLoading, setPhotoLoading] = useState(false);
   const headers = requestHeaders(credential);
   const load = useCallback(async () => {
     const [reportResponse, jobResponse] = await Promise.all([
@@ -42,9 +52,57 @@ export function FieldRecordWorkspace({ credential, role }: { credential: string;
     setJobs(((await jobResponse.json()) as Job[]).filter((job) => ["planned", "active"].includes(job.status)));
     setStatus("");
   }, [credential]);
+
+  const loadPhotos = async (reportId: string) => {
+    setPhotoLoading(true);
+    try {
+      const response = await fetch(`/api/benson/v1/field-records/${reportId}/photos`, {
+        headers: requestHeaders(credential),
+      });
+      if (!response.ok) throw new Error("Failed to load photos");
+      const photosData = await response.json();
+      // Assuming the API returns an array of photos with id, url, filename, uploaded_at
+      setPhotos(photosData as FieldReportPhoto[]);
+    } catch (error) {
+      console.error("Error loading photos:", error);
+      setPhotos([]);
+    } finally {
+      setPhotoLoading(false);
+    }
+  };
+
+  const deletePhoto = async (photoId: string) => {
+    try {
+      const response = await fetch(`/api/benson/v1/field-records/photos/${photoId}`, {
+        method: "DELETE",
+        headers: requestHeaders(credential),
+      });
+      if (!response.ok) throw new Error("Failed to delete photo");
+
+      // Remove the deleted photo from state
+      setPhotos(prevPhotos => prevPhotos.filter(photo => photo.id !== photoId));
+
+      // Update status to show success
+      setStatus("Photo deleted successfully");
+      setTimeout(() => setStatus(""), 3000);
+    } catch (error) {
+      console.error("Error deleting photo:", error);
+      setStatus("Failed to delete photo");
+      setTimeout(() => setStatus(""), 3000);
+    }
+  };
   useEffect(() => {
     void load().catch(() => setStatus("Unable to load field records."));
   }, [load]);
+
+  // Load photos when editing a report
+  useEffect(() => {
+    if (editing) {
+      void loadPhotos(editing.id);
+    } else {
+      setPhotos([]);
+    }
+  }, [editing, loadPhotos]);
   const begin = (report?: FieldReport) => {
     setEditing(report || null);
     setCreating(true);
@@ -95,19 +153,72 @@ export function FieldRecordWorkspace({ credential, role }: { credential: string;
   };
   if (creating) {
     return (
-      <FieldReportForm
-        canCancel={reports.length > 0}
-        draft={draft}
-        editing={Boolean(editing)}
-        jobs={jobs}
-        onCancel={() => {
-          setEditing(null);
-          setCreating(false);
-        }}
-        onSave={() => void save()}
-        setDraft={setDraft}
-        status={status}
-      />
+      <>
+        <FieldReportForm
+          canCancel={reports.length > 0}
+          draft={draft}
+          editing={Boolean(editing)}
+          jobs={jobs}
+          onCancel={() => {
+            setEditing(null);
+            setCreating(false);
+          }}
+          onSave={() => void save()}
+          setDraft={setDraft}
+          status={status}
+        />
+        {editing && (
+          <section className="schedule-workspace" aria-labelledby="photo-preview-heading">
+            <div className="headline">
+              <div>
+                <p>PHOTO MANAGEMENT</p>
+                <h1 id="photo-preview-heading">Photos for {editing?.job_title || 'this report'}</h1>
+                <span>Manage private progress photos attached to this field report.</span>
+              </div>
+            </div>
+            {photoLoading && <p className="photo-loading">Loading photos...</p>}
+            {!photoLoading && photos.length === 0 && <p className="photo-empty">No photos attached to this report yet.</p>}
+            {!photoLoading && photos.length > 0 && (
+              <div className="photo-grid">
+                {photos.map((photo) => (
+                  <div key={photo.id} className="photo-item">
+                    <img
+                      src={photo.url}
+                      alt={photo.filename}
+                      className="photo-preview"
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = '/placeholder-image.png'; // Fallback image
+                      }}
+                    />
+                    <div className="photo-overlay">
+                      <div className="photo-actions">
+                        <button
+                          className="btn-view"
+                          onClick={() => window.open(photo.url, '_blank')}
+                          title="View photo"
+                        >
+                          View
+                        </button>
+                        <button
+                          className="btn-delete"
+                          onClick={() => deletePhoto(photo.id)}
+                          title="Delete photo"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                      <div className="photo-filename">
+                        {photo.filename}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+      </>
     );
   }
   return (
