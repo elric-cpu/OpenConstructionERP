@@ -1,0 +1,44 @@
+"""Application settings domain."""
+
+from pydantic import Field
+from pydantic_settings import SettingsConfigDict
+
+
+class AppSettings:
+    """Application settings."""
+
+    # ── Application ────────────────────────────────────────────────────────
+    app_name: str = Field(
+        default="OpenConstructionERP",
+        description="Application name",
+    )
+    app_version: str = Field(
+        default="0.1.0",
+        description="Application version",
+    )
+    app_env: str = Field(
+        default="development",
+        description="Application environment (development, staging, production)",
+    )
+    app_debug: bool = Field(
+        default=False,
+        description="Enable debug mode",
+    )
+    log_level: str = Field(
+        default="info",
+        description="Logging level (debug, info, warning, error, critical)",
+    )
+    allowed_origins: str = Field(
+        default="http://localhost:5173",
+        description="Comma-separated list of allowed CORS origins",
+    )
+    frontend_url: str = Field(
+        default="",
+        description="Explicit frontend URL for outbound email links",
+    )
+    # Request body size limit (in bytes) to prevent OOM from huge payloads.
+    max_request_body_bytes: int = Field(
+        default=100 * 1024 * 1024,  # 100 MB
+        description="Maximum request body size in bytes",
+    )
+
