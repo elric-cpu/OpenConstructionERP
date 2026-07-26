@@ -1,0 +1,138 @@
+name: Benson ERP v2 Verify
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ["benson-erp/**", ".github/workflows/benson-erp-v2.yml"]
+  pull_request:
+    paths: ["benson-erp/**", ".github/workflows/benson-erp-v2.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: benson-erp
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.11.26
+          enable-cache: true
+          cache-dependency-glob: benson-erp/uv.lock
+      - run: uv sync --extra dev --frozen
+      - run: uv run ruff check .
+      - run: uv run mypy apps/api/app
+      - run: uv run pytest -m "not postgres" apps/api/tests
+      - run: docker compose up -d postgres redis
+      - run: >-
+          MIGRATION_DATABASE_URL=postgresql+asyncpg://benson:benson-development-only@127.0.0.1:55432/benson_erp
+          uv run alembic upgrade head
+      - run: >-
+          RUN_POSTGRES_TESTS=1
+          DATABASE_URL=postgresql+asyncpg://benson_app:benson-app-development-only@127.0.0.1:55432/benson_erp
+          TEST_DATABASE_OWNER_URL=postgresql+asyncpg://benson:benson-development-only@127.0.0.1:55432/benson_erp
+          uv run pytest -m postgres apps/api/tests
+      - run: >-
+          MIGRATION_DATABASE_URL=postgresql+asyncpg://benson:benson-development-only@127.0.0.1:55432/benson_erp
+          uv run alembic check
+      - if: always()
+        run: docker compose down -v
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: benson-erp/apps/web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: benson-erp/apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: npm test
+      - run: npm run typecheck:e2e
+      - run: npm audit --audit-level=high
+
+  containers:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: benson-erp
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker compose config --quiet
+      - run: >-
+          docker build --pull --build-arg VCS_REF=${{ github.sha }}
+          --tag benson-erp-v2:${{ github.sha }} .
+      - name: Verify production image
+        run: |
+          docker run --rm --entrypoint sh benson-erp-v2:${{ github.sha }} -ceu '
+            test "$(id -u)" = "10001"
+            test -f /app/alembic.ini
+            test -f /app/apps/api/alembic/env.py
+            test -f /app/web-dist/index.html
+            test "$WEB_DIST_PATH" = "/app/web-dist"
+            test "$PORT" = "8080"
+          '
+
+  e2e:
+    needs: [backend, frontend, containers]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: benson-erp
+    env:
+      E2E_BASE_URL: http://127.0.0.1:5173
+      E2E_EMAIL: e2e@bensonhomesolutions.com
+      E2E_ORGANIZATION: benson-e2e
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: benson-erp/apps/web/package-lock.json
+      - run: npm ci
+        working-directory: benson-erp/apps/web
+      - run: npx playwright install --with-deps
+        working-directory: benson-erp/apps/web
+      - name: Create ephemeral administrator password
+        run: echo "E2E_PASSWORD=$(openssl rand -hex 18)" >> "$GITHUB_ENV"
+      - run: docker compose up -d --build postgres redis minio minio-init
+      - run: >-
+          docker compose run --rm
+          -e MIGRATION_DATABASE_URL=postgresql+asyncpg://benson:benson-development-only@postgres:5432/benson_erp
+          api alembic upgrade head
+      - run: docker compose up -d api worker scheduler web
+      - name: Create browser-test administrator
+        run: >-
+          printf '%s\n%s\n' "$E2E_PASSWORD" "$E2E_PASSWORD" |
+          docker compose run --rm -T
+          -e DATABASE_URL=postgresql+asyncpg://benson:benson-development-only@postgres:5432/benson_erp
+          api benson-erp create-admin
+          --organization "Benson E2E"
+          --slug "$E2E_ORGANIZATION"
+          --email "$E2E_EMAIL"
+          --google-domain "bensonhomesolutions.com"
+      - run: npm run test:e2e
+        working-directory: benson-erp/apps/web
+      - if: always()
+        run: docker compose logs --no-color > compose-e2e.log
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benson-erp-v2-e2e-${{ github.sha }}
+          path: |
+            benson-erp/apps/web/playwright-report
+            benson-erp/apps/web/test-results
+            benson-erp/compose-e2e.log
+      - if: always()
+        run: docker compose down -v

@@ -1,0 +1,29 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        if ! [[ "${_REVISION}" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "_REVISION must be the full Git commit SHA" >&2
+          exit 1
+        fi
+        if [[ "${_IMAGE_TAG}" != "${_REVISION}" ]]; then
+          echo "_IMAGE_TAG must equal _REVISION" >&2
+          exit 1
+        fi
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --pull
+      - --build-arg
+      - VCS_REF=${_REVISION}
+      - --tag
+      - ${_IMAGE_REPOSITORY}:${_IMAGE_TAG}
+      - .
+images:
+  - ${_IMAGE_REPOSITORY}:${_IMAGE_TAG}
+substitutions:
+  _IMAGE_REPOSITORY: us-west1-docker.pkg.dev/civic-wall-494004-b3/cloud-run-source-deploy/benson-erp-v2
+  _IMAGE_TAG: manual
+  _REVISION: manual

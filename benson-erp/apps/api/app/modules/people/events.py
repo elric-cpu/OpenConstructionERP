@@ -1,0 +1,7 @@
+EMPLOYEE_CREATED = "EmployeeCreated"
+EMPLOYEE_PROVISIONING_REQUESTED = "EmployeeProvisioningRequested"
+GOOGLE_IDENTITY_CREATED = "GoogleIdentityCreated"
+EMPLOYEE_ACTIVATION_REQUESTED = "EmployeeActivationRequested"
+EMPLOYEE_ACTIVATION_SENT = "EmployeeActivationSent"
+EMPLOYEE_ACTIVATED = "EmployeeActivated"
+EMPLOYEE_ACTIVATION_REVOKED = "EmployeeActivationRevoked"
