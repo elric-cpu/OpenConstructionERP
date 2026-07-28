@@ -1,0 +1,20 @@
+"""Audit settings domain."""
+
+from pydantic import Field
+from pydantic_settings import SettingsConfigDict
+
+
+class AuditSettings:
+    """Audit settings."""
+
+    # ── Audit ───────────────────────────────────────────────────────────
+    # Audit log retention settings
+    audit_retention_days: int = Field(
+        default=365,
+        description="Number of days to retain audit log entries",
+    )
+    audit_archive_enabled: bool = Field(
+        default=True,
+        description="Whether to archive audit logs after retention period",
+    )
+

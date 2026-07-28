@@ -29,6 +29,32 @@ updates:
     commit-message:
       prefix: "chore"
 
+  # Benson Operations API (uv lockfile)
+  - package-ecosystem: "pip"
+    directory: "/benson-app/api"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "benson-operations"]
+    commit-message:
+      prefix: "chore"
+
+  # Benson Operations staff web app
+  - package-ecosystem: "npm"
+    directory: "/benson-app/web"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "benson-operations"]
+    commit-message:
+      prefix: "chore"
+
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -45,5 +71,14 @@ updates:
     schedule:
       interval: "monthly"
     labels: ["dependencies", "docker"]
+    commit-message:
+      prefix: "chore"
+
+  # Benson Operations runtime image
+  - package-ecosystem: "docker"
+    directory: "/benson-app"
+    schedule:
+      interval: "monthly"
+    labels: ["dependencies", "docker", "benson-operations"]
     commit-message:
       prefix: "chore"

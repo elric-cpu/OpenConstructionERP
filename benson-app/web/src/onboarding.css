@@ -303,6 +303,15 @@
   line-height: 1.5;
   margin: 0 0 8px;
 }
+.official-form-link {
+  color: var(--maroon);
+  display: inline-flex;
+  font-size: 0.84rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+  text-decoration: underline;
+  text-underline-offset: 0.2rem;
+}
 .review-task small,
 .employee-task-card small {
   color: var(--steel);
@@ -415,6 +424,234 @@
 .task-check {
   color: #55725c;
 }
+.task-state {
+  align-items: center;
+  color: var(--steel);
+  display: flex;
+  font-size: 12px;
+  gap: 7px;
+  line-height: 1.45;
+  max-width: 240px;
+}
+.task-state svg {
+  flex: 0 0 auto;
+  width: 16px;
+}
+.task-state-complete {
+  color: #35543d;
+  font-weight: 700;
+}
+.signature-control {
+  background: #f0eee9;
+  border-left: 4px solid var(--iron);
+  display: grid;
+  gap: 10px;
+  max-width: 310px;
+  padding: 14px;
+}
+.signature-control > p {
+  color: var(--graphite);
+  font-size: 12px;
+  margin: 0;
+}
+.signature-control > label,
+.applicability-review label,
+.task-review-control label {
+  color: var(--graphite);
+  display: grid;
+  font-size: 11px;
+  font-weight: 700;
+  gap: 5px;
+}
+.signature-control input,
+.applicability-review input,
+.applicability-review textarea,
+.task-review-control textarea {
+  background: white;
+  border: 1px solid #b9b4ac;
+  border-radius: 2px;
+  color: var(--graphite);
+  font: inherit;
+  padding: 8px 9px;
+}
+.signature-control .signature-acceptance,
+.applicability-review .review-confirmation {
+  align-items: start;
+  display: flex;
+  font-weight: 500;
+  line-height: 1.35;
+}
+.signature-acceptance input,
+.review-confirmation input {
+  margin-top: 2px;
+}
+.signature-control button,
+.onboarding-error button {
+  align-items: center;
+  background: var(--graphite);
+  border: 0;
+  border-radius: 2px;
+  color: white;
+  display: inline-flex;
+  font-size: 12px;
+  gap: 7px;
+  justify-content: center;
+  padding: 9px 11px;
+}
+.signature-control button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.signature-control button svg,
+.onboarding-error button svg {
+  width: 15px;
+}
+.signature-record {
+  background: #e1e8e3;
+  border: 1px solid #a6b6a9;
+  color: #35543d;
+  font-size: 11px;
+  padding: 7px 9px;
+}
+.rejection-reason {
+  background: #f4e9e7;
+  border-left: 3px solid #8a4b43;
+  color: #743d38 !important;
+  font-size: 12px;
+  padding: 9px 11px;
+}
+.onboarding-error {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.onboarding-error .form-error {
+  margin: 0;
+}
+.applicability-review,
+.task-review-control {
+  background: #f0eee9;
+  border-left: 4px solid var(--iron);
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+.applicability-review textarea,
+.task-review-control textarea {
+  min-height: 70px;
+  resize: vertical;
+}
+.reviewer-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.identity-panel {
+  background: #ebe9e4;
+  border: 1px solid #c8c4bb;
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+  padding: 16px;
+}
+.identity-panel-title {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+.identity-panel-title > svg {
+  color: var(--iron);
+  width: 22px;
+}
+.identity-panel-title > div {
+  display: grid;
+  gap: 3px;
+}
+.identity-panel-title small {
+  color: var(--steel);
+}
+.identity-panel > button,
+.identity-confirmation button {
+  align-items: center;
+  background: var(--graphite);
+  border: 0;
+  border-radius: 2px;
+  color: white;
+  display: inline-flex;
+  gap: 7px;
+  justify-content: center;
+  padding: 10px 12px;
+  width: fit-content;
+}
+.identity-panel button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.identity-panel button svg {
+  width: 16px;
+}
+.identity-command {
+  align-items: center;
+  background: white;
+  border-left: 4px solid var(--steel);
+  display: flex;
+  justify-content: space-between;
+  padding: 12px;
+}
+.identity-command span {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.identity-command p {
+  color: var(--iron);
+  font-size: 12px;
+  margin: 4px 0 0;
+}
+.identity-command > button {
+  background: transparent;
+  border: 0;
+  color: var(--iron);
+  padding: 5px;
+}
+.identity-verified,
+.identity-admin_confirmed {
+  border-left-color: #55725c;
+}
+.identity-failed {
+  border-left-color: #8a4b43;
+}
+.identity-confirmation {
+  border-top: 1px solid #c8c4bb;
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+}
+.identity-confirmation label {
+  color: var(--graphite);
+  display: grid;
+  font-size: 11px;
+  font-weight: 700;
+  gap: 5px;
+}
+.identity-confirmation input,
+.identity-confirmation textarea {
+  background: white;
+  border: 1px solid #b9b4ac;
+  color: var(--graphite);
+  font: inherit;
+  padding: 8px 9px;
+}
+.identity-confirmation textarea {
+  min-height: 62px;
+  resize: vertical;
+}
+.identity-invite {
+  background: #35543d !important;
+}
 @media (max-width: 1180px) {
   .people-grid {
     grid-template-columns: 1fr;
@@ -455,5 +692,11 @@
   }
   .progress-dial {
     justify-self: start;
+  }
+  .signature-control {
+    max-width: none;
+  }
+  .reviewer-grid {
+    grid-template-columns: 1fr;
   }
 }

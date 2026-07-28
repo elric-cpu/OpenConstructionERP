@@ -1,24 +1,30 @@
 # Full ERP completion matrix
 
-This matrix prevents a completed vertical slice from being mistaken for the
-full Benson ERP outcome. A module is complete only when persistence, server
-authorization, attributable audit, responsive UI, tests, UAT, backup/restore,
-rollback, and approved production smoke evidence all exist.
+This matrix prevents implemented code, an old production revision, or one green
+test suite from being mistaken for the completed Benson ERP. Completion requires
+persistence, server authorization, attributable audit, responsive UI, automated
+tests, isolated staging UAT, backup restoration, rollback, external approvals,
+and recorded production smoke evidence.
 
-| Workflow             | Current evidence                                                                                                     | Remaining gate                                                     |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Leads                | Production lead queue, signed intake, private attachments, audit                                                     | Include in end-to-end lead-to-cash UAT                             |
-| Customers            | Persisted guarded workflow, automated tests, and healthy zero-traffic candidate                                      | Synthetic UAT and backup/restore proof                             |
-| Employees/onboarding | Invite, Tasks, encrypted evidence, conditional rules                                                                 | Full rejection/resubmission/offboarding UAT and HR/legal approvals |
-| Estimates            | Persisted guarded workflow, automated tests, and healthy zero-traffic candidate                                      | Synthetic delivery/decision UAT and backup/restore proof           |
-| Jobs                 | Persisted accepted-estimate conversion, guarded delivery states, automated tests, and healthy zero-traffic candidate | Synthetic delivery UAT and backup/restore proof                    |
-| Schedule             | Persisted guarded workflow, race-safe delivery states, and automated API/browser tests                               | Candidate deployment, authenticated UAT, and backup/restore proof  |
-| Field records        | Not implemented in Benson overlay                                                                                    | Full vertical slice                                                |
-| Change orders        | Not implemented in Benson overlay                                                                                    | Full vertical slice                                                |
-| Invoices/payments    | Not implemented in Benson overlay                                                                                    | Full vertical slice; no money movement without approval            |
-| Accounting/reporting | Provider boundary only                                                                                               | Persisted workflow, controlled integration, reconciliation         |
-| Settings             | Notification settings implemented                                                                                    | Complete role/settings surface and UAT                             |
-| Release              | Prior lead/onboarding production revision exists                                                                     | Full-scope candidate, rollback, approved cutover, smoke            |
+| Workflow | Current repository evidence | Remaining release gate |
+| --- | --- | --- |
+| Leads | Signed intake, durable notifications, private attachments, audit, production history | Current-digest lead-to-cash UAT and restore proof |
+| Customers | Persisted guarded workflow and API/browser tests | Current-digest staging UAT and restore proof |
+| Estimates | Persisted guarded workflow and API/browser tests | Delivery/decision UAT and restore proof |
+| Jobs | Accepted-estimate conversion, guarded states, assignment policy, tests | Delivery UAT and restore proof |
+| Schedule | Race-safe persisted workflow and responsive API/browser coverage | Authenticated staging UAT and restore proof |
+| Field records | Versioned reports, corrections, private photos, assignment scoping, tests | Full gate, candidate, staging/mobile UAT, and restore proof |
+| Change orders | Guarded revisions, evidence, approval effects, billing-eligibility controls, tests | Full gate, candidate, staging concurrency/UAT, and restore proof |
+| Invoices/payments | Not implemented in the Benson overlay | Full slice; Stripe test mode only until approved cutover |
+| Accounting/reporting | Provider boundary only | Balanced ledger, reports, outbox/conflicts, sandbox reconciliation |
+| Employees/onboarding | Invitation, Tasks, conditional rules, encrypted evidence | Provisioning, reviews, offboarding, staging UAT, HR/legal approval |
+| Settings/integrations | Notification settings and provider boundaries | Explicit route capabilities, health, consent, secrets/IAM UAT |
+| Release | Live `benson-operations` history and retained rollback/export evidence | Isolated staging, immutable full-scope digest, G1–G8 evidence |
 
-Qualified HR/legal approval of the onboarding matrix and forms remains an
-external completion gate. Code and automated tests cannot supply that approval.
+## Current release decision
+
+The release is **NO-GO**. Billing, accounting, full onboarding, isolated staging,
+current backup restoration, qualified HR/legal approval, and a current immutable
+candidate do not yet exist as recorded evidence. Twilio remains disabled. No
+production traffic change, real payment, accounting-provider production write, or real
+employee invitation may occur merely because an individual module passes.

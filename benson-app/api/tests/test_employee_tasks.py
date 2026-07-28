@@ -11,6 +11,7 @@ from app.storage import operations_store
 from tests.support import (
     STAFF_HEADERS,
     client,
+    provision_test_identity,
 )
 
 
@@ -83,6 +84,7 @@ def test_activated_employee_tasks_are_the_default_view(
             "federal_contract_applicability": "not_applicable",
         },
     ).json()
+    provision_test_identity(isolated_settings, employee["id"])
     invitation = client.post(
         f"/api/benson/v1/employees/{employee['id']}/invite", headers=STAFF_HEADERS
     ).json()
@@ -135,6 +137,7 @@ def test_employee_evidence_is_encrypted_versioned_and_reviewed(
             "federal_contract_applicability": "not_applicable",
         },
     ).json()
+    provision_test_identity(isolated_settings, employee["id"])
     invitation = client.post(
         f"/api/benson/v1/employees/{employee['id']}/invite", headers=STAFF_HEADERS
     ).json()
@@ -169,6 +172,7 @@ def test_employee_evidence_is_encrypted_versioned_and_reviewed(
     uploaded = client.post(
         f"/api/benson/v1/onboarding/tasks/{task['id']}/evidence",
         headers=credential_headers,
+        data={"expected_version": str(task["version"])},
         files={"file": ("w4.pdf", plaintext, "application/pdf")},
     )
 
@@ -193,7 +197,11 @@ def test_employee_evidence_is_encrypted_versioned_and_reviewed(
     completed = client.patch(
         f"/api/benson/v1/employees/{employee['id']}/tasks/{task['id']}",
         headers=STAFF_HEADERS,
-        json={"decision": "complete", "comment": "Reviewed signed withholding form."},
+        json={
+            "expected_version": task["version"] + 1,
+            "decision": "complete",
+            "comment": "Reviewed signed withholding form.",
+        },
     )
     assert completed.status_code == 200
     assert completed.json()["status"] == "completed"
@@ -218,6 +226,7 @@ def test_rejected_evidence_preserves_versions_and_blocks_cross_task_actions(
             "federal_contract_applicability": "unknown",
         },
     ).json()
+    provision_test_identity(isolated_settings, employee["id"])
     invitation = client.post(
         f"/api/benson/v1/employees/{employee['id']}/invite", headers=STAFF_HEADERS
     ).json()
@@ -249,6 +258,7 @@ def test_rejected_evidence_preserves_versions_and_blocks_cross_task_actions(
         client.post(
             f"/api/benson/v1/onboarding/tasks/{blocked['id']}/evidence",
             headers=employee_headers,
+            data={"expected_version": str(blocked["version"])},
             files={"file": ("blocked.pdf", b"%PDF-blocked", "application/pdf")},
         ).status_code
         == 409
@@ -256,18 +266,24 @@ def test_rejected_evidence_preserves_versions_and_blocks_cross_task_actions(
     first = client.post(
         f"/api/benson/v1/onboarding/tasks/{w4['id']}/evidence",
         headers=employee_headers,
+        data={"expected_version": str(w4["version"])},
         files={"file": ("w4-v1.pdf", b"%PDF-first", "application/pdf")},
     ).json()
     rejected = client.patch(
         f"/api/benson/v1/employees/{employee['id']}/tasks/{w4['id']}",
         headers=STAFF_HEADERS,
-        json={"decision": "reject", "comment": "Signature is missing."},
+        json={
+            "expected_version": w4["version"] + 1,
+            "decision": "reject",
+            "comment": "Signature is missing.",
+        },
     )
     assert rejected.status_code == 200
     assert rejected.json()["status"] == "rejected"
     second = client.post(
         f"/api/benson/v1/onboarding/tasks/{w4['id']}/evidence",
         headers=employee_headers,
+        data={"expected_version": str(rejected.json()["version"])},
         files={"file": ("w4-v2.pdf", b"%PDF-second", "application/pdf")},
     ).json()
     assert second["version"] == 2
@@ -281,7 +297,11 @@ def test_rejected_evidence_preserves_versions_and_blocks_cross_task_actions(
         client.patch(
             f"/api/benson/v1/employees/{employee['id']}/tasks/{blocked['id']}",
             headers=STAFF_HEADERS,
-            json={"decision": "complete", "comment": "Attempt without applicability."},
+            json={
+                "expected_version": blocked["version"],
+                "decision": "complete",
+                "comment": "Attempt without applicability.",
+            },
         ).status_code
         == 409
     )
@@ -289,6 +309,7 @@ def test_rejected_evidence_preserves_versions_and_blocks_cross_task_actions(
         f"/api/benson/v1/employees/{employee['id']}/tasks/{blocked['id']}/applicability",
         headers=STAFF_HEADERS,
         json={
+            "expected_version": blocked["version"],
             "decision": "not_applicable",
             "comment": "Contract clause does not apply.",
             "reviewer_name": "Qualified HR Reviewer",

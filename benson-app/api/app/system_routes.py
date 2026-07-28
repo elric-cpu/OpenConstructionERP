@@ -20,8 +20,8 @@ from .domain import (
     BENSON_MODULES,
     NotificationSettings,
     NotificationSettingsUpdate,
-    PortalSession,
 )
+from .onboarding_domain import PortalSession
 from .notifications import NotificationDeliveryError, deliver_notification
 
 router = APIRouter()

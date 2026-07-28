@@ -37,10 +37,15 @@ async def test_agent_gateway_normalizes_transport_failures() -> None:
 async def test_production_agent_gateway_uses_cloud_run_identity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    async def inline_to_thread(function: object, *args: object) -> object:
+        assert callable(function)
+        return function(*args)
+
     monkeypatch.setattr(
         "app.ai_gateway.id_token.fetch_id_token",
         lambda _request, audience: f"id:{audience}",
     )
+    monkeypatch.setattr("app.ai_gateway.asyncio.to_thread", inline_to_thread)
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["authorization"] == "Bearer id:https://fcc.example.com"
@@ -57,6 +62,12 @@ async def test_production_agent_gateway_uses_cloud_run_identity(
         fcc_base_url="https://fcc.example.com",
         notification_worker_audience="https://operations.example.com",
         notification_worker_email="worker@example.iam.gserviceaccount.com",
+        identity_worker_audience="https://operations.example.com",
+        identity_worker_email="identity-worker@example.iam.gserviceaccount.com",
+        google_directory_credentials_json='{"type":"service_account"}',
+        google_directory_admin="workspace-admin@bensonhomesolutions.com",
+        google_paid_license_skus="test-paid-sku",
+        google_paid_license_skus_approved=True,
         resend_api_key="resend-key",
         twilio_account_sid="AC123",
         twilio_api_key_sid="SK123",

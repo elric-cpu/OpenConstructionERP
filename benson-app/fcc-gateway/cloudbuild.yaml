@@ -1,7 +1,31 @@
 steps:
   - name: gcr.io/cloud-builders/docker
-    args: ["build", "-t", "${_IMAGE}", "."]
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        image_tag="${_IMAGE_TAG}"
+        revision="${_REVISION}"
+        if [[ "$$image_tag" == "manual" || "$$image_tag" == "latest" ]]; then
+          echo "_IMAGE_TAG must be an immutable release identifier, not $$image_tag" >&2
+          exit 1
+        fi
+        if ! [[ "$$revision" =~ ^[0-9a-f]{40}$$ ]]; then
+          echo "_REVISION must be the full 40-character Git commit SHA" >&2
+          exit 1
+        fi
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --pull
+      - --label
+      - org.opencontainers.image.revision=${_REVISION}
+      - --tag
+      - ${_IMAGE_REPOSITORY}:${_IMAGE_TAG}
+      - .
 images:
-  - "${_IMAGE}"
+  - ${_IMAGE_REPOSITORY}:${_IMAGE_TAG}
 substitutions:
-  _IMAGE: us-west1-docker.pkg.dev/civic-wall-494004-b3/cloud-run-source-deploy/benson-fcc-gateway:latest
+  _IMAGE_REPOSITORY: us-west1-docker.pkg.dev/civic-wall-494004-b3/cloud-run-source-deploy/benson-fcc-gateway
+  _IMAGE_TAG: manual
+  _REVISION: manual

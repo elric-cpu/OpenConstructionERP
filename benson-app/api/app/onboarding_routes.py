@@ -1,36 +1,32 @@
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response as BinaryResponse
 
-from .auth import Principal, require_employee, require_owner, verify_google_identity
-from .compliance import ONBOARDING_REQUIREMENTS
+from .auth import Principal, require_employee, require_owner
 from .config import Settings, get_settings
 from .dependencies import store
-from .domain import (
-    EmployeeCreate,
+from .onboarding_domain import (
     EmployeeDocumentSummary,
-    EmployeeInviteActivation,
-    EmployeeInviteReceipt,
-    EmployeeSignatureCreate,
     EmployeeSignatureSummary,
     EmployeeSummary,
-    EmployeeTaskApplicabilityReview,
-    EmployeeTaskReview,
-    EmployeeTaskSummary,
+    OnboardingEmployeeSummary,
+    OnboardingTaskSummary,
+    VersionedApplicabilityReview,
+    VersionedSignatureCreate,
+    VersionedTaskReview,
 )
+from .onboarding_authorization import require_manage_employee_data
+from .onboarding_lifecycle_store import OnboardingLifecycleStore, StaleOnboardingVersion
 from .object_storage import (
     delete_upload,
     detect_upload_type,
     read_employee_document,
     store_employee_document,
 )
-from .storage import (
-    InvalidEmployeeInvite,
-    InvalidEmployeeTaskTransition,
-)
+from .storage import InvalidEmployeeTaskTransition
 
 router = APIRouter()
 _allowed_upload_types = {
@@ -41,98 +37,24 @@ _allowed_upload_types = {
 }
 
 
-@router.get("/api/benson/v1/onboarding/requirements")
-async def onboarding_requirements(
-    _principal: Principal = Depends(require_owner),
+def _require_task_access(
+    settings: Settings, principal: Principal, employee_id: str, task_id: str
 ) -> dict[str, Any]:
-    return {
-        "review_status": "pending_qualified_hr_legal_review",
-        "requirements": [
-            item.model_dump(mode="json") for item in ONBOARDING_REQUIREMENTS
-        ],
-    }
+    task = OnboardingLifecycleStore(store(settings).engine).task_row(
+        employee_id, task_id
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="Onboarding record not found")
+    require_manage_employee_data(principal, str(task["data_category"]))
+    return task
 
 
-@router.get("/api/benson/v1/employees", response_model=list[EmployeeSummary])
-def list_employees(
-    _principal: Principal = Depends(require_owner),
-    settings: Settings = Depends(get_settings),
-) -> list[EmployeeSummary]:
-    return store(settings).list_employees()
-
-
-@router.post(
-    "/api/benson/v1/employees", response_model=EmployeeSummary, status_code=201
-)
-def create_employee(
-    employee: EmployeeCreate,
-    principal: Principal = Depends(require_owner),
-    settings: Settings = Depends(get_settings),
-) -> EmployeeSummary:
-    if employee.classification == "employee":
-        email_domain = str(employee.email).lower().partition("@")[2]
-        if email_domain != settings.staff_google_domain.lower():
-            raise HTTPException(
-                status_code=422,
-                detail=f"Employees must use an @{settings.staff_google_domain} Workspace email",
-            )
-    try:
-        return store(settings).create_employee(employee, actor=principal.email)
-    except ValueError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
-
-
-@router.post(
-    "/api/benson/v1/employees/{employee_id}/invite",
-    response_model=EmployeeInviteReceipt,
-    status_code=202,
-)
-def invite_employee(
-    employee_id: str,
-    principal: Principal = Depends(require_owner),
-    settings: Settings = Depends(get_settings),
-) -> EmployeeInviteReceipt:
-    try:
-        invitation = store(settings).create_employee_invite(
-            employee_id,
-            actor=principal.email,
-            invite_base_url=str(settings.upload_base_url),
-            invite_signing_secret=settings.employee_invite_signing_secret,
-            expires_in_hours=72,
-            notification_max_attempts=settings.notification_max_attempts,
-        )
-    except InvalidEmployeeInvite as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
-    if not invitation:
-        raise HTTPException(status_code=404, detail="Employee not found")
-    return invitation
-
-
-@router.post("/api/benson/v1/onboarding/activate", response_model=EmployeeSummary)
-def activate_employee_invitation(
-    activation: EmployeeInviteActivation,
-    settings: Settings = Depends(get_settings),
-) -> EmployeeSummary:
-    claims = verify_google_identity(activation.credential, settings)
-    hosted_domain = str(claims.get("hd", "")).lower()
-    if (
-        not claims.get("email_verified")
-        or not claims.get("email")
-        or not claims.get("sub")
-        or hosted_domain != settings.staff_google_domain.lower()
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail="Managed Benson Workspace account required",
-        )
-    try:
-        return store(settings).activate_employee_invite(
-            activation.token,
-            email=str(claims["email"]),
-            google_subject=str(claims["sub"]),
-        )
-    except InvalidEmployeeInvite as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
+def _require_all_task_access(
+    settings: Settings, principal: Principal, employee_id: str
+) -> None:
+    rows = OnboardingLifecycleStore(store(settings).engine).list_task_rows(employee_id)
+    for task in rows:
+        require_manage_employee_data(principal, str(task["data_category"]))
 
 
 @router.get("/api/benson/v1/onboarding/me", response_model=EmployeeSummary)
@@ -158,12 +80,19 @@ def onboarding_tasks(
     )
     if not employee:
         raise HTTPException(status_code=403, detail="Active employee account required")
-    tasks = store(settings).list_employee_tasks(str(employee.id))
+    lifecycle = OnboardingLifecycleStore(store(settings).engine)
+    tasks = [
+        OnboardingTaskSummary.model_validate(row)
+        for row in lifecycle.list_task_rows(str(employee.id))
+    ]
+    versioned_employee = OnboardingEmployeeSummary.model_validate(
+        lifecycle.employee_row(str(employee.id))
+    )
     applicable = [task for task in tasks if task.status != "not_applicable"]
     completed = sum(task.status == "completed" for task in applicable)
     return {
         "default_view": "tasks",
-        "employee": employee,
+        "employee": versioned_employee,
         "tasks": tasks,
         "progress": {"completed": completed, "total": len(applicable)},
     }
@@ -171,16 +100,19 @@ def onboarding_tasks(
 
 @router.get(
     "/api/benson/v1/employees/{employee_id}/tasks",
-    response_model=list[EmployeeTaskSummary],
+    response_model=list[OnboardingTaskSummary],
 )
 def employee_tasks_for_review(
     employee_id: str,
-    _principal: Principal = Depends(require_owner),
+    principal: Principal = Depends(require_owner),
     settings: Settings = Depends(get_settings),
-) -> list[EmployeeTaskSummary]:
+) -> list[OnboardingTaskSummary]:
     if not store(settings).get_employee(employee_id):
         raise HTTPException(status_code=404, detail="Employee not found")
-    return store(settings).list_employee_tasks(employee_id)
+    rows = OnboardingLifecycleStore(store(settings).engine).list_task_rows(employee_id)
+    for task in rows:
+        require_manage_employee_data(principal, str(task["data_category"]))
+    return [OnboardingTaskSummary.model_validate(row) for row in rows]
 
 
 async def _upload_task_evidence(
@@ -190,6 +122,7 @@ async def _upload_task_evidence(
     file: UploadFile,
     actor: str,
     actor_party: str,
+    expected_version: int,
     settings: Settings,
 ) -> EmployeeDocumentSummary:
     operations = store(settings)
@@ -258,8 +191,9 @@ async def _upload_task_evidence(
             key_version=key_version,
             actor=actor,
             actor_party=actor_party,
+            expected_version=expected_version,
         )
-    except InvalidEmployeeTaskTransition as error:
+    except (InvalidEmployeeTaskTransition, StaleOnboardingVersion) as error:
         await run_in_threadpool(delete_upload, settings, storage_key)
         raise HTTPException(status_code=409, detail=str(error)) from error
 
@@ -272,6 +206,7 @@ async def _upload_task_evidence(
 async def upload_onboarding_evidence(
     task_id: str,
     file: Annotated[UploadFile, File()],
+    expected_version: Annotated[int, Form(ge=1)],
     principal: Principal = Depends(require_employee),
     settings: Settings = Depends(get_settings),
 ) -> EmployeeDocumentSummary:
@@ -286,6 +221,7 @@ async def upload_onboarding_evidence(
         file=file,
         actor=principal.email,
         actor_party="employee",
+        expected_version=expected_version,
         settings=settings,
     )
 
@@ -299,17 +235,18 @@ async def upload_employer_task_evidence(
     employee_id: str,
     task_id: str,
     file: Annotated[UploadFile, File()],
+    expected_version: Annotated[int, Form(ge=1)],
     principal: Principal = Depends(require_owner),
     settings: Settings = Depends(get_settings),
 ) -> EmployeeDocumentSummary:
-    if not store(settings).get_employee(employee_id):
-        raise HTTPException(status_code=404, detail="Employee not found")
+    _require_task_access(settings, principal, employee_id, task_id)
     return await _upload_task_evidence(
         employee_id=employee_id,
         task_id=task_id,
         file=file,
         actor=principal.email,
         actor_party="employer",
+        expected_version=expected_version,
         settings=settings,
     )
 
@@ -352,7 +289,7 @@ def onboarding_signatures(
 )
 def sign_onboarding_task(
     task_id: str,
-    signature: EmployeeSignatureCreate,
+    signature: VersionedSignatureCreate,
     principal: Principal = Depends(require_employee),
     settings: Settings = Depends(get_settings),
 ) -> EmployeeSignatureSummary:
@@ -368,8 +305,9 @@ def sign_onboarding_task(
             signer_email=principal.email,
             signer_subject=principal.subject,
             typed_name=signature.typed_name,
+            expected_version=signature.expected_version,
         )
-    except InvalidEmployeeTaskTransition as error:
+    except (InvalidEmployeeTaskTransition, StaleOnboardingVersion) as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     if not result:
         raise HTTPException(status_code=404, detail="Onboarding task not found")
@@ -382,11 +320,12 @@ def sign_onboarding_task(
 )
 def employee_documents_for_review(
     employee_id: str,
-    _principal: Principal = Depends(require_owner),
+    principal: Principal = Depends(require_owner),
     settings: Settings = Depends(get_settings),
 ) -> list[EmployeeDocumentSummary]:
     if not store(settings).get_employee(employee_id):
         raise HTTPException(status_code=404, detail="Employee not found")
+    _require_all_task_access(settings, principal, employee_id)
     return store(settings).list_employee_documents(employee_id)
 
 
@@ -396,11 +335,12 @@ def employee_documents_for_review(
 )
 def employee_signatures_for_review(
     employee_id: str,
-    _principal: Principal = Depends(require_owner),
+    principal: Principal = Depends(require_owner),
     settings: Settings = Depends(get_settings),
 ) -> list[EmployeeSignatureSummary]:
     if not store(settings).get_employee(employee_id):
         raise HTTPException(status_code=404, detail="Employee not found")
+    _require_all_task_access(settings, principal, employee_id)
     return store(settings).list_employee_signatures(employee_id)
 
 
@@ -464,6 +404,10 @@ async def download_employee_document(
     principal: Principal = Depends(require_owner),
     settings: Settings = Depends(get_settings),
 ) -> BinaryResponse:
+    document = store(settings).get_employee_document(document_id)
+    if not document or document["employee_id"] != employee_id:
+        raise HTTPException(status_code=404, detail="Employee document not found")
+    _require_task_access(settings, principal, employee_id, str(document["task_id"]))
     return await employee_document_response(
         document_id, employee_id=employee_id, actor=principal.email, settings=settings
     )
@@ -471,15 +415,16 @@ async def download_employee_document(
 
 @router.patch(
     "/api/benson/v1/employees/{employee_id}/tasks/{task_id}/applicability",
-    response_model=EmployeeTaskSummary,
+    response_model=OnboardingTaskSummary,
 )
 def review_employee_task_applicability(
     employee_id: str,
     task_id: str,
-    review: EmployeeTaskApplicabilityReview,
+    review: VersionedApplicabilityReview,
     principal: Principal = Depends(require_owner),
     settings: Settings = Depends(get_settings),
-) -> EmployeeTaskSummary:
+) -> OnboardingTaskSummary:
+    _require_task_access(settings, principal, employee_id, task_id)
     try:
         task = store(settings).decide_employee_task_applicability(
             employee_id,
@@ -489,8 +434,9 @@ def review_employee_task_applicability(
             reviewer_name=review.reviewer_name,
             reviewer_qualification=review.reviewer_qualification,
             actor=principal.email,
+            expected_version=review.expected_version,
         )
-    except InvalidEmployeeTaskTransition as error:
+    except (InvalidEmployeeTaskTransition, StaleOnboardingVersion) as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     if not task:
         raise HTTPException(status_code=404, detail="Onboarding task not found")
@@ -499,15 +445,16 @@ def review_employee_task_applicability(
 
 @router.patch(
     "/api/benson/v1/employees/{employee_id}/tasks/{task_id}",
-    response_model=EmployeeTaskSummary,
+    response_model=OnboardingTaskSummary,
 )
 def review_employee_task(
     employee_id: str,
     task_id: str,
-    review: EmployeeTaskReview,
+    review: VersionedTaskReview,
     principal: Principal = Depends(require_owner),
     settings: Settings = Depends(get_settings),
-) -> EmployeeTaskSummary:
+) -> OnboardingTaskSummary:
+    _require_task_access(settings, principal, employee_id, task_id)
     try:
         task = store(settings).review_employee_task(
             employee_id,
@@ -515,8 +462,9 @@ def review_employee_task(
             decision=review.decision,
             comment=review.comment,
             actor=principal.email,
+            expected_version=review.expected_version,
         )
-    except InvalidEmployeeTaskTransition as error:
+    except (InvalidEmployeeTaskTransition, StaleOnboardingVersion) as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     if not task:
         raise HTTPException(status_code=404, detail="Onboarding task not found")

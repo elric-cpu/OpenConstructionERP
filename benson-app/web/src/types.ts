@@ -1,6 +1,15 @@
 export type RequestStatus = "loading" | "ready" | "auth-required" | "offline";
 export type ActiveView =
-  "overview" | "leads" | "customers" | "estimates" | "jobs" | "schedule" | "employees" | "tasks" | "activate";
+  | "overview"
+  | "leads"
+  | "customers"
+  | "estimates"
+  | "jobs"
+  | "schedule"
+  | "field-records"
+  | "employees"
+  | "tasks"
+  | "activate";
 export type SpamFilter = "active" | "spam" | "all";
 export type BusyState = "lead" | "save" | "draft" | "";
 
@@ -115,6 +124,32 @@ export type ScheduleEntry = {
   updated_at: string;
 };
 
+export type FieldReport = {
+  id: string;
+  job_id: string;
+  job_number: string;
+  job_title: string;
+  service_date: string;
+  revision: number;
+  previous_revision_id: string | null;
+  status: "draft" | "submitted" | "correction_required" | "corrected" | "superseded";
+  version: number;
+  workforce_total: number;
+  workforce_hours: string;
+  weather: string;
+  completed_work: string;
+  materials: string;
+  equipment: string;
+  delays: string;
+  issues: string;
+  safety_observations: string[];
+  created_by: string;
+  submitted_by: string | null;
+  submitted_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Attachment = {
   id: string;
   original_name: string;
@@ -146,6 +181,7 @@ export type Employee = {
   name: string;
   email: string;
   invite_delivery_email: string | null;
+  phone: string;
   start_date: string;
   work_location: string;
   classification: "employee" | "independent_contractor";

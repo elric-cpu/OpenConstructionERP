@@ -7,6 +7,7 @@ from pydantic import SecretStr
 
 from app.auth import (
     Principal,
+    require_identity_provisioning_worker,
     require_notification_worker,
     require_staff,
 )
@@ -58,6 +59,16 @@ def test_production_configuration_fails_closed() -> None:
         sms_to="",
     )
     assert sms_disabled.sms_enabled_default is False
+    directory_disabled = production_settings(
+        identity_provisioning_enabled=False,
+        identity_worker_audience=None,
+        identity_worker_email="",
+        google_directory_credentials_json="",
+        google_directory_admin="",
+        google_paid_license_skus="",
+        google_paid_license_skus_approved=False,
+    )
+    assert directory_disabled.identity_provisioning_enabled is False
     with pytest.raises(ValueError, match="BENSON_TWILIO"):
         production_settings(
             sms_enabled_default=True,
@@ -66,6 +77,15 @@ def test_production_configuration_fails_closed() -> None:
             twilio_api_key_secret="",
             twilio_from_number="",
             sms_to="",
+        )
+
+
+def test_disabled_identity_provisioning_worker_fails_closed() -> None:
+    settings = production_settings(identity_provisioning_enabled=False)
+
+    with pytest.raises(HTTPException, match="Identity provisioning is disabled"):
+        require_identity_provisioning_worker(
+            authorization="Bearer ignored", settings=settings
         )
 
 

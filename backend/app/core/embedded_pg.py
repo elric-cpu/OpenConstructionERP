@@ -552,6 +552,17 @@ def _pre_initialize_cluster(pgdata: Path) -> bool:
     # directory, so clear that first. This is what unblocks a user upgrading from
     # a build that was stuck "Recovering the local database" forever.
     _clear_incomplete_cluster(pgdata)
+    # Windows initdb must create the final data directory itself. When Python
+    # creates that empty leaf first, the bundled binary tries to tighten its ACL
+    # and fails with "Permission denied" on current Windows runner images.
+    # Removing only the verified-empty shell preserves its normally inherited
+    # parent ACL while allowing initdb to create the leaf with its required ACL.
+    try:
+        if pgdata.exists():
+            pgdata.rmdir()
+    except OSError as exc:
+        logger.warning("could not prepare Windows initdb target at %s: %r", pgdata, exc)
+        return False
     try:
         from pixeltable_pgserver.pgexec import pgexec
     except Exception as exc:  # noqa: BLE001

@@ -31,7 +31,9 @@ jobs:
           path-to-signatures: "signatures/cla.json"
           path-to-document: "https://github.com/datadrivenconstruction/OpenConstructionERP/blob/main/CLA.md"
           branch: "main"
-          allowlist: "boikoartem,datadrivenconstruction,dependabot[bot],github-actions[bot]"
+          # Fork owners maintain their own downstream code and do not need an
+          # upstream contributor agreement for changes merged only in the fork.
+          allowlist: "boikoartem,datadrivenconstruction,dependabot[bot],github-actions[bot],${{ github.repository_owner }}"
           custom-notsigned-prcomment: |
             Thank you for your pull request! Before we can merge it, you need to sign our
             [Contributor License Agreement (CLA)](https://github.com/datadrivenconstruction/OpenConstructionERP/blob/main/CLA.md).

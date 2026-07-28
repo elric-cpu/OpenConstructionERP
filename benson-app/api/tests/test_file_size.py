@@ -16,7 +16,7 @@ def test_python_files_do_not_exceed_ai_context_limit() -> None:
     project_root = Path(__file__).resolve().parents[1]
     violations: list[str] = []
     for path in sorted(project_root.rglob("*.py")):
-        if {".venv", "__pycache__", "migrations"} & set(path.parts):
+        if {".venv", ".uv-cache", "__pycache__", "migrations"} & set(path.parts):
             continue
         count = code_line_count(path)
         if count > MAX_CODE_LINES:

@@ -4,10 +4,10 @@ from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import create_engine, inspect, select, text, update
-from sqlalchemy.engine import Engine
+from sqlalchemy.pool import StaticPool
 
 from .compliance import REQUIREMENTS_BY_ID
-from .domain import EmployeeTaskSummary
+from .onboarding_domain import EmployeeTaskSummary
 from .lead_rules import classify_spam, lead_source
 from .storage_schema import audit_events, employee_tasks, leads, metadata
 
@@ -17,9 +17,17 @@ class StoreBase:
         connect_args = (
             {"check_same_thread": False} if database_url.startswith("sqlite") else {}
         )
-        self.engine: Engine = create_engine(
-            database_url, pool_pre_ping=True, connect_args=connect_args
-        )
+        if database_url.startswith("sqlite") and ":memory:" in database_url:
+            self.engine = create_engine(
+                database_url,
+                pool_pre_ping=True,
+                connect_args=connect_args,
+                poolclass=StaticPool,
+            )
+        else:
+            self.engine = create_engine(
+                database_url, pool_pre_ping=True, connect_args=connect_args
+            )
 
     def initialize_schema(self) -> None:
         metadata.create_all(self.engine)
@@ -58,6 +66,7 @@ class StoreBase:
             "workspace_account_status": (
                 "VARCHAR(40) NOT NULL DEFAULT 'external_unlicensed_required'"
             ),
+            "phone": "VARCHAR(20) NOT NULL DEFAULT ''",
         }
         with self.engine.begin() as db:
             for name, definition in employee_additions.items():
@@ -75,6 +84,7 @@ class StoreBase:
             "applicability_status": "VARCHAR(40) NOT NULL DEFAULT 'applied'",
             "retention_rule": "TEXT NOT NULL DEFAULT ''",
             "data_classification": "VARCHAR(40) NOT NULL DEFAULT 'restricted'",
+            "data_category": "VARCHAR(40) NOT NULL DEFAULT 'general'",
             "official_source": "TEXT NOT NULL DEFAULT ''",
             "legal_review_status": "VARCHAR(20) NOT NULL DEFAULT 'pending'",
             "signature_statement": "TEXT",
@@ -99,6 +109,7 @@ class StoreBase:
                             completion_method=requirement.completion_method,
                             retention_rule=requirement.retention_rule,
                             data_classification=requirement.data_classification,
+                            data_category=requirement.data_category,
                             official_source=requirement.official_source,
                             legal_review_status=requirement.legal_review_status,
                         )

@@ -5,7 +5,8 @@ from uuid import uuid4
 from sqlalchemy import func, select, update
 from sqlalchemy.engine import Connection, RowMapping
 
-from .domain import EmployeeSignatureSummary, EmployeeTaskSummary
+from .onboarding_domain import EmployeeSignatureSummary, OnboardingTaskSummary
+from .onboarding_lifecycle_store import OnboardingLifecycleStore
 from .store_base import StoreBase
 from .storage_schema import (
     InvalidEmployeeTaskTransition,
@@ -27,7 +28,8 @@ class EmployeeTaskStoreMixin(StoreBase):
         reviewer_name: str,
         reviewer_qualification: str,
         actor: str,
-    ) -> EmployeeTaskSummary | None:
+        expected_version: int,
+    ) -> OnboardingTaskSummary | None:
         now = datetime.now(UTC)
         with self.engine.begin() as db:
             task = self._task_for_update(db, employee_id, task_id)
@@ -43,6 +45,9 @@ class EmployeeTaskStoreMixin(StoreBase):
                 )
             applicable = decision == "applicable"
             status = "pending" if applicable else "not_applicable"
+            task_version = OnboardingLifecycleStore(self.engine).guard_task_version(
+                db, task_id, expected_version, now=now
+            )
             db.execute(
                 update(employee_tasks)
                 .where(employee_tasks.c.id == task_id)
@@ -61,8 +66,22 @@ class EmployeeTaskStoreMixin(StoreBase):
                     applicability_decided_by=actor,
                     completed_at=None if applicable else now,
                     completed_by=None if applicable else actor,
+                    data_category=task["data_category"],
                     updated_at=now,
                 )
+            )
+            OnboardingLifecycleStore(self.engine).record_review(
+                db,
+                task=task,
+                to_status=status,
+                review_type="applicability",
+                decision=decision,
+                comment=comment,
+                reviewer_email=actor,
+                reviewer_name=reviewer_name,
+                reviewer_qualification=reviewer_qualification,
+                task_version=task_version,
+                now=now,
             )
             self._audit(
                 db,
@@ -82,7 +101,8 @@ class EmployeeTaskStoreMixin(StoreBase):
                 },
             )
             self._update_employee_completion(db, employee_id, now)
-        return self._task_summary(employee_id, task_id)
+        row = OnboardingLifecycleStore(self.engine).task_row(employee_id, task_id)
+        return OnboardingTaskSummary.model_validate(row) if row else None
 
     def submit_employee_signature(
         self,
@@ -92,6 +112,7 @@ class EmployeeTaskStoreMixin(StoreBase):
         signer_email: str,
         signer_subject: str,
         typed_name: str,
+        expected_version: int,
     ) -> EmployeeSignatureSummary | None:
         now = datetime.now(UTC)
         signature_id = str(uuid4())
@@ -129,6 +150,9 @@ class EmployeeTaskStoreMixin(StoreBase):
                 )
             ).scalar_one()
             version = int(latest or 0) + 1
+            OnboardingLifecycleStore(self.engine).guard_task_version(
+                db, task_id, expected_version, now=now
+            )
             db.execute(
                 update(employee_signatures)
                 .where(
@@ -155,6 +179,15 @@ class EmployeeTaskStoreMixin(StoreBase):
                 "signed_at": now,
             }
             db.execute(employee_signatures.insert().values(**values))
+            OnboardingLifecycleStore(self.engine).record_submission(
+                db,
+                employee_id=employee_id,
+                task_id=task_id,
+                evidence_type="signature",
+                evidence_id=signature_id,
+                submitted_by=signer_email.lower(),
+                now=now,
+            )
             db.execute(
                 update(employee_tasks)
                 .where(employee_tasks.c.id == task_id)
@@ -199,7 +232,8 @@ class EmployeeTaskStoreMixin(StoreBase):
         decision: str,
         comment: str,
         actor: str,
-    ) -> EmployeeTaskSummary | None:
+        expected_version: int,
+    ) -> OnboardingTaskSummary | None:
         now = datetime.now(UTC)
         with self.engine.begin() as db:
             task = self._task_for_update(db, employee_id, task_id)
@@ -222,6 +256,9 @@ class EmployeeTaskStoreMixin(StoreBase):
                 status = "rejected"
                 completed_at = None
                 completed_by = None
+            task_version = OnboardingLifecycleStore(self.engine).guard_task_version(
+                db, task_id, expected_version, now=now
+            )
             db.execute(
                 update(employee_tasks)
                 .where(employee_tasks.c.id == task_id)
@@ -229,8 +266,22 @@ class EmployeeTaskStoreMixin(StoreBase):
                     status=status,
                     completed_at=completed_at,
                     completed_by=completed_by,
+                    data_category=task["data_category"],
                     updated_at=now,
                 )
+            )
+            OnboardingLifecycleStore(self.engine).record_review(
+                db,
+                task=task,
+                to_status=status,
+                review_type="task_review",
+                decision=decision,
+                comment=comment,
+                reviewer_email=actor,
+                reviewer_name=None,
+                reviewer_qualification=None,
+                task_version=task_version,
+                now=now,
             )
             self._audit(
                 db,
@@ -241,7 +292,8 @@ class EmployeeTaskStoreMixin(StoreBase):
                 payload={"task_id": task_id, "comment": comment},
             )
             self._update_employee_completion(db, employee_id, now)
-        return self._task_summary(employee_id, task_id)
+        row = OnboardingLifecycleStore(self.engine).task_row(employee_id, task_id)
+        return OnboardingTaskSummary.model_validate(row) if row else None
 
     def _require_completion_evidence(
         self, db: Connection, task_id: str, task: RowMapping
@@ -288,10 +340,6 @@ class EmployeeTaskStoreMixin(StoreBase):
             .mappings()
             .first()
         )
-
-    def _task_summary(self, employee_id: str, task_id: str) -> EmployeeTaskSummary:
-        tasks = {str(item.id): item for item in self.list_employee_tasks(employee_id)}
-        return tasks[task_id]
 
     def _update_employee_completion(
         self, db: Connection, employee_id: str, now: datetime

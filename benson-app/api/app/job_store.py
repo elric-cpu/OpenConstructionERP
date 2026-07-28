@@ -94,6 +94,8 @@ class JobStoreMixin(StoreBase):
                         title=estimate["title"],
                         scope_snapshot=estimate["scope_notes"],
                         contract_value_cents=estimate["total_cents"],
+                        approved_change_order_cents=0,
+                        billing_eligible_cents=estimate["total_cents"],
                         status="planned",
                         target_start=plan.target_start,
                         target_completion=plan.target_completion,

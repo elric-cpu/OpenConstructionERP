@@ -14,6 +14,7 @@ def isolated_settings(tmp_path: Path) -> Iterator[Settings]:
     settings = Settings(
         environment="test",
         employee_document_encryption_key=base64.b64encode(b"t" * 32).decode(),
+        database_url="sqlite+pysqlite:///:memory:",
         database_path=tmp_path / "operations.sqlite3",
         upload_storage_path=tmp_path / "uploads",
         ddc_registry_path=Path(__file__).resolve().parents[2]

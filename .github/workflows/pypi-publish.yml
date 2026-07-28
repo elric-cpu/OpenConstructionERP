@@ -58,13 +58,15 @@ jobs:
         run: python scripts/check_repo_hygiene.py
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          # Cesium 1.137+ requires Node 22; tsc-on-prebuild needs the full
-          # devDeps set, so the frontend job is locked to 22.
-          node-version: '22'
+          # Cesium and the frontend prebuild require a current supported Node.
+          node-version: '24.18.0'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
+
+      - name: Upgrade npm
+        run: npm install --global npm@12.0.1
 
       - name: Build frontend bundle into wheel layout
         # The Vite/Rollup build now exceeds Node's default ~4 GB heap and dies
