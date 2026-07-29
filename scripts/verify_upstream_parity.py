@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
 import json
 import os
 import re
@@ -18,7 +19,16 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = ROOT / "scripts" / "parity" / "benson-baseline.json"
 SOURCE_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx"}
-SKIP_DIRECTORIES = {".git", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv", "artifacts", "dist", "node_modules"}
+SKIP_DIRECTORIES = {
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    "artifacts",
+    "dist",
+    "node_modules",
+}
 OPERATION_PATTERN = re.compile(r"operation_id\s*=\s*['\"]([^'\"]+)")
 ROUTE_PATTERNS = (
     re.compile(r"(?:path|to)\s*[:=]\s*['\"](/[^'\"]*)"),
@@ -127,18 +137,57 @@ def inventory(root: Path) -> dict[str, set[str]]:
     return result
 
 
-def migration_inventory(root: Path) -> tuple[set[str], set[str]]:
+def migration_inventory(root: Path) -> tuple[set[str], set[str], dict[str, set[str]]]:
     revisions: set[str] = set()
     parents: set[str] = set()
-    revision_re = re.compile(r"^revision(?:\s*:[^=]+)?\s*=\s*['\"]([^'\"]+)", re.MULTILINE)
-    down_re = re.compile(r"^down_revision(?:\s*:[^=]+)?\s*=\s*['\"]([^'\"]+)", re.MULTILINE)
+    graph: dict[str, set[str]] = {}
     for path in (root / "backend").rglob("*.py"):
         if "versions" not in path.parts:
             continue
-        text = path.read_text(encoding="utf-8")
-        revisions.update(revision_re.findall(text))
-        parents.update(down_re.findall(text))
-    return revisions, revisions - parents
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+        assignments: dict[str, Any] = {}
+        for node in tree.body:
+            if isinstance(node, ast.Assign):
+                targets = node.targets
+                value = node.value
+            elif isinstance(node, ast.AnnAssign):
+                targets = [node.target]
+                value = node.value
+            else:
+                continue
+            for target in targets:
+                if isinstance(target, ast.Name) and target.id in {"revision", "down_revision"}:
+                    with contextlib.suppress(ValueError, TypeError):
+                        assignments[target.id] = ast.literal_eval(value)
+        revision = assignments.get("revision")
+        if not isinstance(revision, str):
+            continue
+        down_revision = assignments.get("down_revision")
+        if isinstance(down_revision, str):
+            revision_parents = {down_revision}
+        elif isinstance(down_revision, (list, tuple, set)):
+            revision_parents = {item for item in down_revision if isinstance(item, str)}
+        else:
+            revision_parents = set()
+        revisions.add(revision)
+        parents.update(revision_parents)
+        graph[revision] = revision_parents
+    return revisions, revisions - parents, graph
+
+
+def migration_lineage(heads: set[str], graph: dict[str, set[str]]) -> set[str]:
+    lineage: set[str] = set()
+    pending = list(heads)
+    while pending:
+        revision = pending.pop()
+        if revision in lineage:
+            continue
+        lineage.add(revision)
+        pending.extend(graph.get(revision, ()))
+    return lineage
 
 
 def skip_counts(root: Path, baseline_paths: list[str]) -> dict[str, int]:
@@ -177,17 +226,21 @@ def verify() -> dict[str, Any]:
         inventory_counts = {}
         for name, expected in baseline_inventory.items():
             missing = expected - current_inventory[name]
-            inventory_counts[name] = {"baseline": len(expected), "integrated": len(current_inventory[name])}
+            inventory_counts[name] = {
+                "baseline": len(expected),
+                "integrated": len(current_inventory[name]),
+            }
             if missing:
                 sample = ", ".join(sorted(missing)[:8])
                 failures.append(f"{name} lost {len(missing)} items: {sample}")
 
-        baseline_revisions, baseline_heads = migration_inventory(baseline_root)
-        current_revisions, current_heads = migration_inventory(ROOT)
+        baseline_revisions, baseline_heads, _baseline_graph = migration_inventory(baseline_root)
+        current_revisions, current_heads, current_graph = migration_inventory(ROOT)
         if not baseline_revisions <= current_revisions:
             failures.append(f"lost {len(baseline_revisions - current_revisions)} Alembic revisions")
-        if not baseline_heads <= current_heads:
-            failures.append(f"lost Alembic heads: {sorted(baseline_heads - current_heads)}")
+        missing_head_lineage = baseline_heads - migration_lineage(current_heads, current_graph)
+        if missing_head_lineage:
+            failures.append(f"lost Alembic head lineage: {sorted(missing_head_lineage)}")
 
         baseline_skips = skip_counts(baseline_root, paths)
         current_skips = skip_counts(ROOT, paths)
@@ -203,9 +256,17 @@ def verify() -> dict[str, Any]:
         "baseline_commit": commit,
         "status": "pass" if not failures else "fail",
         "tracked_paths": {"baseline": len(paths), "missing": len(missing_paths)},
-        "backend_modules": {"baseline": len(modules), "integrated": len(backend_modules([
-            path.relative_to(ROOT).as_posix() for path in (ROOT / "backend" / "app" / "modules").rglob("*")
-        ]))},
+        "backend_modules": {
+            "baseline": len(modules),
+            "integrated": len(
+                backend_modules(
+                    [
+                        path.relative_to(ROOT).as_posix()
+                        for path in (ROOT / "backend" / "app" / "modules").rglob("*")
+                    ]
+                )
+            ),
+        },
         "inventories": inventory_counts,
         "migrations": {
             "baseline_revisions": len(baseline_revisions),

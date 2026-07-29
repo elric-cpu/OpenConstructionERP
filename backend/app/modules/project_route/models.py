@@ -99,7 +99,7 @@ class RouteAssessment(Base):
     )
 
     # ── Audit ──────────────────────────────────────────────────────────
-    classified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    classified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     classified_by: Mapped[str | None] = mapped_column(
         String(36),
         nullable=True,

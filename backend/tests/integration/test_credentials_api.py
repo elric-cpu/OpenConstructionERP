@@ -70,14 +70,14 @@ async def _activate_user(email: str) -> None:
         await s.commit()
 
 
-async def _promote_to_editor(client: AsyncClient, email: str, password: str) -> dict[str, str]:
+async def _set_role(client: AsyncClient, email: str, password: str, *, role: str) -> dict[str, str]:
     from sqlalchemy import update
 
     from app.database import async_session_factory
     from app.modules.users.models import User
 
     async with async_session_factory() as s:
-        await s.execute(update(User).where(User.email == email.lower()).values(role="editor"))
+        await s.execute(update(User).where(User.email == email.lower()).values(role=role))
         await s.commit()
 
     resp = await client.post(
@@ -86,6 +86,14 @@ async def _promote_to_editor(client: AsyncClient, email: str, password: str) -> 
     )
     assert resp.status_code == 200, resp.text
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+
+async def _promote_to_editor(client: AsyncClient, email: str, password: str) -> dict[str, str]:
+    return await _set_role(client, email, password, role="editor")
+
+
+async def _promote_to_manager(client: AsyncClient, email: str, password: str) -> dict[str, str]:
+    return await _set_role(client, email, password, role="manager")
 
 
 async def _register_login(client: AsyncClient, *, tenant: str) -> tuple[str, str, str, dict[str, str]]:
@@ -120,7 +128,8 @@ async def _create_project(owner_user_id: str, name: str) -> str:
 
 @pytest_asyncio.fixture(scope="module")
 async def two_tenants(http_client):
-    a_uid, _ae, _ap, a_hdr = await _register_login(http_client, tenant="a")
+    a_uid, a_email, a_pw, _a_hdr = await _register_login(http_client, tenant="a")
+    a_hdr = await _promote_to_manager(http_client, a_email, a_pw)
     b_uid, b_email, b_pw, _b_hdr = await _register_login(http_client, tenant="b")
     b_hdr = await _promote_to_editor(http_client, b_email, b_pw)
     a_project = await _create_project(a_uid, "A's project")
