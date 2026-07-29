@@ -212,6 +212,10 @@ all = [
 ]
 # Development tools
 dev = [
+    # The unit suite exercises the production job runner and Benson worker
+    # bootstrap, so a development/test install must include the server extra
+    # that owns Celery and its Redis transport.
+    "openconstructionerp[server]",
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
     "pytest-cov>=6.0.0",

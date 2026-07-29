@@ -34,9 +34,11 @@ def _impact(
     currency: str,
     cost: str,
     days: str,
-    status: str = "approved",
+    status: str | None = None,
 ) -> ChangeImpact:
     """Build a ChangeImpact from string money / day literals."""
+    if status is None:
+        status = "issued" if kind == "variation_order" else "approved"
     return ChangeImpact(
         kind=kind,
         currency=currency,

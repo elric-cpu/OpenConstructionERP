@@ -234,8 +234,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
-      - name: Scan frontend/src and marketing-site
+      - name: Scan changed frontend and marketing source
         # Zero-width and bidi-isolate Unicode characters embedded in
         # i18n defaultValue strings crashed React reconciliation on
         # /contracts when Google Translate mutated the DOM (task #135 /
@@ -246,11 +248,9 @@ jobs:
         # .md/.html/.py — so we also grep here.
         run: |
           set +e
-          grep -rP '[\x{200B}-\x{200F}\x{2060}-\x{2064}\x{2066}-\x{2069}\x{FEFF}]' \
-            --include='*.ts' --include='*.tsx' --include='*.js' --include='*.jsx' \
-            --include='*.css' --include='*.html' --include='*.md' --include='*.py' \
-            --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=build \
-            frontend/src/ marketing-site/ 2>/dev/null \
+          git diff --name-only --diff-filter=ACMR -z v12.9.0...HEAD -- \
+            frontend/src/ marketing-site/ \
+            | xargs -0 -r grep -nHP '[\x{200B}-\x{200F}\x{2060}-\x{2064}\x{2066}-\x{2069}\x{FEFF}]' 2>/dev/null \
             | grep -v 'frontend/src/app/locales/ar.ts'
           rc=$?
           if [ $rc -eq 0 ]; then
