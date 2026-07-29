@@ -61,6 +61,7 @@ backend/openestimate.db-shm
 backend/openestimate.db-wal
 backend/openestimate.db.cleanup-backup-*
 backend/storage
+backend/uploads
 backend/*.db
 backend/*.db-journal
 **/*.sqlite
