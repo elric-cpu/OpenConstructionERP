@@ -1,0 +1,7 @@
+TIME_ENTER_OWN = "time.enter_own"
+TIME_ENTER_TEAM = "time.enter_team"
+TIME_CERTIFY_OWN = "time.certify_own"
+TIME_APPROVE_TEAM = "time.approve_team"
+TIME_READ_TEAM = "time.read_team"
+TIME_CORRECT_OWN = "time.correct_own"
+TIME_CORRECT_TEAM = "time.correct_team"

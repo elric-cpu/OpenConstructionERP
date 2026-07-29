@@ -9,6 +9,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
+from app.core.edition import validate_locale
+
 
 def _sanitize_name(name: str) -> str:
     """Strip HTML tags from a name to prevent XSS."""
@@ -183,6 +185,11 @@ class UserCreate(BaseModel):
     def _sanitize_job_title(cls, v: str) -> str:
         return _sanitize_name(v) if v else ""
 
+    @field_validator("locale")
+    @classmethod
+    def _validate_locale(cls, v: str) -> str:
+        return validate_locale(v) or "en"
+
 
 class AdminUserCreate(BaseModel):
     """Admin-only: create a user with an arbitrary role.
@@ -236,6 +243,11 @@ class AdminUserCreate(BaseModel):
     def _sanitize_full_name(cls, v: str) -> str:
         return _sanitize_name(v)
 
+    @field_validator("locale")
+    @classmethod
+    def _validate_locale(cls, v: str) -> str:
+        return validate_locale(v) or "en"
+
 
 class UserUpdate(BaseModel):
     """Update user profile."""
@@ -257,6 +269,11 @@ class UserUpdate(BaseModel):
             return _sanitize_name(v)
         return v
 
+    @field_validator("locale")
+    @classmethod
+    def _validate_locale(cls, v: str | None) -> str | None:
+        return validate_locale(v)
+
 
 class UserAdminUpdate(BaseModel):
     """Admin-level user update (role, active status)."""
@@ -272,6 +289,11 @@ class UserAdminUpdate(BaseModel):
         if v is not None:
             return _sanitize_name(v)
         return v
+
+    @field_validator("locale")
+    @classmethod
+    def _validate_locale(cls, v: str | None) -> str | None:
+        return validate_locale(v)
 
 
 class UserResponse(BaseModel):

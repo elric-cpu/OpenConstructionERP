@@ -22,6 +22,14 @@
 FROM node:22-alpine AS frontend-build
 
 WORKDIR /build
+ARG OE_EDITION=community
+ARG OE_SUPPORTED_LOCALES=
+ARG OE_DEFAULT_LOCALE=en
+ARG OE_DEFAULT_REGION=
+ENV OE_EDITION=${OE_EDITION} \
+    OE_SUPPORTED_LOCALES=${OE_SUPPORTED_LOCALES} \
+    OE_DEFAULT_LOCALE=${OE_DEFAULT_LOCALE} \
+    OE_DEFAULT_REGION=${OE_DEFAULT_REGION}
 COPY frontend/package.json frontend/package-lock.json ./
 # Installed with Node's default heap on purpose. The ceiling below belongs to
 # the Vite/Rollup build and nothing else, but as a stage-wide ENV it also
@@ -52,14 +60,19 @@ WORKDIR /app
 
 # Copy backend source first (includes pyproject.toml + README.md + all code)
 COPY backend/ backend/
+COPY packs/ packs/
 
 # Create frontend dist directory for hatch force-include
 RUN mkdir -p /app/frontend/dist
 COPY --from=frontend-build /build/dist backend/app/_frontend_dist/
 
 # Install Python dependencies with server extras (asyncpg for PostgreSQL)
-RUN pip install --no-cache-dir "./backend[server]" && \
+RUN pip install --no-cache-dir "./backend[server,gcs]" && \
     pip install --no-cache-dir "ezdxf>=0.18.0" || true
+ARG OE_EDITION=community
+RUN if [ "$OE_EDITION" = "benson" ]; then \
+      pip install --no-cache-dir ./packs/us-rsmeans ./packs/benson-eastern-oregon; \
+    fi
 
 # Copy data catalogs (for seed/enrichment)
 COPY data/ data/

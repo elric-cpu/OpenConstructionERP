@@ -127,13 +127,49 @@ _TOKEN_RE = re.compile(r"[a-z0-9]+")
 
 # Only scan source and content file types; skip binaries and vendored trees.
 _TEXT_SUFFIXES = {
-    ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json", ".md", ".mdx",
-    ".html", ".css", ".scss", ".yml", ".yaml", ".toml", ".txt", ".sql", ".sh",
-    ".env", ".cfg", ".ini", ".rs", ".vue", ".svelte",
+    ".py",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".json",
+    ".md",
+    ".mdx",
+    ".html",
+    ".css",
+    ".scss",
+    ".yml",
+    ".yaml",
+    ".toml",
+    ".txt",
+    ".sql",
+    ".sh",
+    ".env",
+    ".cfg",
+    ".ini",
+    ".rs",
+    ".vue",
+    ".svelte",
 }
 _SKIP_PARTS = {
-    ".git", "node_modules", "dist", "build", "__pycache__", ".venv", "venv",
-    ".mypy_cache", ".ruff_cache", "target", "_frontend_dist",
+    ".git",
+    "node_modules",
+    "dist",
+    "build",
+    "__pycache__",
+    ".venv",
+    "venv",
+    ".mypy_cache",
+    ".ruff_cache",
+    "target",
+    "_frontend_dist",
+    # Preserved Benson applications are capability-reference snapshots, not
+    # production source. They remain byte-for-byte intact until parity is
+    # accepted and are excluded from the integrated image by .dockerignore.
+    "benson-app",
+    "benson-erp",
 }
 # This gate stores hashes, never literals, so it never matches itself, but skip
 # it anyway to keep the report clean.

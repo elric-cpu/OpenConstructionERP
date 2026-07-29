@@ -1,0 +1,224 @@
+{
+  "schema_version": 1,
+  "source_repository": "https://github.com/datadrivenconstruction/DDC_Skills_for_AI_Agents_in_Construction",
+  "source_commit": "34e0d78332ce6a510706703dcb61793ee85e4aed",
+  "policy": "Draft and propose only. No skill may mutate ERP or external systems without explicit human approval.",
+  "skills": [
+    {
+      "id": "estimate-builder",
+      "label": "Build estimate draft",
+      "category": "estimating",
+      "description": "Draft a Benson estimate from approved scope, quantities, cost sources, and markup policy.",
+      "risk": "financial",
+      "allowed_roles": ["owner", "admin", "office", "estimator_pm"],
+      "source_path": "2_DDC_Book/3.1-Cost-Estimation/estimate-builder/SKILL.md",
+      "required_context": ["project", "scope", "cost_sources"]
+    },
+    {
+      "id": "historical-cost-analyzer",
+      "label": "Compare historical costs",
+      "category": "estimating",
+      "description": "Compare line items with Benson historical costs without inventing missing rates.",
+      "allowed_roles": ["owner", "admin", "office", "estimator_pm", "accounting"],
+      "source_path": "2_DDC_Book/3.1-Cost-Estimation/historical-cost-analyzer/SKILL.md"
+    },
+    {
+      "id": "takeoff-helper",
+      "label": "Review quantity takeoff",
+      "category": "estimating",
+      "description": "Extract and validate draft quantities from approved project documents.",
+      "allowed_roles": ["owner", "admin", "office", "estimator_pm"],
+      "source_path": "1_DDC_Toolkit/CWICR-Database/cwicr-takeoff-helper/SKILL.md"
+    },
+    {
+      "id": "value-engineering",
+      "label": "Draft value options",
+      "category": "estimating",
+      "description": "Propose scope alternatives with explicit cost, schedule, and quality tradeoffs.",
+      "risk": "financial",
+      "allowed_roles": ["owner", "admin", "estimator_pm"],
+      "source_path": "1_DDC_Toolkit/CWICR-Database/cwicr-value-engineering/SKILL.md"
+    },
+    {
+      "id": "change-order-processor",
+      "label": "Draft change order",
+      "category": "project_controls",
+      "description": "Draft documented cost and schedule impacts for a proposed change.",
+      "risk": "signature",
+      "allowed_roles": ["owner", "admin", "office", "estimator_pm"],
+      "source_path": "1_DDC_Toolkit/Cost-Management/change-order-processor/SKILL.md",
+      "required_context": ["job", "approved_baseline", "change_scope"]
+    },
+    {
+      "id": "budget-variance-analyzer",
+      "label": "Analyze budget variance",
+      "category": "project_controls",
+      "description": "Compare approved budget, commitments, and accounting actuals.",
+      "allowed_roles": ["owner", "admin", "estimator_pm", "accounting"],
+      "source_path": "1_DDC_Toolkit/Cost-Management/budget-variance-analyzer/SKILL.md"
+    },
+    {
+      "id": "cash-flow-forecaster",
+      "label": "Forecast project cash flow",
+      "category": "project_controls",
+      "description": "Draft a cash-flow forecast from approved schedule and accounting facts.",
+      "risk": "financial",
+      "allowed_roles": ["owner", "admin", "accounting"],
+      "source_path": "1_DDC_Toolkit/Cost-Management/cash-flow-forecaster/SKILL.md"
+    },
+    {
+      "id": "look-ahead-scheduler",
+      "label": "Draft look-ahead schedule",
+      "category": "scheduling",
+      "description": "Propose a short-horizon schedule from constraints, crews, materials, and commitments.",
+      "risk": "external_send",
+      "allowed_roles": ["owner", "admin", "office", "estimator_pm", "field"],
+      "source_path": "3_DDC_Insights/Schedule-Optimization/look-ahead-scheduler/SKILL.md"
+    },
+    {
+      "id": "critical-path-analyzer",
+      "label": "Analyze critical path",
+      "category": "scheduling",
+      "description": "Identify schedule constraints and proposed recovery actions.",
+      "allowed_roles": ["owner", "admin", "office", "estimator_pm"],
+      "source_path": "1_DDC_Toolkit/Schedule-Management/critical-path-analyzer/SKILL.md"
+    },
+    {
+      "id": "weather-impact-scheduler",
+      "label": "Review weather impacts",
+      "category": "scheduling",
+      "description": "Flag weather-sensitive work using project location and verified forecast data.",
+      "allowed_roles": ["owner", "admin", "office", "estimator_pm", "field"],
+      "source_path": "1_DDC_Toolkit/Schedule-Integration/weather-impact-scheduler/SKILL.md"
+    },
+    {
+      "id": "daily-report-generator",
+      "label": "Draft daily report",
+      "category": "field",
+      "description": "Turn field notes, time, deliveries, and photos into a reviewable daily report.",
+      "risk": "external_send",
+      "allowed_roles": ["owner", "admin", "office", "estimator_pm", "field"],
+      "source_path": "1_DDC_Toolkit/Field-Operations/daily-report-generator/SKILL.md"
+    },
+    {
+      "id": "progress-photo-analyzer",
+      "label": "Organize progress photos",
+      "category": "field",
+      "description": "Classify project photos and flag uncertain observations for human review.",
+      "allowed_roles": ["owner", "admin", "office", "estimator_pm", "field"],
+      "source_path": "1_DDC_Toolkit/Field-Operations/progress-photo-analyzer/SKILL.md"
+    },
+    {
+      "id": "punch-list-manager",
+      "label": "Draft punch list",
+      "category": "field",
+      "description": "Create and organize proposed punch items from inspected facts and photos.",
+      "risk": "external_send",
+      "allowed_roles": ["owner", "admin", "office", "estimator_pm", "field"],
+      "source_path": "1_DDC_Toolkit/Field-Operations/punch-list-manager/SKILL.md"
+    },
+    {
+      "id": "safety-inspection",
+      "label": "Draft safety inspection",
+      "category": "field",
+      "description": "Structure observations without replacing competent-person safety judgment.",
+      "risk": "legal",
+      "allowed_roles": ["owner", "admin", "estimator_pm", "field"],
+      "source_path": "1_DDC_Toolkit/Field-Operations/safety-inspection/SKILL.md"
+    },
+    {
+      "id": "material-procurement-tracker",
+      "label": "Review material procurement",
+      "category": "procurement",
+      "description": "Summarize approved material needs, orders, lead times, and delivery risks.",
+      "risk": "financial",
+      "allowed_roles": ["owner", "admin", "office", "estimator_pm", "accounting"],
+      "source_path": "1_DDC_Toolkit/Procurement/material-procurement-tracker/SKILL.md"
+    },
+    {
+      "id": "bid-analysis-comparator",
+      "label": "Compare supplier and trade bids",
+      "category": "procurement",
+      "description": "Normalize bid scope and identify exclusions, alternates, and comparison gaps.",
+      "risk": "financial",
+      "allowed_roles": ["owner", "admin", "estimator_pm", "accounting"],
+      "source_path": "1_DDC_Toolkit/Procurement/bid-analysis-comparator/SKILL.md"
+    },
+    {
+      "id": "payment-application-generator",
+      "label": "Draft payment request",
+      "category": "finance",
+      "description": "Draft a customer payment request from approved progress and billing policy.",
+      "risk": "financial",
+      "allowed_roles": ["owner", "admin", "accounting"],
+      "source_path": "1_DDC_Toolkit/Cost-Management/payment-application-generator/SKILL.md"
+    },
+    {
+      "id": "lien-waiver-tracker",
+      "label": "Track lien waivers",
+      "category": "finance",
+      "description": "Track waiver status and missing documents without providing legal advice.",
+      "risk": "legal",
+      "allowed_roles": ["owner", "admin", "accounting"],
+      "source_path": "4_DDC_Curated/Contract-Legal/lien-waiver-tracker/SKILL.md"
+    },
+    {
+      "id": "contract-clause-analyzer",
+      "label": "Review contract clauses",
+      "category": "documents",
+      "description": "Extract and flag clauses for owner or counsel review without legal conclusions.",
+      "risk": "legal",
+      "allowed_roles": ["owner", "admin", "estimator_pm"],
+      "source_path": "1_DDC_Toolkit/Document-Control/contract-clause-analyzer/SKILL.md"
+    },
+    {
+      "id": "meeting-minutes-generator",
+      "label": "Draft meeting minutes",
+      "category": "documents",
+      "description": "Draft decisions, assignments, and unresolved questions from meeting notes.",
+      "risk": "external_send",
+      "allowed_roles": ["owner", "admin", "office", "estimator_pm"],
+      "source_path": "1_DDC_Toolkit/Document-Control/meeting-minutes-generator/SKILL.md"
+    },
+    {
+      "id": "project-closeout-checklist",
+      "label": "Review closeout readiness",
+      "category": "closeout",
+      "description": "Check required Benson closeout records and flag missing evidence.",
+      "allowed_roles": ["owner", "admin", "office", "estimator_pm", "field"],
+      "source_path": "1_DDC_Toolkit/Project-Closeout/project-closeout-checklist/SKILL.md"
+    },
+    {
+      "id": "warranty-tracker",
+      "label": "Review warranties",
+      "category": "closeout",
+      "description": "Summarize warranty dates, obligations, documents, and upcoming follow-up.",
+      "allowed_roles": ["owner", "admin", "office", "estimator_pm"],
+      "source_path": "1_DDC_Toolkit/Closeout/warranty-tracker/SKILL.md"
+    },
+    {
+      "id": "document-extraction",
+      "label": "Extract construction documents",
+      "category": "documents",
+      "description": "Extract structured draft data with source references and confidence flags.",
+      "allowed_roles": ["owner", "admin", "office", "estimator_pm", "accounting"],
+      "source_path": "3_DDC_Insights/AI-Agents/llm-document-extraction/SKILL.md"
+    },
+    {
+      "id": "security-review-construction",
+      "label": "Run construction security review",
+      "category": "quality",
+      "description": "Review ERP and integration changes against construction-specific security controls.",
+      "allowed_roles": ["owner", "admin"],
+      "source_path": "4_DDC_Curated/Quality-Assurance/security-review-construction/SKILL.md"
+    },
+    {
+      "id": "verification-loop-construction",
+      "label": "Verify construction deliverable",
+      "category": "quality",
+      "description": "Check data integrity, business rules, evidence, and output quality before delivery.",
+      "allowed_roles": ["owner", "admin", "office", "estimator_pm", "accounting", "field"],
+      "source_path": "4_DDC_Curated/Quality-Assurance/verification-loop-construction/SKILL.md"
+    }
+  ]
+}

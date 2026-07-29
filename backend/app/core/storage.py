@@ -1633,7 +1633,12 @@ def build_storage_backend(settings: Settings) -> StorageBackend:
             region=settings.s3_region,
         )
 
-    raise ValueError(f"Unknown storage backend {backend_name!r}. Expected one of: 'local', 's3'.")
+    if backend_name == "gcs":
+        from app.modules.benson_workers.gcs_storage import GoogleCloudStorageBackend
+
+        return GoogleCloudStorageBackend.from_settings(settings)
+
+    raise ValueError(f"Unknown storage backend {backend_name!r}. Expected one of: 'local', 's3', 'gcs'.")
 
 
 @lru_cache(maxsize=1)

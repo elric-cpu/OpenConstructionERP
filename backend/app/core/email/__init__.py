@@ -40,7 +40,7 @@ from .base import DeliveryResult, EmailAttachment, EmailBackend, EmailMessage
 from .console import ConsoleEmailBackend
 from .memory import MemoryEmailBackend
 from .noop import NoopEmailBackend
-from .service import EmailService, get_email_service, reset_email_service_cache
+from .service import EmailService, get_email_service, register_email_backend, reset_email_service_cache
 from .smtp import SmtpEmailBackend
 from .templates import (
     template_invoice_approved,
@@ -62,6 +62,7 @@ __all__ = [
     "NoopEmailBackend",
     "SmtpEmailBackend",
     "get_email_service",
+    "register_email_backend",
     "reset_email_service_cache",
     "template_invoice_approved",
     "template_meeting_invitation",

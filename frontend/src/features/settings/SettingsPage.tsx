@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useMemo, lazy, Suspense } from 'react
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { getIntlLocale } from '@/shared/lib/formatters';
+import { isBensonEdition } from '@/editions/config';
 import { TranslationManager } from './TranslationManager';
 import { BackupRestore } from './BackupRestore';
 import { RegionalSettings } from './RegionalSettings';
@@ -1642,7 +1643,7 @@ export function SettingsPage() {
           {activeTab === 'account' && (
             <>
               {/* Change password */}
-              <Card className="lg:col-span-2">
+              {!isBensonEdition && <Card className="lg:col-span-2">
                 <CardHeader
                   title={t('settings.change_password_title', { defaultValue: 'Change Password' })}
                   subtitle={t('settings.change_password_subtitle', { defaultValue: 'Update your account password. Minimum 8 characters.' })}
@@ -1725,7 +1726,7 @@ export function SettingsPage() {
                     </Button>
                   )}
                 </CardContent>
-              </Card>
+              </Card>}
 
               {/* Danger zone */}
               <Card className="lg:col-span-2 border-semantic-error/30 bg-semantic-error-bg/40">
@@ -1876,9 +1877,9 @@ export function SettingsPage() {
               <RegionalSettings />
 
               {/* Translation Manager */}
-              <div>
+              {!isBensonEdition && <div>
                 <TranslationManager />
-              </div>
+              </div>}
             </>
           )}
 

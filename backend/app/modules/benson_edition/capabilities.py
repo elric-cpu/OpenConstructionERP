@@ -1,0 +1,15 @@
+CAPABILITIES = (
+    {"id": "identity", "adapter": "benson_workforce", "upstream": "oe_users"},
+    {"id": "crm", "adapter": "benson_operations", "upstream": "oe_crm"},
+    {"id": "estimating", "adapter": "benson_operations", "upstream": "oe_boq"},
+    {"id": "documents", "adapter": "benson_operations", "upstream": "oe_documents"},
+    {"id": "scheduling", "adapter": "benson_operations", "upstream": "oe_schedule"},
+    {"id": "offline_timekeeping", "adapter": "benson_workforce", "upstream": "oe_field_time"},
+    {"id": "employee_onboarding", "adapter": "benson_workforce", "upstream": "oe_onboarding"},
+    {"id": "federal_labor", "adapter": "benson_workforce", "upstream": "oe_compliance"},
+    {"id": "payroll", "adapter": "benson_workforce", "upstream": "oe_payroll"},
+    {"id": "reconciliation", "adapter": "benson_finance", "upstream": "oe_reconciliation"},
+    {"id": "mfa", "adapter": "benson_security", "upstream": "oe_users"},
+    {"id": "audit", "adapter": "benson_security", "upstream": "oe_admin"},
+    {"id": "workers", "adapter": "benson_workers", "upstream": "oe_jobs"},
+)

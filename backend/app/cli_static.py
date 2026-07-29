@@ -197,7 +197,8 @@ def mount_frontend(app: FastAPI) -> None:
         path = request.url.path
 
         # API paths: return the normal JSON 404 response.
-        if path.startswith("/api"):
+        reserved_prefixes = ("/api", "/health/", "/metrics", "/openapi.json/")
+        if path.startswith(reserved_prefixes):
             return await http_exception_handler(request, exc)
 
         # Check if the requested file physically exists in the frontend

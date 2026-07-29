@@ -16,7 +16,7 @@ export {
   useTranslateOne,
 } from './queries';
 
-export { TranslationSettingsTab } from './TranslationSettingsTab';
+export { EditionTranslationSettingsTab as TranslationSettingsTab } from './EditionTranslationSettingsTab';
 
 export type {
   CacheStats,

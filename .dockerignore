@@ -103,6 +103,8 @@ data/catalog/raw
 desktop
 website-marketing
 i18n-audit
+benson-app
+benson-erp
 deploy/terraform
 deploy/kubernetes
 

@@ -373,13 +373,15 @@ export function Header({ title, onMenuClick }: HeaderProps) {
 
         {/* ── Zone 4 (Account) ─────────────────────────────────────── */}
         <UploadQueueIndicator />
-        <LanguageSwitcher
-          currentLang={currentLang}
-          // Load the target locale's lazy chunk BEFORE switching so every
-          // string flips to the new language immediately, with no English
-          // flash and no reload. See ``changeLanguage`` in app/i18n.
-          onSelect={(code) => void changeLanguage(code)}
-        />
+        {SUPPORTED_LANGUAGES.length > 1 && (
+          <LanguageSwitcher
+            currentLang={currentLang}
+            // Load the target locale's lazy chunk BEFORE switching so every
+            // string flips to the new language immediately, with no English
+            // flash and no reload. See ``changeLanguage`` in app/i18n.
+            onSelect={(code) => void changeLanguage(code)}
+          />
+        )}
         <ThemeToggle />
         <UserMenu />
       </div>

@@ -1,0 +1,10 @@
+{
+  "name": "Benson Construction ERP",
+  "short_name": "Benson ERP",
+  "description": "Construction field operations, scheduling, and timekeeping.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FAF8F3",
+  "theme_color": "#722F37",
+  "icons": []
+}

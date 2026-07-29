@@ -3,8 +3,10 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import { useTranslation as useI18nTranslation } from 'react-i18next';
+import { isBensonEdition, supportsLocale } from '@/editions/config';
+import { importLocale } from '@edition/locale-loader';
 
-export const SUPPORTED_LANGUAGES = [
+export const ALL_SUPPORTED_LANGUAGES = [
   { code: 'en', name: 'English', flag: '🇬🇧', country: 'gb' },
   { code: 'de', name: 'Deutsch', english: 'German', flag: '🇩🇪', country: 'de' },
   { code: 'fr', name: 'Français', english: 'French', flag: '🇫🇷', country: 'fr' },
@@ -35,6 +37,10 @@ export const SUPPORTED_LANGUAGES = [
   { code: 'mn', name: 'Монгол', english: 'Mongolian', flag: '🇲🇳', country: 'mn' },
   { code: 'ky', name: 'Кыргызча', english: 'Kyrgyz', flag: '🇰🇬', country: 'kg' },
 ];
+
+export const SUPPORTED_LANGUAGES = isBensonEdition
+  ? ALL_SUPPORTED_LANGUAGES.filter((language) => language.code === 'en')
+  : ALL_SUPPORTED_LANGUAGES.filter((language) => supportsLocale(language.code));
 
 export function getLanguageByCode(code: string): (typeof SUPPORTED_LANGUAGES)[number] {
   return SUPPORTED_LANGUAGES.find((l) => l.code === code) ?? SUPPORTED_LANGUAGES[0]!;
@@ -86,7 +92,7 @@ export async function loadLocaleResource(code: string): Promise<void> {
   if (loadedLocales.has(code)) return;
   if (!SUPPORTED_LANGUAGES.some((l) => l.code === code)) return;
   try {
-    const mod = await import(`./locales/${code}.ts`);
+    const mod = await importLocale(code) as { default?: unknown };
     const resource = (mod.default ?? mod) as { translation: Record<string, string> };
     // ``deep=false`` keeps the resource bundle as a flat dictionary —
     // critical because every locale file ships dotted keys like
@@ -134,6 +140,9 @@ export async function loadLocaleResource(code: string): Promise<void> {
  * are swallowed there (English fallback), so the switch still proceeds.
  */
 export async function changeLanguage(code: string): Promise<void> {
+  if (!SUPPORTED_LANGUAGES.some((language) => language.code === code)) {
+    throw new Error(`Unsupported locale: ${code}`);
+  }
   await loadLocaleResource(code);
   await i18n.changeLanguage(code);
 }

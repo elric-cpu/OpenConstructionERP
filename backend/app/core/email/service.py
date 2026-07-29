@@ -26,6 +26,7 @@ modules/users, modules/integrations, and any future consumer.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from functools import lru_cache
 
 from app.config import Settings, get_settings
@@ -39,6 +40,15 @@ from .templates import template_password_reset, wrap
 
 logger = logging.getLogger(__name__)
 
+EmailBackendFactory = Callable[[Settings], EmailBackend]
+_BACKEND_FACTORIES: dict[str, EmailBackendFactory] = {}
+
+
+def register_email_backend(name: str, factory: EmailBackendFactory) -> None:
+    """Register an additive email transport supplied by a loaded module."""
+    _BACKEND_FACTORIES[name] = factory
+    _cached_service.cache_clear()
+
 
 def _resolve_backend(settings: Settings) -> EmailBackend:
     """Instantiate the backend named in settings.
@@ -51,6 +61,8 @@ def _resolve_backend(settings: Settings) -> EmailBackend:
     host is missing so operators notice immediately.
     """
     name: BackendName = settings.email_backend
+    if name in _BACKEND_FACTORIES:
+        return _BACKEND_FACTORIES[name](settings)
     if name == "smtp":
         if not settings.smtp_host:
             logger.warning(

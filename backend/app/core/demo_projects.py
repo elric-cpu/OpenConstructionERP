@@ -2079,6 +2079,7 @@ PACK_DEMO_PROJECT: dict[str, str] = {
     "aus": "mixed-use-sydney",
     "nzs": "commercial-auckland",
     "batimatech-ca": "condo-toronto",
+    "benson-eastern-oregon": "commercial-denver",
     "bimhessen-de": "residential-berlin",
     "brazil-sinapi": "residential-saopaulo",
     "china-gbt50500": "office-shanghai",

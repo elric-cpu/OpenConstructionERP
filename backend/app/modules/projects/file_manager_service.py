@@ -783,7 +783,7 @@ def resolve_storage_locations(
         project_name=project_name,
         storage_uses_default=True,
         storage_path_override=None,
-        storage_backend=backend_name if backend_name in {"local", "s3"} else "local",  # type: ignore[arg-type]
+        storage_backend=backend_name if backend_name in {"local", "s3", "gcs"} else "local",  # type: ignore[arg-type]
         db_path=db_path,
         uploads_root=uploads_root,
         photos_root=photos_root,

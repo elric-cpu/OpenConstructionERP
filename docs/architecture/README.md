@@ -7,6 +7,22 @@ docs. It explains how the codebase fits together: the monorepo layout, the modul
 system, the validation pipeline, the canonical data format, the data stores, and the
 split between the backend and the frontend. This document tracks version 10.10.0.
 
+## Benson edition overlay
+
+The Benson release line is pinned to the complete OpenConstructionERP `v12.9.0`
+tree at commit `19bd8e0856b549e40472e2b57a6c82b8a0722a73`. It is additive:
+`backend/app/modules/benson_*` composes upstream services through module
+dependencies, while the frontend registers its route through the existing module
+registry. The preserved `benson-app/` and `benson-erp/` directories are reference
+implementations and are not separate production applications.
+
+The Benson build selects an English-only locale loader at compile time and activates
+the `benson-eastern-oregon` partner pack. The pack extends the upstream US profile
+with USD, imperial units, Oregon context, and project-required county, local
+jurisdiction, and IANA timezone. See the [codebase map](../benson-codebase-map.md),
+[capability matrix](../benson-capability-matrix.md), and
+[integrated production runbook](../benson-integrated-production-runbook.md).
+
 ## Design principles
 
 A few ideas shape every part of the code:

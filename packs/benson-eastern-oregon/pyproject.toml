@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openconstructionerp-benson-eastern-oregon"
+version = "12.9.0"
+description = "Benson Home Solutions edition profile for Eastern Oregon operations."
+readme = "README.md"
+license = { text = "AGPL-3.0-or-later" }
+requires-python = ">=3.11"
+dependencies = ["openconstructionerp>=12.9.0"]
+
+[project.entry-points."openconstructionerp.partner_packs"]
+benson-eastern-oregon = "openconstructionerp_benson_eastern_oregon:MANIFEST"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+openconstructionerp_benson_eastern_oregon = ["logo.svg", "onboarding.yaml"]

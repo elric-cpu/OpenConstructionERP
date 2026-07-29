@@ -7,7 +7,10 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
+
+from app.config import get_settings
+from app.core.edition import normalize_project_context, validate_locale
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _CURRENCY_CODE_RE = re.compile(r"^[A-Z]{3}$")
@@ -16,6 +19,14 @@ _UNIT_CODE_RE = re.compile(r"^[A-Za-z0-9._/²³-]{1,20}$")
 
 # Valid date formats accepted by the platform (ISO 8601 preferred)
 _DATE_FORMATS = ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%d.%m.%Y", "%m/%d/%Y")
+
+
+def _default_project_locale() -> str:
+    return get_settings().default_locale
+
+
+def _default_project_region() -> str:
+    return get_settings().default_region
 
 
 def _validate_fx_rates(
@@ -309,7 +320,7 @@ class ProjectCreate(BaseModel):
         return strip_dangerous_html(v)
 
     region: str = Field(
-        default="",
+        default_factory=_default_project_region,
         max_length=100,
         description="Region/market identifier (e.g. DACH, UK, US, Middle East). User must choose, no default bias",
         examples=["DACH"],
@@ -326,7 +337,11 @@ class ProjectCreate(BaseModel):
         description="ISO 4217 currency code (e.g. EUR, GBP, USD). User must choose, no default bias",
         examples=["EUR"],
     )
-    locale: str = Field(default="en", max_length=10, description="UI locale code (e.g. en, de, fr)")
+    locale: str = Field(
+        default_factory=_default_project_locale,
+        max_length=10,
+        description="UI locale code (e.g. en, de, fr)",
+    )
     validation_rule_sets: list[str] = Field(
         default_factory=lambda: ["boq_quality"],
         description="List of validation rule set IDs to apply (e.g. boq_quality, din276, gaeb)",
@@ -350,6 +365,9 @@ class ProjectCreate(BaseModel):
         description="ISO 3166-1 alpha-2 country code (e.g. US, CA, AU, DE, GB). "
         "Drives the AIA G702/G703 payment-application gate (US/CA/AU only).",
     )
+    county: str | None = Field(default=None, max_length=100)
+    local_jurisdiction: str | None = Field(default=None, max_length=160)
+    timezone: str | None = Field(default=None, max_length=64, description="IANA timezone name")
 
     @field_validator("country_code", mode="after")
     @classmethod
@@ -358,6 +376,19 @@ class ProjectCreate(BaseModel):
             return v
         cc = v.strip().upper()
         return cc or None
+
+    @field_validator("locale", mode="after")
+    @classmethod
+    def _validate_locale(cls, v: str) -> str:
+        return validate_locale(v) or "en"
+
+    @model_validator(mode="after")
+    def _validate_benson_context(self) -> "ProjectCreate":
+        normalized = normalize_project_context(self.county, self.local_jurisdiction, self.timezone)
+        self.county = normalized.get("county")
+        self.local_jurisdiction = normalized.get("local_jurisdiction")
+        self.timezone = normalized.get("timezone")
+        return self
 
     contract_value: str | None = Field(default=None, max_length=50)
     planned_start_date: str | None = Field(default=None, max_length=20)
@@ -499,6 +530,9 @@ class ProjectUpdate(BaseModel):
         description="ISO 3166-1 alpha-2 country code (e.g. US, CA, AU, DE, GB). "
         "Drives the AIA G702/G703 payment-application gate (US/CA/AU only).",
     )
+    county: str | None = Field(default=None, max_length=100)
+    local_jurisdiction: str | None = Field(default=None, max_length=160)
+    timezone: str | None = Field(default=None, max_length=64, description="IANA timezone name")
 
     @field_validator("country_code", mode="after")
     @classmethod
@@ -507,6 +541,22 @@ class ProjectUpdate(BaseModel):
             return v
         cc = v.strip().upper()
         return cc or None
+
+    @field_validator("locale", mode="after")
+    @classmethod
+    def _validate_locale(cls, v: str | None) -> str | None:
+        return validate_locale(v)
+
+    @model_validator(mode="after")
+    def _validate_context_values(self) -> "ProjectUpdate":
+        if any(value is not None for value in (self.county, self.local_jurisdiction, self.timezone)):
+            normalize_project_context(
+                self.county,
+                self.local_jurisdiction,
+                self.timezone,
+                required=False,
+            )
+        return self
 
     contract_value: str | None = Field(default=None, max_length=50)
     planned_start_date: str | None = Field(default=None, max_length=20)

@@ -52,7 +52,7 @@ class FileRow(BaseModel):
         ...,
         description="Path relative to the storage root, suitable for breadcrumbs",
     )
-    storage_backend: Literal["local", "s3"] = "local"
+    storage_backend: Literal["local", "s3", "gcs"] = "local"
     download_url: str | None = Field(
         default=None,
         description="Authenticated download URL (e.g. /api/v1/documents/{id}/download/)",
@@ -82,7 +82,7 @@ class FileTreeNode(BaseModel):
         default=None,
         description="Real on-disk parent for files inside this node (None for virtual nodes)",
     )
-    storage_backend: Literal["local", "s3"] = "local"
+    storage_backend: Literal["local", "s3", "gcs"] = "local"
     children: list[FileTreeNode] = Field(default_factory=list)
 
 
@@ -98,7 +98,7 @@ class StorageLocations(BaseModel):
     project_name: str
     storage_uses_default: bool = True
     storage_path_override: str | None = None
-    storage_backend: Literal["local", "s3"] = "local"
+    storage_backend: Literal["local", "s3", "gcs"] = "local"
     db_path: str | None = Field(
         default=None,
         description="Absolute path to the SQLite DB or driver URL summary",

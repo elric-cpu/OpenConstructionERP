@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
   workflow_call:
 
 jobs:
@@ -46,7 +47,9 @@ jobs:
         # SHA-256 hashes of the brand tokens (the denylist itself is
         # brand-free) and permits a small reviewed set of functional
         # interop names via scripts/brand_token_allowlist.txt.
-        run: python scripts/check_no_brand_tokens.py
+        # v12.9.0 locale source remains unchanged for upstream synchronization;
+        # only files added or changed by the integrated release are gated here.
+        run: python scripts/check_no_brand_tokens.py --since v12.9.0
 
   backend:
     name: Backend CI (shard ${{ matrix.shard }}/6)
@@ -377,3 +380,62 @@ jobs:
           pytest tests/unit -q -ra --durations=25
           --timeout=300 --timeout-method=thread
           --splits 3 --group ${{ matrix.shard }}
+
+  upstream-parity:
+    name: Upstream v12.9.0 Parity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout complete history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify additive upstream subset
+        run: python scripts/verify_upstream_parity.py --report artifacts/benson-parity.json
+
+      - name: Upload parity report
+        uses: actions/upload-artifact@v4
+        with:
+          name: benson-upstream-parity
+          path: artifacts/benson-parity.json
+
+  benson-edition-artifact:
+    name: Benson English Artifact
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Reject high severity advisories
+        run: npm audit --audit-level=high
+
+      - name: Build Benson edition
+        env:
+          NODE_OPTIONS: --max-old-space-size=9216
+          OE_EDITION: benson
+          OE_SUPPORTED_LOCALES: en
+          OE_DEFAULT_LOCALE: en-US
+          OE_DEFAULT_REGION: benson_eastern_oregon
+        run: npm run build
+
+      - name: Verify English-only chunks
+        working-directory: .
+        run: python scripts/check_benson_artifact.py

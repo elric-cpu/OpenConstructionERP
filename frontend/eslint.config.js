@@ -180,6 +180,18 @@ export default [
     },
   },
 
+  {
+    files: [
+      'src/editions/**/*.{ts,tsx}',
+      'src/features/benson/**/*.{ts,tsx}',
+      'src/modules/benson-operations/**/*.{ts,tsx}',
+    ],
+    rules: {
+      'max-lines': ['error', { max: 350, skipBlankLines: true, skipComments: true }],
+      'max-lines-per-function': ['warn', { max: 150, skipBlankLines: true, skipComments: true }],
+    },
+  },
+
   // Ignore build output, dependencies, generated and config files
   {
     ignores: [

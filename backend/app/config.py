@@ -242,6 +242,10 @@ class Settings(BaseSettings):
     app_debug: bool = True
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     allowed_origins: str = "http://localhost:5173"
+    edition: str = "community"
+    supported_locales: str = ""
+    default_locale: str = "en"
+    default_region: str = ""
     # Optional allowlist for self-hosted AI provider endpoints (Ollama / vLLM).
     # Empty (default) permits any loopback / private address so a local runtime
     # works out of the box, while link-local and cloud-metadata addresses stay
@@ -274,16 +278,18 @@ class Settings(BaseSettings):
     # ── Redis ────────────────────────────────────────────────────────────
     redis_url: str | None = "redis://localhost:6379/0"
 
-    # ── Storage (Local filesystem or S3/MinIO) ───────────────────────────
+    # ── Storage (Local filesystem, S3/MinIO, or Google Cloud Storage) ─────
     # Set ``storage_backend=s3`` to push BIM/CAD blobs to an S3-compatible
     # bucket instead of the local filesystem.  The S3 credentials below
     # are only consulted when ``storage_backend="s3"``.
-    storage_backend: Literal["local", "s3"] = "local"
+    storage_backend: Literal["local", "s3", "gcs"] = "local"
     s3_endpoint: str = "http://localhost:9000"
     s3_access_key: str = ""
     s3_secret_key: str = ""
     s3_bucket: str = "openestimate"
     s3_region: str = "us-east-1"
+    gcs_bucket: str = ""
+    gcs_project: str = ""
 
     # ── Point Cloud ingest ───────────────────────────────────────────────
     # Reality-capture scans are 5-200 GB. They are uploaded
@@ -490,13 +496,20 @@ class Settings(BaseSettings):
     # ``noop`` and ``memory`` are for automated tests - the service
     # layer in ``app.core.email`` resolves these names into concrete
     # backends.
-    email_backend: Literal["console", "smtp", "noop", "memory"] = "console"
+    email_backend: Literal["console", "smtp", "noop", "memory", "resend"] = "console"
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_password: str = ""
     smtp_from: str = "info@datadrivenconstruction.io"
     smtp_tls: bool = True
+    resend_api_key: str = ""
+    resend_from: str = "Benson Home Solutions <leads@bensonhomesolutions.com>"
+    google_directory_enabled: bool = False
+    google_directory_service_account_json: str = ""
+    google_directory_delegated_admin: str = ""
+    google_directory_org_unit_path: str = "/"
+    google_directory_timeout_seconds: float = 15.0
     # Public URL used to build password-reset and notification links.
     # Falls back to the first CORS origin so dev installs work without
     # an explicit setting.

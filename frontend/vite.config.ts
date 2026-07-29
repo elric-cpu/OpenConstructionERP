@@ -74,6 +74,13 @@ function cesiumAssets(): Plugin {
 // Read the version from package.json once at build time so the entire app
 // (sidebar, About page, error reports, update checker) stays in sync.
 const pkg = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8'));
+const oeEdition = process.env.OE_EDITION ?? 'community';
+const editionLocaleLoader = path.resolve(
+  __dirname,
+  oeEdition === 'benson'
+    ? 'src/editions/benson/localeLoader.ts'
+    : 'src/editions/default/localeLoader.ts',
+);
 
 // The static JSON-LD block in index.html advertises ``softwareVersion`` to
 // search engines. Rewrite it from package.json at serve/build time so the
@@ -95,6 +102,10 @@ function jsonLdSoftwareVersion(): Plugin {
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
+    __OE_EDITION__: JSON.stringify(oeEdition),
+    __OE_SUPPORTED_LOCALES__: JSON.stringify(process.env.OE_SUPPORTED_LOCALES ?? ''),
+    __OE_DEFAULT_LOCALE__: JSON.stringify(process.env.OE_DEFAULT_LOCALE ?? 'en'),
+    __OE_DEFAULT_REGION__: JSON.stringify(process.env.OE_DEFAULT_REGION ?? ''),
   },
   plugins: [
     react(),
@@ -271,6 +282,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@edition/locale-loader': editionLocaleLoader,
     },
     // Without dedupe, recharts can pull a second copy of react/react-dom through
     // its peer-dep optimize-deps pre-bundle in vite dev mode. The duplicate

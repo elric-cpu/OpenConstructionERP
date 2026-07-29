@@ -203,9 +203,12 @@ analytics = []
 s3 = [
     "aioboto3>=12.0.0",
 ]
+gcs = [
+    "google-cloud-storage>=2.18.0,<4",
+]
 # Everything
 all = [
-    "openconstructionerp[server,vector,semantic,cv,s3,pointcloud,analytics]",
+    "openconstructionerp[server,vector,semantic,cv,s3,gcs,pointcloud,analytics]",
 ]
 # Development tools
 dev = [

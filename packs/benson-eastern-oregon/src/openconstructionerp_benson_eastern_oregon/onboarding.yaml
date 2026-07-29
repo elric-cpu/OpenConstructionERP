@@ -1,0 +1,18 @@
+version: 1
+steps:
+  - id: operating-profile
+    title: Eastern Oregon operating profile
+    fields:
+      - id: county
+        type: text
+        required: true
+        label: Project county
+      - id: local_jurisdiction
+        type: text
+        required: true
+        label: Local permitting jurisdiction
+      - id: timezone
+        type: text
+        required: true
+        label: Project IANA timezone
+        placeholder: America/Boise

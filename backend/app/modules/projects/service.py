@@ -439,6 +439,15 @@ class ProjectService:
             fx_rates=list(data.fx_rates or []),
             default_vat_rate=data.default_vat_rate,
             custom_units=list(data.custom_units or []),
+            metadata_={
+                key: value
+                for key, value in {
+                    "county": data.county,
+                    "local_jurisdiction": data.local_jurisdiction,
+                    "timezone": data.timezone,
+                }.items()
+                if value
+            },
         )
 
         # When a partner pack is active, tag the new project with its slug so it
@@ -647,9 +656,21 @@ class ProjectService:
 
         fields = data.model_dump(exclude_unset=True)
 
+        context_fields = {key: fields.pop(key) for key in ("county", "local_jurisdiction", "timezone") if key in fields}
+
         # Map schema field 'metadata' to model column 'metadata_'
         if "metadata" in fields:
             fields["metadata_"] = fields.pop("metadata")
+
+        if context_fields or "metadata_" in fields:
+            from app.core.edition import validate_project_metadata
+
+            final_metadata = dict(project.metadata_ or {})
+            metadata_patch = fields.pop("metadata_", None)
+            if metadata_patch is not None:
+                final_metadata.update(metadata_patch)
+            final_metadata.update(context_fields)
+            fields["metadata_"] = validate_project_metadata(final_metadata)
 
         if not fields:
             return project

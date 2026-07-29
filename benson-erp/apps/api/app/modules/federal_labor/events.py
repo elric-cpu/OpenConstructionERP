@@ -1,0 +1,3 @@
+FEDERAL_CHARGE_CODE_CLOSED = "FederalChargeCodeClosed"
+FEDERAL_INVOICE_SUPPORT_GENERATED = "FederalInvoiceSupportGenerated"
+EMPLOYEE_QUALIFICATION_CHANGED = "EmployeeQualificationChanged"
