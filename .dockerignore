@@ -112,6 +112,7 @@ deploy/kubernetes
 # ── Docs / non-runtime ──────────────────────────────────────────────
 docs
 *.md
+!frontend/src/features/modules/moduleDeveloperGuide.md
 !README.md
 !backend/README.md
 !frontend/README.md
