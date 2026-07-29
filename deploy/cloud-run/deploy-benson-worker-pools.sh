@@ -15,11 +15,16 @@ JWT_SECRET=${JWT_SECRET:-openconstructionerp-secret-key}
 RESEND_SECRET=${RESEND_SECRET:-resend-api-key}
 REDIS_SECRET=${REDIS_SECRET:-benson-erp-redis-url}
 GCS_BUCKET=${GCS_BUCKET:-benson-operations-private-uploads-1048944000089}
+EMAIL_BACKEND=${EMAIL_BACKEND:-noop}
 
 : "${IMAGE_DIGEST:?Set IMAGE_DIGEST to the exact candidate image digest}"
 : "${SMOKE_REPORT:?Set SMOKE_REPORT to a passing candidate smoke JSON file}"
 if [[ ! "$IMAGE_DIGEST" =~ @sha256:[0-9a-f]{64}$ ]]; then
   echo "IMAGE_DIGEST must end in @sha256:<64 lowercase hex characters>." >&2
+  exit 2
+fi
+if [[ "$EMAIL_BACKEND" != "noop" && "$EMAIL_BACKEND" != "resend" ]]; then
+  echo "EMAIL_BACKEND must be noop or resend." >&2
   exit 2
 fi
 jq -e '.status == "pass"' "$SMOKE_REPORT" >/dev/null
@@ -28,7 +33,7 @@ for secret in "$DATABASE_SECRET" "$JWT_SECRET" "$RESEND_SECRET" "$REDIS_SECRET";
   gcloud secrets versions access latest --secret="$secret" --project="$PROJECT_ID" >/dev/null
 done
 
-common_env="APP_ENV=production,PYTHONPATH=/app/backend,OE_EDITION=benson,OE_SUPPORTED_LOCALES=en,OE_DEFAULT_LOCALE=en-US,OE_DEFAULT_REGION=benson_eastern_oregon,OE_PARTNER_PACK=benson-eastern-oregon,OE_STORAGE_BACKEND=gcs,OE_GCS_BUCKET=${GCS_BUCKET},OE_GCS_PROJECT=${PROJECT_ID},OE_EMAIL_BACKEND=noop,OE_RESEND_FROM=Benson Home Solutions <notifications@bensonhomesolutions.com>,OE_GOOGLE_DIRECTORY_ENABLED=false"
+common_env="APP_ENV=production,PYTHONPATH=/app/backend,OE_EDITION=benson,OE_SUPPORTED_LOCALES=en,OE_DEFAULT_LOCALE=en-US,OE_DEFAULT_REGION=benson_eastern_oregon,OE_PARTNER_PACK=benson-eastern-oregon,OE_STORAGE_BACKEND=gcs,OE_GCS_BUCKET=${GCS_BUCKET},OE_GCS_PROJECT=${PROJECT_ID},OE_EMAIL_BACKEND=${EMAIL_BACKEND},OE_RESEND_FROM=Benson Home Solutions <notifications@bensonhomesolutions.com>,OE_GOOGLE_DIRECTORY_ENABLED=false"
 common_secrets="DATABASE_URL=${DATABASE_SECRET}:latest,OE_JWT_SECRET=${JWT_SECRET}:latest,OE_RESEND_API_KEY=${RESEND_SECRET}:latest,OE_REDIS_URL=${REDIS_SECRET}:latest,OE_CELERY_BROKER_URL=${REDIS_SECRET}:latest,OE_CELERY_RESULT_BACKEND=${REDIS_SECRET}:latest"
 revision_suffix=${REVISION_SUFFIX:-benson-$(git rev-parse --short=10 HEAD)}
 
@@ -60,4 +65,5 @@ gcloud run worker-pools deploy "$SCHEDULER_POOL" \
   --revision-suffix="$revision_suffix" \
   --quiet
 
-printf 'Worker pool: %s\nScheduler pool: %s\nImage: %s\n' "$WORKER_POOL" "$SCHEDULER_POOL" "$IMAGE_DIGEST"
+printf 'Worker pool: %s\nScheduler pool: %s\nImage: %s\nEmail backend: %s\n' \
+  "$WORKER_POOL" "$SCHEDULER_POOL" "$IMAGE_DIGEST" "$EMAIL_BACKEND"

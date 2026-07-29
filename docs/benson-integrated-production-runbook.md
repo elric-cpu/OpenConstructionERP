@@ -65,6 +65,7 @@ python scripts/smoke_benson_candidate.py \
 
 IMAGE_DIGEST='us-west1-docker.pkg.dev/.../image@sha256:...' \
 SMOKE_REPORT='artifacts/releases/candidate-smoke.json' \
+EMAIL_BACKEND='noop' \
   deploy/cloud-run/deploy-benson-worker-pools.sh
 ```
 
@@ -87,6 +88,11 @@ the cache, Celery broker, and Celery result-backend environment variables.
 After the zero-traffic candidate passes smoke, deploy one Celery worker and one
 Celery scheduler worker pool from the same image digest. The worker bootstrap
 registers Benson handlers before consuming any queued job.
+
+When the post-smoke provider gate is approved, redeploy both the candidate and
+worker pools with `EMAIL_BACKEND=resend`, then repeat the candidate smoke with
+`--expected-email-backend resend`. Leave Google Directory disabled unless the
+approved service-account secret exists.
 
 ## Cutover Authorization
 
