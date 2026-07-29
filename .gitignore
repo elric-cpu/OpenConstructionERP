@@ -465,3 +465,8 @@ frontend/scripts/_i18n_*.py
 # Session working directory: translation intermediates, audit dumps and one-off
 # scripts. Local only, and it holds source-language drafts we do not publish.
 /scratchpad/
+
+# Deployment-generated evidence is retained externally with the release record.
+# Keeping it untracked allows staged provider redeploys to preserve the clean
+# exact-commit gate without committing environment-specific revision metadata.
+/artifacts/releases/
