@@ -2029,6 +2029,14 @@ The Windows desktop app now stops its background service before it installs or u
 
 The backend service is also renamed from openestimate-server to openconstructionerp-server, so the whole app carries one name. An upgrade from an older version still stops the old process by its former name, so nothing is left running behind. Your data folder and settings are untouched.
 
+### Added
+
+- Add the Benson Operations foundation with durable website leads, private customer uploads, Google Workspace staff access, a branded mobile workspace, and confirmation-gated construction AI drafts
+
+### Security
+
+- Protect website intake with timestamped HMAC signatures and stable idempotency, enforce production-only PostgreSQL and private storage, remove unsigned legacy routes, and bound public upload and request capacity
+
 ## [11.7.0] - 2026-07-14
 
 The national cost bases now open up the same way the global base does. China, Turkey, Brazil, Spain, Italy, Greece and Indonesia each show all of their market and language variants as cards, and picking a market loads the base and reprices it into that market at its own price level and currency. The global CWICR base keeps its thirty market variants, so every base is now browsable market by market from one place, and the browser shows the running total across all nine bases, which now comes to more than 120,000 priced positions.

@@ -1,0 +1,7 @@
+PAYROLL_PERIODS_MANAGE = "payroll.periods_manage"
+PAYROLL_REVIEW = "payroll.review"
+PAYROLL_EXPORT = "payroll.export"
+PAYROLL_VIEW_WAGES = "payroll.view_wages"
+PAYROLL_MAPPINGS_MANAGE = "payroll.mappings_manage"
+PAYROLL_IMPORT = "payroll.import"
+PAYROLL_RECONCILE = "payroll.reconcile"

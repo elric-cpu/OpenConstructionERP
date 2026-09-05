@@ -1,0 +1,5 @@
+TIME_ENTRY_CREATED = "TimeEntryCreated"
+TIME_ENTRY_CERTIFIED = "TimeEntryCertified"
+TIME_ENTRY_APPROVED = "TimeEntryApproved"
+TIME_CORRECTION_REQUESTED = "TimeCorrectionRequested"
+TIME_CORRECTION_COMPLETED = "TimeCorrectionCompleted"

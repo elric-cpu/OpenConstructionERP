@@ -1,0 +1,7 @@
+FEDERAL_CHARGE_CODES_MANAGE = "federal_labor.charge_codes_manage"
+FEDERAL_CHARGE_CODES_READ = "federal_labor.charge_codes_read"
+FEDERAL_RATES_MANAGE = "federal_labor.rates_manage"
+FEDERAL_QUALIFICATIONS_MANAGE = "federal_labor.qualifications_manage"
+FEDERAL_INVOICE_SUPPORT_GENERATE = "federal_labor.invoice_support_generate"
+FEDERAL_INVOICE_SUPPORT_READ = "federal_labor.invoice_support_read"
+FEDERAL_FLOOR_CHECK_READ = "federal_labor.floor_check_read"

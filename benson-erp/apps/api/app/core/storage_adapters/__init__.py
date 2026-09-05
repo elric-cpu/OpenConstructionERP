@@ -1,0 +1,1 @@
+"""Portable object-storage adapters."""
