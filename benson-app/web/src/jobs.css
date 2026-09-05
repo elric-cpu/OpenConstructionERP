@@ -1,0 +1,71 @@
+.job-workspace,
+.job-plan-form {
+  display: grid;
+  gap: 20px;
+}
+.job-plan-form,
+.accepted-estimates,
+.job-list article {
+  background: white;
+  border: 1px solid #ded8cc;
+  border-radius: 5px;
+  padding: 20px;
+}
+.job-plan-form label {
+  display: grid;
+  gap: 6px;
+}
+.job-plan-form input {
+  border: 1px solid #b8b2a8;
+  border-radius: 4px;
+  padding: 10px;
+  font: inherit;
+}
+.job-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.accepted-estimates,
+.job-list {
+  display: grid;
+  gap: 10px;
+}
+.accepted-estimates h2 {
+  margin: 0 0 8px;
+}
+.accepted-estimates article,
+.job-list article {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto auto;
+  gap: 18px;
+  align-items: center;
+}
+.accepted-estimates article {
+  border-top: 1px solid #ded8cc;
+  padding-top: 12px;
+}
+.accepted-estimates article div {
+  display: grid;
+  gap: 3px;
+}
+.job-list article {
+  grid-template-columns: minmax(300px, 1fr) auto auto minmax(180px, auto);
+}
+.job-list h2,
+.job-list p {
+  margin: 3px 0;
+}
+.job-status {
+  border: 1px solid var(--silver);
+  border-radius: 999px;
+  padding: 5px 9px;
+  text-transform: capitalize;
+}
+@media (max-width: 900px) {
+  .job-plan-grid,
+  .accepted-estimates article,
+  .job-list article {
+    grid-template-columns: 1fr;
+  }
+}
