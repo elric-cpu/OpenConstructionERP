@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bensonhomesolutions.com/contracts/public-inquiry.raw.schema.json",
+  "title": "Public inquiry raw payload",
+  "type": "object",
+  "required": ["received_at", "source", "body"],
+  "properties": {
+    "received_at": { "type": "string", "format": "date-time" },
+    "source": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "source_message_id": { "type": ["string", "null"], "maxLength": 240 },
+    "headers": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "body": { "type": "object" }
+  },
+  "additionalProperties": false
+}

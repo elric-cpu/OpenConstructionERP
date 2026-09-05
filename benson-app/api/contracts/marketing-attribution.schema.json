@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bensonhomesolutions.com/contracts/marketing-attribution.schema.json",
+  "title": "Marketing attribution",
+  "type": "object",
+  "properties": {
+    "channel": { "type": ["string", "null"], "maxLength": 120 },
+    "source": { "type": ["string", "null"], "maxLength": 240 },
+    "medium": { "type": ["string", "null"], "maxLength": 240 },
+    "campaign": { "type": ["string", "null"], "maxLength": 240 },
+    "term": { "type": ["string", "null"], "maxLength": 500 },
+    "content": { "type": ["string", "null"], "maxLength": 500 },
+    "referrer": { "type": ["string", "null"], "format": "uri" },
+    "landing_page": { "type": ["string", "null"], "format": "uri" },
+    "click_ids": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "maxLength": 500 }
+    }
+  },
+  "additionalProperties": false
+}

@@ -42,3 +42,11 @@ We publish this freely so teams anywhere can plan, estimate and control construc
 And to every person who stars, opens an issue or sends a specification: thank you. We read what comes in and we try to give back in kind.
 
 Questions are welcome at info@datadrivenconstruction.io
+
+## Benson Operations overlay
+
+- The active Benson application is `benson-app/`; frontend-specific instructions live in `benson-app/web/AGENTS.md`.
+- Preserve the lead-foundation launch boundaries, authenticated deny-by-default behavior, guarded mutations, audit history, and private attachment handling.
+- React/TypeScript source files must remain at or below 350 nonblank, noncomment lines. Functions and components should remain at or below 150 nonblank, noncomment lines.
+- Split by responsibility instead of creating cosmetic wrapper components. Keep API access, orchestration hooks, forms, filters, workflow panels, and presentation components independently testable.
+- Run `npm run verify` from `benson-app/` after cross-stack changes; run the narrow API or web gate first while iterating.
