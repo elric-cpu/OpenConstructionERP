@@ -1,0 +1,1 @@
+"""Federal labor accounting domain."""

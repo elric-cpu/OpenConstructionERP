@@ -128,6 +128,7 @@ frontend/debug-bim/
 
 # MCP artifacts
 .mcp.json
+.serena/
 
 # The agent working notes. Local only, and the only thing that kept them out
 # of the repo until now was .git/info/exclude, which is per-clone and does not
